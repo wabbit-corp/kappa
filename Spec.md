@@ -123,7 +123,7 @@ elaboration behavior, backend obligation, diagnostic mode, or standard-library s
 
 Feature gates include:
 
-* standardized language-version gates, such as `kappa-v0.1`;
+* standardized language-version gates, such as `kappa-v1`;
 * standardized optional gates named by this specification;
 * backend-capability gates, such as `rt-multishot-effects`;
 * unsafe/debug gates, such as `unhide`, `clarify`, and `assertReducible`;
@@ -1087,14 +1087,15 @@ as compile-time values where §5.1.3 permits, and are erased according to §5.1.
 Implementations MUST provide the intrinsic trait declarations referenced by §§5.1.3, 5.3.1, 5.3.2, and 12.4:
 
 ```text
-IsProp, IsTrait,
+IsSubsingleton, IsProp, IsSet, RuntimeErased, IsTrait,
 ContainsRec, LacksRec,
 ContainsVar, LacksVar,
 ContainsEff, LacksEff, SplitEff
 ```
 
-`IsProp` is an ordinary proof trait. `IsTrait` and the row-membership traits above are intrinsic solver traits: their
-source-level names are ordinary prelude exports, but their evidence introduction rules are owned by the compiler.
+`IsSubsingleton`, `IsProp`, and `IsSet` are ordinary proof traits. `RuntimeErased`, `IsTrait`, and the row-membership
+traits above are intrinsic solver traits: their source-level names are ordinary prelude exports, but their evidence
+introduction rules are owned by the compiler.
 
 Implementations MUST provide the projector and accessor declarations referenced by §§5.1.7.3, 7.1.3A, 7.1.3B, 8.8, and
 17.3.1.3:
@@ -1119,7 +1120,7 @@ RecRow, VarRow, EffRow, Label, EffLabel,
 Unit, Void, Bool,
 Byte, Bytes,
 UnicodeScalar, Grapheme, String,
-Int, Nat, Integer, Float, Double, Real, Ordering,
+Int, Nat, Integer, Float, Double, Rational, Ordering,
 
 -- unions and rows
 Variant r,
@@ -1202,11 +1203,14 @@ point including surrogates, extended grapheme cluster, or one-code-unit substrin
 
 Portable source code SHOULD use `UnicodeScalar`.
 
-`Integer`, `Double`, and `Real` are ordinary user-facing numeric types exported by `std.prelude`.
+`Integer`, `Int`, `Rational`, `Double`, and `Float` are ordinary user-facing numeric types exported by `std.prelude`.
 
-* `Integer` is an arbitrary-precision integer type.
+* `Integer` is an arbitrary-precision signed mathematical integer type.
+* `Int` is a transparent alias of `Integer`. Portable `Int` arithmetic is exact mathematical integer arithmetic, not
+  machine-word arithmetic.
+* `Rational` is the exact arbitrary-precision ratio type, observationally a normalized ratio of two `Integer` values
+  with positive denominator.
 * `Double` is the IEEE-754 binary64 floating-point type.
-* `Real` is an arbitrary-precision real/decimal type for exact numeric programming.
 * `Float` is the standard prelude alias of `Double`.
 
 Constructors (constructor namespace):
@@ -1291,6 +1295,7 @@ fromComprehensionPlan, fromComprehensionRaw,
 -- proof and equality helpers
 absurd,
 subst, sym, trans, cong,
+unsafeAssertProof,
 witness, summon,
 measureRelation, lexRelation,
 
@@ -1376,17 +1381,17 @@ and `+0.0` equals `-0.0`). It is not the default `(==)` for `Float`.
 
 Traits (trait declaration kind):
 ```
--- proof and trait evidence
-IsProp, IsTrait,
+-- proof, erased evidence, and trait evidence
+IsSubsingleton, IsProp, IsSet, RuntimeErased, IsTrait,
 
 -- equality, ordering, display, sharing
 Equiv, Eq, Ord, Show, Shareable,
 
--- operational numeric traits
+-- numeric operation traits
 Zero, One, Add, Mul, Negatable,
 CheckedSub, CheckedDiv, CheckedMod,
 
--- lawful algebraic numeric traits
+-- algebraic numeric traits
 AdditiveMonoid, AdditiveGroup,
 MultiplicativeMonoid,
 Semiring, Ring,
@@ -1419,9 +1424,11 @@ MonadError, MonadFinally, MonadResource, MonadRef, Releasable
 This is intentional. Ordinary equality-keyed APIs use `Eq`; hashing is an optional acceleration facility. Code that
 defines, derives, or explicitly requests hashing imports `std.hash`.
 
-The prelude numeric traits are likewise split between operational traits and lawful algebraic traits. Floating-point
-types may support operational arithmetic without claiming lawful semiring, ring, or field structure under raw-bit
-`Eq`.
+All traits are lawful with respect to their declared contracts. Numeric operation traits such as `Add` and `Mul` have
+small contracts: they provide operations and only the domain/refinement obligations they explicitly declare. Algebraic
+traits such as `Semiring`, `Ring`, and `FieldLike` have stronger contracts because they declare algebraic law members.
+Floating-point types may support numeric operation traits without satisfying the stronger algebraic trait contracts
+under raw-bit `Eq`.
 
 Canonical declarations:
 
@@ -1435,6 +1442,12 @@ data Bool : Type =
     True
     False
 
+expect data Nat : Type
+expect data Integer : Type
+expect data Rational : Type
+expect data Double : Type
+
+type Int = Integer
 type Float = Double
 
 data Ordering : Type =
@@ -1643,11 +1656,20 @@ EffRow   : Type0
 Label    : Type0
 EffLabel : Type0
 
-trait IsProp (t : Type) =
-    0 isProp :
-        (@0 x : t) ->
-        (@0 y : t) ->
+trait IsSubsingleton (t : Type) =
+    allEqual :
+        (x : t) ->
+        (y : t) ->
         x = y
+
+trait IsSubsingleton p => IsProp (p : Type)
+
+trait IsSet (a : Type) =
+    pathIsProp :
+        forall (x : a) (y : a).
+        IsProp (x = y)
+
+intrinsic trait RuntimeErased (t : Type)
 
 intrinsic trait IsProp t => IsTrait (t : Type)
 
@@ -1861,7 +1883,13 @@ absurd :
 
 subst :
     forall (@0 a : Type) (@0 P : a -> Type) (@0 x : a) (@0 y : a).
-    (@0 p : x = y) -> P x -> P y
+    (p : x = y) -> P x -> P y
+
+unsafeAssertProof :
+    forall (@0 P : Type).
+    (@_ : IsProp P) ->
+    (@0 reason : String) ->
+    P
 
 witness :
     forall (a : Type).
@@ -2024,15 +2052,15 @@ trait Monoid (m : Type) =
     empty : m
     append : m -> m -> m
 
-    0 appendAssoc :
+    appendAssoc :
         forall (x : m) (y : m) (z : m).
         append (append x y) z = append x (append y z)
 
-    0 appendLeftIdentity :
+    appendLeftIdentity :
         forall (x : m).
         append empty x = x
 
-    0 appendRightIdentity :
+    appendRightIdentity :
         forall (x : m).
         append x empty = x
 
@@ -2335,7 +2363,7 @@ The portable prelude MUST provide at least:
 
 ```text
 Show Unit, Show Bool, Show Byte, Show Bytes, Show UnicodeScalar, Show Grapheme, Show String,
-Show Int, Show Nat, Show Integer, Show Float, Show Double, Show Real,
+Show Int, Show Nat, Show Integer, Show Float, Show Double, Show Rational,
 Show Ordering, Show Duration, Show Instant
 ```
 
@@ -2394,32 +2422,32 @@ Implementations MUST provide coherent evidence for at least the following portab
 Equality, ordering, and display:
 
 ```text
-Eq Unit, Eq Bool, Eq Byte, Eq Bytes, Eq UnicodeScalar, Eq Grapheme, Eq String, Eq Int, Eq Nat, Eq Integer, Eq Float, Eq Double, Eq Real,
+Eq Unit, Eq Bool, Eq Byte, Eq Bytes, Eq UnicodeScalar, Eq Grapheme, Eq String, Eq Int, Eq Nat, Eq Integer, Eq Float, Eq Double, Eq Rational,
 Eq Ordering, Eq Duration, Eq Instant,
 
-Ord Bool, Ord Byte, Ord Bytes, Ord UnicodeScalar, Ord String, Ord Int, Ord Nat, Ord Integer, Ord Float, Ord Double, Ord Real,
+Ord Bool, Ord Byte, Ord Bytes, Ord UnicodeScalar, Ord String, Ord Int, Ord Nat, Ord Integer, Ord Float, Ord Double, Ord Rational,
 Ord Ordering, Ord Duration, Ord Instant,
 
-Show Unit, Show Bool, Show Byte, Show Bytes, Show UnicodeScalar, Show Grapheme, Show String, Show Int, Show Nat, Show Integer, Show Float, Show Double, Show Real,
+Show Unit, Show Bool, Show Byte, Show Bytes, Show UnicodeScalar, Show Grapheme, Show String, Show Int, Show Nat, Show Integer, Show Float, Show Double, Show Rational,
 Show Ordering, Show Duration, Show Instant
 ```
 
 Numeric:
 
 ```text
-FromInteger Nat, FromInteger Int, FromInteger Integer, FromInteger Real, FromInteger Float, FromInteger Double,
-FromFloat Real, FromFloat Float, FromFloat Double,
+FromInteger Nat, FromInteger Int, FromInteger Integer, FromInteger Rational, FromInteger Float, FromInteger Double,
+FromFloat Rational, FromFloat Float, FromFloat Double,
 FromString String,
 
 Zero Nat, One Nat, Add Nat, Mul Nat, CheckedSub Nat, CheckedDiv Nat, CheckedMod Nat,
 Zero Integer, One Integer, Add Integer, Mul Integer, Negatable Integer, CheckedSub Integer, CheckedDiv Integer, CheckedMod Integer,
 Zero Int, One Int, Add Int, Mul Int, Negatable Int, CheckedSub Int, CheckedDiv Int, CheckedMod Int,
-Zero Real, One Real, Add Real, Mul Real, Negatable Real, CheckedSub Real, CheckedDiv Real,
+Zero Rational, One Rational, Add Rational, Mul Rational, Negatable Rational, CheckedSub Rational, CheckedDiv Rational,
 Zero Float, One Float, Add Float, Mul Float, Negatable Float, CheckedSub Float, CheckedDiv Float,
 Zero Double, One Double, Add Double, Mul Double, Negatable Double, CheckedSub Double, CheckedDiv Double
 ```
 
-Lawful numeric instances:
+Algebraic numeric instances:
 
 ```text
 AdditiveMonoid Nat, MultiplicativeMonoid Nat, Semiring Nat, OrderedAdditive Nat, OrderedSemiring Nat,
@@ -2429,7 +2457,14 @@ AdditiveMonoid Integer, AdditiveGroup Integer,
 MultiplicativeMonoid Integer, Semiring Integer, Ring Integer,
 OrderedAdditive Integer, OrderedSemiring Integer,
 
-FieldLike Real
+AdditiveMonoid Int, AdditiveGroup Int,
+MultiplicativeMonoid Int, Semiring Int, Ring Int,
+OrderedAdditive Int, OrderedSemiring Int,
+
+AdditiveMonoid Rational, AdditiveGroup Rational,
+MultiplicativeMonoid Rational, Semiring Rational, Ring Rational,
+OrderedAdditive Rational, OrderedSemiring Rational,
+FieldLike Rational
 ```
 
 Container and traversal:
@@ -2458,19 +2493,21 @@ operation.
 
 `Eq Float` and `Eq Double` use raw IEEE-754 bit equality. Use `floatEq` for IEEE numeric equality.
 
-`Float` and `Double` have operational arithmetic instances but no portable lawful algebraic instances such as
+`Float` and `Double` have numeric operation instances but no portable algebraic instances such as
 `Semiring`, `Ring`, or `FieldLike`.
 
-<!-- modules.prelude.numeric_operational_traits -->
-##### Operational numeric traits
+<!-- modules.prelude.numeric_operation_traits -->
+##### Numeric operation traits
 
-The prelude separates operational numeric operations from lawful algebraic structure.
+All traits are lawful: an accepted instance must satisfy the complete contract declared by the trait.
 
-Operational traits provide callable operations. Lawful algebraic traits refine those operations with erased proof
-obligations.
+The numeric operation traits below have small contracts. They provide callable operations and, where relevant, explicit
+partial-operation domain obligations. They do not by themselves claim associativity, identities, distributivity, inverse
+laws, or field laws.
 
-This split is required because some standard types, notably `Float` and `Double`, support useful arithmetic operations
-but do not satisfy ordinary algebraic laws under the portable raw-bit `Eq` semantics of §4.1.3.
+Algebraic numeric traits later in this section refine these operation traits by adding stronger law members. This lets
+standard types such as `Float` and `Double` support useful arithmetic operations without pretending to satisfy ordinary
+semiring, ring, or field laws under the portable raw-bit `Eq` semantics of §4.1.3.
 
 ```kappa
 trait Zero (a : Type) =
@@ -2598,103 +2635,105 @@ Rules:
   `saturatingSub`, `unsafeDiv`, or `truncateDiv` in non-prelude modules, but those names are not part of the portable
   prelude minimum.
 
-<!-- modules.prelude.numeric_lawful_traits -->
-##### Lawful algebraic numeric traits
+<!-- modules.prelude.numeric_algebraic_traits -->
+##### Algebraic numeric traits
 
-The following traits refine operational numeric traits with erased laws.
+The following traits refine numeric operation traits with algebraic law members.
 
-The law members are compile-time-only proof obligations. They are part of coherent instance checking and interface
-identity, but they are erased at runtime unless explicitly reified by a nonstandard mechanism.
+The law members are ordinary proof-producing trait members. They are part of coherent instance checking, interface
+identity, semantic hashing, and optimization-visible law selection. Whether their values have runtime representation is
+determined by the general `RuntimeErased` and ambient-demand rules of §§5.1.4-5.1.5 and §14.4, not by a prose-only
+promise that they are "proofs".
 
 ```kappa
 trait (Eq a, Zero a, Add a) => AdditiveMonoid (a : Type) =
-    0 addAssoc :
+    addAssoc :
         forall (x : a) (y : a) (z : a).
         add (add x y) z = add x (add y z)
 
-    0 addLeftIdentity :
+    addLeftIdentity :
         forall (x : a).
         add zero x = x
 
-    0 addRightIdentity :
+    addRightIdentity :
         forall (x : a).
         add x zero = x
 
 trait (AdditiveMonoid a, Negatable a) => AdditiveGroup (a : Type) =
-    0 addLeftInverse :
+    addLeftInverse :
         forall (x : a).
         add (negate x) x = zero
 
-    0 addRightInverse :
+    addRightInverse :
         forall (x : a).
         add x (negate x) = zero
 
 trait (Eq a, One a, Mul a) => MultiplicativeMonoid (a : Type) =
-    0 mulAssoc :
+    mulAssoc :
         forall (x : a) (y : a) (z : a).
         multiply (multiply x y) z = multiply x (multiply y z)
 
-    0 mulLeftIdentity :
+    mulLeftIdentity :
         forall (x : a).
         multiply one x = x
 
-    0 mulRightIdentity :
+    mulRightIdentity :
         forall (x : a).
         multiply x one = x
 
 trait (AdditiveMonoid a, MultiplicativeMonoid a) => Semiring (a : Type) =
-    0 mulLeftZero :
+    mulLeftZero :
         forall (x : a).
         multiply zero x = zero
 
-    0 mulRightZero :
+    mulRightZero :
         forall (x : a).
         multiply x zero = zero
 
-    0 leftDistribute :
+    leftDistribute :
         forall (x : a) (y : a) (z : a).
         multiply x (add y z) = add (multiply x y) (multiply x z)
 
-    0 rightDistribute :
+    rightDistribute :
         forall (x : a) (y : a) (z : a).
         multiply (add x y) z = add (multiply x z) (multiply y z)
 
 trait (Semiring a, AdditiveGroup a, CheckedSub a) => Ring (a : Type) =
-    0 subDefinedAlways :
+    subDefinedAlways :
         forall (x : a) (y : a).
         subDefined x y = True
 
-    0 subtractAsAddInverse :
+    subtractAsAddInverse :
         forall (x : a) (y : a) (@p : subDefined x y = True).
         subtract x y @p = add x (negate y)
 
 trait (Semiring a, Ord a, CheckedDiv a, CheckedMod a) => EuclideanSemiring (a : Type) =
-    0 divAndModSameDomain :
+    divAndModSameDomain :
         forall (x : a) (y : a).
         divDefined x y = modDefined x y
 
-    0 divModIdentity :
+    divModIdentity :
         forall (x : a) (y : a)
                (@pd : divDefined x y = True)
                (@pm : modDefined x y = True).
         add (multiply (divide x y @pd) y) (modulo x y @pm) = x
 
 trait (Ring a, CheckedDiv a) => FieldLike (a : Type) =
-    0 divisionRightInverse :
+    divisionRightInverse :
         forall (x : a) (y : a) (@p : divDefined x y = True).
         multiply (divide x y @p) y = x
 
 trait (Ord a, AdditiveMonoid a) => OrderedAdditive (a : Type) =
-    0 addMonotoneLeft :
+    addMonotoneLeft :
         forall (x : a) (y : a) (z : a).
         (x <= y) = True -> (add z x <= add z y) = True
 
-    0 addMonotoneRight :
+    addMonotoneRight :
         forall (x : a) (y : a) (z : a).
         (x <= y) = True -> (add x z <= add y z) = True
 
 trait (OrderedAdditive a, Semiring a) => OrderedSemiring (a : Type) =
-    0 mulNonnegativeMonotone :
+    mulNonnegativeMonotone :
         forall (x : a) (y : a) (z : a).
         (zero <= z) = True ->
         (x <= y) = True ->
@@ -2703,31 +2742,30 @@ trait (OrderedAdditive a, Semiring a) => OrderedSemiring (a : Type) =
 
 Rules:
 
-* Operational arithmetic and lawful algebraic structure are intentionally separate.
-* A type may implement `Add`, `Mul`, `CheckedDiv`, or related operational traits without implementing the corresponding
-  lawful traits.
-* Algorithms that require laws SHOULD request the lawful traits, such as `Semiring`, `Ring`, `EuclideanSemiring`, or
-  `FieldLike`, rather than merely requesting operational arithmetic.
+* Numeric operation traits and algebraic traits are intentionally separate contracts, not lawful/unlawful variants.
+* A type may implement `Add`, `Mul`, `CheckedDiv`, or related operation traits without implementing stronger algebraic
+  traits such as `Semiring`, `Ring`, `EuclideanSemiring`, or `FieldLike`.
+* Algorithms that require algebraic laws SHOULD request the algebraic traits, not merely the operation traits.
 * `Float` and `Double` MUST NOT receive portable `Semiring`, `Ring`, or `FieldLike` instances under the raw-bit `Eq`
   semantics of §4.1.3.
-* `Real` MAY receive `FieldLike` if the implementation provides exact real/decimal semantics satisfying the stated laws.
+* `Rational` MUST receive `FieldLike`.
 * `Nat` MUST NOT receive `Negatable`, `AdditiveGroup`, `Ring`, or `FieldLike`.
 
 <!-- modules.prelude.numeric_standard_instances -->
 ##### Standard numeric instances and partial-operation domains
 
-The portable prelude MUST provide the following operational instances:
+The portable prelude MUST provide the following numeric operation instances:
 
 ```text
 Zero Nat, One Nat, Add Nat, Mul Nat, CheckedSub Nat, CheckedDiv Nat, CheckedMod Nat
 Zero Integer, One Integer, Add Integer, Mul Integer, Negatable Integer, CheckedSub Integer, CheckedDiv Integer, CheckedMod Integer
 Zero Int, One Int, Add Int, Mul Int, Negatable Int, CheckedSub Int, CheckedDiv Int, CheckedMod Int
-Zero Real, One Real, Add Real, Mul Real, Negatable Real, CheckedSub Real, CheckedDiv Real
+Zero Rational, One Rational, Add Rational, Mul Rational, Negatable Rational, CheckedSub Rational, CheckedDiv Rational
 Zero Float, One Float, Add Float, Mul Float, Negatable Float, CheckedSub Float, CheckedDiv Float
 Zero Double, One Double, Add Double, Mul Double, Negatable Double, CheckedSub Double, CheckedDiv Double
 ```
 
-The portable prelude MUST provide the following lawful instances when the corresponding type semantics satisfy the laws:
+The portable prelude MUST provide the following algebraic instances:
 
 ```text
 AdditiveMonoid Nat, MultiplicativeMonoid Nat, Semiring Nat, OrderedAdditive Nat, OrderedSemiring Nat,
@@ -2737,12 +2775,17 @@ AdditiveMonoid Integer, AdditiveGroup Integer,
 MultiplicativeMonoid Integer, Semiring Integer, Ring Integer,
 OrderedAdditive Integer, OrderedSemiring Integer,
 
-FieldLike Real
+AdditiveMonoid Int, AdditiveGroup Int,
+MultiplicativeMonoid Int, Semiring Int, Ring Int,
+OrderedAdditive Int, OrderedSemiring Int,
+
+AdditiveMonoid Rational, AdditiveGroup Rational,
+MultiplicativeMonoid Rational, Semiring Rational, Ring Rational,
+OrderedAdditive Rational, OrderedSemiring Rational,
+FieldLike Rational
 ```
 
-`Int` receives lawful instances only if portable `Int` arithmetic is specified as exact mathematical integer arithmetic.
-If `Int` is fixed-width, wrapping, trapping, saturating, or backend-dependent, the portable prelude MUST NOT provide
-lawful algebraic instances for `Int`; it may provide only the operational traits.
+Because portable `Int` is definitionally `Integer`, every portable algebraic instance for `Integer` is also available for `Int` under the same evidence coherence rules.
 
 For `Nat`:
 
@@ -2780,7 +2823,7 @@ Portable `Nat` division and modulo have the shapes:
 
 The portable prelude MUST NOT define `Nat` subtraction as saturating subtraction.
 
-For `Integer`:
+For `Integer` and `Int`:
 
 ```kappa
 subDefined x y = True
@@ -2791,12 +2834,14 @@ modDefined x y = (y /= zero)
 For exact signed integer division, the implementation MUST document the quotient/remainder convention and use it
 consistently in the `EuclideanSemiring` instance if such an instance is provided.
 
-For `Real`:
+For `Rational`:
 
 ```kappa
 subDefined x y = True
 divDefined x y = (y /= zero)
 ```
+
+`Rational` division is exact ratio division and is defined exactly when the divisor is nonzero.
 
 For `Float` and `Double`:
 
@@ -3175,6 +3220,7 @@ Traits:
 
 ```text
 AtomicValue a
+AtomicInteger a
 ```
 
 Terms:
@@ -3225,6 +3271,8 @@ data CompareExchangeResult (a : Type) : Type =
 
 trait AtomicValue (a : Type)
 
+trait AtomicValue a => AtomicInteger (a : Type)
+
 newAtomicRef :
     forall (a : Type).
     (@_ : AtomicValue a) ->
@@ -3256,19 +3304,29 @@ atomicCompareExchange :
     UIO (CompareExchangeResult a)
 
 atomicFetchAdd :
-    RmwOrder -> AtomicRef Int -> Int -> UIO Int
+    forall (a : Type).
+    (@_ : AtomicInteger a) ->
+    RmwOrder -> AtomicRef a -> a -> UIO a
 
 atomicFetchSub :
-    RmwOrder -> AtomicRef Int -> Int -> UIO Int
+    forall (a : Type).
+    (@_ : AtomicInteger a) ->
+    RmwOrder -> AtomicRef a -> a -> UIO a
 
 atomicFetchAnd :
-    RmwOrder -> AtomicRef Int -> Int -> UIO Int
+    forall (a : Type).
+    (@_ : AtomicInteger a) ->
+    RmwOrder -> AtomicRef a -> a -> UIO a
 
 atomicFetchOr :
-    RmwOrder -> AtomicRef Int -> Int -> UIO Int
+    forall (a : Type).
+    (@_ : AtomicInteger a) ->
+    RmwOrder -> AtomicRef a -> a -> UIO a
 
 atomicFetchXor :
-    RmwOrder -> AtomicRef Int -> Int -> UIO Int
+    forall (a : Type).
+    (@_ : AtomicInteger a) ->
+    RmwOrder -> AtomicRef a -> a -> UIO a
 ```
 
 Rules:
@@ -3278,11 +3336,16 @@ Rules:
 * Atomic operations on one `AtomicRef` participate in a single modification order for that cell.
 * Atomic operations do not participate in STM transactions.
 * `AtomicValue a` classifies values that have a backend-supported atomic representation.
+* `AtomicInteger a` classifies atomic values that additionally support fetch-add, fetch-sub, and bitwise read-modify-write
+  operations.
 * A conforming implementation of `std.atomic` MUST provide `AtomicValue` instances at least for:
-  * `Bool`,
-  * `Int`,
-  * and the exact-width integer types exported by `std.ffi` when `std.ffi` is available for the selected backend.
-* A backend MAY provide additional `AtomicValue` instances.
+  * `Bool`, and
+  * the exact-width and pointer-width integer types exported by `std.ffi` when `std.ffi` is available for the selected
+    backend.
+* A conforming implementation MUST provide `AtomicInteger` instances for the backend-supported fixed-width and
+  pointer-width integer types above.
+* Portable `Int` is exact mathematical integer arithmetic and is not required to have `AtomicValue` or `AtomicInteger`.
+* A backend MAY provide additional `AtomicValue` or `AtomicInteger` instances.
 * Atomic equality for `atomicCompareExchange` is representation equality for the selected `AtomicValue` instance.
 * Atomic operations are interruption points only if the implementation documents them as potentially suspending.
   Ordinary lock-free atomic operations SHOULD NOT suspend.
@@ -3308,8 +3371,9 @@ Atomic arithmetic and bitwise operations:
 
 * `atomicFetchAdd`, `atomicFetchSub`, `atomicFetchAnd`, `atomicFetchOr`, and `atomicFetchXor` return the old value.
 * Their update is atomic with respect to all other atomic operations on the same cell.
-* Overflow behavior follows the ordinary backend-defined representation of `Int` only if `Int` is fixed-width for that
-  backend. Otherwise, the operation MUST either be implemented exactly or be rejected for that backend profile.
+* Overflow behavior follows the documented fixed-width representation of the selected `AtomicInteger` instance.
+* These operations are not defined over portable `Int` unless an implementation explicitly provides a coherent exact
+  atomic-integer representation for `Int`.
 
 <!-- modules.supervisor -->
 ### 2.7D Standard supervision support module `std.supervisor`
@@ -3540,11 +3604,17 @@ hashInt :
 hashInteger :
     Integer -> (1 state : HashState) -> HashState
 
+hashRational :
+    Rational -> (1 state : HashState) -> HashState
+
 hashFloatRaw :
     Float -> (1 state : HashState) -> HashState
 
 hashDoubleRaw :
     Double -> (1 state : HashState) -> HashState
+
+-- Because `Int` is a transparent alias of `Integer`, `hashInt` and `hashInteger`
+-- are observationally the same operation.
 
 hashNatTag :
     Nat -> (1 state : HashState) -> HashState
@@ -3687,7 +3757,7 @@ Required instances:
 A conforming implementation MUST provide `Hashable` instances in `std.hash` for at least:
 
 ```text
-Unit, Bool, Byte, Bytes, UnicodeScalar, Grapheme, String, Int, Integer, Float, Double, Ordering
+Unit, Bool, Byte, Bytes, UnicodeScalar, Grapheme, String, Int, Integer, Rational, Float, Double, Ordering
 ```
 
 and for the following type constructors whenever their element arguments are `Hashable`:
@@ -4573,7 +4643,7 @@ In particular, `runtimeRelevant` is `False` for:
 
 * fields whose type is compile-time-only in the sense of §5.1.4.1;
 * implicit trait evidence fields that elaborate to trait evidence types;
-* erased proof fields whose quantity and type make them runtime-erased; and
+* proof fields whose type is known to satisfy `RuntimeErased` or whose use is checked under erased ambient demand; and
 * any other field whose value would not be present in the runtime representation after mandatory erasure.
 
 `runtimeConstructorFields ctor` returns exactly the subsequence of `ctor.fields` whose `runtimeRelevant` flag is `True`.
@@ -5606,7 +5676,7 @@ Common escapes:
 * `\n`, `\t`, `\r`, `\\`, `\"`, `\b`, `\uXXXX` etc. Exact set is implementation-defined but should be Unicode-aware.
 
 Single-quoted literals are reserved for Unicode scalar literals (§4.4). Single-quoted **string** literals are not valid
-in v0.1.
+in v1.
 
 <!-- literals.string_literals.raw_strings -->
 #### 4.3.2 Raw strings
@@ -6165,7 +6235,7 @@ Rules:
     * In type position, `()` is surface syntax sugar for the type `Unit`.
     * Through type scope, the constructor is accessible as `Unit.Unit`.
     * The zero-field closed structural record is identified with `Unit`; there is no distinct empty-record type or
-      empty-record value in v0.1. Accordingly, the would-be empty record written `()` is definitionally equal to `Unit`
+      empty-record value in v1. Accordingly, the would-be empty record written `()` is definitionally equal to `Unit`
       in type position and to the unique `Unit` value in term position.
 * Tuple value:
   ```kappa
@@ -6385,7 +6455,7 @@ Packaging or storing a compile-time value such as a `Region` does not by itself 
 The ordinary skolem-escape rules of §5.1.6 still apply.
 
 This section does not by itself add arbitrary new surface constructors or eliminators for raw inhabitants of `Universe`,
-`Quantity`, or `Region`. Surface v0.1 provides only the forms explicitly specified elsewhere. KCore and elaboration,
+`Quantity`, or `Region`. Surface v1 provides only the forms explicitly specified elsewhere. KCore and elaboration,
 however, MAY carry such terms as ordinary compile-time bindable values.
 
 Intended use:
@@ -6442,7 +6512,7 @@ For every well-formed fully applied trait evidence type `Tr args`, the compiler 
 IsTrait (Tr args)
 ```
 
-and, through the `IsTrait` supertrait, erased proof-irrelevance evidence:
+and, through the `IsTrait` supertrait, proposition/proof-irrelevance evidence:
 
 ```kappa
 IsProp (Tr args)
@@ -6486,16 +6556,25 @@ IR. Such renderings are not source names. They are not made available through le
 Trait evidence is proof-irrelevant in the following source-level sense:
 
 ```kappa
-trait IsProp (t : Type) =
-    0 isProp :
-        (@0 x : t) ->
-        (@0 y : t) ->
+trait IsSubsingleton (t : Type) =
+    allEqual :
+        (x : t) ->
+        (y : t) ->
         x = y
+
+trait IsSubsingleton p => IsProp (p : Type)
+
+trait IsSet (a : Type) =
+    pathIsProp :
+        forall (x : a) (y : a).
+        IsProp (x = y)
+
+intrinsic trait RuntimeErased (t : Type)
 
 intrinsic trait IsProp t => IsTrait (t : Type)
 ```
 
-`IsProp` by itself asserts uniqueness, not existence. It does not provide a value of `t`.
+`IsSubsingleton` by itself asserts uniqueness, not existence. `IsProp` classifies proof propositions and does not provide a value of its parameter.
 
 `IsTrait` is compiler-issued evidence that `t` is a trait evidence type. User source MUST NOT declare instances of
 `IsTrait`. The compiler synthesizes `IsTrait (Tr args)` for every well-formed full application of a trait constructor.
@@ -6525,7 +6604,7 @@ in that their evidence is introduced by the row solver rather than by user-autho
 <!-- types.universes.constraints.rejected_constraints_custom_errors -->
 #### 5.1.3A Rejected trait obligations and custom type-error computation
 
-Kappa v0.1 does not standardize user-authored custom type-error computation.
+Kappa v1 does not standardize user-authored custom type-error computation.
 
 A conforming implementation MAY provide implementation-defined rejected trait obligations or custom diagnostic traits only
 behind a feature gate governed by §1.2.
@@ -6617,6 +6696,26 @@ Runtime erasure is governed as follows:
   implementation or libraries.
 * Implementations may provide library mechanisms to reify type information or other compile-time information explicitly
   when needed, but there is no implicit runtime reflection.
+
+
+Runtime-erased propositions and proof terms:
+
+* `IsSubsingleton T` states that all inhabitants of `T` are propositionally equal.
+* `IsProp P` classifies `P` as a proof proposition. `IsProp P` implies `IsSubsingleton P`.
+* `RuntimeErased T` states that values of `T` have no runtime representation in portable object code.
+* The compiler provides intrinsic `RuntimeErased P` evidence whenever `IsProp P` is available.
+* `RuntimeErased T` does not imply `IsProp T`.
+* `IsSubsingleton T` does not imply `RuntimeErased T` unless this specification or a trusted intrinsic rule supplies
+  that implication.
+* `IsTrait T` implies `IsProp T`, but does not by itself imply that every projection obtainable from `T` has no runtime
+  representation. A method-bearing trait such as `Eq a` may be propositionally unique while its method projection is
+  still runtime-relevant before specialization.
+* Equality types are not propositions by default. For arbitrary `A`, the type `x = y` is not assumed to satisfy
+  `IsProp`. Such evidence is available from `IsSet A`, from a more specific theorem, or from an intrinsic rule.
+
+A value of a `RuntimeErased` type may be used freely in type positions, erased proof positions, erased implicit
+arguments, erased indices, compile-time-only positions, and expressions checked under ambient demand `0`. It may affect
+runtime-relevant computation only through eliminators explicitly specified to be runtime-safe.
 
 <!-- types.universes.erasure_elaboration_time.compile_time_bindings_fields -->
 ##### 5.1.4.1 Compile-time bindings, fields, and meta-phase locals
@@ -6796,7 +6895,7 @@ contexts that demand `&` is specified separately below.
 
 The symbol `⊑` is used instead of `≤` to avoid confusion with numeric or subset ordering.
 
-For the six surface quantities of v0.1, this yields the following complete table:
+For the six surface quantities of v1, this yields the following complete table:
 
 ```text
 q_cap ⊑ q_dem |  0   1   <=1  >=1   ω    &
@@ -6833,6 +6932,23 @@ Addition, multiplication, and control-flow join are defined on interval quantiti
 `[a,b] · [c,d] = [a·c, b·d]`
 
 `[a,b] ⊔ [c,d] = [min(a,c), max(b,d)]`
+
+Ambient runtime demand:
+
+Expression checking is parameterized by an ambient runtime demand `δ`.
+
+* Ordinary runtime expression checking uses `δ = 1`.
+* Type positions, compile-time-only positions, erased-index positions, erased proof positions, and positions whose
+  expected type is known to satisfy `RuntimeErased` use `δ = 0`.
+* Runtime usage contributed by a subexpression is multiplied by the ambient demand.
+* For an application `f a1 ... an`, if the whole application is checked at ambient demand `δ`, and the selected binder
+  for argument `ai` has declared quantity `qi`, then the runtime demand imposed on `ai` is `δ · qi`.
+* Consequently, when `δ = 0`, all subexpressions of the application contribute zero runtime demand, even when the
+  function's parameters are declared at quantity `ω`, `1`, or another runtime-relevant quantity.
+
+This rule does not make such values available at runtime. It means the whole application is erased before runtime.
+Thus proof-producing functions may be written and composed like ordinary source functions while still erasing when their
+result is known to be runtime-erased.
 
 Default quantity when omitted: `ω`.
 
@@ -6885,7 +7001,7 @@ This is a separate elaboration rule. It does not modify the quantity-satisfactio
 Borrowable stable expressions are expressions that elaborate to stable places under §5.1.7.1, together with any fresh
 hidden temporaries introduced by elaboration.
 
-In v0.1 this includes at least:
+In v1 this includes at least:
 
 * variables;
 * record projections from stable places;
@@ -7166,7 +7282,7 @@ distinct modal/coeffect layer.
 
 Consequences:
 
-* the surface quantity forms of §5.1.5 remain the only user-written quantity forms in v0.1;
+* the surface quantity forms of §5.1.5 remain the only user-written quantity forms in v1;
 * the quantity-satisfaction relation `⊑` ranges only over interval quantities and the borrow mode `&`;
 * borrow introduction, borrow lifetimes, and path-sensitive borrowing continue to be governed only by §§5.1.5-5.1.7;
 * quantity-governed erasure continues to be governed by §§5.1.3-5.1.7 and §14.4.
@@ -7209,11 +7325,11 @@ Orthogonality:
 Examples of candidate future modalities include information-flow labels, privacy/sensitivity grades, energy or cost
 budgets, and scheduling budgets.
 
-v0.1 defines no user-visible modal extension.
+v1 defines no user-visible modal extension.
 
 User-defined grade algebras:
 
-* A conforming v0.1 implementation MUST NOT expose arbitrary user-defined grade algebras or user-defined solver
+* A conforming v1 implementation MUST NOT expose arbitrary user-defined grade algebras or user-defined solver
   theories as a portable language feature.
 * An implementation MAY experiment with such facilities under implementation-defined nonportable flags, but those
   facilities are outside conformance unless and until a later revision standardizes them.
@@ -7465,7 +7581,7 @@ Borrow tracking for records is path-sensitive. A borrow of a record field does n
 Definitions:
 
 * A **borrow root** is a stable variable, parameter, or hidden temporary from which the borrowed view is projected. In
-  v0.1, borrow introduction is defined for roots currently held at `1`, `<=1`, `>=1`, `ω`, or `&`. Hidden temporaries
+  v1, borrow introduction is defined for roots currently held at `1`, `<=1`, `>=1`, `ω`, or `&`. Hidden temporaries
   introduced by elaboration of borrowed local bindings (`let & pat = expr`) are borrow roots for the scope of that
   binding's body or remaining do-items.
 * A **record path** is a borrow root followed by zero or more field labels: `r`, `r.x`, `r.pos.x`, and so on.
@@ -7490,7 +7606,7 @@ Overlap and disjointness:
   * they have different borrow roots, or
   * they have the same borrow root and their footprints are disjoint.
 * Otherwise they **overlap**.
-* Because `&` is a non-consuming shared borrow in v0.1, overlapping borrowed paths may coexist with each other. The
+* Because `&` is a non-consuming shared borrow in v1, overlapping borrowed paths may coexist with each other. The
   important restriction is against consuming the root or any overlapping subpath while such borrows are live.
 
 Consequences:
@@ -7512,7 +7628,7 @@ Consequences:
 * When the compiler cannot identify a stable record root and field path, it MAY conservatively treat the borrow as one
   of the whole expression.
 
-This path-sensitive rule is specified only for record fields in v0.1. Other aggregate structures may be treated
+This path-sensitive rule is specified only for record fields in v1. Other aggregate structures may be treated
 conservatively as whole-value borrows unless a later section defines finer-grained splitting for them.
 
 <!-- types.universes.disjoint_path_borrowing_records.stable_places_place_preserving_bindings -->
@@ -7526,12 +7642,12 @@ A stable place consists of:
 * a root binder; and
 * a path of zero or more selections from that root.
 
-The path components admitted in v0.1 are:
+The path components admitted in v1 are:
 
 * record-field selections; and
 * constructor-field selections made available by the current refinement context.
 
-Source forms that elaborate to stable places in v0.1 are:
+Source forms that elaborate to stable places in v1 are:
 
 * a variable name `x`, yielding the root place `x`;
 * a record projection `e.f` when `e` elaborates to a stable place `p`, yielding the place `p.f`;
@@ -7604,7 +7720,7 @@ Use restrictions:
   `MoveProjector proj pack`.
 * In a borrow-demanding position, the call elaborates through `BorrowProjector proj pack`.
 * Under `~`, the call elaborates through `OpenProjector proj pack`.
-* The post-expression path state is the branchwise join of the leaf path states; in v0.1 a conforming implementation MAY
+* The post-expression path state is the branchwise join of the leaf path states; in v1 a conforming implementation MAY
   conservatively take this join to be the union of consumed footprints per root.
 * Consequently, a path may be considered unavailable after the expression even if it is consumed only on some dynamic
   branches.
@@ -7898,7 +8014,7 @@ Uniqueness and contradiction facts:
 
 Surface syntax for `EffRow` values is given in §5.3.2.
 
-In v0.1, `RecRow` and `EffRow` are finite maps with unique labels, while `VarRow` is a finite duplicate-free collection
+In v1, `RecRow` and `EffRow` are finite maps with unique labels, while `VarRow` is a finite duplicate-free collection
 of member types. Row equality is modulo permutation after row normalization.
 
 A row variable must have one of the types `RecRow`, `VarRow`, or `EffRow`. Row variables of different row types are
@@ -8248,7 +8364,7 @@ Opaque members:
   analysis, lawful reordering, or canonical field order.
 
 * One-element record type: `(x : T,)`
-* The zero-field closed record has no distinct surface syntax in v0.1; it is identified with `Unit` / `()`.
+* The zero-field closed record has no distinct surface syntax in v1; it is identified with `Unit` / `()`.
 * If a field quantity is omitted, it defaults to `ω`.
 * Closed record types may be dependent telescopes of named fields.
 * Field order in a closed record type is not semantically significant.
@@ -8275,16 +8391,24 @@ Opaque members:
 
 Record types are **order-insensitive up to lawful reorderings**.
 
-Closed record *values* use the same dependency-graph discipline as closed record *types*. A record literal `(f1 = e1, f2
-= e2, ...)` may be written in any order. During elaboration, the compiler builds a field-dependency graph using both:
+Closed record *values* use the same dependency-graph discipline as closed record *types* for typing and canonical
+identity. A record literal `(f1 = e1, f2 = e2, ...)` may be written in any order.
+
+During elaboration, the compiler builds a field-dependency graph using both:
 
 * the dependencies induced by the corresponding field types, and
 * the dependencies induced by explicit `this.label` references and by bare identifiers that resolve as sibling-field
   shorthand in the same literal.
 
-It then computes a dependency-respecting topological order and performs name resolution, typechecking, and evaluation in
-that reordered sequence. If the resulting graph contains a cycle, the record literal is ill-formed and compilation
-fails. After elaboration, the resulting value is definitionally equal to its canonically reordered form.
+It then computes a dependency-respecting topological order for typechecking, substitution, canonical record identity,
+and definitional equality. Runtime evaluation order is separate: user-written field expressions are evaluated exactly
+once in source order. Operationally, elaboration behaves as if each source field expression is first evaluated into a
+fresh temporary in source order, and the final record value is assembled from those temporaries in canonical
+field-dependency order.
+
+If the dependency graph contains a cycle, the record literal is ill-formed and compilation fails. After elaboration, the
+resulting value is definitionally equal to its canonically reordered form, but side effects and monadic splices in field
+initializers follow the source-order evaluation rule.
 
 Well-formedness:
 
@@ -8307,6 +8431,8 @@ More precisely:
 * A reordering is **lawful** iff every field appears **after** all fields that its type depends on (a
   dependency-respecting permutation).
 * Canonicalization chooses the dependency-respecting topological order; ties are broken as specified in §14.6.
+* Canonicalization does not determine runtime evaluation order of source-written field initializers. Evaluation order is
+  specified by §5.5.1.1.
 * Two record types are definitionally equal iff they have the same set of fields (by name) and their canonical forms
   align such that corresponding field quantities are identical and corresponding field types are definitionally equal.
 
@@ -9055,7 +9181,7 @@ Erasure and witness quantity:
 
 * Each existential witness elaborates to an `opaque 0` member.
 * Therefore existential witnesses are quantity-`0` values and are erased at runtime under the ordinary erasure rules of
-  §14.4, except where the existing special treatment of constraint evidence in §5.1.3 requires retention.
+  §14.4.
 * This means `exists` packages anonymous quantity-`0` witnesses together with a payload.
 * The fixed witness quantity used by this surface sugar is a property of `exists` itself. It does not restrict ordinary
   user-written compile-time members, which may carry any quantity annotation allowed by §5.1.4.1.
@@ -9141,6 +9267,15 @@ Rules:
   `S1 ... Sn`.
 * The names bound by `pat` are introduced in `body` exactly as in an ordinary irrefutable `let` binding.
 * Any implicit-field unpacking induced by binding `pat` occurs exactly as specified in §5.5.9.
+* The witness binders `a1 ... an` are rigid abstract witnesses scoped to `body`.
+* No opened witness may appear free in the externally visible type, runtime representation, capture annotation, region
+  environment, syntax-scope metadata, core reflection value, module-interface item, stored value, returned value, or
+  exported declaration produced by `body`, except under a new existential or sealing form that hides that witness again.
+* At the end of the `open` body, elaboration checks that all opened witnesses are absent from the result's externally
+  visible type and hidden escape-relevant metadata.
+* If the body is checked against an expected type, that expected type must not mention the opened witnesses except under
+  an existential or sealing form that hides them. If the body type is inferred, the inferred type is checked for the same
+  non-escape condition before the `open` expression is accepted.
 
 Normative elaboration:
 
@@ -9200,7 +9335,7 @@ Eliminator (`subst`):
 ```kappa
 subst :
     forall (@0 a : Type) (@0 P : a -> Type) (@0 x : a) (@0 y : a).
-    (@0 p : x = y) -> P x -> P y
+    (p : x = y) -> P x -> P y
 ```
 
 Normative behavior:
@@ -9280,6 +9415,9 @@ Compile-time term and type generation use `Syntax` and top-level `$(...)` splici
 
 Within a `do` block (§8), `!e` runs the monadic computation `e` and yields its result in an expression context.
 
+The immediate-application form `!f x y` is accepted as ergonomic sugar for `!(f x y)`.
+It is not parsed as `(!f) x y`.
+
 Example:
 
 ```kappa
@@ -9310,6 +9448,14 @@ The translation is defined recursively and preserves Kappa's ordinary left-to-ri
 
 * Splice:
   `Splice_m[!e] = e`
+
+* Immediate-application splice:
+  if `!` is followed by a callable head expression and one or more application arguments in the same maximal application
+  site, the entire application spine is the splice operand. Thus `!f x y` is translated as `Splice_m[!(f x y)]`.
+  The application `f x y` must elaborate directly to a computation of the enclosing monad type `m A`, after ordinary
+  implicit insertion and named-argument elaboration. Failure of `f x y` to elaborate to `m A` is an error for this form.
+  If the user intends to splice a computation that returns a function and then apply the resulting function, they must
+  write `(!f) x`.
 
 * Application spine `e0 e1 ... en`:
   translate `e0, e1, ..., en` left-to-right, bind their results to fresh temporaries `t0, t1, ..., tn`, and return:
@@ -9574,7 +9720,7 @@ A conforming implementation MUST provide either:
 * quotation-pattern matching on `Syntax t`, or
 * an observationally equivalent stable public `Syntax` inspection API,
 
-sufficient to distinguish the surface constructs of v0.1 that may arise before semantic elaboration.
+sufficient to distinguish the surface constructs of v1 that may arise before semantic elaboration.
 
 At minimum, this coverage includes:
 
@@ -9794,7 +9940,7 @@ Shared-context discipline:
 Mandatory structural coverage:
 
 Implementations MUST additionally provide a typed constructor / destructor API sufficient to inspect and construct
-reflected core terms that may arise from elaboration of v0.1 surface programs. At minimum this coverage includes:
+reflected core terms that may arise from elaboration of v1 surface programs. At minimum this coverage includes:
 
 * variables and local binders;
 * global references;
@@ -10401,13 +10547,13 @@ violated, when those origins are available.
 <!-- types.staging.reserved_extension_lane_contextual_open_code -->
 #### 5.9.8 Reserved extension lane: contextual open code
 
-v0.1 standardizes closed / closable staged code through `Code`, `ClosedCode`, `closeCode`, `genlet`, and `runCode`.
+v1 standardizes closed / closable staged code through `Code`, `ClosedCode`, `closeCode`, `genlet`, and `runCode`.
 It does not standardize a user-visible contextual open-code calculus with explicit context variables.
 
 A future revision MAY add such a calculus, provided it preserves the scope-safety, staging, and separate-compilation
 invariants of this chapter.
 
-A conforming v0.1 implementation MUST NOT expose nonportable contextual-open-code features as if they were part of the
+A conforming v1 implementation MUST NOT expose nonportable contextual-open-code features as if they were part of the
 portable `Code` contract.
 
 Non-normative note: recent dependent layered modal systems justify a future calculus with typed contextual open code,
@@ -10418,7 +10564,7 @@ reflection. This keeps the staging layer small while preserving a clear future e
 <!-- types.gradual -->
 ### 5.10 Dynamic values, runtime representations, and checked boundaries
 
-Kappa v0.1 provides explicit dynamic values through `std.gradual`.
+Kappa v1 provides explicit dynamic values through `std.gradual`.
 
 This section is not an ambient gradual typing extension.
 
@@ -10749,7 +10895,7 @@ Rules common to both forms:
   borrowed view of its current value. Such use may inspect the place but may not consume it.
 * A projection definition is pure. Its declared result type must not be a monadic type.
 * A projection definition must carry its declared result type inline. There is no separate signature-only form for
-  projections in v0.1.
+  projections in v1.
 
 Selector-form rules:
 
@@ -11015,7 +11161,7 @@ Implicit local bindings:
 * These forms are lexically scoped only. They are not instance declarations, do not affect the module export surface,
   and do not participate in global instance search outside their lexical scope.
 * Their runtime semantics are otherwise exactly those of the corresponding ordinary local binding or monadic bind.
-* In v0.1 an implicit local binder binds only a simple identifier. Pattern implicit local binders are not supported.
+* In v1 an implicit local binder binds only a simple identifier. Pattern implicit local binders are not supported.
 * Because the default-quantity rule for implicit binders is given by §7.3, ordinary runtime values SHOULD typically use
   an explicit quantity such as `@ω`.
 
@@ -11908,7 +12054,7 @@ The `?.` token is an additional dotted-form operator performing safe-navigation 
 
 * safe-navigation member access (`e?.member`)
 
-The right-hand side of `?.` is restricted to member-access forms only. In v0.1 these are:
+The right-hand side of `?.` is restricted to member-access forms only. In v1 these are:
 
 * record or package member projection,
 * constructor-field projection,
@@ -12056,15 +12202,12 @@ T` for some `T`; otherwise the chain is ill-typed.
 > let getB x = x?.b     -- ERROR: ambiguous safe-navigation
 > ```
 >
-> This is a deliberate design decision. We prioritize predictable behavior
-> and simplicity over perfect inference in generic contexts.
+> This is a deliberate design decision. Safe-navigation is type-directed syntax, intentionally not equivalent to ordinary
+> `map`, ordinary bind, or a defaulting heuristic. Generic contexts must provide enough type information for the
+> wrapping/flattening choice to be determined.
 >
-> If you need to write generic accessors, either:
-> * add explicit type annotations, or
-> * use `>>=` / `|>=` (or a custom operator) for explicit control.
->
-> We may revisit this in the future if the ergonomics prove too painful,
-> but for v0.1 we accept this limitation.
+> If you need to write generic accessors, add explicit type annotations or use an explicitly chosen ordinary combinator.
+> The compiler MUST NOT default the choice.
 
 Dispatch is performed after elaborating the prefix and residual in the following order:
 
@@ -12254,7 +12397,7 @@ Roots-argument admissibility:
 * Otherwise the roots argument MUST be a closed record literal `(p1 = e1, ..., pn = en)` whose field labels are
   exactly the field labels of `Roots` and whose field expressions `ei` are stable place expressions of the
   corresponding field types.
-* In v0.1, the roots argument of a projector descriptor application is elaborated only from stable places under
+* In v1, the roots argument of a projector descriptor application is elaborated only from stable places under
   §5.1.7.1. Nested computed-place roots are reserved for a later revision.
 * In this context the roots argument is elaborated in **place-pack mode** rather than as an ordinary runtime record
   value.
@@ -12409,7 +12552,7 @@ Rules:
 * Duplicate supplied names are a compile-time error.
 * Extra supplied names are a compile-time error.
 * Missing explicit named binders are a compile-time error.
-* Ordinary function defaults do not exist in v0.1; named function application never inserts defaults.
+* Ordinary function defaults do not exist in v1; named function application never inserts defaults.
 * Positional application never inserts defaults.
 * A named application block does not supply implicit binders. Use explicit implicit application `@arg` before the named
   block when needed.
@@ -12956,7 +13099,7 @@ Unless the hole is solved by ordinary elaboration, implicit resolution, or an ex
 elaboration rule, the existence of a `Contractible` or `Finite n` inhabitance summary does not by itself make an
 unsolved hole accepted source code.
 
-Kappa does not provide placeholder-abstraction sugar based on holes in v0.1. Users should write an ordinary lambda
+Kappa does not provide placeholder-abstraction sugar based on holes in v1. Users should write an ordinary lambda
 explicitly when abstraction is intended, or use existing section forms such as operator sections (§3.5.1.1) and
 projection sections (§7.1.1).
 
@@ -12981,7 +13124,11 @@ Resolution proceeds in this order:
 
    At the first lexical scope level containing one or more candidates whose types are definitionally equal to `G`:
    * if exactly one candidate is present, use it;
-   * if more than one candidate is present, the implicit goal is ambiguous and compilation fails.
+   * if more than one candidate is present and `IsTrait G` is not available, the implicit goal is ambiguous and
+     compilation fails;
+   * if more than one candidate is present and `IsTrait G` is available, the candidates are accepted iff they are
+     coherent under the trait-evidence coherence relation of §15.2.1. When coherent candidates are accepted, the
+     implementation selects the deterministic representative specified by §12.3.1.
 
    Search does not continue to outer lexical levels once such a level is found.
 
@@ -13099,7 +13246,7 @@ Condition:
 * The condition expression of each `if` or `elif` must have type `Bool`.
 * Constructor-tag tests such as `e is C` are ordinary boolean expressions (§7.3.4) and require no special `if`
   grammar.
-* There is no `if let` condition form in v0.1.
+* There is no `if let` condition form in v1.
 * Commas do not separate conditions in `if` or `elif`.
 
 To combine boolean conditions, use `&&`, `||`, `not`, nested `if`, or `match`.
@@ -13242,6 +13389,12 @@ A flow-sensitive condition position is:
 
 In such a position, when the boolean expression contains `&&`, `||`, or `not`, the implementation MUST behave as if the
 following equations were applied recursively before the branch-evidence rules of §7.4.1:
+
+This rule is keyed by resolved semantic identity, not by spelling. It applies only when the relevant occurrence resolves
+to the canonical `std.prelude` declaration of `(&&)`, `(||)`, or `not`, or to a transparent alias whose semantic identity
+is known to preserve that declaration. If any of these names is shadowed, rebound, imported under a different semantic
+identity, or passed through an alias not known to preserve the canonical identity, the expression is treated as an
+ordinary function application for refinement purposes.
 
 ```kappa
 if a && b then t else f
@@ -13962,7 +14115,7 @@ Rules:
 * The `pattern` keyword alters elaboration only for pattern-head use. In expression position, the declared name behaves
   like an ordinary function.
 * A `pattern` declaration is ill-formed if its result type is monadic.
-* For pattern-head use in v0.1, the result type must elaborate to one of:
+* For pattern-head use in v1, the result type must elaborate to one of:
   * `Option T` for some `T`,
   * `Match a r` for some `a` and `r`,
   * a `data` type, or
@@ -17578,7 +17731,7 @@ trait MonadFinally m => MonadResource (m : Type -> Type) =
 
 The prelude minimum requires a trait providing at least this operation; this section uses the name `MonadResource`.
 Because `bracket` must retain ownership of the acquired resource for the eventual `release` while simultaneously
-exposing only a borrowed view to `use`, it is not in general expressible in surface v0.1 by the naive source-level
+exposing only a borrowed view to `use`, it is not in general expressible in surface v1 by the naive source-level
 expansion:
 
 ```kappa
@@ -19836,6 +19989,7 @@ trait Eq (a : Type) =
     (==) : (& x : a) -> (& y : a) -> Bool
     eqSound    : (& x : a) -> (& y : a) -> ((x == y) = True  -> x = y)
     eqComplete : (& x : a) -> (& y : a) -> (x = y -> (x == y) = True)
+    eqIsSet    : IsSet a
 
 trait Eq a => Ord (a : Type) =
     compare : (& x : a) -> (& y : a) -> Ordering
@@ -19896,6 +20050,15 @@ trait Functor (f : Type -> Type) =
         forall (a : Type) (b : Type).
         (a -> b) -> f a -> f b
 
+    mapId :
+        forall (a : Type) (x : f a).
+        map (\x -> x) x = x
+
+    mapComp :
+        forall (a : Type) (b : Type) (c : Type)
+               (g : b -> c) (h : a -> b) (x : f a).
+        map (\x -> g (h x)) x = map g (map h x)
+
 trait Functor f => Applicative (f : Type -> Type) =
     pure :
         forall (a : Type).
@@ -19910,6 +20073,23 @@ trait Functor f => Applicative (f : Type -> Type) =
         f (a -> b) -> f a -> f b =
             \ff fa -> liftA2 (\f x -> f x) ff fa
 
+    applicativeIdentity :
+        forall (a : Type) (v : f a).
+        pure (\x -> x) <*> v = v
+
+    applicativeComposition :
+        forall (a : Type) (b : Type) (c : Type)
+               (u : f (b -> c)) (v : f (a -> b)) (w : f a).
+        pure (\f0 g x -> f0 (g x)) <*> u <*> v <*> w = u <*> (v <*> w)
+
+    applicativeHomomorphism :
+        forall (a : Type) (b : Type) (f0 : a -> b) (x : a).
+        pure f0 <*> pure x = pure (f0 x)
+
+    applicativeInterchange :
+        forall (a : Type) (b : Type) (u : f (a -> b)) (y : a).
+        u <*> pure y = pure (\f0 -> f0 y) <*> u
+
 trait Applicative m => Monad (m : Type -> Type) =
     (>>=) :
         forall (a : Type) (b : Type).
@@ -19919,6 +20099,19 @@ trait Applicative m => Monad (m : Type -> Type) =
         forall (a : Type) (b : Type).
         m a -> m b -> m b =
             \ma mb -> ma >>= \_ -> mb
+
+    leftIdentity :
+        forall (a : Type) (b : Type) (x : a) (f : a -> m b).
+        pure x >>= f = f x
+
+    rightIdentity :
+        forall (a : Type) (x : m a).
+        x >>= pure = x
+
+    associativity :
+        forall (a : Type) (b : Type) (c : Type)
+               (x : m a) (f : a -> m b) (g : b -> m c).
+        ((x >>= f) >>= g) = (x >>= (\a -> f a >>= g))
 ```
 
 <!-- traits.headers.abstract_evidence_records -->
@@ -19933,6 +20126,7 @@ trait Eq (a : Type) =
     (==) : (& x : a) -> (& y : a) -> Bool
     eqSound    : (x : a) -> (y : a) -> ((x == y) = True -> x = y)
     eqComplete : (x : a) -> (y : a) -> (x = y -> (x == y) = True)
+    eqIsSet    : IsSet a
 ```
 
 elaborates as if it introduced an abstract evidence type:
@@ -20021,18 +20215,24 @@ The comparison helper operators are derived from `compare`; they do not consume 
 
 For any lawful `Ord a` instance, `compare x y = EQ` must agree with `(x == y) = True`.
 
-All `Functor`, `Applicative`, and `Monad` instances MUST satisfy the usual identity, composition, homomorphism,
-interchange, associativity, and unit laws up to observational equivalence for the corresponding carrier.
-
-These laws are normative even when not represented as explicit erased trait members.
+All `Functor`, `Applicative`, and `Monad` instances MUST satisfy the law members declared by the corresponding traits.
+There is no prose-only law: a law is optimization-visible only when it is a member of available coherent trait evidence
+or is supplied by a trusted intrinsic instance declared by this specification.
 
 Fully applied trait applications are ordinary types. A full application `Tr args` is a trait evidence type, and the
 compiler provides `IsTrait (Tr args)` (§5.1.3).
 
-`Eq` is reflective decidable equality. Its comparison operation is non-consuming: both operands are received by borrow.
+`Eq` is reflective decidable observational identity. Its comparison operation is non-consuming: both operands are
+received by borrow.
+
+If `(x == y) = True`, then `Eq.eqSound` yields `x = y`. If `x = y`, then `Eq.eqComplete` yields `(x == y) = True`.
+Consequently, within portable object-language Kappa, no pure context may distinguish `x` from `y` after such a proof is
+available.
+
 An `Eq` instance participates in equality reflection only because `eqSound` and `eqComplete` are required members whose
-proof terms must typecheck. No additional restriction on hand-written instances is required beyond those required
-members.
+proof terms must typecheck. The member `eqIsSet` records that equality proofs for values of `a` are propositions; the
+compiler may synthesize it for ordinary instances from reflected decidable equality. No additional restriction on
+hand-written instances is required beyond the declared members.
 
 `Equiv` is a non-reflecting boolean equivalence relation. Its comparison operation is also non-consuming. The compiler
 MUST NOT derive `x = y` from `(x ~= y) = True`; only proof-carrying `Eq` participates in equality reflection (§7.3.3).
@@ -20367,8 +20567,8 @@ When solving an implicit goal `G`, trait evidence resolution applies only if `G 
 Resolution proceeds as follows:
 
 1. **Local implicit context first.** Perform step 1 of the implicit-resolution procedure of §7.3.3. If that step yields a
-   unique local candidate, use it. If that step yields ambiguity, compilation fails. Only if that step yields no local
-   candidate does trait evidence resolution continue.
+   unique local candidate or a coherent local-candidate representative, use it. If that step yields non-coherent
+   ambiguity, compilation fails. Only if that step yields no local candidate does trait evidence resolution continue.
 
 2. **Intrinsic solver traits.** If `G` is headed by an intrinsic solver trait, invoke that trait's compiler-owned solver.
    This includes `IsTrait`, compiler-generated `IsProp` evidence for trait evidence types, and the standard row traits
@@ -20580,30 +20780,62 @@ A conforming implementation may use any check at least as strict as the followin
 Implementations MAY use a stricter termination check.
 
 <!-- traits.proof_irrelevance -->
-### 12.4 Proof irrelevance
+### 12.4 Proof irrelevance, propositions, and trait evidence
 
-Kappa does not provide a separate proposition universe in v0.1.
+Kappa does not provide a separate proposition universe in v1.
 
-Ordinary proof types remain ordinary inhabitants of `Type`.
+Ordinary proof-like types remain ordinary inhabitants of `Type`. Kappa therefore does not assume UIP, proof
+irrelevance, or runtime erasure for arbitrary equality types or arbitrary proof-shaped types.
 
-For ordinary proofs, computational irrelevance is expressed by quantity `0`: a proof bound as `(@0 p : P)` or
-`(0 p : P)` is erased according to §§5.1.5 and 14.4.
-
-Ordinary terms of type `P : Type` are not treated as propositionally equal merely because they witness the same
-proposition. Definitional equality remains the core conversion relation of §14.3 and does not consult arbitrary
-user-space proof-irrelevance markers.
-
-Kappa does provide the prelude trait:
+The portable prelude provides the following proof-classification traits:
 
 ```kappa
-trait IsProp (t : Type) =
-    0 isProp :
-        (@0 x : t) ->
-        (@0 y : t) ->
+trait IsSubsingleton (t : Type) =
+    allEqual :
+        (x : t) ->
+        (y : t) ->
         x = y
+
+trait IsSubsingleton p => IsProp (p : Type)
+
+trait IsSet (a : Type) =
+    pathIsProp :
+        forall (x : a) (y : a).
+        IsProp (x = y)
+
+intrinsic trait RuntimeErased (t : Type)
 ```
 
-`IsProp t` states that `t` has at most one inhabitant. It does not state that `t` is inhabited.
+Meanings:
+
+* `IsSubsingleton T` states that all inhabitants of `T` are propositionally equal. It does not state that `T` is
+  inhabited.
+* `IsProp P` states that `P` is a proof proposition. `IsProp P` implies `IsSubsingleton P`.
+* `IsSet A` states that all equality types of `A` are propositions.
+* `RuntimeErased T` states that values of `T` have no runtime representation in portable object code.
+* The compiler provides intrinsic `RuntimeErased P` evidence whenever `IsProp P` is available.
+* `RuntimeErased T` does not imply `IsProp T`.
+* `IsSubsingleton T` does not imply `RuntimeErased T` unless this specification or a trusted intrinsic rule supplies
+  that implication.
+
+Equality proofs are not erased by default. For arbitrary `A`, the type `x = y` is not assumed to satisfy `IsProp`.
+Such evidence is available when `IsSet A` is available, or when a more specific theorem or intrinsic rule supplies it.
+
+The primitive equality eliminator has the prelude type:
+
+```kappa
+subst :
+    forall (@0 a : Type) (@0 P : a -> Type) (@0 x : a) (@0 y : a).
+    (p : x = y) -> P x -> P y
+```
+
+The proof argument `p` is runtime-erased when the application is checked under erased ambient demand, or when the type
+`x = y` is known to satisfy `RuntimeErased`. In particular, if `IsSet a` is available, then for all `x y : a`, `x = y`
+is an `IsProp`, hence `RuntimeErased`.
+
+Proof-producing functions may be written and composed as ordinary source functions. When the expected result type is
+known to satisfy `RuntimeErased`, the ambient-demand rule of §5.1.5 checks the whole proof expression at demand `0`, so
+its subexpressions impose no runtime demand even when their binders are not explicitly annotated with quantity `0`.
 
 The prelude also provides the intrinsic trait:
 
@@ -20626,33 +20858,37 @@ and hence:
 IsProp (Tr args)
 ```
 
-The generated `IsProp (Tr args)` evidence is a trusted consequence of the trait-evidence construction invariant:
-all closed inhabitants of a trait evidence type originate from accepted instance artifacts, intrinsic solver artifacts,
-or assumptions whose provenance is checked at their use boundary, and all artifacts for the same normalized trait head
-are coherent under §15.2.1.
+The generated `IsProp (Tr args)` evidence is a trusted consequence of the trait-evidence construction invariant: all
+closed inhabitants of a trait evidence type originate from accepted instance artifacts, intrinsic solver artifacts, or
+assumptions whose provenance is checked at their use boundary, and all artifacts for the same normalized trait head are
+coherent under §15.2.1.
 
 This proof irrelevance is propositional, not representational:
 
-* it permits proofs such as `IsProp.isProp d1 d2 : d1 = d2` for `d1 d2 : Tr args`;
+* it permits proofs such as `IsSubsingleton.allEqual d1 d2 : d1 = d2` for `d1 d2 : Tr args`;
 * it does not expose a generic equality, hash, serialization, or runtime identity operation for evidence values;
 * it does not make a missing trait goal solvable;
-* it does not imply that evidence has no runtime representation; and
+* it does not imply that every projection from the evidence has no runtime representation; and
 * it does not apply to arbitrary non-trait proof types.
 
 Examples:
 
 ```kappa
 transport :
-    (@0 p : x = y) -> Vec x a -> Vec y a
+    (p : x = y) -> Vec x a -> Vec y a
 
 assumePositive :
-    (n : Nat) -> (@0 pf : n > 0) -> SafeNat n
+    (n : Nat) -> (pf : n > 0) -> SafeNat n
 
 sameEqEvidence :
     (d1 : Eq Int) -> (d2 : Eq Int) -> d1 = d2
 let sameEqEvidence d1 d2 =
-    IsProp.isProp d1 d2
+    IsSubsingleton.allEqual d1 d2
 ```
+
+A program may still explicitly bind a proof at quantity `0` when it wants to forbid runtime use regardless of whether
+`RuntimeErased` evidence is currently available. That is an ordinary quantity choice, not the only proof-erasure
+mechanism.
 
 <!-- traits.deriving -->
 ### 12.5 Deriving
@@ -21295,13 +21531,16 @@ numeric literals appearing as type indices are normalized before comparison.
 ### 14.4 Erasure
 
 Intrinsic compile-time values, meta-phase values, syntax values, elaboration actions, reflection values,
-captured-region annotations, universes, `Type u` terms, quantities, regions, trait-obligation type expressions, rows, labels,
-proof terms used only for compile-time reasoning, and erased indices do not require implicit runtime representation.
+captured-region annotations, universes, `Type u` terms, quantities, regions, trait-obligation type expressions, rows,
+labels, values of types known to satisfy `RuntimeErased`, proof terms checked under erased ambient demand, and erased
+indices do not require implicit runtime representation.
 
 The runtime representation of a term is obtained by deleting:
 
 * all computational binders and fields whose quantity is `0`, together with the corresponding erased arguments at
-  applications, except for retained trait evidence values governed by §§5.1.3 and 12.4;
+  applications;
+* all binders, fields, arguments, package members, and local values whose type is known to satisfy `RuntimeErased`,
+  except where an explicit runtime carrier or trusted boundary contract reifies that value;
 * all capture-annotation structure introduced by `captures (...)`; and
 * all binders, fields, arguments, and package members whose values are compile-time values or meta-phase values in the
   sense of §§5.1.4, 5.1.4.1, 5.1.4.2, and 5.1.4.3, including `Syntax`, `SyntaxOrigin`, `SyntaxFragment`, `Elab`, `ElabGoal`, `CoreCtx`,
@@ -21312,6 +21551,18 @@ The runtime representation of a term is obtained by deleting:
 For computational binders and fields, quantities other than `0` are runtime-relevant and remain in the runtime term.
 For compile-time binders, fields, arguments, and package members, and for internal nominal-scope tokens introduced by
 elaboration of §6.3.1.1, runtime relevance is determined by classifier rather than by written quantity.
+
+A function type `(q x : A) -> B` is runtime-erased when, under the extended telescope, the result type `B` is known to
+satisfy `RuntimeErased`, and the function value is consumed only in an erased ambient-demand position. A record field,
+constructor field, trait member, package member, or local binding whose type is runtime-erased is omitted from runtime
+representation unless explicitly reified by a runtime carrier.
+
+Elimination restriction:
+
+A value of a runtime-erased type may affect runtime-relevant computation only through eliminators explicitly specified by
+this document. The primitive equality eliminator `subst` is runtime-safe when the equality proof is erased: it compiles
+as a type-directed coercion/refinement, not as a runtime branch on proof representation. No generic eliminator from an
+arbitrary runtime-erased value to a runtime-relevant result type is provided.
 
 This erasure is sound: runtime behavior of the computational fragment is preserved.
 
@@ -21412,6 +21663,13 @@ Canonical order:
   lexicographic order of field names.
 * Two record types are definitionally equal iff their canonical forms are field-wise definitionally equal, including
   identical field quantities.
+
+Record values:
+
+* Record values also normalize to canonical dependency-respecting field order for definitional equality.
+* Normalization and canonicalization do not authorize reordering of runtime effects in source field initializers.
+  Source field expressions evaluate in source order as specified by §5.5.1.1; the canonical order is used only after
+  those expressions have been elaborated/evaluated into their corresponding fields.
 
 Record update:
 
@@ -22104,6 +22362,33 @@ It is computed by full normalization of the definition, including:
 
 The resulting fully normalized form is De Bruijn-indexed, canonically serialized, and hashed.
 
+Hard Hash soundness assumption:
+
+A Hard Hash is a SHA-256 digest over a canonical, domain-separated serialization of a semantic object. Hard Hash equality
+may be used as evidence of semantic-object equality only under the following cryptographic assumption:
+
+```text
+hardHash_D(x) = hardHash_D(y)  implies  x = y
+```
+
+where `D` is the hash domain and `x` and `y` are canonical serialized semantic objects in that same domain.
+
+The implementation MUST compute the digest itself from canonical serialized bytes. It MUST NOT trust a digest supplied
+by an external artifact unless that digest is validated against the artifact contents. Each Hard Hash domain MUST include
+a domain-separation prefix identifying the object class, schema version, language version, profile, and semantic options
+that affect canonicalization. Hard Hashes from different domains are never comparable.
+
+Standard domains include at least:
+
+```text
+KAPPA:v1:CoreNF
+KAPPA:v1:TypeNF
+KAPPA:v1:InstanceArtifact
+KAPPA:v1:ModuleInterface
+KAPPA:v1:TraitEvidence
+KAPPA:v1:CoherenceWitness
+```
+
 The canonical Hard Hash of a definition is computed using the defining module's own transparency rules only, ignoring
 downstream `clarify`. For coherence checking, implementations MUST compare these canonical hashes, not hashes recomputed
 under the importing module's view. Coherence comparisons are performed on instantiated candidate dictionaries, not
@@ -22194,8 +22479,8 @@ Coherence check algorithm for instance resolution:
      then compares those Hard Hashes and rejects the program if any required Hard Hash cannot be obtained;
    * if `coherence_mode = "semantic-if-available"`, the compiler MUST attempt to compute the Hard Hash for each
      candidate in the comparison set;
-   * under either semantic mode, if the Hard Hashes match, treat the candidates as semantically equivalent and therefore
-     as harmless overlap;
+   * under either semantic mode, if the Hard Hashes match in the same `KAPPA:v1:InstanceArtifact` domain, treat the
+     candidates as semantically equivalent under the Hard Hash soundness assumption and therefore as harmless overlap;
    * under either semantic mode, if the Hard Hashes differ, the program violates coherence and the compiler MUST reject
      it;
    * under `semantic-if-available`, if one or more required Hard Hashes cannot be computed, the compiler MUST
@@ -22255,8 +22540,9 @@ NOT expose compiler-generated `IsTrait` evidence for the affected trait evidence
 When checking definitional equality (`t1 ≡ t2`) between two top-level definitions, or between two closed transparent
 subterms for which Hard Hashes are available, the compiler MAY first compare their Hard Hashes.
 
-* If both Hard Hashes are available and equal, the compiler MAY conclude that the terms are definitionally equal without
-  further conversion checking.
+* If both Hard Hashes are available, are from the same Hard Hash domain, and are equal, the compiler MAY conclude that
+  the terms are definitionally equal without further conversion checking under the Hard Hash soundness assumption of
+  §15.1.2.
 * If the Hard Hashes differ, or one or both Hard Hashes are unavailable, the compiler MUST fall back to ordinary
   definitional-equality checking (§14.3).
 
@@ -22328,7 +22614,8 @@ The safe portable subset of Kappa excludes:
 * `assertTerminates`,
 * `assertReducible`,
 * `assertTotal`,
-* the standard debug-introspection module `std.debug` of §16.6.
+* `unsafeAssertProof`, and
+* the standard debug-introspection module `std.debug` of §16.7.
 
 Programs that use any of these facilities are outside the safe portable subset.
 
@@ -22353,21 +22640,22 @@ allow_unhiding            : Bool
 allow_clarify             : Bool
 allow_assert_terminates   : Bool
 allow_assert_reducible    : Bool
+allow_unsafe_assert_proof : Bool
 allow_debug_introspection : Bool
 ```
 
 Defaults:
 
-* In package mode, all five default to `false`.
+* In package mode, all unsafe/debug settings default to `false`.
 * In script mode, implementations MAY default any or all of them to `true` for experimentation. Implementations SHOULD
   document the actual defaults they choose.
 
 Violations are compile-time errors. Diagnostics for such errors MUST identify both:
 
-* the offending `unhide` / `clarify` import item, `assertTerminates`, `assertReducible`, or legacy `assertTotal`
-  declaration, or `std.debug` import / use, and
-* the build setting (`allow_unhiding`, `allow_clarify`, `allow_assert_terminates`, `allow_assert_reducible`, or
-  `allow_debug_introspection`) that disallows it.
+* the offending `unhide` / `clarify` import item, `assertTerminates`, `assertReducible`, legacy `assertTotal`
+  declaration, `unsafeAssertProof` use, or `std.debug` import / use, and
+* the build setting (`allow_unhiding`, `allow_clarify`, `allow_assert_terminates`, `allow_assert_reducible`,
+  `allow_unsafe_assert_proof`, or `allow_debug_introspection`) that disallows it.
 
 <!-- unsafe_debug.visibility_escapes -->
 ### 16.3 `unhide` and `clarify`
@@ -22446,8 +22734,35 @@ Code accepted solely via `assertTerminates`, legacy `assertTotal`, or `assertRed
 * Enabling `assertReducible` does not imply reproducible package-mode semantics. A package-mode build that admits
   `assertReducible` MUST record that fact in package artifacts and hashes.
 
+<!-- unsafe_debug.unsafe_assert_proof -->
+### 16.5 Unchecked proof assertion
+
+`unsafeAssertProof` is an unsafe/debug prelude helper for trusted bootstrapping of proof obligations.
+
+```kappa
+unsafeAssertProof :
+    forall (@0 P : Type).
+    (@_ : IsProp P) ->
+    (@0 reason : String) ->
+    P
+```
+
+Rules:
+
+* `unsafeAssertProof @P reason` constructs evidence of proposition `P` without checking a proof.
+* It is accepted only when `IsProp P` is available.
+* A compilation unit that uses `unsafeAssertProof` is outside the safe portable subset.
+* The module interface MUST record the assertion, the asserted proposition's canonical identity, the source origin, and
+  the supplied reason string.
+* Easy Hashes, Hard Hashes, interface hashes, instance-artifact hashes, and coherence hashes MUST include unchecked
+  proof assertions that participate in exported definitions, trait instances, optimization-visible laws, or
+  module-interface identity.
+* A proof produced by `unsafeAssertProof` may erase exactly like any other proof of the same proposition. Erasure does
+  not make the assertion checked.
+* If `allow_unsafe_assert_proof` is disabled under §16.2, use of `unsafeAssertProof` is a compile-time error.
+
 <!-- unsafe_debug.backend_escapes -->
-### 16.5 Backend-specific surface escapes
+### 16.6 Backend-specific surface escapes
 
 The safe portable subset of Kappa excludes any implementation-defined surface syntax or API for directly embedding
 backend-specific code, backend-specific syntax fragments, or backend-specific intermediate representations.
@@ -22461,7 +22776,7 @@ If an implementation provides such a facility:
   validation is explicitly documented for that facility.
 
 <!-- unsafe_debug.std_debug -->
-### 16.6 Standard debug-introspection module `std.debug`
+### 16.7 Standard debug-introspection module `std.debug`
 
 When `allow_debug_introspection` is enabled, implementations MUST provide a standard module `std.debug`.
 
@@ -26837,7 +27152,7 @@ If the required unification fails, that constructor arm contributes `Empty`.
 If the required unification succeeds, the constructor arm summary is the product of the summaries of its retained
 constructor fields under the branch-local index equalities and parameter refinements.
 
-For `RuntimeShape` and `Optimization`, compile-time-only fields, quantity-`0` fields, proof-only fields, and erased
+For `RuntimeShape` and `Optimization`, compile-time-only fields, quantity-`0` fields, runtime-erased proof fields, and erased
 indices are removed before this product is computed.
 
 Equality types:
