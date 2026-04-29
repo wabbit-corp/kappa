@@ -29720,6 +29720,28 @@ The summary status is derived as follows:
 * `Unreproducible` applies when any selected dimension is unpinned, ambient, missing, stale, or intentionally not
   replayable.
 
+When more than one non-`FullyReproducible` summary condition applies, the summary status is chosen by the following
+precedence order:
+
+```text
+Unreproducible
+NonSelfContainedDeployment
+ReproducibleCompilationButSystemRuntimePrerequisite
+ReproducibleWithRecordedTranscript
+FullyReproducible
+```
+
+The summary status is a lossy compatibility label. Tools that need precise behavior MUST inspect the full
+reproducibility record.
+
+A target with recorded system prerequisites and recorded transcripts is summarized as
+`ReproducibleCompilationButSystemRuntimePrerequisite` unless it is also non-self-contained in a way covered by
+`NonSelfContainedDeployment`.
+
+A target with a non-self-contained deployment and recorded transcripts is summarized as `NonSelfContainedDeployment`
+unless any dimension is unpinned, ambient, missing, stale, or intentionally not replayable, in which case it is
+`Unreproducible`.
+
 A target whose summary status is `Unreproducible` MUST record at least one `UnreproducibilityReason`.
 
 Portable unreproducibility reasons include:
@@ -29798,7 +29820,7 @@ A lockfile entry has at least:
 * all resolved facts that contributed to the entry;
 * relevant tool, generator, macro, backend, adapter, bridge, or loader identity;
 * content digest or transcript identity when applicable;
-* reproducibility vector under §19.3A;
+* reproducibility vector under §19.3B;
 * provenance backreferences to the manifest values, lockfile entries, generated outputs, or external facts that produced
   it; and
 * schema identity under which the entry was written.
@@ -31049,7 +31071,8 @@ A generated output cache key includes:
 A generator used as a target artifact dependency MUST be built or resolved before the codegen target that executes it.
 
 A codegen target that emits Kappa modules contributes module providers only after the corresponding generated source root
-or generated interface artifact is materialized, cached, checked in, or verified by lockfile entry under §19.3B.
+or generated interface artifact is materialized, cached, checked in, or verified by lockfile entry under §§19.3A and
+19.3C.
 
 A generator diagnostic MUST carry provenance for the manifest expression selecting the generator, each relevant
 generator input, and the generated output span when available.
