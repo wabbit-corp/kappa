@@ -5764,10 +5764,10 @@ Let `prefix` resolve to a term `p` in scope at the literal occurrence.
 
 A prefixed string literal requires `p` to elaborate to one of the following:
 
-* `Elab (Dict (InterpolatedMacro t))` for some result type `t`; or
-* a meta-phase value of type `Dict (InterpolatedMacro t)`, in which case it is treated as `pure p`.
+* `Elab (InterpolatedMacro t)` for some result type `t`; or
+* a meta-phase value of type `InterpolatedMacro t`, in which case it is treated as `pure p`.
 
-An object-phase runtime value of type `Dict (InterpolatedMacro t)` does not qualify as a prefixed-string handler.
+An object-phase runtime value of type `InterpolatedMacro t` does not qualify as a prefixed-string handler.
 
 If resolution fails, or if the resolved term does not have one of the admissible types above, compilation fails with a
 compile-time error.
@@ -5817,7 +5817,7 @@ $(do
     __prefix.buildInterpolated [Lit "raw"])
 ```
 
-If `p` itself is already a meta-phase value of type `Dict (InterpolatedMacro t)`, the first line is treated as:
+If `p` itself is already a meta-phase value of type `InterpolatedMacro t`, the first line is treated as:
 
 ```kappa
 let __prefix = p
@@ -5896,7 +5896,7 @@ There is no built-in `type"..."`
 intrinsic.
 
 ```kappa
-type : Elab (Dict (InterpolatedMacro Type))
+type : Elab (InterpolatedMacro Type)
 ```
 
 Because keywords are soft (§3.2), `type"..."`, `type"""..."""`, and their raw forms are parsed as prefixed-string
