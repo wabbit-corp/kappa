@@ -6338,11 +6338,11 @@ When an unresolved variable is rejected, the diagnostic MUST identify:
 * if defaulting was not permitted, the rule forbidding it;
 * if defaulting was attempted, why it failed.
 
-<!-- types.universes.constraints_dictionaries -->
-#### 5.1.3 Constraints and dictionaries
+<!-- types.universes.trait_evidence -->
+#### 5.1.3 Intrinsic compile-time values and trait evidence
 
-`Universe`, `Quantity`, `Region`, `Constraint`, `RecRow`, `VarRow`, `EffRow`, `Label`, and `EffLabel` are intrinsic
-compile-time types, not extra meta-level sorts.
+`Universe`, `Quantity`, `Region`, `RecRow`, `VarRow`, `EffRow`, `Label`, and `EffLabel` are intrinsic compile-time types,
+not extra meta-level sorts.
 
 Terms of these intrinsic compile-time types may be used in ordinary explicit binders, record fields, package members,
 projections, existential witnesses, and local bindings wherever the surrounding surface form otherwise permits them.
@@ -6355,7 +6355,6 @@ In particular, a record field, package member, local binding, or existential wit
 * `Universe`
 * `Quantity`
 * `Region`
-* `Constraint`
 * `RecRow`
 * `VarRow`
 * `EffRow`
@@ -6388,58 +6387,132 @@ Intended use:
   accounting only; see §5.1.5.1.
 * `Region` classifies explicit borrow lifetimes that may be named in surface types when a borrow relationship must cross
   an interface boundary.
-* `Constraint` classifies constraint descriptors such as `Eq Int`, `Monad (IO e)`, or `ContainsRec r l T`.
+* `RecRow`, `VarRow`, and `EffRow` classify record, union/variant, and effect rows.
+* `Label` classifies record labels.
+* `EffLabel` classifies effect labels.
 
-Constraint descriptors and coherent evidence are distinct:
+Kappa has no separate `Constraint` classifier and no built-in `Dict` reification type.
 
-* A trait declaration `trait Tr ... = ...` introduces a trait constructor `Tr` whose fully applied applications are
-  terms of type `Constraint`.
-* The trait constructor `Tr` also has a reified static-object term facet under §2.8.6.
-  If the trait header elaborates to telescope `Δ`, then the reified trait constructor has type:
-
-  ```text
-  Δ -> Constraint
-  ```
-
-  with the evident simplification when `Δ` is empty.
-
-  Examples:
-
-  ```kappa
-  let C = Eq          -- C : Type -> Constraint
-  let c = C Int       -- c : Constraint
-  let d : Dict (C Int) = ...
-  ```
-* A concrete constraint descriptor such as `Eq Int`, `Monad (IO e)`, or `ContainsRec r l T` is not coherent evidence
-  by itself.
-* Concrete constraint descriptors may appear:
-  * in implicit binders `(@x : C)`,
-  * in constraint arrows `C => T`,
-  * in instance heads, and
-  * as arguments to built-ins that abstract over constraints.
-
-Built-in reification:
+A **trait evidence type** is a type `T : Type u` for which the compiler can establish:
 
 ```kappa
-Dict : Constraint -> Type
+IsTrait T
 ```
 
-`Dict C` is the explicit dictionary type corresponding to the concrete constraint descriptor `C`.
+A **trait obligation** is a request for evidence of such a trait evidence type.
 
-Usage rules:
+The surface form:
 
-* A value of a concrete constraint descriptor `C` may only be bound implicitly.
-* An explicit parameter, field, or result may not have concrete type `C`; use `Dict C`.
-* There is an implicit coercion from coherent evidence `ev : C` to `Dict C`.
-* There is no coercion from `Dict C` to `C`.
-* `Dict C` never participates in implicit resolution.
-* Coherent constraint evidence is proof-irrelevant for typechecking and coherence.
-* The runtime representation of constraint evidence is implementation-defined.
-* Explicit `Dict C` values are ordinary runtime values unless eliminated by specialization, inlining, or dead-code
-  erasure.
-* Implicit evidence may be erased when the implementation proves that it is unused after elaboration.
-* A binder may range over `Constraint` itself, e.g. `(c : Constraint) -> ...`; this quantifies over constraint
-  descriptors and does not introduce coherent evidence for `c`.
+```kappa
+C => R
+```
+
+is accepted only when `C : Type u` and `IsTrait C` is available. It elaborates to an implicit parameter:
+
+```kappa
+(@_ : C) -> R
+```
+
+A trait declaration:
+
+```kappa
+trait Tr params = body
+```
+
+introduces an abstract evidence record family:
+
+```text
+Tr : Δ -> Type u
+```
+
+where `Δ` is the elaborated trait-parameter telescope. A fully applied trait application such as `Eq Int`,
+`Monad (IO e)`, or `ContainsRec r l T` is an ordinary type, not a descriptor in a separate constraint sort.
+
+For every well-formed fully applied trait evidence type `Tr args`, the compiler provides intrinsic evidence:
+
+```kappa
+IsTrait (Tr args)
+```
+
+and, through the `IsTrait` supertrait, erased proof-irrelevance evidence:
+
+```kappa
+IsProp (Tr args)
+```
+
+Trait evidence values are ordinary values at their evidence type. They may appear in explicit parameters, implicit
+parameters, fields, results, local bindings, packages, and existential payloads:
+
+```kappa
+d : Eq Int
+p : ContainsRec r l a
+```
+
+There is no wrapper type analogous to `Dict (Eq Int)`. Explicit trait evidence is just a value of the trait evidence
+type itself.
+
+Trait evidence records are abstract:
+
+* their member projections are public according to ordinary trait-member visibility;
+* their supertrait projections are public according to §12.1.1;
+* their constructors are compiler-private introduction forms;
+* source code cannot name, import, unhide, clarify, reflect, quote, pattern match on, or call their constructors;
+* source code cannot construct them with record literals;
+* source code cannot update them with record-update syntax;
+* source code cannot use generic record reconstruction, structural record reflection, or deserialization to reveal or
+  fabricate their representation.
+
+The only portable introduction forms for a trait evidence value are:
+
+1. an accepted ordinary instance declaration;
+2. an accepted local instance declaration;
+3. an implicit parameter or local implicit assumption, which assumes evidence supplied by the caller or enclosing scope;
+4. compiler-generated intrinsic evidence for intrinsic traits; and
+5. trusted boundary forms that explicitly publish a coherent instance artifact and are checked against the active
+   coherence environment.
+
+An implementation MAY render compiler-private constructors or fields with names beginning in `__` in dumps or internal
+IR. Such renderings are not source names. They are not made available through lexical lookup, import, `unhide`,
+`clarify`, reflection, quotation, macro expansion, or generated source.
+
+Trait evidence is proof-irrelevant in the following source-level sense:
+
+```kappa
+trait IsProp (t : Type) =
+    0 isProp :
+        (@0 x : t) ->
+        (@0 y : t) ->
+        x = y
+
+intrinsic trait IsProp t => IsTrait (t : Type)
+```
+
+`IsProp` by itself asserts uniqueness, not existence. It does not provide a value of `t`.
+
+`IsTrait` is compiler-issued evidence that `t` is a trait evidence type. User source MUST NOT declare instances of
+`IsTrait`. The compiler synthesizes `IsTrait (Tr args)` for every well-formed full application of a trait constructor.
+The generated `IsProp (Tr args)` evidence is justified by the trait-evidence construction invariant and the instance
+coherence rules of §15.2.1.
+
+Trait evidence is not compile-time-only merely because `IsTrait T` holds. A trait evidence value may have runtime
+representation when one of its runtime-relevant projections is used. A trait evidence value whose projections are all
+erased, compile-time-only, or specialized away may itself be erased under the ordinary erasure rules of §§5.1.4 and
+14.4.
+
+The runtime representation of trait evidence is implementation-defined subject to the public projection behavior of the
+trait. A conforming implementation MAY specialize, inline, common, or erase trait evidence only when doing so preserves
+all source-observable projections and the coherence invariant.
+
+Intrinsic traits:
+
+An intrinsic trait is a trait whose evidence introduction rules are owned by the compiler. Source `instance`
+declarations for an intrinsic trait are rejected unless that intrinsic trait explicitly defines a checked source-level
+introduction form.
+
+The standard row traits `ContainsRec`, `LacksRec`, `ContainsVar`, `LacksVar`, `ContainsEff`, `LacksEff`, and `SplitEff`
+are intrinsic solver traits. They are ordinary trait evidence types for purposes of `=>`, implicit binders, `summon`,
+projection-free explicit evidence passing, proof irrelevance, and coherence. They differ from ordinary user traits only
+in that their evidence is introduced by the row solver rather than by user-authored instances.
 
 <!-- types.universes.constraints.rejected_constraints_custom_errors -->
 #### 5.1.3A Rejected constraints and custom type-error computation
