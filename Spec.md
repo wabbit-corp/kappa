@@ -14776,6 +14776,9 @@ If a multi-shot operation is rejected because the backend lacks `rt-multishot-ef
 * the operation invocation or exported declaration that requires it; and
 * the selected backend profile.
 
+This rejection is a feature-gating rejection under §1.2 and belongs to diagnostic family `kappa.feature.gated` with code
+`E_FEATURE_BACKEND_CAPABILITY_MISSING`.
+
 <!-- effects.monadic_core.effect_labels.identity_and_handler_matching -->
 #### 8.1.7C Effect-label identity and handler matching
 
@@ -20036,8 +20039,8 @@ When solving a trait constraint goal `Tr args`, instance resolution proceeds as 
    ambiguity, compilation fails. Only if that step yields no local candidate does instance resolution continue to step 2
    below.
 
-2. **Then global instances** Collect all top-level instance declarations in the compilation unit's module closure whose
-   instance heads unify with the goal.
+2. **Then global instances** Normalize the goal and instance heads according to §12.3.1A. Collect all top-level instance
+   declarations in the compilation unit's module closure whose normalized instance heads unify with the normalized goal.
 
 3. **Recursive premise solving** For each collected candidate, solve its premises recursively using this same algorithm.
 
@@ -20591,6 +20594,8 @@ assumption.
 
 Definitional equality is the smallest congruence containing the following reductions, relative to the active refinement
 context and subject to opacity rules:
+
+The reductions above are position-independent as specified by §14.3B.
 
 * β-reduction: `(\(x : A) -> e) v  ↦  e[x := v]`
 * δ-reduction: unfolding of transparent **conversion-reducible** definitions, including transparent type aliases, whose
@@ -26797,6 +26802,8 @@ At or before publication of KBackendIR, the implementation MUST validate that:
   `rt-multishot-effects`;
 * if the selected backend lacks `rt-multishot-effects`, all reachable effect operation invocations must be one-shot,
   abortive, or otherwise lowerable without persistent multi-shot resumption behavior;
+* handler, resumption, and multi-shot continuation lowering preserves the optimization-stability requirements of
+  §17.4.6A;
 * any internal multi-return or join-point lowering of `Completion`, `Match`, projection/projector-elimination control,
   or implementation-generated boolean / constructor-refinement / case-split control satisfies §17.4.7A;
 * data, variant, and record layout choices are fixed consistently with §§14.5-14.6;
@@ -27269,6 +27276,8 @@ Portable ABI exclusions:
 * Function values, callbacks, callable objects, closures, iterators, streams, dictionaries, packages, trait evidence,
   effects, resumptions, handlers, handler frames, cleanup frames, local nominal declarations, and anonymous borrow
   regions are not PortableAbi values.
+* A value whose apparent ABI shape is first-order before erasure but whose host-call arity would require passing
+  compile-time-only source parameters is not a PortableAbi value.
 * Fiber handles, fiber ids, supervision scopes, monitor handles, promises, fiber-local-state cells, `STM` values, and
   `TVar` values are not PortableAbi values.
 * Direct borrowed parameters and direct borrowed results are not part of the portable ABI subset.
