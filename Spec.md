@@ -20573,18 +20573,62 @@ Implementations MAY use a stricter termination check.
 <!-- traits.proof_irrelevance -->
 ### 12.4 Proof irrelevance
 
-Kappa does not provide a user-space `Prop` trait or a separate proposition universe in v0.1.
+Kappa does not provide a separate proposition universe in v0.1.
 
-Rules:
-* Ordinary proof types remain ordinary inhabitants of `Type`.
-* For ordinary proofs, proof irrelevance is expressed by quantity `0`: a proof bound as `(@0 p : P)` or `(0 p : P)` is
-  computationally irrelevant and erased according to Sections 5.1.5 and 14.4.
-* Ordinary terms of type `P : Type` are **not** treated as definitionally equal merely because they witness the same
-  proposition. Definitional equality remains the core conversion relation of Section 14.3 and does not consult trait
-  resolution or any user-space proof-irrelevance marker.
-* Constraint evidence for trait applications `Tr args : Constraint` is separately proof-irrelevant for typechecking and
-  coherence by the rules of Section 5.1.3. This is a property of the `Constraint` sort, not of an ordinary trait over
-  `Type`.
+Ordinary proof types remain ordinary inhabitants of `Type`.
+
+For ordinary proofs, computational irrelevance is expressed by quantity `0`: a proof bound as `(@0 p : P)` or
+`(0 p : P)` is erased according to §§5.1.5 and 14.4.
+
+Ordinary terms of type `P : Type` are not treated as propositionally equal merely because they witness the same
+proposition. Definitional equality remains the core conversion relation of §14.3 and does not consult arbitrary
+user-space proof-irrelevance markers.
+
+Kappa does provide the prelude trait:
+
+```kappa
+trait IsProp (t : Type) =
+    0 isProp :
+        (@0 x : t) ->
+        (@0 y : t) ->
+        x = y
+```
+
+`IsProp t` states that `t` has at most one inhabitant. It does not state that `t` is inhabited.
+
+The prelude also provides the intrinsic trait:
+
+```kappa
+intrinsic trait IsProp t => IsTrait (t : Type)
+```
+
+`IsTrait t` is compiler-issued evidence that `t` is a trait evidence type. User source MUST NOT define `IsTrait`
+instances.
+
+For every well-formed full trait application `Tr args`, the compiler synthesizes:
+
+```kappa
+IsTrait (Tr args)
+```
+
+and hence:
+
+```kappa
+IsProp (Tr args)
+```
+
+The generated `IsProp (Tr args)` evidence is a trusted consequence of the trait-evidence construction invariant:
+all closed inhabitants of a trait evidence type originate from accepted instance artifacts, intrinsic solver artifacts,
+or assumptions whose provenance is checked at their use boundary, and all artifacts for the same normalized trait head
+are coherent under §15.2.1.
+
+This proof irrelevance is propositional, not representational:
+
+* it permits proofs such as `IsProp.isProp d1 d2 : d1 = d2` for `d1 d2 : Tr args`;
+* it does not expose a generic equality, hash, serialization, or runtime identity operation for evidence values;
+* it does not make a missing trait goal solvable;
+* it does not imply that evidence has no runtime representation; and
+* it does not apply to arbitrary non-trait proof types.
 
 Examples:
 
@@ -20594,6 +20638,11 @@ transport :
 
 assumePositive :
     (n : Nat) -> (@0 pf : n > 0) -> SafeNat n
+
+sameEqEvidence :
+    (d1 : Eq Int) -> (d2 : Eq Int) -> d1 = d2
+let sameEqEvidence d1 d2 =
+    IsProp.isProp d1 d2
 ```
 
 <!-- traits.deriving -->
