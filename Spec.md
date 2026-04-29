@@ -6413,6 +6413,51 @@ Usage rules:
 * A binder may range over `Constraint` itself, e.g. `(c : Constraint) -> ...`; this quantifies over constraint
   descriptors and does not introduce coherent evidence for `c`.
 
+<!-- types.universes.constraints.rejected_constraints_custom_errors -->
+#### 5.1.3A Rejected constraints and custom type-error computation
+
+Kappa v0.1 does not standardize user-authored custom type-error computation.
+
+A conforming implementation MAY provide implementation-defined rejected constraints or custom diagnostic constraints only
+behind a feature gate governed by §1.2.
+
+If such a feature is enabled, its specification MUST distinguish:
+
+* a constraint that is semantically unsatisfiable; from
+* a constraint whose purpose is to compute or render a diagnostic message.
+
+Forcing discipline:
+
+* A rejected constraint may be forced when the enclosing phase must decide whether the constraint is solvable.
+* A rejected constraint MUST NOT be forced merely because doing so would produce a nicer message earlier.
+* For equivalent programs with the same semantic obligations, the timing of forcing rejected constraints MUST NOT change
+  accepted/rejected status.
+* Custom diagnostic computation MUST NOT participate in definitional equality unless the feature's owning gate explicitly
+  defines that reduction behavior.
+
+Required forcing points:
+
+If rejected constraints exist, the implementation MUST force them at least:
+
+* before accepting an instance candidate whose premises include the rejected constraint;
+* before accepting a declaration whose ambiguity check depends on the rejected constraint;
+* before publishing a module interface containing an unsolved rejected constraint;
+* before accepting a proof, instance, or implicit argument whose correctness depends on the rejected constraint being
+  solvable.
+
+Diagnostics:
+
+A diagnostic caused by a rejected constraint MUST identify:
+
+* the rejected constraint;
+* the phase that forced it;
+* the source obligation that required it;
+* whether the constraint is intrinsically unsatisfiable or produced by custom diagnostic computation;
+* any custom message, if one is part of the enabled feature.
+
+Implementation-defined custom diagnostic features MUST NOT make `Constraint` itself an ambient stringly diagnostic
+language for portable Kappa.
+
 <!-- types.universes.erasure_elaboration_time -->
 #### 5.1.4 Erasure, phases, and elaboration time
 
