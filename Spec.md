@@ -28581,6 +28581,26 @@ For example, if a dependency coordinate is produced by a prefixed string using h
 coordinate SHOULD include related origins for the final dependency expression and for the helper bindings that
 contributed to it, as specified by §§18.8-18.10.
 
+A build manifest describes build intentions only.
+
+A build manifest MAY describe targets, target matrices, features, dependencies, host binding requests, bridge requests,
+code-generation requests, export surfaces, tests, benchmarks, packaging requests, and publish requests.
+
+A build manifest MUST NOT execute any build step.
+
+In particular, a manifest MUST NOT execute a code generator, bridge generator, binding generator, compiler, linker,
+package manager, test runner, benchmark runner, `pkg-config`, SDK discovery command, filesystem traversal, network
+fetch, registry query, JVM classpath scan, CLR assembly scan, native loader query, or package publication operation.
+
+If a build description names a tool, generator, external package, SDK, header, registry artifact, host binding, bridge,
+native library, managed assembly, generated source root, or target artifact, the build manifest names an intention.
+The exact identity and all build-affecting facts are established only by build-plan resolution and build scheduling under
+Chapter 19.
+
+A config-safe helper supplied by `std.build` MAY construct matrix descriptions, default target lists, dependency
+records, or feature-conditioned records, provided the helper remains total, deterministic, config-safe, and does not
+perform external discovery.
+
 ---
 
 <!-- build_system -->
