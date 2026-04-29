@@ -6574,8 +6574,8 @@ Some types are intrinsically compile-time-only. Values of those types are always
 
 Compile-time-only values include:
 
-* inhabitants of the intrinsic compile-time types `Universe`, `Quantity`, `Region`, `Constraint`, `RecRow`, `VarRow`,
-  `EffRow`, `Label`, and `EffLabel`;
+* inhabitants of the intrinsic compile-time types `Universe`, `Quantity`, `Region`, `RecRow`, `VarRow`, `EffRow`,
+  `Label`, and `EffLabel`;
 * universe terms appearing in `Type u`;
 * inhabitants of `Syntax t`, `SyntaxOrigin`, and `SyntaxFragment`;
 * inhabitants of the elaboration-time reflection types `CoreCtx`, `Symbol`, `Core Γ t`, and `CoreEq x y` of §5.8.5;
@@ -6603,10 +6603,10 @@ within the phase in which they are valid, but Kappa does not provide implicit ru
 Runtime erasure is governed as follows:
 
 * For object-phase computational binders and fields, runtime erasure is governed by quantities (§5.1.5, §14.4), subject
-  to the special treatment of coherent constraint evidence and `Dict` values in §5.1.3.
+  to the representation and specialization rules for trait evidence in §5.1.3.
 * For meta-phase binders, fields, arguments, and package members, erasure is by phase/classifier rather than by written
-  quantity: they are compile-time only and are erased unless preserved by an explicit reified runtime carrier such as
-  `Dict C` or another representation type supplied by the implementation or libraries.
+  quantity: they are compile-time only and are erased unless preserved by an explicit runtime carrier supplied by the
+  implementation or libraries.
 * Implementations may provide library mechanisms to reify type information or other compile-time information explicitly
   when needed, but there is no implicit runtime reflection.
 
@@ -6645,7 +6645,6 @@ capable. For example, a local binding of type `String` inside an `Elab` action i
 A **static-object expression position** is a source position whose expected classifier is one of:
 
 * `Type u`
-* `Constraint`
 * `EffLabel`
 * `Label`
 * `RecRow`
@@ -6658,8 +6657,9 @@ A **static-object expression position** is a source position whose expected clas
 At such a position, elaboration proceeds by ordinary expression checking against the expected compile-time type, subject
 to the syntactic restrictions of the surrounding grammar.
 
-Static-object expression positions are meta-phase only unless the surrounding type explicitly uses a runtime reified
-carrier such as `Dict`.
+Static-object expression positions are meta-phase only unless the surrounding type explicitly uses a runtime carrier.
+Trait evidence types are ordinary `Type` inhabitants; they are not static-object expression positions merely because
+`IsTrait` evidence exists for them.
 
 <!-- types.universes.erasure_elaboration_time.phase_separation_elab -->
 ##### 5.1.4.3 Phase separation for `Elab`
