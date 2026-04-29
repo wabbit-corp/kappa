@@ -27642,6 +27642,163 @@ In particular:
 
 ---
 
+<!-- config_mode -->
+## 18. Config mode and value provenance
+
+Kappa supports a restricted source mode called **config mode**.
+
+Config mode is used for source files whose purpose is to produce typed configuration data, such as:
+
+* build manifests;
+* package metadata;
+* test fixture descriptions;
+* code-generation inputs;
+* tool configuration;
+* reproducible benchmark descriptions;
+* implementation-defined compiler-driver configuration.
+
+A config-mode file is parsed using Kappa lexical structure and expression syntax, but it is not an ordinary Kappa module.
+
+A config-mode file:
+
+* does not produce an ordinary module interface;
+* does not contribute ordinary source declarations to package module discovery;
+* is evaluated before the ordinary project dependency graph that depends on it;
+* is evaluated by the config evaluator of §18.4;
+* produces one or more named config values; and
+* records value provenance as specified by §18.5.
+
+A tool selects config mode by role, file extension, command-line option, or embedding API.
+
+The canonical extension for standalone config data files is:
+
+```text
+.kcfg
+```
+
+The canonical build-manifest path, when standardized by the build system, is:
+
+```text
+kappa.build.kp
+```
+
+A file named `kappa.build.kp` is parsed as Kappa syntax but evaluated in config-expression mode unless an implementation
+documents a stricter manifest mode.
+
+Config mode has two standardized profiles:
+
+```text
+config-data
+config-expression
+```
+
+`config-data` is the minimal data-only profile intended for test fixtures, bootstrap inputs, and simple manifests.
+
+`config-expression` extends `config-data` with saturated calls to config-safe functions and limited branching.
+
+<!-- config_mode.syntax -->
+### 18.1 Config units
+
+A config unit contains only imports and simple value bindings.
+
+Grammar:
+
+```text
+configUnit      ::= configImport* configLet*
+
+configImport    ::= ordinary import declaration restricted by §18.3
+
+configLet       ::= 'let' ident [ ':' type ] '=' configExpr
+
+configExpr      ::= configLiteral
+                  | ident
+                  | configInterpolatedString
+                  | tupleExpr
+                  | recordExpr
+                  | listExpr
+                  | constructorApp
+                  | configCall
+                  | projectionExpr
+                  | typeAscriptionExpr
+                  | ifExpr                 -- config-expression only
+                  | matchExpr              -- config-expression only
+```
+
+Rules:
+
+* A config unit has no `module` header.
+* A config unit has no `export` declarations.
+* A config unit has no top-level signatures separate from definitions.
+* Every `let` binding binds exactly one simple identifier.
+* Config `let` bindings are non-recursive.
+* Duplicate top-level config binding names are rejected.
+* A config binding may refer only to earlier config bindings and imported config-safe names.
+* A config binding may carry an explicit type annotation.
+* If no type annotation is present, ordinary inference is used within the restrictions of config mode.
+
+The following declarations and expressions are rejected in config mode:
+
+* `data`;
+* `type`;
+* `trait`;
+* `effect`;
+* `instance`;
+* `derive`;
+* `projection`;
+* `pattern`;
+* `expect`;
+* `public`;
+* `private`;
+* `opaque`;
+* `block`;
+* `do`;
+* `var`;
+* `while`;
+* `for`;
+* comprehensions;
+* `using`;
+* `defer`;
+* `try`;
+* `handle`;
+* `return`;
+* `break`;
+* `continue`;
+* lambda expressions;
+* local function definitions;
+* macro splices;
+* syntax quotations;
+* staged-code quotations;
+* `Elab`;
+* `IO`;
+* semantic reflection;
+* host imports;
+* unsafe/debug forms.
+
+An implementation MAY provide an extension profile that admits more of Kappa, but such extensions are not part of
+portable config mode.
+
+<!-- config_mode.profiles -->
+### 18.2 Profiles
+
+This section is reserved for the detailed rules of the standardized config-mode profiles.
+
+<!-- config_mode.imports -->
+### 18.3 Config imports
+
+This section is reserved for config-mode import restrictions and semantics.
+
+<!-- config_mode.evaluator -->
+### 18.4 Config evaluator
+
+This section is reserved for config-mode evaluation semantics.
+
+<!-- config_mode.provenance -->
+### 18.5 Value provenance
+
+This section is reserved for config-value provenance rules.
+
+---
+
 <!-- appendices.pipe_operators -->
 ## Appendix B. Pipe operators
 
