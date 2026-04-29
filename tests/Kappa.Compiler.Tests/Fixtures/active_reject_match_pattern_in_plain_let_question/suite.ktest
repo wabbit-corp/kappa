@@ -1,3 +1,4 @@
 --! mode check
 --! packageMode
 --! assertErrorCount 1
+--! assertDiagnosticCodes E_ACTIVE_PATTERN_MATCH_RESULT_NOT_ALLOWED_IN_PLAIN_LET_QUESTION

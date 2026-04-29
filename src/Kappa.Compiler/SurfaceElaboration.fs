@@ -776,19 +776,20 @@ module SurfaceElaboration =
         (scheme: TypeScheme)
         (parameterLayouts: Parameter list option)
         =
-        let isForallLayoutParameter (parameter: Parameter) =
-            parameter.IsImplicit
-            && (scheme.Forall |> List.exists (fun binder -> binder.Name = parameter.Name))
-            && (parameter.TypeTokens.IsNone
-                || (parameter.TypeTokens
-                    |> Option.bind TypeSignatures.parseType
-                    |> Option.exists (function
-                        | TypeUniverse None -> true
-                        | TypeName([ "Type" ], []) -> true
-                        | _ -> false)))
-
         parameterLayouts
-        |> Option.map (List.filter (isForallLayoutParameter >> not))
+        |> Option.map (fun layouts ->
+            let rec stripLeadingForallLayouts
+                (remainingBinders: TypeSignatures.ForallBinder list)
+                (remainingLayouts: Parameter list)
+                =
+                match remainingBinders, remainingLayouts with
+                | binder :: restBinders, layout :: restLayouts
+                    when String.Equals(binder.Name, layout.Name, StringComparison.Ordinal) ->
+                    stripLeadingForallLayouts restBinders restLayouts
+                | _ ->
+                    remainingLayouts
+
+            stripLeadingForallLayouts scheme.Forall layouts)
 
     let private parameterLayoutNeedsApplicationMetadata (parameter: Parameter) =
         parameter.IsImplicit
@@ -1292,6 +1293,8 @@ module SurfaceElaboration =
                 Name(staticObject.NameSegments @ path)
             | Name _ ->
                 current
+            | TypeSyntaxTokens _ ->
+                current
             | SyntaxQuote inner ->
                 SyntaxQuote(rewrite inner)
             | SyntaxSplice inner ->
@@ -1484,6 +1487,8 @@ module SurfaceElaboration =
 
         let rec rewrite current =
             match current with
+            | TypeSyntaxTokens _ ->
+                current
             | SyntaxQuote inner ->
                 SyntaxQuote(rewrite inner)
             | SyntaxSplice inner ->
@@ -1589,6 +1594,7 @@ module SurfaceElaboration =
             | Literal _
             | NumericLiteral _
             | KindQualifiedName _
+            | TypeSyntaxTokens _
             | Name _ ->
                 current
 
@@ -1597,6 +1603,8 @@ module SurfaceElaboration =
     let private rewriteDirectAliasUse aliasName targetName expression =
         let rec rewrite current =
             match current with
+            | TypeSyntaxTokens _ ->
+                current
             | SyntaxQuote inner ->
                 SyntaxQuote(rewrite inner)
             | SyntaxSplice inner ->
@@ -1753,6 +1761,8 @@ module SurfaceElaboration =
             | Name segments ->
                 tryRewriteName activeAliases segments
                 |> Option.defaultValue current
+            | TypeSyntaxTokens _ ->
+                current
             | SyntaxQuote inner ->
                 SyntaxQuote(rewrite activeAliases inner)
             | SyntaxSplice inner ->
@@ -2830,6 +2840,8 @@ module SurfaceElaboration =
                     definition.Name
                 | ProjectionDeclarationNode declaration when isExportedVisibility privateByDefault declaration.Visibility ->
                     Some declaration.Name
+                | ExpectDeclarationNode (ExpectTermDeclaration declaration) ->
+                    Some declaration.Name
                 | _ ->
                     None)
             |> Set.ofList
@@ -2842,6 +2854,8 @@ module SurfaceElaboration =
                 | EffectDeclarationNode declaration when isExportedVisibility privateByDefault declaration.Visibility ->
                     Some declaration.Name
                 | TypeAliasNode declaration when isExportedVisibility privateByDefault declaration.Visibility ->
+                    Some declaration.Name
+                | ExpectDeclarationNode (ExpectTypeDeclaration declaration) ->
                     Some declaration.Name
                 | _ ->
                     None)
@@ -2875,6 +2889,8 @@ module SurfaceElaboration =
             frontendModule.Declarations
             |> List.choose (function
                 | TraitDeclarationNode declaration when isExportedVisibility privateByDefault declaration.Visibility ->
+                    Some declaration.Name
+                | ExpectDeclarationNode (ExpectTraitDeclaration declaration) ->
                     Some declaration.Name
                 | _ ->
                     None)
@@ -4327,6 +4343,8 @@ module SurfaceElaboration =
 
         and rewriteExpression localAliases current =
             match current with
+            | TypeSyntaxTokens _ ->
+                current
             | SyntaxQuote inner ->
                 SyntaxQuote(rewriteExpression localAliases inner)
             | SyntaxSplice inner ->
@@ -4992,13 +5010,18 @@ module SurfaceElaboration =
             match scheme with
             | Some scheme ->
                 let parameters =
-                    parameters
-                    |> List.filter (fun parameter ->
-                        not (
-                            parameter.IsImplicit
-                            && parameter.TypeTokens.IsNone
-                            && (scheme.Forall |> List.exists (fun binder -> binder.Name = parameter.Name))
-                        ))
+                    let rec stripLeadingForallParameters
+                        (remainingBinders: TypeSignatures.ForallBinder list)
+                        (remainingParameters: Parameter list)
+                        =
+                        match remainingBinders, remainingParameters with
+                        | binder :: restBinders, parameter :: restParameters
+                            when String.Equals(binder.Name, parameter.Name, StringComparison.Ordinal) ->
+                            stripLeadingForallParameters restBinders restParameters
+                        | _ ->
+                            remainingParameters
+
+                    stripLeadingForallParameters scheme.Forall parameters
 
                 let parameterTypes, _ = TypeSignatures.schemeParts scheme
                 if List.length parameterTypes = List.length parameters then
@@ -6316,7 +6339,7 @@ module SurfaceElaboration =
         let instantiated = TypeSignatures.instantiate "t" freshCounter.Value bindingInfo.Scheme
         freshCounter.Value <- freshCounter.Value + instantiated.Forall.Length
 
-        let rec consumeExplicitTypeApplications
+        let rec consumeCompileTimeApplications
             (remainingForall: TypeSignatures.ForallBinder list)
             (remainingArguments: SurfaceExpression list)
             substitution
@@ -6325,7 +6348,7 @@ module SurfaceElaboration =
             | binder :: restForall, ExplicitImplicitArgument explicitArgument :: restArguments ->
                 match tryParseTypeLikeSurfaceExpression explicitArgument with
                 | Some explicitTypeArgument ->
-                    consumeExplicitTypeApplications
+                    consumeCompileTimeApplications
                         restForall
                         restArguments
                         (composeTypeSubstitution substitution (Map.ofList [ binder.Name, explicitTypeArgument ]))
@@ -6335,7 +6358,7 @@ module SurfaceElaboration =
                 Some(substitution, remainingArguments)
 
         let explicitTypeApplicationsValid, instantiated, arguments =
-            match consumeExplicitTypeApplications instantiated.Forall arguments Map.empty with
+            match consumeCompileTimeApplications instantiated.Forall arguments Map.empty with
             | Some(substitution, remainingArguments) ->
                 true,
                 TypeSignatures.applySchemeSubstitution substitution instantiated,
@@ -7002,6 +7025,8 @@ module SurfaceElaboration =
                 inferValidationExpressionType environment freshCounter localTypes (Apply(Name [ suffixName ], [ NumericLiteral(SurfaceNumericLiteral.withoutSuffix literal) ]))
             | None ->
                 Some(inferSurfaceNumericLiteralType literal)
+        | TypeSyntaxTokens tokens ->
+            TypeSignatures.parseType tokens |> Option.map (fun _ -> TypeName([ "Type" ], []))
         | SyntaxQuote inner ->
             inferValidationExpressionType environment freshCounter localTypes inner
             |> Option.map syntaxType
@@ -7745,6 +7770,7 @@ module SurfaceElaboration =
             | Literal _
             | NumericLiteral _
             | KindQualifiedName _
+            | TypeSyntaxTokens _
             | Name _ ->
                 current
 
@@ -7983,6 +8009,8 @@ module SurfaceElaboration =
                 | Seal(nestedBody, _)
                 | TagTest(nestedBody, _) ->
                     descend nestedBody expectations
+                | TypeSyntaxTokens _ ->
+                    expectations
                 | Handle(_, label, nestedBody, returnClause, operationClauses) ->
                     expectations
                     |> descend label
@@ -8510,6 +8538,8 @@ module SurfaceElaboration =
                 | Seal(nestedBody, _)
                 | TagTest(nestedBody, _) ->
                     descend nestedBody expectations
+                | TypeSyntaxTokens _ ->
+                    expectations
                 | Handle(_, label, nestedBody, returnClause, operationClauses) ->
                     expectations
                     |> descend label
@@ -8866,6 +8896,8 @@ module SurfaceElaboration =
                 | InoutArgument inner
                 | Unary(_, inner) ->
                     fromExpression inner
+                | TypeSyntaxTokens _ ->
+                    None
                 | IfThenElse(condition, whenTrue, whenFalse) ->
                     fromExpression condition
                     |> Option.orElseWith (fun () -> fromExpression whenTrue)
@@ -9269,6 +9301,8 @@ module SurfaceElaboration =
                         yield!
                             quotedVisibleNames currentVisible inner
                             |> Seq.filter (fun name -> not (Set.contains name bindingVisible))
+                    | TypeSyntaxTokens _ ->
+                        ()
                     | SyntaxSplice inner
                     | TopLevelSyntaxSplice inner
                     | CodeQuote inner
@@ -9883,7 +9917,7 @@ module SurfaceElaboration =
 
                             match environment.VisibleBindings |> Map.tryFind headName with
                             | Some bindingInfo when not bindingInfo.IsPattern && not isConstructor ->
-                                [ makeDiagnostic DiagnosticCode.ActivePatternInvalid $"Pattern head '{headName}' resolves to an ordinary term, not a constructor or active pattern." ]
+                                [ makeDiagnostic DiagnosticCode.PatternHeadNotConstructorOrActivePattern $"Pattern head '{headName}' resolves to an ordinary term, not a constructor or active pattern." ]
                             | _ ->
                                 []
 
@@ -9908,9 +9942,9 @@ module SurfaceElaboration =
             | Some bindingInfo ->
                 match activePatternResultKind bindingInfo, activePatternScrutineeQuantity bindingInfo with
                 | Some "Option", Some QuantityOne ->
-                    [ makeDiagnostic DiagnosticCode.ActivePatternInvalid $"Option-returning active pattern '{bindingInfo.Name}' consumes its scrutinee linearly in a refutable {context}." ]
+                    [ makeDiagnostic DiagnosticCode.ActivePatternLinearityViolation $"Option-returning active pattern '{bindingInfo.Name}' consumes its scrutinee linearly in a refutable {context}." ]
                 | Some "Match", _ when String.Equals(context, "let?", StringComparison.Ordinal) ->
-                    [ makeDiagnostic DiagnosticCode.ActivePatternInvalid $"Match-returning active pattern '{bindingInfo.Name}' is not permitted in plain let? destructuring." ]
+                    [ makeDiagnostic DiagnosticCode.ActivePatternMatchResultNotAllowedInPlainLetQuestion $"Match-returning active pattern '{bindingInfo.Name}' is not permitted in plain let? destructuring." ]
                 | _ ->
                     []
             | None ->
@@ -10659,6 +10693,8 @@ module SurfaceElaboration =
                     match current with
                     | Name("this" :: fieldName :: _) ->
                         yield fieldName
+                    | TypeSyntaxTokens _ ->
+                        ()
                     | SyntaxQuote inner
                     | SyntaxSplice inner
                     | TopLevelSyntaxSplice inner
@@ -10987,7 +11023,7 @@ module SurfaceElaboration =
                         if projectionSupportsSet projectionInfo then
                             None
                         else
-                            Some(makeDiagnostic DiagnosticCode.ProjectionDefinitionUnsupported "Projection-section update requires an accessor/setter or selector projection.")))
+                            Some(makeDiagnostic DiagnosticCode.ProjectionUpdateTargetUnsupported "Projection-section update requires an accessor/setter or selector projection.")))
 
             duplicatePathDiagnostics
             @ prefixDiagnostics
@@ -11243,6 +11279,7 @@ module SurfaceElaboration =
                     | ExplicitImplicitArgument inner
                     | InoutArgument inner
                     | Unary(_, inner) -> loop inner
+                    | TypeSyntaxTokens _ -> []
                     | NamedApplicationBlock fields -> fields |> List.collect (fun field -> loop field.Value)
                     | Apply(callee, arguments) -> loop callee @ (arguments |> List.collect loop)
                     | Binary(left, _, right)
@@ -11602,6 +11639,16 @@ module SurfaceElaboration =
             | _ ->
                 None
 
+        let rec dropLeadingCompileTimeArguments
+            (remainingForall: TypeSignatures.ForallBinder list)
+            (remainingArguments: SurfaceExpression list)
+            =
+            match remainingForall, remainingArguments with
+            | _ :: restForall, ExplicitImplicitArgument _ :: restArguments ->
+                dropLeadingCompileTimeArguments restForall restArguments
+            | _ ->
+                remainingArguments
+
         let applicationExpectedArgumentDiagnostics locals refinements lexicalNames (bindingInfo: BindingSchemeInfo) arguments =
             let inferArgumentTypeForParameter parameterType argument =
                 tryInferNumericExpressionTypeFromContext environment parameterType argument
@@ -11619,10 +11666,11 @@ module SurfaceElaboration =
                         []
                 | Some parameterLayouts ->
                     let instantiated = TypeSignatures.instantiate "v" freshCounter.Value bindingInfo.Scheme
+                    let runtimeArguments = dropLeadingCompileTimeArguments instantiated.Forall arguments
                     let schemeParameterTypes, _ = TypeSignatures.schemeParts instantiated
 
                     let hasApplicationOnlyArgument =
-                        arguments
+                        runtimeArguments
                         |> List.exists (function
                             | ExplicitImplicitArgument _
                             | NamedApplicationBlock _ -> true
@@ -11633,7 +11681,7 @@ module SurfaceElaboration =
                     else
                         match tryAlignParameterTypesWithLayouts environment parameterLayouts schemeParameterTypes with
                         | Some(parameterTypes, []) ->
-                            let remainingArguments = ref arguments
+                            let remainingArguments = ref runtimeArguments
                             let substitution = ref Map.empty<string, TypeExpr>
                             let diagnostics = ResizeArray<Diagnostic>()
 
@@ -11898,6 +11946,8 @@ module SurfaceElaboration =
                 | Unary(_, inner)
                 | Seal(inner, _) ->
                     recurse inner
+                | TypeSyntaxTokens _ ->
+                    []
                 | ExplicitImplicitArgument inner ->
                     match tryParseTypeLikeSurfaceExpression inner with
                     | Some _ ->
@@ -12196,6 +12246,8 @@ module SurfaceElaboration =
                         String.Equals(root, target, StringComparison.Ordinal)
                         && not (Set.contains root currentShadowed)
                     | Name [] ->
+                        false
+                    | TypeSyntaxTokens _ ->
                         false
                     | SyntaxQuote inner
                     | SyntaxSplice inner
@@ -12594,6 +12646,8 @@ module SurfaceElaboration =
                 | Name [ name ] ->
                     String.Equals(name, target, StringComparison.Ordinal)
                     && not (Set.contains name shadowed)
+                | TypeSyntaxTokens _ ->
+                    false
                 | SyntaxQuote inner
                 | SyntaxSplice inner
                 | TopLevelSyntaxSplice inner
@@ -12759,6 +12813,8 @@ module SurfaceElaboration =
                 match current with
                 | Name [ name ] when not (Set.contains name shadowed) ->
                     substitutions |> Map.tryFind name |> Option.defaultValue current
+                | TypeSyntaxTokens _ ->
+                    current
                 | SyntaxQuote inner ->
                     SyntaxQuote(rewrite inner)
                 | SyntaxSplice inner ->
@@ -12861,6 +12917,7 @@ module SurfaceElaboration =
                 | Literal _
                 | NumericLiteral _
                 | KindQualifiedName _
+                | TypeSyntaxTokens _
                 | Name _ ->
                     current
 
@@ -12956,6 +13013,7 @@ module SurfaceElaboration =
                 | Literal _
                 | NumericLiteral _
                 | KindQualifiedName _
+                | TypeSyntaxTokens _
                 | Name _ ->
                     current
 
@@ -12992,6 +13050,8 @@ module SurfaceElaboration =
                 | Name [ name ] when String.Equals(name, target, StringComparison.Ordinal) && not (Set.contains name shadowed) ->
                     1
                 | Name _ ->
+                    0
+                | TypeSyntaxTokens _ ->
                     0
                 | SyntaxQuote inner
                 | SyntaxSplice inner
@@ -13152,70 +13212,90 @@ module SurfaceElaboration =
                     []
 
             let topLevelSpliceElabPhaseDiagnostics inner =
-                let rec loop current =
-                    let recurseCurrent = loop
+                let objectPhaseEscapeDiagnostic name =
+                    makeDiagnostic
+                        DiagnosticCode.TypeEqualityMismatch
+                        $"Object-phase/runtime value '{name}' cannot be passed directly to elaboration. Quote it as Syntax or rebind it inside Elab."
+
+                let localIsCompileTimeOnly name =
+                    locals
+                    |> Map.tryFind name
+                    |> Option.exists typeIsMetaPhaseTransferType
+
+                let rec loop shadowed current =
+                    let recurseCurrent = loop shadowed
 
                     match current with
-                    | Apply(Name [ calleeName ], arguments) ->
-                        let nestedDiagnostics = arguments |> List.collect recurseCurrent
-
-                        match tryInferCallableElabResult calleeName with
-                        | Some _ ->
-                            let argumentDiagnostics =
-                                arguments
-                                |> List.collect (fun argument ->
-                                    match inferValidationExpressionType environment freshCounter locals argument with
-                                    | Some argumentType when not (typeIsMetaPhaseTransferType argumentType) ->
-                                        [
-                                            makeDiagnostic
-                                                DiagnosticCode.TypeEqualityMismatch
-                                                $"Object-phase/runtime value of type '{TypeSignatures.toText argumentType}' cannot be passed directly to Elab action '{calleeName}'. Use Syntax or another reflection carrier."
-                                        ]
-                                    | _ ->
-                                        [])
-
-                            nestedDiagnostics @ argumentDiagnostics
-                        | None ->
-                            nestedDiagnostics
-                    | Apply(callee, arguments) ->
-                        recurseCurrent callee @ (arguments |> List.collect recurseCurrent)
-                    | SyntaxQuote nested
+                    | Name [ name ] when not (Set.contains name shadowed) ->
+                        if localIsCompileTimeOnly name then
+                            []
+                        elif Map.containsKey name locals || Set.contains name lexicalNames then
+                            [ objectPhaseEscapeDiagnostic name ]
+                        else
+                            []
+                    | Name _
+                    | Literal _
+                    | NumericLiteral _
+                    | KindQualifiedName _
+                    | TypeSyntaxTokens _ ->
+                        []
+                    | SyntaxQuote _ ->
+                        []
                     | SyntaxSplice nested
                     | TopLevelSyntaxSplice nested
-                    | CodeQuote nested
                     | CodeSplice nested
                     | MonadicSplice nested
-                    | ExplicitImplicitArgument nested
                     | InoutArgument nested
-                    | Unary(_, nested) ->
+                    | Unary(_, nested)
+                    | Seal(nested, _) ->
                         recurseCurrent nested
+                    | ExplicitImplicitArgument nested ->
+                        match tryParseTypeLikeSurfaceExpression nested with
+                        | Some _ -> []
+                        | None -> recurseCurrent nested
+                    | CodeQuote _ ->
+                        []
+                    | Apply(callee, arguments) ->
+                        recurseCurrent callee @ (arguments |> List.collect recurseCurrent)
+                    | LocalLet(binding, value, body) ->
+                        let nextShadowed =
+                            Set.union shadowed (collectPatternNames binding.Pattern |> Set.ofList)
+
+                        recurseCurrent value @ loop nextShadowed body
+                    | LocalSignature(declaration, body) ->
+                        loop (Set.add declaration.Name shadowed) body
+                    | LocalTypeAlias(_, body) ->
+                        recurseCurrent body
+                    | LocalScopedEffect(declaration, body) ->
+                        loop (Set.add declaration.Name shadowed) body
+                    | Lambda(parameters, body) ->
+                        let nextShadowed =
+                            parameters
+                            |> List.map (fun parameter -> parameter.Name)
+                            |> Set.ofList
+                            |> Set.union shadowed
+
+                        loop nextShadowed body
                     | Handle(_, label, body, returnClause, operationClauses) ->
                         recurseCurrent label
                         @ recurseCurrent body
-                        @ recurseCurrent returnClause.Body
-                        @ (operationClauses |> List.collect (fun clause -> recurseCurrent clause.Body))
-                    | LocalLet(_, value, body) ->
-                        recurseCurrent value @ recurseCurrent body
-                    | LocalSignature(_, body) ->
-                        recurseCurrent body
-                    | LocalTypeAlias(_, body) ->
-                        recurseCurrent body
-                    | LocalScopedEffect(_, body) ->
-                        recurseCurrent body
-                    | Lambda(_, body) ->
-                        recurseCurrent body
+                        @ loop (Set.union shadowed (clauseBoundNames returnClause)) returnClause.Body
+                        @ (operationClauses
+                           |> List.collect (fun clause ->
+                               loop (Set.union shadowed (clauseBoundNames clause)) clause.Body))
                     | IfThenElse(condition, whenTrue, whenFalse) ->
                         recurseCurrent condition @ recurseCurrent whenTrue @ recurseCurrent whenFalse
                     | Match(scrutinee, cases) ->
                         recurseCurrent scrutinee
                         @ (cases
                            |> List.collect (fun caseClause ->
-                               (caseClause.Guard |> Option.map recurseCurrent |> Option.defaultValue [])
-                               @ recurseCurrent caseClause.Body))
+                               let caseShadowed =
+                                   Set.union shadowed (collectPatternNames caseClause.Pattern |> Set.ofList)
+
+                               (caseClause.Guard |> Option.map (loop caseShadowed) |> Option.defaultValue [])
+                               @ loop caseShadowed caseClause.Body))
                     | RecordLiteral fields ->
                         fields |> List.collect (fun field -> recurseCurrent field.Value)
-                    | Seal(value, _) ->
-                        recurseCurrent value
                     | RecordUpdate(receiver, fields) ->
                         recurseCurrent receiver @ (fields |> List.collect (fun field -> recurseCurrent field.Value))
                     | MemberAccess(receiver, _, arguments) ->
@@ -13225,35 +13305,52 @@ module SurfaceElaboration =
                     | TagTest(receiver, _) ->
                         recurseCurrent receiver
                     | Do statements ->
-                        statements
-                        |> List.collect (function
-                            | DoLet(_, value)
-                            | DoBind(_, value)
-                            | DoUsing(_, value)
-                            | DoVar(_, value)
-                            | DoAssign(_, value)
-                            | DoDefer value
-                            | DoExpression value
-                            | DoReturn value -> recurseCurrent value
-                            | DoLetQuestion(_, value, failure) ->
-                                recurseCurrent value
-                                @ (failure
-                                   |> Option.map (fun failure ->
-                                       failure.Body
-                                       |> List.collect (function
-                                           | DoExpression inner
-                                           | DoReturn inner
-                                           | DoDefer inner
-                                           | DoVar(_, inner)
-                                           | DoAssign(_, inner) -> recurseCurrent inner
-                                           | _ -> []))
-                                   |> Option.defaultValue [])
-                            | DoIf(condition, whenTrue, whenFalse) ->
-                                recurseCurrent condition
-                                @ validateDoStatementsWithFlow locals refinements lexicalNames aliases staticAliases constructorFacts whenTrue
-                                @ validateDoStatementsWithFlow locals refinements lexicalNames aliases staticAliases constructorFacts whenFalse
-                            | DoWhile(condition, body) ->
-                                recurseCurrent condition @ validateDoStatementsWithFlow locals refinements lexicalNames aliases staticAliases constructorFacts body)
+                        let rec loopStatements currentShadowed remaining =
+                            match remaining with
+                            | [] ->
+                                []
+                            | statement :: rest ->
+                                match statement with
+                                | DoLet(binding, value)
+                                | DoBind(binding, value)
+                                | DoUsing(binding, value) ->
+                                    let nextShadowed =
+                                        Set.union currentShadowed (collectPatternNames binding.Pattern |> Set.ofList)
+
+                                    loop currentShadowed value @ loopStatements nextShadowed rest
+                                | DoLetQuestion(binding, value, failure) ->
+                                    let nextShadowed =
+                                        Set.union currentShadowed (collectPatternNames binding.Pattern |> Set.ofList)
+
+                                    let failureDiagnostics =
+                                        failure
+                                        |> Option.map (fun failure ->
+                                            let failureShadowed =
+                                                Set.union nextShadowed (collectPatternNames failure.ResiduePattern.Pattern |> Set.ofList)
+
+                                            loopStatements failureShadowed failure.Body)
+                                        |> Option.defaultValue []
+
+                                    loop currentShadowed value @ failureDiagnostics @ loopStatements nextShadowed rest
+                                | DoVar(name, value) ->
+                                    let nextShadowed = Set.add name currentShadowed
+                                    loop currentShadowed value @ loopStatements nextShadowed rest
+                                | DoAssign(_, value)
+                                | DoDefer value
+                                | DoExpression value
+                                | DoReturn value ->
+                                    loop currentShadowed value @ loopStatements currentShadowed rest
+                                | DoIf(condition, whenTrue, whenFalse) ->
+                                    loop currentShadowed condition
+                                    @ loopStatements currentShadowed whenTrue
+                                    @ loopStatements currentShadowed whenFalse
+                                    @ loopStatements currentShadowed rest
+                                | DoWhile(condition, body) ->
+                                    loop currentShadowed condition
+                                    @ loopStatements currentShadowed body
+                                    @ loopStatements currentShadowed rest
+
+                        loopStatements shadowed statements
                     | NamedApplicationBlock fields ->
                         fields |> List.collect (fun field -> recurseCurrent field.Value)
                     | Binary(left, _, right)
@@ -13265,14 +13362,9 @@ module SurfaceElaboration =
                         parts
                         |> List.collect (function
                             | StringText _ -> []
-                            | StringInterpolation(inner, _) -> recurseCurrent inner)
-                    | Literal _
-                    | NumericLiteral _
-                    | KindQualifiedName _
-                    | Name _ ->
-                        []
+                            | StringInterpolation(nested, _) -> recurseCurrent nested)
 
-                loop inner
+                loop Set.empty inner
 
             match expression with
             | SyntaxQuote inner ->
@@ -13285,8 +13377,10 @@ module SurfaceElaboration =
                 @ topLevelSpliceElabPhaseDiagnostics inner
                 @ topLevelSpliceLinearityDiagnostics inner
                 @ (tryExtractFailElabDiagnosticMessage inner
-                   |> Option.map (fun message -> [ makeDiagnostic DiagnosticCode.FrontendValidation message ])
+                   |> Option.map (fun message -> [ makeDiagnostic DiagnosticCode.ElaborationFailed message ])
                    |> Option.defaultValue [])
+            | TypeSyntaxTokens _ ->
+                []
             | CodeQuote inner
             | CodeSplice inner ->
                 recurse inner
@@ -13861,6 +13955,8 @@ module SurfaceElaboration =
                         SyntaxSplice(rewrite inner)
                     | TopLevelSyntaxSplice inner ->
                         TopLevelSyntaxSplice(rewrite inner)
+                    | TypeSyntaxTokens _ ->
+                        expression
                     | CodeQuote inner ->
                         CodeQuote(rewrite inner)
                     | CodeSplice inner ->
@@ -14498,6 +14594,20 @@ module SurfaceElaboration =
 
                             walk parameterLayouts parameterTypes pendingArguments
 
+                        let rec consumeLeadingCompileTimeArguments
+                            (remainingForall: TypeSignatures.ForallBinder list)
+                            (remainingArguments: SurfaceExpression list)
+                            =
+                            match remainingForall, remainingArguments with
+                            | _ :: restForall, ExplicitImplicitArgument explicitArgument :: restArguments ->
+                                let currentDiagnostics = validateCompileTimeArgument explicitArgument
+                                let remainingDiagnostics, finalArguments =
+                                    consumeLeadingCompileTimeArguments restForall restArguments
+
+                                currentDiagnostics @ remainingDiagnostics, finalArguments
+                            | _ ->
+                                [], remainingArguments
+
                         let argumentDiagnosticsForBindingInfo (bindingInfo: BindingSchemeInfo) =
                             let preserveOrdinaryConstructorApplication =
                                 bindingInfo.ConstructorTypeName.IsSome
@@ -14510,22 +14620,8 @@ module SurfaceElaboration =
                                 match bindingInfo.ParameterLayouts with
                                 | Some parameterLayouts ->
                                     let instantiated = TypeSignatures.instantiate "v" freshCounter.Value bindingInfo.Scheme
-                                    let rec consumeLeadingExplicitTypeApplications
-                                        (remainingForall: TypeSignatures.ForallBinder list)
-                                        (remainingArguments: SurfaceExpression list)
-                                        =
-                                        match remainingForall, remainingArguments with
-                                        | _ :: restForall, ExplicitImplicitArgument explicitArgument :: restArguments ->
-                                            let currentDiagnostics = validateCompileTimeArgument explicitArgument
-                                            let remainingDiagnostics, finalArguments =
-                                                consumeLeadingExplicitTypeApplications restForall restArguments
-
-                                            currentDiagnostics @ remainingDiagnostics, finalArguments
-                                        | _ ->
-                                            [], remainingArguments
-
                                     let explicitTypeArgumentDiagnostics, alignedArguments =
-                                        consumeLeadingExplicitTypeApplications instantiated.Forall arguments
+                                        consumeLeadingCompileTimeArguments instantiated.Forall arguments
 
                                     let schemeParameterTypes, _ = TypeSignatures.schemeParts instantiated
 
@@ -14824,12 +14920,16 @@ module SurfaceElaboration =
                             else
                                 match runtimeRelevantParameterLayouts bindingInfo with
                                 | Some layouts ->
+                                    let instantiated = TypeSignatures.instantiate "v" freshCounter.Value bindingInfo.Scheme
+                                    let runtimeArguments =
+                                        consumeLeadingCompileTimeArguments instantiated.Forall arguments
+                                        |> snd
                                     let visibleParameterCount =
                                         layouts
                                         |> List.filter (fun parameter -> not parameter.IsImplicit)
                                         |> List.length
 
-                                    visibleParameterCount > 0 && arguments.Length > visibleParameterCount
+                                    visibleParameterCount > 0 && runtimeArguments.Length > visibleParameterCount
                                 | None ->
                                     false
 
@@ -14844,22 +14944,9 @@ module SurfaceElaboration =
                                 let instantiatedForStructural =
                                     TypeSignatures.instantiate "v" freshCounter.Value bindingInfo.Scheme
 
-                                let rec consumeLeadingExplicitTypeApplications
-                                    (remainingForall: TypeSignatures.ForallBinder list)
-                                    (remainingArguments: SurfaceExpression list)
-                                    =
-                                    match remainingForall, remainingArguments with
-                                    | _ :: restForall, ExplicitImplicitArgument explicitArgument :: restArguments ->
-                                        match tryParseTypeLikeSurfaceExpression explicitArgument with
-                                        | Some _ ->
-                                            consumeLeadingExplicitTypeApplications restForall restArguments
-                                        | None ->
-                                            remainingArguments
-                                    | _ ->
-                                        remainingArguments
-
                                 let structuralArguments =
-                                    consumeLeadingExplicitTypeApplications instantiatedForStructural.Forall arguments
+                                    consumeLeadingCompileTimeArguments instantiatedForStructural.Forall arguments
+                                    |> snd
 
                                 let rec walk (layouts: Parameter list) pendingArguments =
                                     match layouts, pendingArguments with
@@ -15447,7 +15534,7 @@ module SurfaceElaboration =
             | PrefixedString(prefix, parts) ->
                 prefixedStringPrefixDiagnostics locals lexicalNames prefix
                 @ (tryResolvePrefixedStringFailureDiagnostic prefix
-                   |> Option.map (fun message -> [ makeDiagnostic DiagnosticCode.FrontendValidation message ])
+                   |> Option.map (fun message -> [ makeDiagnostic DiagnosticCode.ElaborationFailed message ])
                    |> Option.defaultValue [])
                 @ (parts
                    |> List.collect (function
@@ -15677,6 +15764,8 @@ module SurfaceElaboration =
                         [ makeDiagnostic DiagnosticCode.QttInoutMarkerUnexpected "The '~' inout marker is only valid inside do blocks." ]
 
                 markerDiagnostics @ recurse inner
+            | TypeSyntaxTokens _ ->
+                []
             | SyntaxQuote inner
             | SyntaxSplice inner
             | TopLevelSyntaxSplice inner
@@ -15831,11 +15920,11 @@ module SurfaceElaboration =
                     if isStableDescriptorPlace expression then
                         None
                     else
-                        Some(makeDiagnostic DiagnosticCode.ProjectionDefinitionUnsupported "Projector descriptor roots must be stable places or selector-computed places."))
+                        Some(makeDiagnostic DiagnosticCode.ProjectionRootInvalid "Projector descriptor roots must be stable places or selector-computed places."))
 
             match remainingPlaceBinders with
             | [] ->
-                [ makeDiagnostic DiagnosticCode.ProjectionDefinitionUnsupported "A projector descriptor application must still have at least one root." ]
+                [ makeDiagnostic DiagnosticCode.ProjectionDescriptorRootMissing "A projector descriptor application must still have at least one root." ]
             | [ binder ] ->
                 match rootsArgument with
                 | RecordLiteral fields when fields |> List.exists (fun field -> String.Equals(field.Name, binder.Name, StringComparison.Ordinal)) ->
@@ -15844,11 +15933,11 @@ module SurfaceElaboration =
                     let expectedNames = Set.singleton binder.Name
 
                     if fieldNames <> expectedNames then
-                        [ makeDiagnostic DiagnosticCode.ProjectionDefinitionUnsupported "Projector descriptor roots pack fields must match the projector root binders exactly." ]
+                        [ makeDiagnostic DiagnosticCode.ProjectionRootsPackMismatch "Projector descriptor roots pack fields must match the projector root binders exactly." ]
                     else
                         fieldMap |> Map.find binder.Name |> List.singleton |> unstableRootDiagnostics
                 | RecordLiteral _ ->
-                    [ makeDiagnostic DiagnosticCode.ProjectionDefinitionUnsupported "Projector descriptor roots pack fields must match the projector root binders exactly." ]
+                    [ makeDiagnostic DiagnosticCode.ProjectionRootsPackMismatch "Projector descriptor roots pack fields must match the projector root binders exactly." ]
                 | _ ->
                     unstableRootDiagnostics [ rootsArgument ]
             | binders ->
@@ -15859,13 +15948,13 @@ module SurfaceElaboration =
                     let expectedNames = binders |> List.map (fun binder -> binder.Name) |> Set.ofList
 
                     if fieldNames <> expectedNames then
-                        [ makeDiagnostic DiagnosticCode.ProjectionDefinitionUnsupported "Projector descriptor roots pack fields must match the projector root binders exactly." ]
+                        [ makeDiagnostic DiagnosticCode.ProjectionRootsPackMismatch "Projector descriptor roots pack fields must match the projector root binders exactly." ]
                     else
                         binders
                         |> List.map (fun binder -> fieldMap |> Map.find binder.Name)
                         |> unstableRootDiagnostics
                 | _ ->
-                    [ makeDiagnostic DiagnosticCode.ProjectionDefinitionUnsupported "Multi-root projector descriptors must be applied to a record literal roots pack." ]
+                    [ makeDiagnostic DiagnosticCode.ProjectionDescriptorRootsLiteralRequired "Multi-root projector descriptors must be applied to a record literal roots pack." ]
 
         let fullyAppliedProjectionReturningDescriptorDiagnostic body =
             let returnTypeIsProjector =
@@ -15881,7 +15970,7 @@ module SurfaceElaboration =
                 |> Map.tryFind projectionName
                 |> Option.filter (fun projectionInfo -> List.length projectionInfo.Binders = List.length arguments)
                 |> Option.map (fun _ ->
-                    [ makeDiagnostic DiagnosticCode.ProjectionDefinitionUnsupported "A fully applied projection produces the projected focus, not a projector descriptor value." ])
+                    [ makeDiagnostic DiagnosticCode.ProjectionDescriptorValueExpected "A fully applied projection produces the projected focus, not a projector descriptor value." ])
                 |> Option.defaultValue []
             | _ ->
                 []
@@ -15896,6 +15985,8 @@ module SurfaceElaboration =
             | CodeQuote inner
             | CodeSplice inner ->
                 recurse inner
+            | TypeSyntaxTokens _ ->
+                []
             | Handle(_, label, body, returnClause, operationClauses) ->
                 recurse label
                 @ recurse body
@@ -16123,6 +16214,8 @@ module SurfaceElaboration =
                 | CodeQuote inner
                 | CodeSplice inner ->
                     recurse inner
+                | TypeSyntaxTokens _ ->
+                    []
                 | Handle(_, label, body, returnClause, operationClauses) ->
                     recurse label
                     @ recurse body
@@ -16296,7 +16389,7 @@ module SurfaceElaboration =
 
                 let binderDiagnostics =
                     if explicitParameterCount = 0 then
-                        [ makeDiagnostic DiagnosticCode.ActivePatternInvalid "An active pattern declaration must have at least one explicit binder for the scrutinee." ]
+                        [ makeDiagnostic DiagnosticCode.ActivePatternMissingScrutineeBinder "An active pattern declaration must have at least one explicit binder for the scrutinee." ]
                     else
                         []
 
@@ -16304,7 +16397,7 @@ module SurfaceElaboration =
                     scheme
                     |> Option.map (fun parsedScheme ->
                         if isMonadicType parsedScheme.Body then
-                            [ makeDiagnostic DiagnosticCode.ActivePatternInvalid "An active pattern declaration result type must not be monadic." ]
+                            [ makeDiagnostic DiagnosticCode.ActivePatternMonadicResult "An active pattern declaration result type must not be monadic." ]
                         else
                             [])
                     |> Option.defaultValue []
@@ -16697,7 +16790,7 @@ module SurfaceElaboration =
 
                     let missingPlaceDiagnostics =
                         if List.isEmpty placeBinders then
-                            [ makeDiagnostic DiagnosticCode.ProjectionDefinitionUnsupported "A projection definition must declare at least one place binder." ]
+                            [ makeDiagnostic DiagnosticCode.ProjectionMissingPlaceBinder "A projection definition must declare at least one place binder." ]
                         else
                             []
 
@@ -16710,13 +16803,13 @@ module SurfaceElaboration =
                             | Some nestedProjection ->
                                 match nestedProjection.Body with
                                 | Some(ProjectionAccessors _) ->
-                                    [ makeDiagnostic DiagnosticCode.ProjectionDefinitionUnsupported "A selector projection yield must denote a stable place, not an accessor bundle." ]
+                                    [ makeDiagnostic DiagnosticCode.ProjectionYieldInvalid "A selector projection yield must denote a stable place, not an accessor bundle." ]
                                 | _ ->
                                     []
                             | None ->
-                                [ makeDiagnostic DiagnosticCode.ProjectionDefinitionUnsupported "A selector projection yield must denote a stable place." ]
+                                [ makeDiagnostic DiagnosticCode.ProjectionYieldInvalid "A selector projection yield must denote a stable place." ]
                         | ProjectionYield _ ->
-                            [ makeDiagnostic DiagnosticCode.ProjectionDefinitionUnsupported "A selector projection yield must denote a stable place rooted in a place binder." ]
+                            [ makeDiagnostic DiagnosticCode.ProjectionYieldInvalid "A selector projection yield must denote a stable place rooted in a place binder." ]
                         | ProjectionIfThenElse(_, whenTrue, whenFalse) ->
                             selectorYieldDiagnostics whenTrue @ selectorYieldDiagnostics whenFalse
                         | ProjectionMatch(_, cases) ->
@@ -16734,7 +16827,7 @@ module SurfaceElaboration =
                                     if List.length placeBinders = 1 then
                                         []
                                     else
-                                        [ makeDiagnostic DiagnosticCode.ProjectionDefinitionUnsupported "An expanded accessor projection must declare exactly one place binder." ]
+                                        [ makeDiagnostic DiagnosticCode.ProjectionExpandedAccessorPlaceBinderMismatch "An expanded accessor projection must declare exactly one place binder." ]
 
                                 let duplicateDiagnostics =
                                     clauses
@@ -16746,7 +16839,7 @@ module SurfaceElaboration =
                                     |> List.countBy id
                                     |> List.choose (fun (kind, count) ->
                                         if count > 1 then
-                                            Some(makeDiagnostic DiagnosticCode.ProjectionDefinitionUnsupported $"Projection accessor clause '{kind}' is declared more than once.")
+                                            Some(makeDiagnostic DiagnosticCode.ProjectionAccessorClauseDuplicate $"Projection accessor clause '{kind}' is declared more than once.")
                                         else
                                             None)
 
@@ -16787,10 +16880,10 @@ module SurfaceElaboration =
                             match definition.TotalityAssertion with
                             | Some AssertTerminatesAssertion when not allowAssertTerminates ->
                                 let bindingName = definition.Name |> Option.defaultValue "<anonymous>"
-                                Some(makeDiagnostic DiagnosticCode.FrontendValidation $"Declaration '{bindingName}' uses assertTerminates/assertTotal without enabling module attribute 'allow_assert_terminates'.")
+                                Some(makeDiagnostic DiagnosticCode.AssertTerminatesRequiresModuleAttribute $"Declaration '{bindingName}' uses assertTerminates/assertTotal without enabling module attribute 'allow_assert_terminates'.")
                             | Some AssertReducibleAssertion when not allowAssertReducible ->
                                 let bindingName = definition.Name |> Option.defaultValue "<anonymous>"
-                                Some(makeDiagnostic DiagnosticCode.FrontendValidation $"Declaration '{bindingName}' uses assertReducible without enabling module attribute 'allow_assert_reducible'.")
+                                Some(makeDiagnostic DiagnosticCode.AssertReducibleRequiresModuleAttribute $"Declaration '{bindingName}' uses assertReducible without enabling module attribute 'allow_assert_reducible'.")
                             | _ ->
                                 None
                         | _ ->
@@ -17239,6 +17332,8 @@ module SurfaceElaboration =
                         | Name [ name ] ->
                             String.Equals(name, target, StringComparison.Ordinal)
                             && not (Set.contains name shadowed)
+                        | TypeSyntaxTokens _ ->
+                            false
                         | SyntaxQuote inner
                         | SyntaxSplice inner
                         | TopLevelSyntaxSplice inner
@@ -17411,6 +17506,8 @@ module SurfaceElaboration =
                         | CodeQuote inner
                         | CodeSplice inner ->
                             validateExpression localTypes inner
+                        | TypeSyntaxTokens _ ->
+                            []
                         | LocalLet(binding, value, body) ->
                             let valueType = inferExpectedType localTypes value
                             let nextLocals = extendPatternLocalsWithoutMutation localTypes valueType binding.Pattern
@@ -17576,6 +17673,8 @@ module SurfaceElaboration =
                         | KindQualifiedName _
                         | Literal _
                         | NumericLiteral _ ->
+                            []
+                        | TypeSyntaxTokens _ ->
                             []
                         | SyntaxQuote inner
                         | SyntaxSplice inner
@@ -18018,6 +18117,8 @@ module SurfaceElaboration =
                                 Name(effectName :: path)
                             | Name _ ->
                                 current
+                            | TypeSyntaxTokens _ ->
+                                current
                             | SyntaxQuote inner ->
                                 SyntaxQuote(rewrite inner)
                             | SyntaxSplice inner ->
@@ -18141,6 +18242,8 @@ module SurfaceElaboration =
                                 | TopLevelSyntaxSplice _
                                 | CodeQuote _
                                 | CodeSplice _ ->
+                                    []
+                                | TypeSyntaxTokens _ ->
                                     []
                                 | LocalLet(binding, value, body) ->
                                     let bodyForCollection =
@@ -18519,6 +18622,8 @@ module SurfaceElaboration =
                     SyntaxSplice(substitute inner)
                 | TopLevelSyntaxSplice inner ->
                     TopLevelSyntaxSplice(substitute inner)
+                | TypeSyntaxTokens _ ->
+                    current
                 | CodeQuote inner ->
                     CodeQuote(substitute inner)
                 | CodeSplice inner ->
@@ -18732,6 +18837,8 @@ module SurfaceElaboration =
                 SyntaxSplice(normalizeLocalDeclarationsWithAliases localAliases inner)
             | TopLevelSyntaxSplice inner ->
                 TopLevelSyntaxSplice(normalizeLocalDeclarationsWithAliases localAliases inner)
+            | TypeSyntaxTokens _ ->
+                expression
             | CodeQuote inner ->
                 CodeQuote(normalizeLocalDeclarationsWithAliases localAliases inner)
             | CodeSplice inner ->
@@ -18928,6 +19035,8 @@ module SurfaceElaboration =
                     inferExpressionType localTypes (Apply(Name [ suffixName ], [ NumericLiteral(SurfaceNumericLiteral.withoutSuffix literal) ]))
                 | None ->
                     Some(inferSurfaceNumericLiteralType literal)
+            | TypeSyntaxTokens tokens ->
+                TypeSignatures.parseType tokens |> Option.map (fun _ -> TypeName([ "Type" ], []))
             | SyntaxQuote inner ->
                 inferExpressionType localTypes inner
                 |> Option.map syntaxType
@@ -19685,6 +19794,8 @@ module SurfaceElaboration =
                             current
                 | Name [] ->
                     current
+                | TypeSyntaxTokens _ ->
+                    current
                 | SyntaxQuote inner ->
                     SyntaxQuote(loop inner)
                 | SyntaxSplice inner ->
@@ -20338,6 +20449,12 @@ module SurfaceElaboration =
                     KCoreDeferred(lowerExpression localTypes expression),
                     lowerDoStatements scopeLabel localTypes rest
                 )
+            | [ DoIf(condition, whenTrue, whenFalse) ] ->
+                KCoreIfThenElse(
+                    lowerExpression localTypes condition,
+                    lowerDoStatements scopeLabel localTypes whenTrue,
+                    lowerDoStatements scopeLabel localTypes whenFalse
+                )
             | DoIf(condition, whenTrue, whenFalse) :: rest ->
                 KCoreSequence(
                     KCoreIfThenElse(
@@ -20902,6 +21019,8 @@ module SurfaceElaboration =
                         tryFind shadowed body
                     | LocalScopedEffect(_, body) ->
                         tryFind shadowed body
+                    | TypeSyntaxTokens _ ->
+                        None
                     | Lambda(nestedParameters, body) ->
                         let nextShadowed =
                             if nestedParameters |> List.exists (fun parameter -> String.Equals(parameter.Name, helperName, StringComparison.Ordinal)) then
@@ -21234,6 +21353,8 @@ module SurfaceElaboration =
                     | None ->
                         tryLowerNumericLiteralForRuntime literal
                         |> Option.defaultValue (KCoreLiteral LiteralValue.Unit)
+            | TypeSyntaxTokens _ ->
+                KCoreLiteral LiteralValue.Unit
             | SyntaxQuote inner ->
                 KCoreSyntaxQuote(lowerExpressionWithExpectedType localTypes None inner)
             | SyntaxSplice inner ->
@@ -22158,6 +22279,8 @@ module SurfaceElaboration =
                     | Seal(body, _)
                     | TagTest(body, _) ->
                         findCall body
+                    | TypeSyntaxTokens _ ->
+                        None
                     | Handle(_, label, body, returnClause, operationClauses) ->
                         findCall label
                         |> Option.orElseWith (fun () -> findCall body)
@@ -22329,6 +22452,8 @@ module SurfaceElaboration =
                         [ fieldName ],
                         []
                     )
+            | TypeSyntaxTokens _ ->
+                expression
             | LocalLet(binding, value, body) ->
                 LocalLet(binding, rewrite value, rewrite body)
             | LocalSignature(signature, body) ->

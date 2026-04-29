@@ -422,7 +422,7 @@ let ``lexer reports malformed prefixed numeric literals directly`` () =
 
     let lexicalDiagnostics =
         lexed.Diagnostics
-        |> List.filter (fun diagnostic -> diagnostic.Code = DiagnosticCode.LexicalError)
+        |> List.filter (fun diagnostic -> diagnostic.Code = DiagnosticCode.MalformedNumericLiteral)
 
     Assert.Equal(3, lexicalDiagnostics.Length)
 
@@ -528,7 +528,7 @@ let ``compilation surfaces malformed prefixed numeric literals at the lexical bo
             ]
 
     Assert.True(workspace.HasErrors, "Expected malformed prefixed numeric literals to be rejected.")
-    Assert.Contains(workspace.Diagnostics, fun diagnostic -> diagnostic.Code = DiagnosticCode.LexicalError)
+    Assert.Contains(workspace.Diagnostics, fun diagnostic -> diagnostic.Code = DiagnosticCode.MalformedNumericLiteral)
 
 [<Fact>]
 let ``lexer recognizes raw and multiline string literal spellings`` () =
@@ -811,7 +811,7 @@ let ``parser rejects duplicate unhide and clarify modifiers within one import it
 
     Assert.Empty(lexed.Diagnostics)
     Assert.Equal<DiagnosticCode list>(
-        [ DiagnosticCode.ParseError; DiagnosticCode.ParseError ],
+        [ DiagnosticCode.ExpectedSyntaxToken; DiagnosticCode.ExpectedSyntaxToken ],
         parsed.Diagnostics |> List.map (fun diagnostic -> diagnostic.Code)
     )
     Assert.Contains(parsed.Diagnostics, fun diagnostic -> diagnostic.Message.Contains("Duplicate 'unhide'"))
@@ -892,7 +892,12 @@ let ``source compilation rejects unhide imports in package mode`` () =
             ]
 
     Assert.True(workspace.HasErrors, "Expected package mode to reject unhide imports.")
-    Assert.Contains(workspace.Diagnostics, fun diagnostic -> diagnostic.Message.Contains("allow_unhiding"))
+    Assert.Contains(
+        workspace.Diagnostics,
+        fun diagnostic ->
+            diagnostic.Code = DiagnosticCode.ImportUnhideRequiresBuildSetting
+            && diagnostic.Message.Contains("allow_unhiding", StringComparison.Ordinal)
+    )
 
 [<Fact>]
 let ``source compilation keeps imported opaque type aliases abstract unless clarified`` () =
@@ -1015,7 +1020,12 @@ let ``source compilation rejects clarify imports in package mode`` () =
             ]
 
     Assert.True(workspace.HasErrors, "Expected package mode to reject clarify imports.")
-    Assert.Contains(workspace.Diagnostics, fun diagnostic -> diagnostic.Message.Contains("allow_clarify"))
+    Assert.Contains(
+        workspace.Diagnostics,
+        fun diagnostic ->
+            diagnostic.Code = DiagnosticCode.ImportClarifyRequiresBuildSetting
+            && diagnostic.Message.Contains("allow_clarify", StringComparison.Ordinal)
+    )
 
 [<Fact>]
 let ``source compilation rejects re exporting items imported via unhide or clarify`` () =
@@ -1041,7 +1051,12 @@ let ``source compilation rejects re exporting items imported via unhide or clari
             ]
 
     Assert.True(workspace.HasErrors, "Expected re-export of unhide/clarify imports to be rejected.")
-    Assert.Contains(workspace.Diagnostics, fun diagnostic -> diagnostic.Message.Contains("must not be re-exported"))
+    Assert.Contains(
+        workspace.Diagnostics,
+        fun diagnostic ->
+            diagnostic.Code = DiagnosticCode.ImportItemModifierReexportForbidden
+            && diagnostic.Message.Contains("must not be re-exported", StringComparison.Ordinal)
+    )
 
 [<Fact>]
 let ``parser rejects aliases on constructor-bundle import items`` () =
@@ -1058,7 +1073,7 @@ let ``parser rejects aliases on constructor-bundle import items`` () =
             sourceText
 
     Assert.Empty(lexed.Diagnostics)
-    Assert.Equal<DiagnosticCode list>([ DiagnosticCode.ParseError ], parsed.Diagnostics |> List.map (fun diagnostic -> diagnostic.Code))
+    Assert.Equal<DiagnosticCode list>([ DiagnosticCode.ExpectedSyntaxToken ], parsed.Diagnostics |> List.map (fun diagnostic -> diagnostic.Code))
     Assert.Contains(parsed.Diagnostics, fun diagnostic -> diagnostic.Message.Contains("ctorAll may not be combined with an alias"))
 
 [<Fact>]
@@ -1077,7 +1092,7 @@ let ``parser rejects malformed type aliases with trailing operator garbage`` () 
             sourceText
 
     Assert.Empty(lexed.Diagnostics)
-    Assert.Equal<DiagnosticCode list>([ DiagnosticCode.ParseError ], parsed.Diagnostics |> List.map (fun diagnostic -> diagnostic.Code))
+    Assert.Equal<DiagnosticCode list>([ DiagnosticCode.ExpectedSyntaxToken ], parsed.Diagnostics |> List.map (fun diagnostic -> diagnostic.Code))
     Assert.Contains(parsed.Diagnostics, fun diagnostic -> diagnostic.Message.Contains("type alias body"))
 
 [<Fact>]
@@ -1100,7 +1115,7 @@ let ``parser rejects malformed trait members that are not signatures or defaults
 
     Assert.Empty(lexed.Diagnostics)
     Assert.Equal<DiagnosticCode list>(
-        [ DiagnosticCode.ParseError; DiagnosticCode.ParseError ],
+        [ DiagnosticCode.ExpectedSyntaxToken; DiagnosticCode.ExpectedSyntaxToken ],
         parsed.Diagnostics |> List.map (fun diagnostic -> diagnostic.Code)
     )
     Assert.Contains(parsed.Diagnostics, fun diagnostic -> diagnostic.Message.Contains("type alias body"))
@@ -1165,7 +1180,7 @@ let ``parser rejects unterminated data constructors before the next declaration`
 
     Assert.Empty(lexed.Diagnostics)
     Assert.NotEmpty(parsed.Diagnostics)
-    Assert.All(parsed.Diagnostics, fun diagnostic -> Assert.Equal(DiagnosticCode.ParseError, diagnostic.Code))
+    Assert.All(parsed.Diagnostics, fun diagnostic -> Assert.Equal(DiagnosticCode.ExpectedSyntaxToken, diagnostic.Code))
     Assert.Contains(parsed.Diagnostics, fun diagnostic -> diagnostic.Message.Contains("Expected ')'"))
 
 [<Fact>]
@@ -1188,7 +1203,7 @@ let ``parser rejects malformed top level signatures with stray block bodies`` ()
             sourceText
 
     Assert.Empty(lexed.Diagnostics)
-    Assert.Equal<DiagnosticCode list>([ DiagnosticCode.ParseError ], parsed.Diagnostics |> List.map (fun diagnostic -> diagnostic.Code))
+    Assert.Equal<DiagnosticCode list>([ DiagnosticCode.ExpectedSyntaxToken ], parsed.Diagnostics |> List.map (fun diagnostic -> diagnostic.Code))
     Assert.Contains(parsed.Diagnostics, fun diagnostic -> diagnostic.Message.Contains("valid signature type"))
 
 [<Fact>]
@@ -1284,7 +1299,7 @@ let ``parser rejects malformed URL pins`` () =
             sourceText
 
     Assert.Empty(lexed.Diagnostics)
-    Assert.Equal<DiagnosticCode list>([ DiagnosticCode.ParseError ], parsed.Diagnostics |> List.map (fun diagnostic -> diagnostic.Code))
+    Assert.Equal<DiagnosticCode list>([ DiagnosticCode.ExpectedSyntaxToken ], parsed.Diagnostics |> List.map (fun diagnostic -> diagnostic.Code))
     Assert.Contains(parsed.Diagnostics, fun diagnostic -> diagnostic.Message.Contains("sha256", StringComparison.Ordinal))
 
 [<Fact>]
@@ -1992,7 +2007,7 @@ let ``parser reports a single parse error for an explicit brace after layout-int
             sourceText
 
     Assert.Empty(lexed.Diagnostics)
-    Assert.Equal<DiagnosticCode list>([ DiagnosticCode.ParseError ], parsed.Diagnostics |> List.map (fun diagnostic -> diagnostic.Code))
+    Assert.Equal<DiagnosticCode list>([ DiagnosticCode.ExpectedSyntaxToken ], parsed.Diagnostics |> List.map (fun diagnostic -> diagnostic.Code))
 
 [<Fact>]
 let ``parser keeps a multiline lambda body inside an implicit pure block suite`` () =
@@ -2668,8 +2683,8 @@ let ``source compilation rejects unterminated type alias bodies`` () =
 
     Assert.True(unterminatedBracketWorkspace.HasErrors, "Expected an unterminated type alias body to produce a parse diagnostic.")
     Assert.True(malformedConstructorWorkspace.HasErrors, "Expected a malformed type alias body to produce a parse diagnostic.")
-    Assert.Contains(unterminatedBracketWorkspace.Diagnostics, fun diagnostic -> diagnostic.Code = DiagnosticCode.ParseError)
-    Assert.Contains(malformedConstructorWorkspace.Diagnostics, fun diagnostic -> diagnostic.Code = DiagnosticCode.ParseError)
+    Assert.Contains(unterminatedBracketWorkspace.Diagnostics, fun diagnostic -> diagnostic.Code = DiagnosticCode.ExpectedSyntaxToken)
+    Assert.Contains(malformedConstructorWorkspace.Diagnostics, fun diagnostic -> diagnostic.Code = DiagnosticCode.ExpectedSyntaxToken)
 
 [<Fact>]
 let ``parser gives built in safe navigation and elvis their spec precedence`` () =
@@ -2941,7 +2956,7 @@ let ``imported fixities apply only from the import declaration onward`` () =
         |> Option.defaultWith (fun () -> failwith "Expected a main module document.")
 
     Assert.True(
-        mainDocument.Diagnostics |> List.exists (fun diagnostic -> diagnostic.Code = DiagnosticCode.ParseError),
+        mainDocument.Diagnostics |> List.exists (fun diagnostic -> diagnostic.Code = DiagnosticCode.ExpectedSyntaxToken),
         sprintf "Expected an early parse error before the import brought the fixity into scope, got %A" mainDocument.Diagnostics
     )
 
@@ -3278,7 +3293,7 @@ let ``frontend preserves totality assertions on let declarations and gates unsaf
     Assert.Contains(
         blockedTerminatesWorkspace.Diagnostics,
         fun diagnostic ->
-            diagnostic.Code = DiagnosticCode.FrontendValidation
+            diagnostic.Code = DiagnosticCode.AssertTerminatesRequiresModuleAttribute
             && diagnostic.Message.Contains("allow_assert_terminates", StringComparison.Ordinal)
     )
 
@@ -3298,8 +3313,56 @@ let ``frontend preserves totality assertions on let declarations and gates unsaf
     Assert.Contains(
         blockedReducibleWorkspace.Diagnostics,
         fun diagnostic ->
-            diagnostic.Code = DiagnosticCode.FrontendValidation
+            diagnostic.Code = DiagnosticCode.AssertReducibleRequiresModuleAttribute
             && diagnostic.Message.Contains("allow_assert_reducible", StringComparison.Ordinal)
+    )
+
+[<Fact>]
+let ``macro failElab defaults to elaboration failed diagnostics`` () =
+    let workspace =
+        compileInMemoryWorkspaceWithPackageMode
+            "memory-fail-elab-default-code-root"
+            false
+            [
+                "main.kp",
+                [
+                    "module main"
+                    "broken : Unit"
+                    "let broken = $(failElab \"macro rejected this declaration\")"
+                ]
+                |> String.concat "\n"
+            ]
+
+    Assert.True(workspace.HasErrors, "Expected failElab to surface a dedicated elaboration failure diagnostic.")
+    Assert.Contains(
+        workspace.Diagnostics,
+        fun diagnostic ->
+            diagnostic.Code = DiagnosticCode.ElaborationFailed
+            && diagnostic.Message.Contains("macro rejected this declaration", StringComparison.Ordinal)
+    )
+
+[<Fact>]
+let ``source compilation rejects active patterns without an explicit scrutinee binder`` () =
+    let workspace =
+        compileInMemoryWorkspaceWithPackageMode
+            "memory-active-pattern-missing-scrutinee-root"
+            false
+            [
+                "main.kp",
+                [
+                    "module main"
+                    "pattern Bad : Option Int ="
+                    "    Some 1"
+                    "bad : Int"
+                    "let bad = 0"
+                ]
+                |> String.concat "\n"
+            ]
+
+    Assert.True(workspace.HasErrors, "Expected active pattern declarations without an explicit scrutinee binder to be rejected.")
+    Assert.Contains(
+        workspace.Diagnostics,
+        fun diagnostic -> diagnostic.Code = DiagnosticCode.ActivePatternMissingScrutineeBinder
     )
 
 [<Fact>]

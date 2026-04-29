@@ -8,9 +8,23 @@ type DiagnosticSeverity =
 type DiagnosticCode =
     | SourceInfo
     | SourceWarning
-    | LexicalError
-    | ParseError
-    | FrontendValidation
+    | TabCharacterNotPermitted
+    | UnrecognizedCharacter
+    | MalformedNumericLiteral
+    | UnterminatedStringInterpolation
+    | ExpectedSyntaxToken
+    | ExpectedClosingDelimiter
+    | ExpectedIndentedBlock
+    | InvalidTypeSyntax
+    | UnsupportedSyntax
+    | UnexpectedTrailingSyntax
+    | ModifierNotApplicable
+    | ElaborationFailed
+    | ImportUnhideRequiresBuildSetting
+    | ImportClarifyRequiresBuildSetting
+    | ImportItemModifierReexportForbidden
+    | AssertTerminatesRequiresModuleAttribute
+    | AssertReducibleRequiresModuleAttribute
     | CheckpointVerification
     | TargetCheckpoint
     | ExpectAmbiguous
@@ -32,8 +46,22 @@ type DiagnosticCode =
     | ModulePathMismatch
     | ModuleCaseFoldCollision
     | StaticObjectUnresolved
-    | ActivePatternInvalid
-    | ProjectionDefinitionUnsupported
+    | PatternHeadNotConstructorOrActivePattern
+    | ActivePatternLinearityViolation
+    | ActivePatternMatchResultNotAllowedInPlainLetQuestion
+    | ActivePatternMissingScrutineeBinder
+    | ActivePatternMonadicResult
+    | ProjectionCapabilityRequired
+    | ProjectionUpdateTargetUnsupported
+    | ProjectionRootInvalid
+    | ProjectionDescriptorRootMissing
+    | ProjectionRootsPackMismatch
+    | ProjectionDescriptorRootsLiteralRequired
+    | ProjectionDescriptorValueExpected
+    | ProjectionMissingPlaceBinder
+    | ProjectionYieldInvalid
+    | ProjectionExpandedAccessorPlaceBinderMismatch
+    | ProjectionAccessorClauseDuplicate
     | DuplicateDeclaration
     | DuplicatePatternBinder
     | TraitInstanceAmbiguous
@@ -44,6 +72,14 @@ type DiagnosticCode =
     | HandlerClauseArityMismatch
     | HandlerClauseUnexpected
     | EffectResumptionQuantityBorrowed
+    | DerivingShapeNotData
+    | DerivingShapeNotClosedRecord
+    | DerivingShapeOpaqueRepresentation
+    | DerivingShapeUnsupportedType
+    | DerivingShapeBadConstructorArguments
+    | DerivingShapeBadRecordArguments
+    | DerivingShapeMissingRuntimeFieldInstance
+    | DerivingShapeDeclarationEffect
     | NameAmbiguous
     | NameUnresolved
     | RecursiveTypeAlias
@@ -102,9 +138,23 @@ module DiagnosticCode =
         match code with
         | SourceInfo -> "I_SOURCE"
         | SourceWarning -> "W_SOURCE"
-        | LexicalError -> "E_LEXICAL"
-        | ParseError -> "E_PARSE"
-        | FrontendValidation -> "E_FRONTEND_VALIDATION"
+        | TabCharacterNotPermitted -> "E_TAB_CHARACTER_NOT_PERMITTED"
+        | UnrecognizedCharacter -> "E_UNRECOGNIZED_CHARACTER"
+        | MalformedNumericLiteral -> "E_MALFORMED_NUMERIC_LITERAL"
+        | UnterminatedStringInterpolation -> "E_UNTERMINATED_STRING_INTERPOLATION"
+        | ExpectedSyntaxToken -> "E_EXPECTED_SYNTAX_TOKEN"
+        | ExpectedClosingDelimiter -> "E_EXPECTED_CLOSING_DELIMITER"
+        | ExpectedIndentedBlock -> "E_EXPECTED_INDENTED_BLOCK"
+        | InvalidTypeSyntax -> "E_INVALID_TYPE_SYNTAX"
+        | UnsupportedSyntax -> "E_UNSUPPORTED_SYNTAX"
+        | UnexpectedTrailingSyntax -> "E_UNEXPECTED_TRAILING_SYNTAX"
+        | ModifierNotApplicable -> "E_MODIFIER_NOT_APPLICABLE"
+        | ElaborationFailed -> "E_ELABORATION_FAILED"
+        | ImportUnhideRequiresBuildSetting -> "E_IMPORT_UNHIDE_REQUIRES_BUILD_SETTING"
+        | ImportClarifyRequiresBuildSetting -> "E_IMPORT_CLARIFY_REQUIRES_BUILD_SETTING"
+        | ImportItemModifierReexportForbidden -> "E_IMPORT_ITEM_MODIFIER_REEXPORT_FORBIDDEN"
+        | AssertTerminatesRequiresModuleAttribute -> "E_ASSERT_TERMINATES_REQUIRES_MODULE_ATTRIBUTE"
+        | AssertReducibleRequiresModuleAttribute -> "E_ASSERT_REDUCIBLE_REQUIRES_MODULE_ATTRIBUTE"
         | CheckpointVerification -> "E_CHECKPOINT_VERIFICATION"
         | TargetCheckpoint -> "E_TARGET_CHECKPOINT"
         | ExpectAmbiguous -> "E_EXPECT_AMBIGUOUS"
@@ -126,8 +176,22 @@ module DiagnosticCode =
         | ModulePathMismatch -> "E_MODULE_PATH_MISMATCH"
         | ModuleCaseFoldCollision -> "E_MODULE_CASE_FOLD_COLLISION"
         | StaticObjectUnresolved -> "E_STATIC_OBJECT_UNRESOLVED"
-        | ActivePatternInvalid -> "E_ACTIVE_PATTERN_INVALID"
-        | ProjectionDefinitionUnsupported -> "E_PROJECTION_DEFINITION_UNSUPPORTED"
+        | PatternHeadNotConstructorOrActivePattern -> "E_PATTERN_HEAD_NOT_CONSTRUCTOR_OR_ACTIVE_PATTERN"
+        | ActivePatternLinearityViolation -> "E_ACTIVE_PATTERN_LINEARITY_VIOLATION"
+        | ActivePatternMatchResultNotAllowedInPlainLetQuestion -> "E_ACTIVE_PATTERN_MATCH_RESULT_NOT_ALLOWED_IN_PLAIN_LET_QUESTION"
+        | ActivePatternMissingScrutineeBinder -> "E_ACTIVE_PATTERN_MISSING_SCRUTINEE_BINDER"
+        | ActivePatternMonadicResult -> "E_ACTIVE_PATTERN_MONADIC_RESULT"
+        | ProjectionCapabilityRequired -> "E_PROJECTION_CAPABILITY_REQUIRED"
+        | ProjectionUpdateTargetUnsupported -> "E_PROJECTION_UPDATE_TARGET_UNSUPPORTED"
+        | ProjectionRootInvalid -> "E_PROJECTION_ROOT_INVALID"
+        | ProjectionDescriptorRootMissing -> "E_PROJECTION_DESCRIPTOR_ROOT_MISSING"
+        | ProjectionRootsPackMismatch -> "E_PROJECTION_ROOTS_PACK_MISMATCH"
+        | ProjectionDescriptorRootsLiteralRequired -> "E_PROJECTION_DESCRIPTOR_ROOTS_LITERAL_REQUIRED"
+        | ProjectionDescriptorValueExpected -> "E_PROJECTION_DESCRIPTOR_VALUE_EXPECTED"
+        | ProjectionMissingPlaceBinder -> "E_PROJECTION_MISSING_PLACE_BINDER"
+        | ProjectionYieldInvalid -> "E_PROJECTION_YIELD_INVALID"
+        | ProjectionExpandedAccessorPlaceBinderMismatch -> "E_PROJECTION_EXPANDED_ACCESSOR_PLACE_BINDER_MISMATCH"
+        | ProjectionAccessorClauseDuplicate -> "E_PROJECTION_ACCESSOR_CLAUSE_DUPLICATE"
         | DuplicateDeclaration -> "E_DUPLICATE_DECLARATION"
         | DuplicatePatternBinder -> "E_DUPLICATE_PATTERN_BINDER"
         | TraitInstanceAmbiguous -> "E_TRAIT_INSTANCE_AMBIGUOUS"
@@ -138,6 +202,14 @@ module DiagnosticCode =
         | HandlerClauseArityMismatch -> "E_HANDLER_CLAUSE_ARITY_MISMATCH"
         | HandlerClauseUnexpected -> "E_HANDLER_CLAUSE_UNEXPECTED"
         | EffectResumptionQuantityBorrowed -> "E_EFFECT_RESUMPTION_QUANTITY_BORROWED"
+        | DerivingShapeNotData -> "KAPPA_DERIVING_SHAPE_NOT_DATA"
+        | DerivingShapeNotClosedRecord -> "KAPPA_DERIVING_SHAPE_NOT_CLOSED_RECORD"
+        | DerivingShapeOpaqueRepresentation -> "KAPPA_DERIVING_SHAPE_OPAQUE_REPRESENTATION"
+        | DerivingShapeUnsupportedType -> "KAPPA_DERIVING_SHAPE_UNSUPPORTED_TYPE"
+        | DerivingShapeBadConstructorArguments -> "KAPPA_DERIVING_SHAPE_BAD_CONSTRUCTOR_ARGUMENTS"
+        | DerivingShapeBadRecordArguments -> "KAPPA_DERIVING_SHAPE_BAD_RECORD_ARGUMENTS"
+        | DerivingShapeMissingRuntimeFieldInstance -> "KAPPA_DERIVING_SHAPE_MISSING_RUNTIME_FIELD_INSTANCE"
+        | DerivingShapeDeclarationEffect -> "KAPPA_DERIVING_SHAPE_DECLARATION_EFFECT"
         | NameAmbiguous -> "E_NAME_AMBIGUOUS"
         | NameUnresolved -> "E_NAME_UNRESOLVED"
         | RecursiveTypeAlias -> "E_RECURSIVE_TYPE_ALIAS"
@@ -195,9 +267,23 @@ module DiagnosticCode =
         match identifier.Trim() with
         | "I_SOURCE" -> Some SourceInfo
         | "W_SOURCE" -> Some SourceWarning
-        | "E_LEXICAL" -> Some LexicalError
-        | "E_PARSE" -> Some ParseError
-        | "E_FRONTEND_VALIDATION" -> Some FrontendValidation
+        | "E_TAB_CHARACTER_NOT_PERMITTED" -> Some TabCharacterNotPermitted
+        | "E_UNRECOGNIZED_CHARACTER" -> Some UnrecognizedCharacter
+        | "E_MALFORMED_NUMERIC_LITERAL" -> Some MalformedNumericLiteral
+        | "E_UNTERMINATED_STRING_INTERPOLATION" -> Some UnterminatedStringInterpolation
+        | "E_EXPECTED_SYNTAX_TOKEN" -> Some ExpectedSyntaxToken
+        | "E_EXPECTED_CLOSING_DELIMITER" -> Some ExpectedClosingDelimiter
+        | "E_EXPECTED_INDENTED_BLOCK" -> Some ExpectedIndentedBlock
+        | "E_INVALID_TYPE_SYNTAX" -> Some InvalidTypeSyntax
+        | "E_UNSUPPORTED_SYNTAX" -> Some UnsupportedSyntax
+        | "E_UNEXPECTED_TRAILING_SYNTAX" -> Some UnexpectedTrailingSyntax
+        | "E_MODIFIER_NOT_APPLICABLE" -> Some ModifierNotApplicable
+        | "E_ELABORATION_FAILED" -> Some ElaborationFailed
+        | "E_IMPORT_UNHIDE_REQUIRES_BUILD_SETTING" -> Some ImportUnhideRequiresBuildSetting
+        | "E_IMPORT_CLARIFY_REQUIRES_BUILD_SETTING" -> Some ImportClarifyRequiresBuildSetting
+        | "E_IMPORT_ITEM_MODIFIER_REEXPORT_FORBIDDEN" -> Some ImportItemModifierReexportForbidden
+        | "E_ASSERT_TERMINATES_REQUIRES_MODULE_ATTRIBUTE" -> Some AssertTerminatesRequiresModuleAttribute
+        | "E_ASSERT_REDUCIBLE_REQUIRES_MODULE_ATTRIBUTE" -> Some AssertReducibleRequiresModuleAttribute
         | "E_CHECKPOINT_VERIFICATION" -> Some CheckpointVerification
         | "E_TARGET_CHECKPOINT" -> Some TargetCheckpoint
         | "E_EXPECT_AMBIGUOUS" -> Some ExpectAmbiguous
@@ -219,8 +305,22 @@ module DiagnosticCode =
         | "E_MODULE_PATH_MISMATCH" -> Some ModulePathMismatch
         | "E_MODULE_CASE_FOLD_COLLISION" -> Some ModuleCaseFoldCollision
         | "E_STATIC_OBJECT_UNRESOLVED" -> Some StaticObjectUnresolved
-        | "E_ACTIVE_PATTERN_INVALID" -> Some ActivePatternInvalid
-        | "E_PROJECTION_DEFINITION_UNSUPPORTED" -> Some ProjectionDefinitionUnsupported
+        | "E_PATTERN_HEAD_NOT_CONSTRUCTOR_OR_ACTIVE_PATTERN" -> Some PatternHeadNotConstructorOrActivePattern
+        | "E_ACTIVE_PATTERN_LINEARITY_VIOLATION" -> Some ActivePatternLinearityViolation
+        | "E_ACTIVE_PATTERN_MATCH_RESULT_NOT_ALLOWED_IN_PLAIN_LET_QUESTION" -> Some ActivePatternMatchResultNotAllowedInPlainLetQuestion
+        | "E_ACTIVE_PATTERN_MISSING_SCRUTINEE_BINDER" -> Some ActivePatternMissingScrutineeBinder
+        | "E_ACTIVE_PATTERN_MONADIC_RESULT" -> Some ActivePatternMonadicResult
+        | "E_PROJECTION_CAPABILITY_REQUIRED" -> Some ProjectionCapabilityRequired
+        | "E_PROJECTION_UPDATE_TARGET_UNSUPPORTED" -> Some ProjectionUpdateTargetUnsupported
+        | "E_PROJECTION_ROOT_INVALID" -> Some ProjectionRootInvalid
+        | "E_PROJECTION_DESCRIPTOR_ROOT_MISSING" -> Some ProjectionDescriptorRootMissing
+        | "E_PROJECTION_ROOTS_PACK_MISMATCH" -> Some ProjectionRootsPackMismatch
+        | "E_PROJECTION_DESCRIPTOR_ROOTS_LITERAL_REQUIRED" -> Some ProjectionDescriptorRootsLiteralRequired
+        | "E_PROJECTION_DESCRIPTOR_VALUE_EXPECTED" -> Some ProjectionDescriptorValueExpected
+        | "E_PROJECTION_MISSING_PLACE_BINDER" -> Some ProjectionMissingPlaceBinder
+        | "E_PROJECTION_YIELD_INVALID" -> Some ProjectionYieldInvalid
+        | "E_PROJECTION_EXPANDED_ACCESSOR_PLACE_BINDER_MISMATCH" -> Some ProjectionExpandedAccessorPlaceBinderMismatch
+        | "E_PROJECTION_ACCESSOR_CLAUSE_DUPLICATE" -> Some ProjectionAccessorClauseDuplicate
         | "E_DUPLICATE_DECLARATION" -> Some DuplicateDeclaration
         | "E_DUPLICATE_PATTERN_BINDER" -> Some DuplicatePatternBinder
         | "E_TRAIT_INSTANCE_AMBIGUOUS" -> Some TraitInstanceAmbiguous
@@ -231,6 +331,14 @@ module DiagnosticCode =
         | "E_HANDLER_CLAUSE_ARITY_MISMATCH" -> Some HandlerClauseArityMismatch
         | "E_HANDLER_CLAUSE_UNEXPECTED" -> Some HandlerClauseUnexpected
         | "E_EFFECT_RESUMPTION_QUANTITY_BORROWED" -> Some EffectResumptionQuantityBorrowed
+        | "KAPPA_DERIVING_SHAPE_NOT_DATA" -> Some DerivingShapeNotData
+        | "KAPPA_DERIVING_SHAPE_NOT_CLOSED_RECORD" -> Some DerivingShapeNotClosedRecord
+        | "KAPPA_DERIVING_SHAPE_OPAQUE_REPRESENTATION" -> Some DerivingShapeOpaqueRepresentation
+        | "KAPPA_DERIVING_SHAPE_UNSUPPORTED_TYPE" -> Some DerivingShapeUnsupportedType
+        | "KAPPA_DERIVING_SHAPE_BAD_CONSTRUCTOR_ARGUMENTS" -> Some DerivingShapeBadConstructorArguments
+        | "KAPPA_DERIVING_SHAPE_BAD_RECORD_ARGUMENTS" -> Some DerivingShapeBadRecordArguments
+        | "KAPPA_DERIVING_SHAPE_MISSING_RUNTIME_FIELD_INSTANCE" -> Some DerivingShapeMissingRuntimeFieldInstance
+        | "KAPPA_DERIVING_SHAPE_DECLARATION_EFFECT" -> Some DerivingShapeDeclarationEffect
         | "E_NAME_AMBIGUOUS" -> Some NameAmbiguous
         | "E_NAME_UNRESOLVED" -> Some NameUnresolved
         | "E_RECURSIVE_TYPE_ALIAS" -> Some RecursiveTypeAlias
@@ -289,10 +397,40 @@ module DiagnosticCode =
 
     let tryGetExplanation code =
         match code with
-        | LexicalError ->
-            Some "The source text contains a token or character sequence that is not valid Kappa syntax."
-        | ParseError ->
-            Some "The token stream is well-formed lexically, but it does not match the grammar expected at that source position."
+        | TabCharacterNotPermitted ->
+            Some "Tab characters are not permitted at this lexical position. Kappa source text must use the implementation's accepted space-based layout rules."
+        | UnrecognizedCharacter ->
+            Some "The source text contains a character that does not begin any valid Kappa token at this lexical position."
+        | MalformedNumericLiteral ->
+            Some "A numeric literal prefix, digit sequence, separator, or suffix is lexically malformed before typing is considered."
+        | UnterminatedStringInterpolation ->
+            Some "A string interpolation opened an embedded expression but reached the end of the containing source span before a matching closing brace."
+        | ExpectedSyntaxToken ->
+            Some "The parser reached a position where the grammar required a specific token or syntactic form that was not present."
+        | ExpectedClosingDelimiter ->
+            Some "An opening syntactic delimiter was not closed by the matching closing delimiter required by the grammar."
+        | ExpectedIndentedBlock ->
+            Some "The grammar required an indented block or a matching dedent boundary at this source position."
+        | InvalidTypeSyntax ->
+            Some "A region that is grammatically reserved for type syntax does not contain a well-formed type expression."
+        | UnsupportedSyntax ->
+            Some "The written token sequence is syntactically recognizable but not an admitted Kappa surface form at this position."
+        | UnexpectedTrailingSyntax ->
+            Some "A syntactic form parsed successfully, but extra tokens remained where the grammar requires the form to end."
+        | ModifierNotApplicable ->
+            Some "A source modifier or assertion was attached to a declaration kind that does not admit that modifier."
+        | ElaborationFailed ->
+            Some "Elaboration-time evaluation rejected the program or macro expansion without a more specific declared diagnostic code."
+        | ImportUnhideRequiresBuildSetting ->
+            Some "The import item uses the unhide escape hatch, but the current build configuration does not enable allow_unhiding for this compilation mode."
+        | ImportClarifyRequiresBuildSetting ->
+            Some "The import item uses the clarify escape hatch, but the current build configuration does not enable allow_clarify for this compilation mode."
+        | ImportItemModifierReexportForbidden ->
+            Some "Imports that use unhide or clarify are local escape hatches and must not be re-exported into another module's public surface."
+        | AssertTerminatesRequiresModuleAttribute ->
+            Some "assertTerminates and assertTotal are admitted only when the declaring module explicitly enables allow_assert_terminates."
+        | AssertReducibleRequiresModuleAttribute ->
+            Some "assertReducible is admitted only when the declaring module explicitly enables allow_assert_reducible."
         | ImportCycle ->
             Some "Imports must form an acyclic module dependency graph. Each module in the reported cycle depends, directly or through fragments, on the next module in the cycle."
         | ImportAmbiguous ->
@@ -325,6 +463,38 @@ module DiagnosticCode =
             Some "Top-level @Ident module attributes are only valid as the leading prefix of a module header."
         | ModuleCaseFoldCollision ->
             Some "Two or more source files in the same compilation unit produce module names that are equal after lowercase-ASCII case folding but differ in case. The collision must be rejected and all participating files identified."
+        | PatternHeadNotConstructorOrActivePattern ->
+            Some "A pattern head must resolve to a constructor or an active pattern, not to an ordinary term binding."
+        | ActivePatternLinearityViolation ->
+            Some "A refutable active-pattern use must not consume its scrutinee linearly unless the language form explicitly accounts for the residual case."
+        | ActivePatternMatchResultNotAllowedInPlainLetQuestion ->
+            Some "Plain let? destructuring admits Option-style active patterns, but not Match-returning active patterns that carry explicit miss residue."
+        | ActivePatternMissingScrutineeBinder ->
+            Some "An active pattern declaration must bind at least one explicit scrutinee parameter."
+        | ActivePatternMonadicResult ->
+            Some "An active pattern declaration result type must be a supported pattern result shape, not a general monadic computation."
+        | ProjectionCapabilityRequired ->
+            Some "This projection or accessor use requires a declared projection capability such as get, set, sink, or inout at the use site."
+        | ProjectionUpdateTargetUnsupported ->
+            Some "Projection-section update syntax can target only a selector projection or an accessor projection that provides update capability."
+        | ProjectionRootInvalid ->
+            Some "Projection roots must be stable places or selector-computed places whose roots are themselves stable places."
+        | ProjectionDescriptorRootMissing ->
+            Some "A projector descriptor application must still supply at least one root argument after elaboration."
+        | ProjectionRootsPackMismatch ->
+            Some "A projector descriptor roots pack must provide exactly the declared projector root fields, with matching names and no omissions."
+        | ProjectionDescriptorRootsLiteralRequired ->
+            Some "A multi-root projector descriptor application must receive its roots through an explicit record-literal roots pack."
+        | ProjectionDescriptorValueExpected ->
+            Some "This position expects a projector descriptor value, but the expression has already been fully applied and therefore denotes the projected focus instead."
+        | ProjectionMissingPlaceBinder ->
+            Some "A projection declaration must introduce at least one place binder."
+        | ProjectionYieldInvalid ->
+            Some "A selector projection yield must denote a stable place rooted in one of the projection's declared place binders."
+        | ProjectionExpandedAccessorPlaceBinderMismatch ->
+            Some "An expanded accessor projection declaration must bind exactly one place parameter."
+        | ProjectionAccessorClauseDuplicate ->
+            Some "An expanded accessor projection must not declare the same accessor clause kind more than once."
         | HandlerEffectRowMismatch ->
             Some "A handler can eliminate only an Eff computation whose handled label appears in the handled effect row."
         | HandlerClauseMissing ->
@@ -337,6 +507,22 @@ module DiagnosticCode =
             Some "A handler clause names an operation that is not declared by the handled effect interface."
         | EffectResumptionQuantityBorrowed ->
             Some "Resumption quantities describe the handler-bound resumption value itself. Borrowed resumption values and borrowed resumption payloads are not part of the language."
+        | DerivingShapeNotData ->
+            Some "The requested derivation-shape ADT inspection target does not elaborate to a visible data representation at the splice site."
+        | DerivingShapeNotClosedRecord ->
+            Some "The requested derivation-shape record inspection target does not elaborate to a visible closed record type at the splice site."
+        | DerivingShapeOpaqueRepresentation ->
+            Some "A data or record representation exists, but ordinary visibility or opacity rules do not make it inspectable at this elaboration site."
+        | DerivingShapeUnsupportedType ->
+            Some "The requested derivation-shape target is well-typed but outside the implementation's currently supported Phase 0 reflection forms."
+        | DerivingShapeBadConstructorArguments ->
+            Some "The supplied derivation-shape constructor arguments do not match the target constructor's required fields."
+        | DerivingShapeBadRecordArguments ->
+            Some "The supplied derivation-shape record arguments do not match the target record's required fields."
+        | DerivingShapeMissingRuntimeFieldInstance ->
+            Some "A required runtime-relevant field constraint could not be solved by ordinary implicit resolution at the splice site."
+        | DerivingShapeDeclarationEffect ->
+            Some "Phase 0 derivation-shape helpers must not manufacture or publish declarations as an elaboration-time side effect."
         | UnicodeInvalidScalarLiteral ->
             Some "A Unicode scalar literal must decode to exactly one valid Unicode scalar value and must not contain surrogate or out-of-range code points."
         | UnicodeInvalidGraphemeLiteral ->

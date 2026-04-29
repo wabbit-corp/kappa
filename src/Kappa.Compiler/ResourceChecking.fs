@@ -2593,7 +2593,7 @@ module ResourceChecking =
 
     let private addProjectionCapabilityDiagnostic (document: ParsedDocument) capability expression state =
         addDiagnostic
-            DiagnosticCode.ProjectionDefinitionUnsupported
+            DiagnosticCode.ProjectionCapabilityRequired
             $"Projection/accessor use requires the '{capability}' capability at this site."
             (argumentLocation document expression)
             []
@@ -2602,7 +2602,7 @@ module ResourceChecking =
 
     let private addProjectionPlaceDiagnostic (document: ParsedDocument) expression state =
         addDiagnostic
-            DiagnosticCode.ProjectionDefinitionUnsupported
+            DiagnosticCode.ProjectionRootInvalid
             "Projection place arguments must be stable places or computed selector places with stable roots."
             (argumentLocation document expression)
             []

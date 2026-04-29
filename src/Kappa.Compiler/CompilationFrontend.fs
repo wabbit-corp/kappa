@@ -45,6 +45,16 @@ module internal CompilationFrontend =
           Syntax = parsed.Syntax
           Diagnostics = lexed.Diagnostics @ parsed.Diagnostics }
 
+    let parseBundledStandardModule (moduleInfo: BundledStandardModules.BundledStandardModule) =
+        let source = SourceText.From(moduleInfo.VirtualPath, moduleInfo.LoadText())
+        let lexed = Lexer.tokenize source
+        let parsed = Parser.parse source lexed.Tokens
+
+        { Source = source
+          InferredModuleName = Some moduleInfo.ModuleName
+          Syntax = parsed.Syntax
+          Diagnostics = lexed.Diagnostics @ parsed.Diagnostics }
+
     let private isAsciiModuleSegmentStart (character: char) =
         (character >= 'A' && character <= 'Z')
         || (character >= 'a' && character <= 'z')
@@ -563,6 +573,7 @@ module internal CompilationFrontend =
             | Literal LiteralValue.Unit -> "()"
             | NumericLiteral literal -> SurfaceNumericLiteral.toSurfaceText literal
             | Name segments -> String.concat "." segments
+            | TypeSyntaxTokens tokens -> tokens |> List.map (fun token -> token.Text) |> String.concat " "
             | KindQualifiedName(kind, segments) ->
                 let kindText =
                     match kind with
@@ -993,7 +1004,8 @@ module internal CompilationFrontend =
                     "finishHashState"
                     "hashUnit"
                     "hashBool"
-                    "hashChar"
+                    "hashUnicodeScalar"
+                    "hashGrapheme"
                     "hashString"
                     "hashBytes"
                     "hashInt"
@@ -1195,6 +1207,18 @@ module internal CompilationFrontend =
                     { current with
                         Traits = Set.add declaration.Name current.Traits }
                     |> recomputeUnqualifiedBindings
+                | ExpectDeclarationNode (ExpectTermDeclaration declaration) ->
+                    { current with
+                        Terms = Set.add declaration.Name current.Terms }
+                    |> recomputeUnqualifiedBindings
+                | ExpectDeclarationNode (ExpectTypeDeclaration declaration) ->
+                    { current with
+                        Types = Set.add declaration.Name current.Types }
+                    |> recomputeUnqualifiedBindings
+                | ExpectDeclarationNode (ExpectTraitDeclaration declaration) ->
+                    { current with
+                        Traits = Set.add declaration.Name current.Traits }
+                    |> recomputeUnqualifiedBindings
                 | _ ->
                     current) inventory
 
@@ -1360,6 +1384,28 @@ module internal CompilationFrontend =
                 | TraitDeclarationNode declaration ->
                     let info: ImportableNameInfo =
                         { IsPrivate = isPrivateVisibility privateByDefault declaration.Visibility
+                          IsOpaque = false }
+
+                    { current with
+                        TraitInfos = addName current.TraitInfos declaration.Name info }
+                | ExpectDeclarationNode (ExpectTermDeclaration declaration) ->
+                    let info: ImportableNameInfo =
+                        { IsPrivate = false
+                          IsOpaque = false }
+
+                    { current with
+                        TermInfos = addName current.TermInfos declaration.Name info }
+                | ExpectDeclarationNode (ExpectTypeDeclaration declaration) ->
+                    let info: ImportableTypeInfo =
+                        { IsPrivate = false
+                          IsOpaque = false
+                          Constructors = Set.empty }
+
+                    { current with
+                        TypeInfos = addType current.TypeInfos declaration.Name info }
+                | ExpectDeclarationNode (ExpectTraitDeclaration declaration) ->
+                    let info: ImportableNameInfo =
+                        { IsPrivate = false
                           IsOpaque = false }
 
                     { current with
@@ -1582,7 +1628,7 @@ module internal CompilationFrontend =
 
                                         if itemRequestsUnhide item && not allowUnhiding then
                                             diagnostics.AddError(
-                                                DiagnosticCode.FrontendValidation,
+                                                DiagnosticCode.ImportUnhideRequiresBuildSetting,
                                                 $"Import item '{importItemText item}' requires build setting 'allow_unhiding', which is disabled in package mode.",
                                                 itemLocation,
                                                 stage = "KFrontIR",
@@ -1592,7 +1638,7 @@ module internal CompilationFrontend =
 
                                         if itemRequestsClarify item && not allowClarify then
                                             diagnostics.AddError(
-                                                DiagnosticCode.FrontendValidation,
+                                                DiagnosticCode.ImportClarifyRequiresBuildSetting,
                                                 $"Import item '{importItemText item}' requires build setting 'allow_clarify', which is disabled in package mode.",
                                                 itemLocation,
                                                 stage = "KFrontIR",
@@ -1602,7 +1648,7 @@ module internal CompilationFrontend =
 
                                         if isExport && not (List.isEmpty item.Modifiers) then
                                             diagnostics.AddError(
-                                                DiagnosticCode.FrontendValidation,
+                                                DiagnosticCode.ImportItemModifierReexportForbidden,
                                                 $"Import item '{importItemText item}' uses unhide/clarify and must not be re-exported.",
                                                 itemLocation,
                                                 stage = "KFrontIR",
