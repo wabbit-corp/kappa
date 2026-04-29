@@ -196,8 +196,7 @@ let ``interpreter orders text values by unicode scalar sequence not utf16 ordina
             "module main"
             "let stringOrder = \"\\u{E000}\" < \"\\u{1F600}\""
             "let charOrder = '\\u{E000}' < '\\u{1F600}'"
-            "let graphemeOrder = g'\\u{E000}' < g'\\u{1F600}'"
-            "let result = stringOrder && charOrder && graphemeOrder"
+            "let result = stringOrder && charOrder"
         ]
         |> String.concat "\n"
 

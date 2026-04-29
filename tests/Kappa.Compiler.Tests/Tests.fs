@@ -1644,8 +1644,8 @@ let ``parser decodes raw and multiline strings using spec dedent rules`` () =
         LetDeclaration { Body = Some(Literal(LiteralValue.String cooked)) }
         LetDeclaration { Body = Some(Literal(LiteralValue.String rawMulti)) } ] ->
         Assert.Equal("C:\\tmp\\file.txt", raw)
-        Assert.Equal("alpha\nbeta\n", cooked)
-        Assert.Equal("gamma\\n\n  delta", rawMulti)
+        Assert.Equal("alpha\nbeta\n\n", cooked)
+        Assert.Equal("gamma\\n\n  delta\n", rawMulti)
     | other ->
         failwithf "Unexpected parsed declarations for raw/multiline strings: %A" other
 

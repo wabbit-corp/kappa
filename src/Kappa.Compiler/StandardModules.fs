@@ -53,7 +53,7 @@ module internal StandardModules =
               { Name = "normalize"; TypeText = "NormalizationForm -> String -> String" }
               { Name = "isNormalized"; TypeText = "NormalizationForm -> String -> Bool" }
               { Name = "canonicalEquivalent"; TypeText = "String -> String -> Bool" }
-              { Name = "show"; TypeText = "a -> String" } ]
+              { Name = "show"; TypeText = "forall (a : Type). a -> String" } ]
           Traits = [] }
 
     let private bytesModule =
@@ -71,7 +71,8 @@ module internal StandardModules =
               { Name = "finishHashState"; TypeText = "(1 state : HashState) -> HashCode" }
               { Name = "hashUnit"; TypeText = "(1 state : HashState) -> HashState" }
               { Name = "hashBool"; TypeText = "Bool -> (1 state : HashState) -> HashState" }
-              { Name = "hashChar"; TypeText = "Char -> (1 state : HashState) -> HashState" }
+              { Name = "hashUnicodeScalar"; TypeText = "UnicodeScalar -> (1 state : HashState) -> HashState" }
+              { Name = "hashGrapheme"; TypeText = "Grapheme -> (1 state : HashState) -> HashState" }
               { Name = "hashString"; TypeText = "String -> (1 state : HashState) -> HashState" }
               { Name = "hashBytes"; TypeText = "Bytes -> (1 state : HashState) -> HashState" }
               { Name = "hashInt"; TypeText = "Int -> (1 state : HashState) -> HashState" }
@@ -79,14 +80,16 @@ module internal StandardModules =
               { Name = "hashFloatRaw"; TypeText = "Float -> (1 state : HashState) -> HashState" }
               { Name = "hashDoubleRaw"; TypeText = "Double -> (1 state : HashState) -> HashState" }
               { Name = "hashNatTag"; TypeText = "Nat -> (1 state : HashState) -> HashState" }
-              { Name = "hashField"; TypeText = "(@_ : Hashable a) -> (& value : a) -> (1 state : HashState) -> HashState" }
-              { Name = "hashWith"; TypeText = "(@_ : Hashable a) -> HashSeed -> (& value : a) -> HashCode" } ]
+              { Name = "hashField"
+                TypeText = "forall (a : Type). (@_ : Hashable a) -> (& value : a) -> (1 state : HashState) -> HashState" }
+              { Name = "hashWith"
+                TypeText = "forall (a : Type). (@_ : Hashable a) -> HashSeed -> (& value : a) -> HashCode" } ]
           Traits = [ { Name = "Hashable"; TypeParameterCount = 1; Members = [] } ] }
 
     let private testingModule =
         { ModuleName = "std.testing"
           Types = []
-          Terms = [ { Name = "failNow"; TypeText = "String -> a" } ]
+          Terms = [ { Name = "failNow"; TypeText = "forall (a : Type). String -> a" } ]
           Traits = [] }
 
     let all =
