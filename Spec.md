@@ -24175,6 +24175,57 @@ Generated-only syntax MUST NOT be the sole primary origin when a user-written or
 Family:
 
 ```text
+kappa.ffi.portable-abi-exclusion
+```
+
+Used when a declaration, exported symbol, raw host binding, bridge adapter, shim, or portable ABI surface is rejected
+because an ABI-visible parameter, result, member, callback, layout, or ownership shape is outside the portable ABI
+subset of §17.7.1.
+
+Implementations SHOULD use the following stable diagnostic codes when the corresponding meaning applies:
+
+```text
+E_FFI_PORTABLE_ABI_NON_FIRST_ORDER_FUNCTION
+E_FFI_PORTABLE_ABI_HIGHER_ORDER_VALUE
+E_FFI_PORTABLE_ABI_UNMONITORED_CALLBACK
+E_FFI_PORTABLE_ABI_DICTIONARY_OR_EVIDENCE
+E_FFI_PORTABLE_ABI_EFFECT_HANDLER_RESUMPTION
+E_FFI_PORTABLE_ABI_DIRECT_BORROW
+E_FFI_PORTABLE_ABI_VARIADIC_RAW_BINDING
+E_FFI_PORTABLE_ABI_BARE_OWNING_OPAQUE_HANDLE
+E_FFI_PORTABLE_ABI_UNSTABLE_LAYOUT
+E_FFI_PORTABLE_ABI_ERASED_RUNTIME_PARAMETER
+```
+
+Payload MUST include:
+
+* ABI surface origin;
+* adapter or bridge identity;
+* selected backend profile;
+* offending type or member;
+* whether the offending occurrence is a parameter, result, field, callback, return slot, captured environment, or
+  hidden runtime argument;
+* the ABI-visible erased type;
+* the pre-erasure source type;
+* the precise exclusion rule from §17.7.1;
+* whether a trusted binding summary, shim, monitored higher-order boundary, nominal resource wrapper, `Result`,
+  `Option`, or `IO` surface could make the boundary admissible;
+* whether the surface is raw, refined, portable, or backend-specific.
+
+A human renderer MUST distinguish:
+
+* a source function that is not first-order after erasure;
+* a function value or closure crossing without monitored higher-order boundary support;
+* a dictionary, trait evidence, effect, handler, or resumption crossing the portable ABI;
+* a direct borrowed parameter or result;
+* a raw variadic binding lacking an explicit backend adapter profile;
+* an owning resource exposed as bare `OpaqueHandle`;
+* a layout that depends on erased or importer-local facts;
+* a hidden runtime argument accidentally produced from compile-time-only source information.
+
+Family:
+
+```text
 kappa.bridge.contract
 ```
 
