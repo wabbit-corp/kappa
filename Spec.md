@@ -30910,6 +30910,24 @@ select-by-platform
 `select-by-feature`, `select-by-backend-family`, and `select-by-platform` select by resolved feature set, backend
 family, OS, architecture, or target triple.
 
+Provider availability is a resolved fact.
+
+A provider alternative selected by availability MUST record:
+
+* candidates considered;
+* availability predicate for each candidate;
+* observations used to determine availability;
+* selected candidate;
+* rejected candidates and rejection reasons;
+* lockfile or transcript entries consulted; and
+* provenance of the provider alternative group.
+
+In package mode, a provider selection that depends on ambient host availability is `Unreproducible` unless the
+availability observation is content-pinned or transcript-pinned.
+
+`select-first-available` MUST NOT depend on filesystem enumeration order, registry response order, classpath order,
+native loader search order, or other ambient ordering unless that ordering is recorded as a resolved fact.
+
 A provider alternative group resolves before ordinary provider collision checking.
 
 After resolution, the effective module name MUST have at most one selected provider.
