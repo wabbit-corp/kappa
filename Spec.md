@@ -29418,10 +29418,91 @@ queries and MUST NOT be used as the effective compilation configuration.
 <!-- build_system.reproducibility_status -->
 ### 19.3B Reproducibility status
 
-A `ResolvedBuildPlan` MUST record a reproducibility status for the whole build request and for each selected resolved
+A `ResolvedBuildPlan` MUST record reproducibility information for the whole build request and for each selected resolved
 target.
 
-Portable reproducibility statuses are:
+Reproducibility is a product of independent dimensions, not a single wishful label.
+
+A reproducibility record has at least:
+
+```text
+Reproducibility:
+    compilation identity
+    generated output identity
+    artifact content identity
+    deployment layout identity
+    runtime prerequisite identity
+    external observation identity
+    transcript identity
+    summary status
+    reasons
+```
+
+Portable compilation identity values are:
+
+```text
+FullyPinnedCompilation
+TranscriptPinnedCompilation
+UnpinnedCompilation
+```
+
+Portable generated output identity values are:
+
+```text
+NoGeneratedOutputs
+PinnedGeneratedOutputs
+TranscriptPinnedGeneratedOutputs
+MaterializedUnpinnedGeneratedOutputs
+MissingOrStaleGeneratedOutputs
+```
+
+Portable artifact content identity values are:
+
+```text
+FullyPinnedArtifactContents
+TranscriptPinnedArtifactContents
+UnpinnedArtifactContents
+NoArtifactContents
+```
+
+Portable deployment layout identity values are:
+
+```text
+SelfContainedPinnedDeployment
+NonSelfContainedWithRecordedPrerequisites
+TranscriptPinnedDeployment
+AmbientDeployment
+NoDeployment
+```
+
+Portable runtime prerequisite identity values are:
+
+```text
+NoRuntimePrerequisites
+RecordedRuntimePrerequisites
+RecordedSystemPrerequisites
+AmbientRuntimePrerequisites
+```
+
+Portable external observation identity values are:
+
+```text
+NoExternalObservations
+ContentPinnedExternalObservations
+TranscriptPinnedExternalObservations
+AmbientExternalObservations
+```
+
+Portable transcript identity values are:
+
+```text
+NoTranscriptRequired
+TranscriptRecorded
+TranscriptMissing
+TranscriptStale
+```
+
+The resolved plan additionally records a summary status for compatibility with tools that need one label:
 
 ```text
 FullyReproducible
@@ -29431,26 +29512,20 @@ NonSelfContainedDeployment
 Unreproducible
 ```
 
-Meanings:
+The summary status is derived as follows:
 
-* `FullyReproducible` means that all build-affecting inputs needed to reproduce compilation, generated interfaces,
-  generated code, artifact contents, and deployment layout are pinned by content identity, tool identity, lockfile
-  entry, or equivalent immutable identity.
+* `FullyReproducible` applies only when compilation, generated outputs, artifact contents, deployment layout, runtime
+  prerequisites, and external observations are all fully pinned or absent.
+* `ReproducibleWithRecordedTranscript` applies when the build can be reproduced only by consulting a recorded
+  transcript, and no dimension is ambient, missing, stale, or unpinned.
+* `ReproducibleCompilationButSystemRuntimePrerequisite` applies when compilation and artifact contents are reproducible,
+  but runtime execution intentionally depends on recorded system prerequisites.
+* `NonSelfContainedDeployment` applies when the produced deployment intentionally omits one or more runtime
+  dependencies and records them as runtime prerequisites.
+* `Unreproducible` applies when any selected dimension is unpinned, ambient, missing, stale, or intentionally not
+  replayable.
 
-* `ReproducibleWithRecordedTranscript` means the build depends on observations that are reproducible only by replaying or
-  consulting a recorded transcript, generated-output cache record, or equivalent artifact.
-
-* `ReproducibleCompilationButSystemRuntimePrerequisite` means compilation and artifact identity are reproducible, but the
-  produced deployment intentionally depends at runtime on system-provided libraries, SDKs, drivers, loaders, frameworks,
-  runtimes, or services.
-
-* `NonSelfContainedDeployment` means the produced deployment intentionally omits at least one runtime dependency and
-  records it as a runtime prerequisite.
-
-* `Unreproducible` means at least one build-affecting input is unpinned, moving, unavailable for transcript replay, or
-  intentionally ambient.
-
-A target whose status is `Unreproducible` MUST record at least one `UnreproducibilityReason`.
+A target whose summary status is `Unreproducible` MUST record at least one `UnreproducibilityReason`.
 
 Portable unreproducibility reasons include:
 
@@ -29472,17 +29547,22 @@ ScriptModeExternalInput
 RuntimeLoaderSearchPath
 SystemDriverOrDevice
 ImplementationDefinedAmbientFact
+MissingTranscript
+StaleTranscript
+SchemaIncompatibleLockEntry
+GeneratedOutputCacheMiss
 ```
 
-A package-mode build MUST reject `Unreproducible` targets unless the build request explicitly permits them.
+A package-mode build MUST reject `Unreproducible` targets unless the build request explicitly permits unreproducibility
+for those targets.
 
 A publish target MUST reject `Unreproducible` artifacts.
 
 A publish target MAY accept `ReproducibleCompilationButSystemRuntimePrerequisite` or `NonSelfContainedDeployment` only
-when the publish metadata records the corresponding runtime prerequisites.
+when the publish metadata records the corresponding runtime prerequisites and deployment status.
 
-`ReproducibilityStatus` is part of the query key for any query whose result can depend on a fact that differs between
-these statuses.
+The full reproducibility record, not merely the summary status, is part of the query key for any query whose result can
+depend on a fact represented by that record.
 
 <!-- build_system.lockfile_structure -->
 ### 19.3C Lockfile structure and update modes
