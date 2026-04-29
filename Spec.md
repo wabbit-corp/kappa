@@ -31080,8 +31080,15 @@ cached-generated-output
 
 A codegen target MUST NOT be executed during manifest evaluation.
 
-The build resolver or build scheduler executes a codegen target only after resolving the generator identity, input
-identities, tool identity, execution backend, and output policy.
+The build resolver plans a codegen target only after resolving the generator identity, input identities, tool
+identity, execution backend, and output policy.
+
+The build scheduler executes the corresponding `BuildAction`.
+
+The materialized codegen result is then incorporated into `ResolvedBuildPlanFinal`.
+
+An implementation MAY expose an API that performs resolution and scheduling in one command invocation, but the resolved
+plan MUST still distinguish planning facts, scheduled actions, and materialized action results.
 
 A target that consumes generated Kappa modules MUST compile only against a `ResolvedBuildPlan` in which the required
 generated source root or generated interface artifact is materialized or matched by a valid lockfile/cache entry.
