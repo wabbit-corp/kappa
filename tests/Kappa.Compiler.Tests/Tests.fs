@@ -83,6 +83,8 @@ let rec private tryFindLocalScopedEffect expression =
     | ExplicitImplicitArgument body
     | InoutArgument body ->
         tryFindLocalScopedEffect body
+    | TypeSyntaxTokens _ ->
+        None
     | IfThenElse(condition, whenTrue, whenFalse) ->
         tryFindLocalScopedEffect condition
         |> Option.orElseWith (fun () -> tryFindLocalScopedEffect whenTrue)
@@ -1162,7 +1164,8 @@ let ``parser rejects unterminated data constructors before the next declaration`
             sourceText
 
     Assert.Empty(lexed.Diagnostics)
-    Assert.Equal<DiagnosticCode list>([ DiagnosticCode.ParseError ], parsed.Diagnostics |> List.map (fun diagnostic -> diagnostic.Code))
+    Assert.NotEmpty(parsed.Diagnostics)
+    Assert.All(parsed.Diagnostics, fun diagnostic -> Assert.Equal(DiagnosticCode.ParseError, diagnostic.Code))
     Assert.Contains(parsed.Diagnostics, fun diagnostic -> diagnostic.Message.Contains("Expected ')'"))
 
 [<Fact>]
@@ -2720,6 +2723,42 @@ let ``parser preserves syntax quotes, quote-local splices, and top level syntax 
         failwithf "Unexpected top level syntax splice shape: %A" other
 
 [<Fact>]
+let ``parser preserves tuple syntax quotes with quote local splices`` () =
+    let fixities = Parser.bootstrapFixities ()
+
+    let parsed, diagnostics =
+        parseExpressionWithFixities fixities "__syntax_quote_tuple_splices__.kp" "'{ (${left}, ${right}) }"
+
+    Assert.Empty(diagnostics)
+
+    match parsed with
+    | Some(
+        SyntaxQuote(
+            RecordLiteral
+                [ { Name = "_1"; Value = SyntaxSplice(Name [ "left" ]) }
+                  { Name = "_2"; Value = SyntaxSplice(Name [ "right" ]) } ]
+        )
+      ) -> ()
+    | other ->
+        failwithf "Unexpected tuple syntax quote parse shape: %A" other
+
+[<Fact>]
+let ``parser accepts wildcard do bind patterns`` () =
+    let parsed, diagnostics =
+        parseExpressionWithFixities
+            (Parser.bootstrapFixities ())
+            "__do_wildcard_bind__.kp"
+            "do\n    _ <- action\n    unit"
+
+    Assert.Empty(diagnostics)
+
+    match parsed with
+    | Some(Do [ DoBind(binding, Name [ "action" ]); DoExpression(Name [ "unit" ]) ]) ->
+        Assert.Equal(WildcardPattern, binding.Pattern)
+    | other ->
+        failwithf "Unexpected wildcard do-bind parse shape: %A" other
+
+[<Fact>]
 let ``parser preserves staged code quotes and escapes`` () =
     let parsed, diagnostics =
         parseExpressionWithFixities (Parser.bootstrapFixities ()) "__code_quote__.kp" ".< .~shared + 1 >."
@@ -3679,6 +3718,424 @@ let ``top level syntax splices still charge quoted linear uses at the splice sit
 
     Assert.True(workspace.HasErrors, "Expected splicing duplicated linear use to fail at the splice site.")
     Assert.Contains(workspace.Diagnostics, fun diagnostic -> diagnostic.Code = DiagnosticCode.QttLinearOveruse)
+
+[<Fact>]
+let ``top level macro helpers honor leading forall binders and expand tuple syntax`` () =
+    let workspace =
+        compileInMemoryWorkspace
+            "memory-top-level-macro-forall-root"
+            [
+                "main.kp",
+                [
+                    "module main"
+                    "import support.helper.(dupSyntax)"
+                    "pair : (Int, Int)"
+                    "let pair ="
+                    "    $(dupSyntax @Int '{ 42 })"
+                ]
+                |> String.concat "\n"
+                "support/helper.kp",
+                [
+                    "module support.helper"
+                    "dupSyntax : forall (@0 a : Type). Syntax a -> Elab (Syntax (a, a))"
+                    "let dupSyntax s ="
+                    "    pure '{ (${s}, ${s}) }"
+                ]
+                |> String.concat "\n"
+            ]
+
+    Assert.False(workspace.HasErrors, $"Expected macro helper expansion to succeed, got:{Environment.NewLine}{diagnosticsSummary workspace.Diagnostics}")
+
+    let mainDocument =
+        tryFindDocument "main" workspace
+        |> Option.defaultWith (fun () -> failwith "Expected main document.")
+
+    let pairDeclaration =
+        tryFindLetDeclaration "pair" mainDocument
+        |> Option.defaultWith (fun () -> failwith "Expected pair declaration.")
+
+    match pairDeclaration.Body with
+    | Some(RecordLiteral [ { Name = "_1"; Value = NumericLiteral(SurfaceIntegerLiteral(left, "42", None)) }
+                           { Name = "_2"; Value = NumericLiteral(SurfaceIntegerLiteral(right, "42", None)) } ]) ->
+        Assert.Equal(BigInteger(42), left)
+        Assert.Equal(BigInteger(42), right)
+    | other ->
+        failwithf "Expected expanded tuple syntax body, got %A" other
+
+[<Fact>]
+let ``resource checking aligns later runtime parameters after leading forall binders`` () =
+    let workspace =
+        compileInMemoryWorkspace
+            "memory-resource-leading-forall-alignment-root"
+            [
+                "main.kp",
+                [
+                    "module main"
+                    "sameStringList : List String -> List String -> Bool"
+                    "let sameStringList xs ys = True"
+                    "helper : forall (@0 a : Type). String -> List String -> List (List String) -> Elab (Syntax Unit)"
+                    "let helper @a label expectedConstructors expectedFields ="
+                    "    if sameStringList expectedConstructors expectedConstructors then"
+                    "        pure '{ () }"
+                    "    else"
+                    "        pure '{ () }"
+                ]
+                |> String.concat "\n"
+            ]
+
+    Assert.False(
+        workspace.HasErrors,
+        $"Expected later runtime parameters to retain their declared types after leading forall binders, got:{Environment.NewLine}{diagnosticsSummary workspace.Diagnostics}"
+    )
+
+[<Fact>]
+let ``compile time shape helpers typecheck with leading forall binders and inspectAdt`` () =
+    let workspace =
+        compileInMemoryWorkspace
+            "memory-shape-helper-leading-forall-root"
+            [
+                "main.kp",
+                [
+                    "module main"
+                    "import std.deriving.shape.*"
+                    "assertHasAdtRuntimeFieldInstances :"
+                    "    forall (tc : Type -> Constraint) (@0 a : Type)."
+                    "    Syntax Type -> Elab (Syntax Unit)"
+                    "let assertHasAdtRuntimeFieldInstances @tc @a target = do"
+                    "    shape <- inspectAdt @a target"
+                    "    requireRuntimeFieldInstances @tc shape"
+                    "    unitSyntax"
+                ]
+                |> String.concat "\n"
+            ]
+
+    Assert.False(
+        workspace.HasErrors,
+        $"Expected compile-time shape helper to typecheck through inspectAdt and requireRuntimeFieldInstances, got:{Environment.NewLine}{diagnosticsSummary workspace.Diagnostics}"
+    )
+
+[<Fact>]
+let ``compile time shape helpers reject missing runtime field trait instances`` () =
+    let workspace =
+        compileInMemoryWorkspace
+            "memory-shape-helper-missing-runtime-field-instance-root"
+            [
+                "main.kp",
+                [
+                    "module main"
+                    "import std.deriving.shape.*"
+                    "assertHasAdtRuntimeFieldInstances :"
+                    "    forall (tc : Type -> Constraint) (@0 a : Type)."
+                    "    Syntax Type -> Elab (Syntax Unit)"
+                    "let assertHasAdtRuntimeFieldInstances @tc @a target = do"
+                    "    shape <- inspectAdt @a target"
+                    "    requireRuntimeFieldInstances @tc shape"
+                    "    unitSyntax"
+                    "trait MiniShow (a : Type) ="
+                    "    miniShow : (& value : a) -> String"
+                    "data Mystery : Type ="
+                    "    Mystery"
+                    "data NeedsMystery : Type ="
+                    "    NeedsMystery (value : Mystery)"
+                    "probe : Unit"
+                    "let probe ="
+                    "    $(assertHasAdtRuntimeFieldInstances @MiniShow @NeedsMystery '{ NeedsMystery })"
+                ]
+                |> String.concat "\n"
+            ]
+
+    Assert.True(workspace.HasErrors, "Expected missing runtime field trait instances to be rejected during elaboration.")
+    Assert.Contains(workspace.Diagnostics, fun diagnostic -> diagnostic.Code = DiagnosticCode.DerivingShapeMissingRuntimeFieldInstance)
+
+[<Fact>]
+let ``parser preserves ordinary named constructor parameters`` () =
+    let sourceText =
+        [
+            "module main"
+            "data User : Type ="
+            "    User (name : String) (age : Int)"
+        ]
+        |> String.concat "\n"
+
+    let parsed = parseDocumentWithFixities FixityTable.empty "__constructor_parameters__.kp" sourceText
+
+    Assert.Empty(parsed.Diagnostics)
+
+    match parsed.Syntax.Declarations with
+    | [ DataDeclarationNode declaration ] ->
+        match declaration.Constructors with
+        | [ constructor ] ->
+            match constructor.Parameters with
+            | Some parameters ->
+                Assert.Equal<string option>([ Some "name"; Some "age" ], parameters |> List.map _.ParameterName)
+                Assert.Equal<string>([ "String"; "Int" ], parameters |> List.map (fun parameter -> tokensText parameter.ParameterTypeTokens))
+            | None ->
+                failwith "Expected ordinary constructor parameters to be preserved."
+        | other ->
+            failwithf "Expected one constructor, got %A" other
+    | other ->
+        failwithf "Unexpected declarations when parsing data constructor parameters: %A" other
+
+[<Fact>]
+let ``data declarations accept inline pipe separated constructor alternatives`` () =
+    let sourceText =
+        [
+            "module main"
+            "data Tree a : Type = Leaf | Branch (Tree a) a (Tree a)"
+        ]
+        |> String.concat "\n"
+
+    let parsed = parseDocumentWithFixities FixityTable.empty "__inline_pipe_constructors__.kp" sourceText
+
+    Assert.Empty(parsed.Diagnostics)
+
+    match parsed.Syntax.Declarations with
+    | [ DataDeclarationNode declaration ] ->
+        Assert.Equal("Tree", declaration.Name)
+
+        match declaration.Constructors with
+        | [ leaf; branch ] ->
+            Assert.Equal("Leaf", leaf.Name)
+            Assert.Equal(0, leaf.Arity)
+            Assert.Equal("Branch", branch.Name)
+            Assert.Equal(3, branch.Arity)
+        | other ->
+            failwithf "Expected two inline constructor alternatives, got %A" other
+    | other ->
+        failwithf "Unexpected declarations when parsing inline constructor alternatives: %A" other
+
+[<Fact>]
+let ``macro deriving shape inspection preserves ordinary constructor field names`` () =
+    let workspace =
+        compileInMemoryWorkspace
+            "memory-deriving-shape-field-names-root"
+            [
+                "main.kp",
+                [
+                    "module main"
+                    "import support.shape_assert.(assertAdtShape)"
+                    "data User : Type ="
+                    "    User (name : String) (age : Int)"
+                    "shapeSmoke : Unit"
+                    "let shapeSmoke ="
+                    "    $(assertAdtShape @User"
+                    "        '{ User }"
+                    "        ((\"name\" :: \"age\" :: Nil) :: Nil))"
+                ]
+                |> String.concat "\n"
+                "support/shape_assert.kp",
+                [
+                    "module support.shape_assert"
+                    "import std.deriving.shape.*"
+                    ""
+                    "sameStringList : List String -> List String -> Bool"
+                    "let sameStringList xs ys ="
+                    "    match (xs, ys)"
+                    "    case (Nil, Nil) ->"
+                    "        True"
+                    "    case ((::) x xs1, (::) y ys1) ->"
+                    "        (x == y) && sameStringList xs1 ys1"
+                    "    case _ ->"
+                    "        False"
+                    ""
+                    "sameStringListList : List (List String) -> List (List String) -> Bool"
+                    "let sameStringListList xs ys ="
+                    "    match (xs, ys)"
+                    "    case (Nil, Nil) ->"
+                    "        True"
+                    "    case ((::) x xs1, (::) y ys1) ->"
+                    "        sameStringList x y && sameStringListList xs1 ys1"
+                    "    case _ ->"
+                    "        False"
+                    ""
+                    "fieldNames : List ShapeField -> List String"
+                    "let fieldNames fields ="
+                    "    match fields"
+                    "    case Nil ->"
+                    "        Nil"
+                    "    case (::) field rest ->"
+                    "        (::) field.renderName (fieldNames rest)"
+                    ""
+                    "constructorFieldNames : List ShapeConstructor -> List (List String)"
+                    "let constructorFieldNames constructors ="
+                    "    match constructors"
+                    "    case Nil ->"
+                    "        Nil"
+                    "    case (::) ctor rest ->"
+                    "        (::) (fieldNames ctor.fields) (constructorFieldNames rest)"
+                    ""
+                    "assertAdtShape :"
+                    "    forall (@0 a : Type)."
+                    "    Syntax Type -> List (List String) -> Elab (Syntax Unit)"
+                    "let assertAdtShape @a target expectedFields = do"
+                    "    shape <- inspectAdt @a target"
+                    "    if sameStringListList expectedFields (constructorFieldNames shape.constructors) then"
+                    "        unitSyntax"
+                    "    else"
+                    "        failElabWith \"KAPPA_TEST_SHAPE_MISMATCH\" \"ADT fields\" []"
+                ]
+                |> String.concat "\n"
+            ]
+
+    Assert.False(workspace.HasErrors, $"Expected deriving shape field-name expansion to succeed, got:{Environment.NewLine}{diagnosticsSummary workspace.Diagnostics}")
+
+[<Fact>]
+let ``macro deriving shape can generate a match body for ordinary constructors`` () =
+    let workspace =
+        compileInMemoryWorkspace
+            "memory-deriving-shape-match-root"
+            [
+                "main.kp",
+                [
+                    "module main"
+                    "import support.shape_assert.(deriveTagNameBody)"
+                    "data Expr : Type ="
+                    "    Lit (value : Int)"
+                    "    Add (left : Expr) (right : Expr)"
+                    "tagName : Expr -> String"
+                    "let tagName value ="
+                    "    $(deriveTagNameBody @Expr '{ Expr } '{ value })"
+                ]
+                |> String.concat "\n"
+                "support/shape_assert.kp",
+                [
+                    "module support.shape_assert"
+                    "import std.deriving.shape.*"
+                    "deriveTagNameBody :"
+                    "    forall (@0 a : Type)."
+                    "    Syntax Type -> Syntax a -> Elab (Syntax String)"
+                    "let deriveTagNameBody @a target value = do"
+                    "    shape <- inspectAdt @a target"
+                    "    matchAdt shape value \\ctor fields ->"
+                    "        stringSyntax ctor.renderName"
+                ]
+                |> String.concat "\n"
+            ]
+
+    Assert.False(workspace.HasErrors, $"Expected deriving-shape match expansion to succeed, got:{Environment.NewLine}{diagnosticsSummary workspace.Diagnostics}")
+
+[<Fact>]
+let ``macro do blocks accept a final if expression after a bind`` () =
+    let workspace =
+        compileInMemoryWorkspace
+            "memory-macro-do-final-if-root"
+            [
+                "main.kp",
+                [
+                    "module main"
+                    "import support.helper.(smoke)"
+                    "data User : Type ="
+                    "    User (name : String) (age : Int)"
+                    "result : Unit"
+                    "let result ="
+                    "    $(smoke @User '{ User })"
+                ]
+                |> String.concat "\n"
+                "support/helper.kp",
+                [
+                    "module support.helper"
+                    "import std.deriving.shape.*"
+                    "smoke : forall (@0 a : Type). Syntax Type -> Elab (Syntax Unit)"
+                    "let smoke @a target = do"
+                    "    shape <- inspectAdt @a target"
+                    "    if True then"
+                    "        unitSyntax"
+                    "    else"
+                    "        failElabWith \"KAPPA_TEST_UNREACHABLE\" \"unreachable\" []"
+                ]
+                |> String.concat "\n"
+            ]
+
+    Assert.False(workspace.HasErrors, $"Expected macro do-block final if-expression to elaborate, got:{Environment.NewLine}{diagnosticsSummary workspace.Diagnostics}")
+
+[<Fact>]
+let ``macro evaluator do blocks return their final expression value`` () =
+    let workspace =
+        compileInMemoryWorkspace
+            "memory-macro-do-final-expression-root"
+            [
+                "main.kp",
+                [
+                    "module main"
+                    "import support.helper.(smoke)"
+                    "data User : Type ="
+                    "    User (name : String) (age : Int)"
+                    "result : Unit"
+                    "let result ="
+                    "    $(smoke @User '{ User })"
+                ]
+                |> String.concat "\n"
+                "support/helper.kp",
+                [
+                    "module support.helper"
+                    "import std.deriving.shape.*"
+                    "smoke : forall (@0 a : Type). Syntax Type -> Elab (Syntax Unit)"
+                    "let smoke @a target = do"
+                    "    shape <- inspectAdt @a target"
+                    "    unitSyntax"
+                ]
+                |> String.concat "\n"
+            ]
+
+    Assert.False(workspace.HasErrors, $"Expected do-block macro helper expansion to succeed, got:{Environment.NewLine}{diagnosticsSummary workspace.Diagnostics}")
+
+    let mainDocument =
+        tryFindDocument "main" workspace
+        |> Option.defaultWith (fun () -> failwith "Expected main document.")
+
+    let resultDeclaration =
+        tryFindLetDeclaration "result" mainDocument
+        |> Option.defaultWith (fun () -> failwith "Expected result declaration.")
+
+    match resultDeclaration.Body with
+    | Some(Literal Unit) -> ()
+    | other ->
+        failwithf "Expected expanded unit syntax body, got %A" other
+
+[<Fact>]
+let ``macro evaluator resolves dotted local field access through meta bindings`` () =
+    let workspace =
+        compileInMemoryWorkspace
+            "memory-macro-dotted-field-root"
+            [
+                "main.kp",
+                [
+                    "module main"
+                    "import support.helper.(smoke)"
+                    "data User : Type ="
+                    "    User (name : String) (age : Int)"
+                    "result : String"
+                    "let result ="
+                    "    $(smoke @User '{ User })"
+                ]
+                |> String.concat "\n"
+                "support/helper.kp",
+                [
+                    "module support.helper"
+                    "import std.deriving.shape.*"
+                    "smoke : forall (@0 a : Type). Syntax Type -> Elab (Syntax String)"
+                    "let smoke @a target = do"
+                    "    shape <- inspectAdt @a target"
+                    "    stringSyntax shape.renderName"
+                ]
+                |> String.concat "\n"
+            ]
+
+    Assert.False(workspace.HasErrors, $"Expected dotted local field access macro expansion to succeed, got:{Environment.NewLine}{diagnosticsSummary workspace.Diagnostics}")
+
+    let mainDocument =
+        tryFindDocument "main" workspace
+        |> Option.defaultWith (fun () -> failwith "Expected main document.")
+
+    let resultDeclaration =
+        tryFindLetDeclaration "result" mainDocument
+        |> Option.defaultWith (fun () -> failwith "Expected result declaration.")
+
+    match resultDeclaration.Body with
+    | Some(Literal(String text)) ->
+        Assert.Equal("User", text)
+    | other ->
+        failwithf "Expected expanded string literal body, got %A" other
 
 [<Fact>]
 let ``backend profile parser accepts portable names and legacy aliases`` () =

@@ -429,6 +429,47 @@ type private TokenParser
         |> Seq.toList
         |> List.filter (List.isEmpty >> not)
 
+    member private _.SplitTopLevelConstructorAlternatives(tokens: Token list) =
+        let groups = ResizeArray<Token list>()
+        let tokenArray = tokens |> List.toArray
+        let mutable parenDepth = 0
+        let mutable braceDepth = 0
+        let mutable bracketDepth = 0
+        let mutable setBraceDepth = 0
+        let mutable groupStart = 0
+
+        for index = 0 to tokenArray.Length - 1 do
+            match tokenArray[index].Kind with
+            | LeftParen -> parenDepth <- parenDepth + 1
+            | RightParen -> parenDepth <- max 0 (parenDepth - 1)
+            | LeftBrace -> braceDepth <- braceDepth + 1
+            | RightBrace -> braceDepth <- max 0 (braceDepth - 1)
+            | LeftBracket -> bracketDepth <- bracketDepth + 1
+            | RightBracket -> bracketDepth <- max 0 (bracketDepth - 1)
+            | LeftEffectRow -> bracketDepth <- bracketDepth + 1
+            | RightEffectRow -> bracketDepth <- max 0 (bracketDepth - 1)
+            | LeftSetBrace -> setBraceDepth <- setBraceDepth + 1
+            | RightSetBrace -> setBraceDepth <- max 0 (setBraceDepth - 1)
+            | Operator
+                when tokenArray[index].Text = "|"
+                     && parenDepth = 0
+                     && braceDepth = 0
+                     && bracketDepth = 0
+                     && setBraceDepth = 0 ->
+                if index > groupStart then
+                    groups.Add(tokenArray[groupStart .. index - 1] |> Array.toList)
+
+                groupStart <- index
+            | _ ->
+                ()
+
+        if groupStart <= tokenArray.Length then
+            groups.Add(tokenArray[groupStart ..] |> Array.toList)
+
+        groups
+        |> Seq.toList
+        |> List.filter (List.isEmpty >> not)
+
     member private _.TryFindLastTopLevelEquals(tokens: Token list) =
         let tokenArray = tokens |> List.toArray
         let mutable parenDepth = 0
@@ -497,6 +538,89 @@ type private TokenParser
                DefaultValue = defaultValue }
              : DataConstructorParameter))
 
+    member private this.ParseOrdinaryConstructorParameter(tokens: Token list) =
+        let significantTokens =
+            tokens
+            |> List.filter (fun token ->
+                match token.Kind with
+                | Newline
+                | Indent
+                | Dedent
+                | EndOfFile -> false
+                | _ -> true)
+
+        let declarationTokens, defaultTokens =
+            match this.TryFindLastTopLevelEquals(significantTokens) with
+            | Some splitIndex ->
+                let tokenArray = significantTokens |> List.toArray
+                tokenArray[0 .. splitIndex - 1] |> Array.toList,
+                Some(tokenArray[splitIndex + 1 ..] |> Array.toList)
+            | None ->
+                significantTokens, None
+
+        let hasTopLevelColon =
+            let tokenArray = declarationTokens |> List.toArray
+            let mutable parenDepth = 0
+            let mutable braceDepth = 0
+            let mutable bracketDepth = 0
+            let mutable setBraceDepth = 0
+            let mutable found = false
+            let mutable index = 0
+
+            while index < tokenArray.Length && not found do
+                match tokenArray[index].Kind with
+                | LeftParen -> parenDepth <- parenDepth + 1
+                | RightParen -> parenDepth <- max 0 (parenDepth - 1)
+                | LeftBrace -> braceDepth <- braceDepth + 1
+                | RightBrace -> braceDepth <- max 0 (braceDepth - 1)
+                | LeftBracket -> bracketDepth <- bracketDepth + 1
+                | RightBracket -> bracketDepth <- max 0 (bracketDepth - 1)
+                | LeftEffectRow -> bracketDepth <- bracketDepth + 1
+                | RightEffectRow -> bracketDepth <- max 0 (bracketDepth - 1)
+                | LeftSetBrace -> setBraceDepth <- setBraceDepth + 1
+                | RightSetBrace -> setBraceDepth <- max 0 (setBraceDepth - 1)
+                | Colon when parenDepth = 0 && braceDepth = 0 && bracketDepth = 0 && setBraceDepth = 0 ->
+                    found <- true
+                | _ ->
+                    ()
+
+                index <- index + 1
+
+            found
+
+        let looksLikeBinderLayout =
+            hasTopLevelColon
+            || match declarationTokens with
+               | { Kind = AtSign } :: _
+               | { Kind = Underscore } :: _ -> true
+               | _ -> false
+
+        if not looksLikeBinderLayout then
+            Some
+                { ParameterName = None
+                  ParameterTypeTokens = declarationTokens
+                  ParameterQuantity = None
+                  ParameterIsImplicit = false
+                  DefaultValue = None }
+        else
+            CoreParsing.parseParameterLayout source diagnostics declarationTokens
+            |> Option.map (fun parameter ->
+                let defaultValue =
+                    defaultTokens |> Option.bind (CoreParsing.parseExpression fixities source diagnostics)
+
+                let parameterName =
+                    if parameter.Name.StartsWith("__kappa_wildcard_", StringComparison.Ordinal) then
+                        None
+                    else
+                        Some parameter.Name
+
+                ({ ParameterName = parameterName
+                   ParameterTypeTokens = parameter.TypeTokens |> Option.defaultValue []
+                   ParameterQuantity = parameter.Quantity
+                   ParameterIsImplicit = parameter.IsImplicit
+                   DefaultValue = defaultValue }
+                 : DataConstructorParameter))
+
     member private this.ParseConstructor(lineTokens: Token list) =
         let constructorName, fallbackArity =
             this.ParseConstructorNameAndArity(lineTokens)
@@ -563,8 +687,109 @@ type private TokenParser
                         parameters |> List.choose id |> Some
                     else
                         None
-            | _ ->
+            | { Kind = Colon } :: _ ->
                 None
+            | _ ->
+                let tokenArray = constructorBodyTokens |> List.toArray
+                let groups = ResizeArray<Token list>()
+                let mutable index = 0
+
+                let collectDelimitedGroup leftKind rightKind =
+                    let startIndex = index
+                    let mutable depth = 1
+                    index <- index + 1
+
+                    while index < tokenArray.Length && depth > 0 do
+                        match tokenArray[index].Kind with
+                        | kind when kind = leftKind ->
+                            depth <- depth + 1
+                        | kind when kind = rightKind ->
+                            depth <- depth - 1
+                        | _ ->
+                            ()
+
+                        index <- index + 1
+
+                    tokenArray[startIndex .. index - 1] |> Array.toList
+
+                while index < tokenArray.Length do
+                    match tokenArray[index].Kind with
+                    | LeftParen ->
+                        groups.Add(collectDelimitedGroup LeftParen RightParen)
+                    | LeftBrace ->
+                        groups.Add(collectDelimitedGroup LeftBrace RightBrace)
+                    | _ ->
+                        groups.Add([ tokenArray[index] ])
+                        index <- index + 1
+
+                if groups.Count = 0 then
+                    None
+                elif groups.Count = 1 then
+                    match groups[0] with
+                    | { Kind = LeftBrace } :: rest when not (List.isEmpty rest) && (List.last rest).Kind = RightBrace ->
+                        let innerTokens = rest |> List.take (List.length rest - 1)
+
+                        this.SplitTopLevelCommaGroups(innerTokens)
+                        |> List.map this.ParseRecordStyleConstructorParameter
+                        |> fun parameters ->
+                            if parameters |> List.forall Option.isSome then
+                                parameters |> List.choose id |> Some
+                            else
+                                None
+                    | _ ->
+                        groups
+                        |> Seq.map (fun group ->
+                            match group with
+                            | [ token ] when Token.isName token ->
+                                Some
+                                    { ParameterName = None
+                                      ParameterTypeTokens = [ token ]
+                                      ParameterQuantity = None
+                                      ParameterIsImplicit = false
+                                      DefaultValue = None }
+                            | { Kind = LeftParen } :: rest when not (List.isEmpty rest) && (List.last rest).Kind = RightParen ->
+                                let innerTokens = rest |> List.take (List.length rest - 1)
+                                this.ParseOrdinaryConstructorParameter(innerTokens)
+                            | _ ->
+                                diagnostics.AddError(
+                                    DiagnosticCode.ParseError,
+                                    "Unsupported constructor parameter syntax.",
+                                    source.GetLocation(group.Head.Span)
+                                )
+                                None)
+                        |> Seq.toList
+                        |> fun parameters ->
+                            if parameters |> List.forall Option.isSome then
+                                parameters |> List.choose id |> Some
+                            else
+                                None
+                else
+                    groups
+                    |> Seq.map (fun group ->
+                        match group with
+                        | [ token ] when Token.isName token ->
+                            Some
+                                { ParameterName = None
+                                  ParameterTypeTokens = [ token ]
+                                  ParameterQuantity = None
+                                  ParameterIsImplicit = false
+                                  DefaultValue = None }
+                        | { Kind = LeftParen } :: rest when not (List.isEmpty rest) && (List.last rest).Kind = RightParen ->
+                            let innerTokens = rest |> List.take (List.length rest - 1)
+                            this.ParseOrdinaryConstructorParameter(innerTokens)
+                        | _ ->
+                            diagnostics.AddError(
+                                DiagnosticCode.ParseError,
+                                "Unsupported constructor parameter syntax.",
+                                source.GetLocation(group.Head.Span)
+                            )
+                            None)
+                    |> Seq.toList
+                    |> fun parameters ->
+                        if parameters |> List.forall Option.isSome then
+                            parameters |> List.choose id |> Some
+                        else
+                            None
 
         let signatureArity =
             match constructorBodyTokens with
@@ -1385,6 +1610,7 @@ type private TokenParser
         let constructors: DataConstructor list =
             if this.TryConsume(Equals).IsSome then
                 this.ParseIndentedLines()
+                |> List.collect this.SplitTopLevelConstructorAlternatives
                 |> List.map this.ParseConstructor
             else
                 []

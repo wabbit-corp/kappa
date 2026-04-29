@@ -3602,10 +3602,9 @@ let ``backend verification accepts constructor underapplication as ordinary appl
             [
                 "module main"
                 ""
-                "data I0 : Type ="
-                "    I0 + I0"
+                "data I0 a : Type = I0 a a"
                 ""
-                "result : Int"
+                "result : I0 Int -> I0 (I0 Int)"
                 "let result = I0 (I0 4 2)"
             ]
             |> String.concat "\n"
