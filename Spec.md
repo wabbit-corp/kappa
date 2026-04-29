@@ -20689,7 +20689,8 @@ A Phase 0 body macro MUST NOT:
 * alter the local or global implicit-resolution environment;
 * bypass ordinary coherence rules;
 * inspect opaque representations unavailable to ordinary code at the splice site; or
-* treat a `Dict C` value as coherent evidence for implicit resolution.
+* treat an ordinary explicit trait evidence value as local implicit evidence unless it is bound through an implicit
+  binder or another source form that explicitly adds it to the local implicit context.
 
 For `Eq` specifically:
 
@@ -20699,7 +20700,7 @@ For `Eq` specifically:
 * `std.deriving.shape.matchAdt2` may help generate field-wise branch syntax for equality, but it does not by itself expose constructor injectivity, constructor disjointness, no-confusion, or proof-producing equality certificates.
 
 If `T` is declared as `opaque data`, any deriving algorithm that inspects the constructors or fields of `T` MUST do so only in a scope where that representation is available.
-The resulting derived dictionary is still an instance of the abstract type `T`.
+The resulting derived evidence value is still an instance of the abstract type `T`.
 Outside the defining module it may be used only through the trait interface and does not grant constructor access, pattern-matching access, or additional definitional transparency for `T`.
 
 A `derive` declaration that appears in a block scope generates a local instance when the implementation supports such declarations.
