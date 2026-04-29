@@ -19614,6 +19614,34 @@ trait Functor f =
     map : (a -> b) -> f a -> f b
 ```
 
+<!-- traits.headers.supertraits.refinement_graph_cycles -->
+#### 12.1.1A Trait refinement graph cycles
+
+Trait headers, supertrait declarations, and associated constraint bounds induce a directed refinement graph.
+
+Graph nodes are normalized trait applications up to alpha-renaming of explicitly bound parameters. Graph edges are
+introduced by:
+
+* each declared supertrait premise of a trait;
+* each associated constraint bound that must hold for every dictionary of the trait;
+* any standardized trait-header sugar that elaborates to such a premise.
+
+A trait declaration group is well-formed only if the refinement graph induced by that group and all visible referenced
+trait headers is acyclic after normalization of transparent aliases available at the declaration site.
+
+If a cycle is found, the checker rejects the whole strongly connected component as one graph-level error.
+
+The diagnostic MUST identify:
+
+* every trait application in the cycle;
+* every edge in the cycle;
+* the source origin of each edge;
+* whether the edge came from a supertrait, associated constraint bound, or elaborated sugar;
+* the smallest cycle found, when several are present.
+
+The checker MUST NOT report each edge as an unrelated circularity error when those edges are part of the same strongly
+connected component.
+
 <!-- traits.members -->
 ### 12.2 Trait members
 
