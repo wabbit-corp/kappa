@@ -30540,6 +30540,43 @@ An artifact identity MUST distinguish:
 Two artifacts with byte-identical primary files are still distinct artifacts if their module interfaces, export
 surfaces, dependency graph, deployment metadata, toolchain identity, or reproducibility record differ.
 
+<!-- build_system.artifact_targets.entrypoints -->
+#### Entrypoints and launch metadata
+
+An artifact target whose primary artifact family is executable, application, runtime image, command-style WASM module,
+or test runner MUST record an entrypoint policy.
+
+An entrypoint policy records at least:
+
+* entrypoint kind;
+* entrypoint module name when applicable;
+* entrypoint declaration identity when applicable;
+* expected entrypoint type or signature;
+* argument passing policy;
+* environment policy;
+* process exit or result mapping policy;
+* runtime initialization policy;
+* launcher generation policy;
+* generated launcher artifact identity when materialized; and
+* provenance of the authored entrypoint selection.
+
+Portable entrypoint kinds include:
+
+```text
+kappa-main
+native-exported-main
+jvm-main-class
+dotnet-entrypoint
+wasm-command
+test-runner-entrypoint
+implementation-defined-entrypoint
+```
+
+A target whose artifact family requires an entrypoint MUST be rejected if no valid entrypoint policy can be resolved.
+
+A target whose artifact family does not execute directly, such as a static library, shared library without executable
+launcher, interface artifact, or pure module archive, MUST NOT invent an entrypoint.
+
 <!-- build_system.interface_equivalence -->
 ### 19.5B Interface equivalence groups
 
