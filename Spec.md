@@ -30092,6 +30092,56 @@ the same backend-specific public surface or the equivalence mode explicitly perm
 This mechanism is intended for packages that claim backend-portable public APIs while using backend-specific fragments
 internally.
 
+<!-- build_system.interface_equivalence.fingerprints -->
+#### Interface surface fingerprints
+
+Interface equivalence is checked by comparing canonical surface fingerprints.
+
+An `InterfaceSurfaceFingerprint` records at least:
+
+* selected equivalence mode;
+* effective module names;
+* module provider identities visible in the public surface;
+* exported declaration names;
+* exported declaration kinds;
+* exported declaration semantic identities;
+* exported declaration types after the transparency policy of the equivalence mode is applied;
+* exported data constructors and constructor order for each exported data type;
+* exported record and package member surfaces;
+* exported trait declarations and trait member surfaces;
+* exported coherent instances whose visibility contributes to downstream instance search;
+* exported fixity metadata;
+* export aliases;
+* opacity and visibility metadata;
+* capture annotations in exported value types;
+* quantity annotations in exported value types;
+* erased implicit and proof-only binder policy;
+* backend-specific host binding references that appear in the public surface; and
+* unsafe/debug exposure metadata.
+
+For `exact-kappa-interface`, two member targets match iff their selected module interface artifacts have identical
+canonical interface identities after schema-compatible canonicalization.
+
+For `public-kappa-surface`, two member targets match iff their `InterfaceSurfaceFingerprint` values are identical after
+removing backend-private declarations, backend-private fragments, companion-artifact metadata, non-exported
+declarations, and private implementation-only provider identities.
+
+For `abi-erased-kappa-surface`, two member targets match iff their `InterfaceSurfaceFingerprint` values are identical
+after additionally erasing compile-time-only binders, proof-only members, erased implicit evidence, and other
+components whose erasure is required by Chapter 14.
+
+No equivalence mode may ignore a difference in a public runtime-visible type, quantity, capture annotation, exported
+constructor set, exported instance set, opacity boundary, or public provider family unless that mode explicitly says
+the difference is erased or backend-private.
+
+A backend-specific host binding reference in a public surface is backend-private only when it is not reachable from any
+exported declaration type, exported instance head, exported trait member type, exported constructor type, or exported
+alias.
+
+A mismatch diagnostic MUST include the compared fingerprints or stable projections of them sufficient for tools to
+identify the first differing module, declaration, instance, fixity, alias, opacity boundary, provider identity, or
+backend-specific public reference.
+
 <!-- build_system.features -->
 ### 19.5C Features
 
