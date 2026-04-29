@@ -1198,6 +1198,137 @@ let ``multishot aliased effect labels still trigger capture and backend capabili
     Assert.Contains(workspace.Diagnostics, fun diagnostic -> diagnostic.Code = DiagnosticCode.QttContinuationCapture)
 
 [<Fact>]
+let ``multishot rebound operation values still trigger capture checks`` () =
+    let mainSource =
+        [
+            "@PrivateByDefault module main"
+            ""
+            "bad : (1 x : Int) -> Int"
+            "let bad (1 x : Int) : Int ="
+            "    block"
+            "        scoped effect Choice ="
+            "            ω choose : Unit -> Bool"
+            ""
+            "        let choose = Choice.choose"
+            ""
+            "        let comp : Eff <[Choice : Choice]> Int ="
+            "            do"
+            "                let b <- choose ()"
+            "                if b then x else x"
+            ""
+            "        let handled ="
+            "            deep handle Choice comp with"
+            "                case return y -> pure y"
+            "                case choose _ k ->"
+            "                    do"
+            "                        let a <- k True"
+            "                        let _ <- k False"
+            "                        pure a"
+            ""
+            "        runPure handled"
+        ]
+        |> String.concat "\n"
+
+    let workspace =
+        compileInMemoryWorkspace
+            "memory-m4-multishot-operation-alias-root"
+            [ "main.kp", mainSource ]
+
+    Assert.True(workspace.HasErrors, "Expected rebound multishot operation values to be rejected.")
+    Assert.Contains(workspace.Diagnostics, fun diagnostic -> diagnostic.Code = DiagnosticCode.QttContinuationCapture)
+
+[<Fact>]
+let ``multishot record carried operation values still trigger capture checks`` () =
+    let mainSource =
+        [
+            "@PrivateByDefault module main"
+            ""
+            "bad : (1 x : Int) -> Int"
+            "let bad (1 x : Int) : Int ="
+            "    block"
+            "        scoped effect Choice ="
+            "            ω choose : Unit -> Bool"
+            ""
+            "        let ops = (choose = Choice.choose)"
+            ""
+            "        let comp : Eff <[Choice : Choice]> Int ="
+            "            do"
+            "                let b <- ops.choose ()"
+            "                if b then x else x"
+            ""
+            "        let handled ="
+            "            deep handle Choice comp with"
+            "                case return y -> pure y"
+            "                case choose _ k ->"
+            "                    do"
+            "                        let a <- k True"
+            "                        let _ <- k False"
+            "                        pure a"
+            ""
+            "        runPure handled"
+        ]
+        |> String.concat "\n"
+
+    let workspace =
+        compileInMemoryWorkspace
+            "memory-m4-multishot-operation-record-root"
+            [ "main.kp", mainSource ]
+
+    Assert.True(workspace.HasErrors, "Expected record-carried multishot operation values to be rejected.")
+    Assert.Contains(workspace.Diagnostics, fun diagnostic -> diagnostic.Code = DiagnosticCode.QttContinuationCapture)
+
+[<Fact>]
+let ``shadowed same spelling effects do not widen rebound one shot operation values`` () =
+    let mainSource =
+        [
+            "@PrivateByDefault module main"
+            ""
+            "ok : (1 x : Int) -> Int"
+            "let ok (1 x : Int) : Int ="
+            "    block"
+            "        scoped effect Ask ="
+            "            1 ask : Unit -> Bool"
+            ""
+            "        let l = Ask"
+            "        let ask = Ask.ask"
+            ""
+            "        let comp : Eff <[Ask : Ask]> Int ="
+            "            do"
+            "                let b <- ask ()"
+            "                if b then x else x"
+            ""
+            "        block"
+            "            scoped effect Ask ="
+            "                ω ask : Unit -> Bool"
+            ""
+            "            let handled ="
+            "                deep handle l comp with"
+            "                    case return y -> pure y"
+            "                    case ask () k -> k True"
+            ""
+            "            runPure handled"
+            ""
+            "result : Int"
+            "let result = ok 1"
+        ]
+        |> String.concat "\n"
+
+    let workspace, result =
+        evaluateInMemoryBinding
+            "memory-m4-shadowed-rebound-operation-root"
+            "main.result"
+            [ "main.kp", mainSource ]
+
+    Assert.False(workspace.HasErrors, sprintf "Expected rebound one-shot operation values to keep their original semantics under same-spelling shadowing, got:%s%s" Environment.NewLine (diagnosticsText workspace.Diagnostics))
+    Assert.DoesNotContain(workspace.Diagnostics, fun diagnostic -> diagnostic.Code = DiagnosticCode.QttContinuationCapture)
+
+    match result with
+    | Result.Ok value ->
+        Assert.Equal("1", RuntimeValue.format value)
+    | Result.Error issue ->
+        failwithf "Expected rebound one-shot operation value to evaluate successfully, got %s" issue.Message
+
+[<Fact>]
 let ``zig backend runs one shot handled programs`` () =
     let mainSource =
         [

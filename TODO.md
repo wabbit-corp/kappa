@@ -288,12 +288,6 @@ Duplicates are merged. The organization below is by compiler stage rather than b
 
 ## 7. Effects and Handlers
 
-- `[High] Resolve handled labels and operations before resource checking.`
-  - Resource checking appears to recover one-shot and multi-shot semantics only for narrow syntactic forms such as direct names.
-  - Alias-carried labels, record-carried labels, qualified imports, and rebound operation values can bypass or weaken the intended checks.
-  - Add a resolved effect/operation representation so later passes do not need to rediscover effect identity from syntax.
-  - Sources: `reviews/effects1.md`.
-
 - `[High] Make multi-shot continuation capture analysis semantic rather than syntax-shaped.`
   - Current logic appears too tied to narrow `DoBind` / direct-operation-call forms.
   - It needs to recognize semantically equivalent operation invocations through aliases, records, qualified names, and nested expressions.

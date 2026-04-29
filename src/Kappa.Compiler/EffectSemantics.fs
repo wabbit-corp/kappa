@@ -19,6 +19,20 @@ type EffectSemanticDeclaration =
       Operations: EffectSemanticOperation list }
 
 module internal EffectSemantics =
+    type ResolvedEffectLabel =
+        { Declaration: EffectSemanticDeclaration
+          CanonicalExpression: SurfaceExpression }
+
+    type ResolvedEffectOperation =
+        { Declaration: EffectSemanticDeclaration
+          Operation: EffectSemanticOperation
+          BaseExpression: SurfaceExpression
+          AppliedArguments: SurfaceExpression list }
+
+    type EffectResolutionCallbacks =
+        { TryResolveHandledEffectDeclaration: SurfaceExpression -> EffectSemanticDeclaration option
+          TryResolveEffectOperationNamePath: string list -> (EffectSemanticDeclaration * EffectSemanticOperation) option }
+
     let private stableId (prefix: string) (seed: string) =
         let bytes: byte array = Encoding.UTF8.GetBytes(seed)
         let hash: byte array = SHA256.HashData(bytes)
@@ -49,6 +63,12 @@ module internal EffectSemantics =
 
     let interfaceNameSegments (declaration: EffectSemanticDeclaration) =
         [ $"__kappa_effect_interface_{sanitizeScopedEffectId declaration.InterfaceId}" ]
+
+    let labelExpression (declaration: EffectSemanticDeclaration) =
+        KindQualifiedName(EffectLabelKind, labelNameSegments declaration)
+
+    let operationExpression (declaration: EffectSemanticDeclaration) (operation: EffectSemanticOperation) =
+        MemberAccess(labelExpression declaration, [ operation.Name ], [])
 
     let private effectOperationParameterArity signatureTokens =
         signatureTokens
@@ -344,6 +364,370 @@ module internal EffectSemantics =
     let tryFindOperation operationName (declaration: EffectSemanticDeclaration) =
         declaration.Operations
         |> List.tryFind (fun operation -> String.Equals(operation.Name, operationName, StringComparison.Ordinal))
+
+    let tryResolveHandledLabel (callbacks: EffectResolutionCallbacks) expression =
+        callbacks.TryResolveHandledEffectDeclaration expression
+        |> Option.map (fun declaration ->
+            { Declaration = declaration
+              CanonicalExpression = labelExpression declaration })
+
+    let tryResolveOperationExpression (callbacks: EffectResolutionCallbacks) expression =
+        let rec resolve current =
+            match current with
+            | Apply(callee, arguments) ->
+                resolve callee
+                |> Option.map (fun resolved ->
+                    { resolved with
+                        AppliedArguments = resolved.AppliedArguments @ arguments })
+            | Name nameSegments ->
+                callbacks.TryResolveEffectOperationNamePath nameSegments
+                |> Option.map (fun (declaration, operation) ->
+                    { Declaration = declaration
+                      Operation = operation
+                      BaseExpression = operationExpression declaration operation
+                      AppliedArguments = [] })
+            | MemberAccess(receiver, [ operationName ], []) ->
+                callbacks.TryResolveHandledEffectDeclaration receiver
+                |> Option.bind (fun declaration ->
+                    tryFindOperation operationName declaration
+                    |> Option.map (fun operation ->
+                        { Declaration = declaration
+                          Operation = operation
+                          BaseExpression = operationExpression declaration operation
+                          AppliedArguments = [] }))
+            | Seal(inner, _) ->
+                resolve inner
+            | _ ->
+                None
+
+        resolve expression
+
+    let collectPatternOperationAliases
+        (callbacks: EffectResolutionCallbacks)
+        pattern
+        value
+        =
+        let rec collectExpression prefix expression aliases =
+            match tryResolveOperationExpression callbacks expression with
+            | Some resolved ->
+                Map.add prefix resolved aliases
+            | None ->
+                match expression with
+                | RecordLiteral fields ->
+                    fields
+                    |> List.fold (fun current field -> collectExpression (prefix @ [ field.Name ]) field.Value current) aliases
+                | Seal(inner, _) ->
+                    collectExpression prefix inner aliases
+                | _ ->
+                    aliases
+
+        let rec collectPattern currentPattern currentValue aliases =
+            match currentPattern with
+            | NamePattern name ->
+                collectExpression [ name ] currentValue aliases
+            | AsPattern(name, inner) ->
+                collectPattern inner currentValue (collectExpression [ name ] currentValue aliases)
+            | TypedPattern(inner, _) ->
+                collectPattern inner currentValue aliases
+            | AnonymousRecordPattern(fields, rest) ->
+                fields
+                |> List.fold (fun current field ->
+                    let fieldExpression =
+                        match currentValue with
+                        | Name segments -> Name(segments @ [ field.Name ])
+                        | _ -> MemberAccess(currentValue, [ field.Name ], [])
+
+                    collectPattern field.Pattern fieldExpression current) aliases
+                |> fun current ->
+                    match rest with
+                    | Some(BindRecordPatternRest name) ->
+                        collectExpression [ name ] currentValue current
+                    | _ ->
+                        current
+            | ConstructorPattern(_, arguments) ->
+                arguments |> List.fold (fun current argument -> collectPattern argument currentValue current) aliases
+            | NamedConstructorPattern(_, fields) ->
+                fields |> List.fold (fun current field -> collectPattern field.Pattern currentValue current) aliases
+            | TuplePattern elements ->
+                elements |> List.fold (fun current element -> collectPattern element currentValue current) aliases
+            | VariantPattern(BoundVariantPattern(name, _))
+            | VariantPattern(RestVariantPattern name) ->
+                collectExpression [ name ] currentValue aliases
+            | VariantPattern(WildcardVariantPattern _) ->
+                aliases
+            | OrPattern alternatives ->
+                alternatives
+                |> List.tryHead
+                |> Option.map (fun first -> collectPattern first currentValue aliases)
+                |> Option.defaultValue aliases
+            | WildcardPattern
+            | LiteralPattern _ ->
+                aliases
+
+        collectPattern pattern value Map.empty
+
+    let rebuildOperationAliasExpression (resolved: ResolvedEffectOperation) =
+        match resolved.AppliedArguments with
+        | [] -> resolved.BaseExpression
+        | arguments -> Apply(resolved.BaseExpression, arguments)
+
+    let rec rewriteOperationAliasUses
+        (callbacks: EffectResolutionCallbacks)
+        (aliases: Map<string list, ResolvedEffectOperation>)
+        expression
+        =
+        let shadowsAnyAlias names (activeAliases: Map<string list, ResolvedEffectOperation>) =
+            if Set.isEmpty names then
+                false
+            else
+                activeAliases
+                |> Map.exists (fun segments _ ->
+                    match segments with
+                    | root :: _ -> Set.contains root names
+                    | [] -> false)
+
+        let withoutShadowedAliases names (activeAliases: Map<string list, ResolvedEffectOperation>) =
+            if Set.isEmpty names then
+                activeAliases
+            else
+                activeAliases
+                |> Map.filter (fun segments _ ->
+                    match segments with
+                    | root :: _ -> not (Set.contains root names)
+                    | [] -> true)
+
+        let tryLookupNameAlias activeAliases segments =
+            activeAliases |> Map.tryFind segments
+
+        let tryLookupMemberAlias activeAliases receiver segments =
+            match receiver with
+            | Name receiverSegments ->
+                activeAliases |> Map.tryFind (receiverSegments @ segments)
+            | _ ->
+                None
+
+        let rec collectPatternNames pattern =
+            match pattern with
+            | NamePattern name -> [ name ]
+            | TypedPattern(inner, _) -> collectPatternNames inner
+            | WildcardPattern
+            | LiteralPattern _ -> []
+            | ConstructorPattern(_, arguments)
+            | TuplePattern arguments -> arguments |> List.collect collectPatternNames
+            | NamedConstructorPattern(_, fields) -> fields |> List.collect (fun field -> collectPatternNames field.Pattern)
+            | AsPattern(name, inner) -> name :: collectPatternNames inner
+            | AnonymousRecordPattern(fields, rest) ->
+                let fieldNames = fields |> List.collect (fun field -> collectPatternNames field.Pattern)
+
+                match rest with
+                | Some(BindRecordPatternRest name) -> name :: fieldNames
+                | _ -> fieldNames
+            | VariantPattern(BoundVariantPattern(name, _))
+            | VariantPattern(RestVariantPattern name) -> [ name ]
+            | VariantPattern(WildcardVariantPattern _) -> []
+            | OrPattern alternatives ->
+                alternatives
+                |> List.tryHead
+                |> Option.map collectPatternNames
+                |> Option.defaultValue []
+
+        let rec rewrite activeAliases current =
+            match current with
+            | Name segments ->
+                tryLookupNameAlias activeAliases segments
+                |> Option.map rebuildOperationAliasExpression
+                |> Option.defaultValue current
+            | SyntaxQuote inner ->
+                SyntaxQuote(rewrite activeAliases inner)
+            | SyntaxSplice inner ->
+                SyntaxSplice(rewrite activeAliases inner)
+            | TopLevelSyntaxSplice inner ->
+                TopLevelSyntaxSplice(rewrite activeAliases inner)
+            | CodeQuote inner ->
+                CodeQuote(rewrite activeAliases inner)
+            | CodeSplice inner ->
+                CodeSplice(rewrite activeAliases inner)
+            | Handle(isDeep, label, body, returnClause, operationClauses) ->
+                let rewriteClause (clause: SurfaceEffectHandlerClause) =
+                    { clause with Body = rewrite activeAliases clause.Body }
+
+                Handle(
+                    isDeep,
+                    rewrite activeAliases label,
+                    rewrite activeAliases body,
+                    rewriteClause returnClause,
+                    operationClauses |> List.map rewriteClause
+                )
+            | LocalLet(binding, value, body) ->
+                let rewrittenValue = rewrite activeAliases value
+                let shadowedNames = collectPatternNames binding.Pattern |> Set.ofList
+                let bodyAliases =
+                    withoutShadowedAliases shadowedNames activeAliases
+                    |> fun currentAliases ->
+                        collectPatternOperationAliases callbacks binding.Pattern rewrittenValue
+                        |> Map.fold (fun state segments alias -> Map.add segments alias state) currentAliases
+
+                LocalLet(binding, rewrittenValue, rewrite bodyAliases body)
+            | LocalSignature(declaration, body) ->
+                LocalSignature(declaration, rewrite (withoutShadowedAliases (Set.singleton declaration.Name) activeAliases) body)
+            | LocalTypeAlias(declaration, body) ->
+                LocalTypeAlias(declaration, rewrite activeAliases body)
+            | LocalScopedEffect(declaration, body) ->
+                LocalScopedEffect(declaration, rewrite (withoutShadowedAliases (Set.singleton declaration.Name) activeAliases) body)
+            | Lambda(parameters, body) ->
+                let shadowedNames = parameters |> List.map (fun parameter -> parameter.Name) |> Set.ofList
+                Lambda(parameters, rewrite (withoutShadowedAliases shadowedNames activeAliases) body)
+            | IfThenElse(condition, whenTrue, whenFalse) ->
+                IfThenElse(rewrite activeAliases condition, rewrite activeAliases whenTrue, rewrite activeAliases whenFalse)
+            | Match(scrutinee, cases) ->
+                Match(
+                    rewrite activeAliases scrutinee,
+                    cases
+                    |> List.map (fun caseClause ->
+                        let shadowedNames = collectPatternNames caseClause.Pattern |> Set.ofList
+                        let caseAliases = withoutShadowedAliases shadowedNames activeAliases
+
+                        { caseClause with
+                            Guard = caseClause.Guard |> Option.map (rewrite caseAliases)
+                            Body = rewrite caseAliases caseClause.Body })
+                )
+            | RecordLiteral fields ->
+                RecordLiteral(fields |> List.map (fun field -> { field with Value = rewrite activeAliases field.Value }))
+            | Seal(value, ascriptionTokens) ->
+                Seal(rewrite activeAliases value, ascriptionTokens)
+            | RecordUpdate(receiver, fields) ->
+                RecordUpdate(rewrite activeAliases receiver, fields |> List.map (fun field -> { field with Value = rewrite activeAliases field.Value }))
+            | MemberAccess(receiver, segments, arguments) ->
+                let rewrittenArguments = arguments |> List.map (rewrite activeAliases)
+
+                match tryLookupMemberAlias activeAliases receiver segments with
+                | Some resolved ->
+                    if List.isEmpty rewrittenArguments then
+                        rebuildOperationAliasExpression resolved
+                    else
+                        Apply(resolved.BaseExpression, resolved.AppliedArguments @ rewrittenArguments)
+                | None ->
+                    MemberAccess(rewrite activeAliases receiver, segments, rewrittenArguments)
+            | SafeNavigation(receiver, navigation) ->
+                SafeNavigation(rewrite activeAliases receiver, { navigation with Arguments = navigation.Arguments |> List.map (rewrite activeAliases) })
+            | TagTest(receiver, constructorName) ->
+                TagTest(rewrite activeAliases receiver, constructorName)
+            | Do statements ->
+                let rec rewriteStatements currentAliases remaining =
+                    match remaining with
+                    | [] -> []
+                    | statement :: rest ->
+                        match statement with
+                        | DoLet(binding, value) ->
+                            let rewrittenValue = rewrite currentAliases value
+                            let shadowedNames = collectPatternNames binding.Pattern |> Set.ofList
+                            let restAliases =
+                                withoutShadowedAliases shadowedNames currentAliases
+                                |> fun aliasesWithoutShadowing ->
+                                    collectPatternOperationAliases callbacks binding.Pattern rewrittenValue
+                                    |> Map.fold (fun state segments alias -> Map.add segments alias state) aliasesWithoutShadowing
+
+                            DoLet(binding, rewrittenValue) :: rewriteStatements restAliases rest
+                        | DoLetQuestion(binding, value, failure) ->
+                            let rewrittenValue = rewrite currentAliases value
+                            let rewrittenFailure =
+                                failure
+                                |> Option.map (fun failureClause ->
+                                    let shadowedNames = collectPatternNames failureClause.ResiduePattern.Pattern |> Set.ofList
+
+                                    { failureClause with
+                                        Body = rewriteStatements (withoutShadowedAliases shadowedNames currentAliases) failureClause.Body })
+
+                            let shadowedNames = collectPatternNames binding.Pattern |> Set.ofList
+                            let restAliases =
+                                withoutShadowedAliases shadowedNames currentAliases
+                                |> fun aliasesWithoutShadowing ->
+                                    collectPatternOperationAliases callbacks binding.Pattern rewrittenValue
+                                    |> Map.fold (fun state segments alias -> Map.add segments alias state) aliasesWithoutShadowing
+
+                            DoLetQuestion(binding, rewrittenValue, rewrittenFailure) :: rewriteStatements restAliases rest
+                        | DoBind(binding, value) ->
+                            let rewrittenValue = rewrite currentAliases value
+                            let shadowedNames = collectPatternNames binding.Pattern |> Set.ofList
+                            DoBind(binding, rewrittenValue) :: rewriteStatements (withoutShadowedAliases shadowedNames currentAliases) rest
+                        | DoUsing(binding, value) ->
+                            let rewrittenValue = rewrite currentAliases value
+                            let shadowedNames = collectPatternNames binding.Pattern |> Set.ofList
+                            DoUsing(binding, rewrittenValue) :: rewriteStatements (withoutShadowedAliases shadowedNames currentAliases) rest
+                        | DoVar(name, value) ->
+                            DoVar(name, rewrite currentAliases value)
+                            :: rewriteStatements (withoutShadowedAliases (Set.singleton name) currentAliases) rest
+                        | DoAssign(name, value) ->
+                            DoAssign(name, rewrite currentAliases value) :: rewriteStatements currentAliases rest
+                        | DoDefer value ->
+                            DoDefer(rewrite currentAliases value) :: rewriteStatements currentAliases rest
+                        | DoIf(condition, whenTrue, whenFalse) ->
+                            DoIf(
+                                rewrite currentAliases condition,
+                                rewriteStatements currentAliases whenTrue,
+                                rewriteStatements currentAliases whenFalse
+                            )
+                            :: rewriteStatements currentAliases rest
+                        | DoWhile(condition, body) ->
+                            DoWhile(rewrite currentAliases condition, rewriteStatements currentAliases body)
+                            :: rewriteStatements currentAliases rest
+                        | DoReturn value ->
+                            DoReturn(rewrite currentAliases value) :: rest
+                        | DoExpression value ->
+                            DoExpression(rewrite currentAliases value) :: rewriteStatements currentAliases rest
+
+                Do(rewriteStatements activeAliases statements)
+            | MonadicSplice inner ->
+                MonadicSplice(rewrite activeAliases inner)
+            | ExplicitImplicitArgument inner ->
+                ExplicitImplicitArgument(rewrite activeAliases inner)
+            | NamedApplicationBlock fields ->
+                NamedApplicationBlock(fields |> List.map (fun field -> { field with Value = rewrite activeAliases field.Value }))
+            | Apply(Name segments, arguments) ->
+                let rewrittenArguments = arguments |> List.map (rewrite activeAliases)
+
+                match tryLookupNameAlias activeAliases segments with
+                | Some resolved ->
+                    Apply(resolved.BaseExpression, resolved.AppliedArguments @ rewrittenArguments)
+                | None ->
+                    Apply(Name segments, rewrittenArguments)
+            | Apply(MemberAccess(receiver, segments, []), arguments) ->
+                let rewrittenArguments = arguments |> List.map (rewrite activeAliases)
+
+                match tryLookupMemberAlias activeAliases receiver segments with
+                | Some resolved ->
+                    Apply(resolved.BaseExpression, resolved.AppliedArguments @ rewrittenArguments)
+                | None ->
+                    Apply(MemberAccess(rewrite activeAliases receiver, segments, []), rewrittenArguments)
+            | Apply(callee, arguments) ->
+                Apply(rewrite activeAliases callee, arguments |> List.map (rewrite activeAliases))
+            | InoutArgument inner ->
+                InoutArgument(rewrite activeAliases inner)
+            | Unary(operatorName, operand) ->
+                Unary(operatorName, rewrite activeAliases operand)
+            | Binary(left, operatorName, right) ->
+                Binary(rewrite activeAliases left, operatorName, rewrite activeAliases right)
+            | Elvis(left, right) ->
+                Elvis(rewrite activeAliases left, rewrite activeAliases right)
+            | Comprehension comprehension ->
+                Comprehension { comprehension with Lowered = rewrite activeAliases comprehension.Lowered }
+            | PrefixedString(prefix, parts) ->
+                PrefixedString(
+                    prefix,
+                    parts
+                    |> List.map (function
+                        | StringText _ as part -> part
+                        | StringInterpolation(inner, format) -> StringInterpolation(rewrite activeAliases inner, format))
+                )
+            | Literal _
+            | NumericLiteral _
+            | KindQualifiedName _ ->
+                current
+
+        if Map.isEmpty aliases then
+            expression
+        else
+            rewrite aliases expression
 
     let defaultResumptionQuantity quantity =
         quantity |> Option.defaultValue QuantityOne

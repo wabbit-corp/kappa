@@ -873,6 +873,22 @@ module ResourceChecking =
 
         riskyBindings, linearNames, borrowedNames
 
+    let private tryResolveScopedEffectOperationNamePath nameSegments =
+        match List.rev nameSegments with
+        | operationName :: reversedPrefix when not (List.isEmpty reversedPrefix) ->
+            let effectName = List.rev reversedPrefix |> SyntaxFacts.moduleNameToText
+
+            tryFindScopedEffectDeclaration effectName
+            |> Option.bind (fun declaration ->
+                EffectSemantics.tryFindOperation operationName declaration
+                |> Option.map (fun operation -> declaration, operation))
+        | _ ->
+            None
+
+    let private effectResolutionCallbacks tryResolveHandledEffectDeclaration : EffectSemantics.EffectResolutionCallbacks =
+        { TryResolveHandledEffectDeclaration = tryResolveHandledEffectDeclaration
+          TryResolveEffectOperationNamePath = tryResolveScopedEffectOperationNamePath }
+
     let private tryFindMultiShotScopedOperation expression =
         let tryResolveHandledEffectDeclaration expression =
             match expression with
@@ -885,31 +901,15 @@ module ResourceChecking =
             | _ ->
                 None
 
-        let tryResolveScopedOperation declaration operationName =
-            Some declaration
-            |> Option.bind (fun declaration ->
-                declaration.Operations
-                |> List.tryFind (fun operation -> String.Equals(operation.Name, operationName, StringComparison.Ordinal))
-                |> Option.map (fun operation -> declaration, operation))
+        let resolvedEffects = effectResolutionCallbacks tryResolveHandledEffectDeclaration
 
         match expression with
-        | Apply(Name nameSegments, _) ->
-            match List.rev nameSegments with
-            | operationName :: reversedEffectSegments when not (List.isEmpty reversedEffectSegments) ->
-                let effectName = List.rev reversedEffectSegments |> SyntaxFacts.moduleNameToText
-
-                tryFindScopedEffectDeclaration effectName
-                |> Option.bind (fun declaration -> tryResolveScopedOperation declaration operationName)
-                |> Option.filter (fun (_, operation) -> isMultiShotResumptionQuantity operation.ResumptionQuantity)
-                |> Option.map (fun (declaration, operation) -> declaration.VisibleName, operation)
-            | _ ->
-                None
-        | Apply(MemberAccess(receiver, [ operationName ], []), _) ->
-            tryResolveHandledEffectDeclaration receiver
-            |> Option.bind (fun declaration ->
-                tryResolveScopedOperation declaration operationName
-                |> Option.filter (fun (_, operation) -> isMultiShotResumptionQuantity operation.ResumptionQuantity)
-                |> Option.map (fun (declaration, operation) -> declaration.VisibleName, operation))
+        | Apply(_, _) ->
+            EffectSemantics.tryResolveOperationExpression
+                (effectResolutionCallbacks tryResolveHandledEffectDeclaration)
+                expression
+            |> Option.filter (fun resolved -> isMultiShotResumptionQuantity resolved.Operation.ResumptionQuantity)
+            |> Option.map (fun resolved -> resolved.Declaration.VisibleName, resolved.Operation)
         | _ ->
             None
 
@@ -5352,6 +5352,8 @@ module ResourceChecking =
             | _ ->
                 None
 
+        let resolvedEffects = effectResolutionCallbacks tryResolveHandledEffectDeclaration
+
         match expression with
         | CodeQuote inner ->
             state
@@ -5403,6 +5405,10 @@ module ResourceChecking =
                 checkHandlerClause None returnArgumentNames None returnClause.Body nextState
 
             let handledEffectDeclaration = tryResolveHandledEffectDeclaration label
+            let handledEffectDeclaration =
+                EffectSemantics.tryResolveHandledLabel resolvedEffects label
+                |> Option.map (fun resolved -> resolved.Declaration)
+                |> Option.orElse handledEffectDeclaration
 
             operationClauses
             |> List.fold
@@ -5484,6 +5490,10 @@ module ResourceChecking =
                     |> fun aliases -> rewriteEffectLabelAliasUses aliases bodyForChecking
                 | _ ->
                     bodyForChecking
+
+            let bodyForChecking =
+                EffectSemantics.collectPatternOperationAliases resolvedEffects binding.Pattern value
+                |> fun aliases -> EffectSemantics.rewriteOperationAliasUses resolvedEffects aliases bodyForChecking
 
             let projectionDescriptorAliasUse =
                 projectionDescriptorAlias
@@ -6607,6 +6617,19 @@ module ResourceChecking =
         state
         statements
         =
+        let tryResolveHandledEffectDeclaration expression =
+            match expression with
+            | Name [ effectName ]
+            | KindQualifiedName(EffectLabelKind, [ effectName ]) ->
+                tryFindScopedEffectDeclaration effectName
+            | Name nameSegments when not (List.isEmpty nameSegments) ->
+                let qualifiedName = SyntaxFacts.moduleNameToText nameSegments
+                tryFindScopedEffectDeclaration qualifiedName
+            | _ ->
+                None
+
+        let resolvedEffects = effectResolutionCallbacks tryResolveHandledEffectDeclaration
+
         let rec loop localTypes current remaining =
             match remaining with
             | [] -> current
@@ -6783,6 +6806,13 @@ module ResourceChecking =
                         | Do rewrittenRest -> Some rewrittenRest
                         | _ -> None)
                     |> Option.defaultValue rest
+
+                let restForChecking =
+                    EffectSemantics.collectPatternOperationAliases resolvedEffects binding.Pattern expression
+                    |> fun aliases ->
+                        match EffectSemantics.rewriteOperationAliasUses resolvedEffects aliases (Do restForChecking) with
+                        | Do rewrittenRest -> rewrittenRest
+                        | _ -> restForChecking
 
                 let current =
                     projectionDescriptorAlias
