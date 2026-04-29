@@ -30217,6 +30217,41 @@ Generated C headers and ABI metadata are companion artifacts of the artifact tar
 A native shared library with `c-abi` export therefore remains one artifact target with one primary artifact family
 `native-shared-library`; the generated header and ABI metadata are companion artifacts.
 
+<!-- build_system.artifact_targets.identity_records -->
+#### Artifact identity records
+
+A produced artifact identity records at least:
+
+* producing target identity;
+* producing action identity or action-result identity;
+* primary artifact family;
+* backend profile;
+* target platform;
+* toolchain profile;
+* build profile;
+* optimization/sanitizer/coverage/profiling/PGO/LTO profiles when applicable;
+* semantic source tree identities;
+* generated output identities consumed by the target;
+* dependency graph identity;
+* module interface identities;
+* export surface identities;
+* companion artifact identities;
+* content digest or content-addressed identity;
+* deployment contribution when applicable;
+* reproducibility record; and
+* provenance of the target declaration.
+
+An artifact identity MUST distinguish:
+
+* artifact content identity;
+* module interface identity;
+* export surface identity;
+* deployment layout identity; and
+* publication identity.
+
+Two artifacts with byte-identical primary files are still distinct artifacts if their module interfaces, export
+surfaces, dependency graph, deployment metadata, toolchain identity, or reproducibility record differ.
+
 <!-- build_system.interface_equivalence -->
 ### 19.5B Interface equivalence groups
 
