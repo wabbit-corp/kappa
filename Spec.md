@@ -29846,6 +29846,74 @@ An alias MUST NOT cause two different module interfaces to masquerade as one sem
 A public facade module such as `crypto.Hashing` SHOULD be modeled as a provider alternative group when the build may
 choose among pure Kappa, native, JVM, .NET, or other implementations.
 
+<!-- build_system.target_artifact_dependencies -->
+### 19.5E Target artifact dependencies
+
+A target artifact dependency connects a consumer target to the artifact, module interface, export surface, or companion
+artifact produced by another target in the same resolved build graph.
+
+A target artifact dependency has at least:
+
+* dependency name;
+* producer target reference;
+* requested export surface;
+* usage;
+* optional artifact family constraint;
+* optional backend family constraint;
+* optional link specification;
+* optional load specification;
+* optional deployment specification;
+* optional module-provider imports or aliases.
+
+Portable usages are:
+
+```text
+compile-interface
+runtime-artifact
+static-link
+dynamic-link
+runtime-load
+bridge-provider
+test-subject
+benchmark-subject
+codegen-tool
+publish-input
+```
+
+Build-plan resolution resolves a target artifact dependency to a resolved target artifact reference.
+
+A resolved target artifact reference records at least:
+
+* producer target identity;
+* producer resolved-plan projection;
+* producer backend profile;
+* producer primary artifact family;
+* requested export surface identity;
+* artifact identity;
+* module interface artifact identities, when applicable;
+* link specification, when applicable;
+* load specification, when applicable;
+* deployment path or deployment layout contribution, when applicable;
+* compatibility fingerprint;
+* provenance of the consumer dependency declaration.
+
+A target artifact dependency MUST NOT depend on a producer target whose selected artifact family is incompatible with the
+requested usage.
+
+A consumer target that dynamically links to a locally built native shared library MUST express that relationship as a
+target artifact dependency with usage `dynamic-link` or `runtime-load`.
+
+A consumer target that depends on a locally built JVM JAR MUST express that relationship as a target artifact dependency
+with usage `compile-interface`, `runtime-artifact`, or both.
+
+A consumer target that chooses between static and dynamic variants of the same source MUST depend on the corresponding
+producer target explicitly.
+
+Target artifact dependencies participate in the target dependency graph.
+
+A target dependency cycle is a build error unless the cycle is entirely within an explicitly standardized bridge-bundle
+mechanism. Portable v1 does not standardize mutually recursive static artifact targets.
+
 <!-- build_system.dependencies -->
 ### 19.6 Dependencies
 
