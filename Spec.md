@@ -29724,19 +29724,22 @@ surface permitted by Chapter 17.
 <!-- build_system.bridges -->
 ### 19.8 Bridge providers and bridge targets
 
-A bridge specification connects two Kappa artifacts or targets through a bridge realization.
+A bridge target realizes one bridge between provider and consumer artifacts, targets, or artifact identities.
 
-A bridge specification has at least:
+A bridge target has at least:
 
-* bridge name;
-* provider target or artifact;
-* consumer target or artifact;
-* exported module set;
+* bridge target name;
+* provider target reference or provider artifact dependency;
+* consumer target reference, consumer backend profile, or consumer artifact dependency;
+* exported module set or signature surface;
 * imported module names or aliases;
 * backend pair;
 * bridge realization mode;
+* bridge contract policy;
+* callback policy;
+* generated companion artifact policy;
 * deployment prerequisites;
-* generated companion artifact policy.
+* runtime prerequisite policy.
 
 Portable bridge realization names include those standardized by Chapter 17, including where implemented:
 
@@ -29744,8 +29747,11 @@ Portable bridge realization names include those standardized by Chapter 17, incl
 kappa.jni
 ```
 
-A bridge specification that supplies static modules to a consumer target creates bridge-supplied Kappa modules under
-§2.3.4.
+A bridge target does not have one backend profile.
+
+A bridge target records the provider backend profile and consumer backend profile as a backend pair.
+
+A bridge target that supplies static modules to a consumer target creates bridge-supplied Kappa modules under §2.3.4.
 
 The provider artifact MUST supply Kappa module interface artifacts for every bridge-supplied module.
 
@@ -29754,23 +29760,65 @@ Kappa modules.
 
 The bridge realization MUST supply or derive a bridge contract sufficient to preserve the exported Kappa surface.
 
-A bridge specification MUST NOT silently degrade a precise Kappa surface to `Dyn`, raw pointers, opaque handles, erased
-typed errors, serialized blobs, or lossy foreign values.
+A bridge target MUST NOT silently degrade a precise Kappa surface to `Dyn`, raw pointers, opaque handles, erased typed
+errors, serialized blobs, or lossy foreign values.
 
 If the selected bridge realization cannot preserve or enforce the requested surface, build-plan resolution MUST reject
 the bridge unless the user explicitly selects a less precise adapter module.
 
+A bridge target may emit companion artifacts on the provider side, consumer side, or deployment side.
+
+Companion bridge artifacts include, when applicable:
+
+* JNI entry points;
+* native bridge stubs;
+* JVM companion classes;
+* .NET companion assemblies;
+* registration tables;
+* callback trampolines;
+* runtime representation tables;
+* bridge contract tables;
+* loader metadata;
+* deployment manifests.
+
+Generated bridge companion artifacts are companion artifacts. They do not make the bridge target an artifact target.
+
+A bridge target whose contract permits callbacks from consumer into provider, or provider into consumer, MUST record:
+
+* callback surface identity;
+* callback lifetime policy;
+* callback ownership policy;
+* callback threading policy;
+* callback exception/error/failure mapping;
+* callback registration and release policy;
+* whether callbacks may outlive the dynamic invocation that supplied them;
+* rejection rules for unsupported callback shapes.
+
+A bridge target used to connect bidirectional runtime interaction MUST NOT create a static module import cycle.
+
+Bidirectional runtime interaction across bridge-connected targets MUST use one of:
+
+* a shared acyclic interface package imported by both targets;
+* callback values passed through one direction of the bridge;
+* runtime bridge handles and `std.bridge` package values;
+* an implementation-documented bridge-bundle mechanism explicitly standardized by that implementation.
+
+Portable v1 does not standardize mutually recursive static bridge bundles.
+
 In package mode, the lockfile or equivalent artifact MUST record at least:
 
-* provider artifact identity;
+* bridge target identity;
+* provider target or artifact identity;
+* consumer target, backend, or artifact identity;
 * exported module interface identities;
 * bridge contract identity;
 * bridge generator identity;
 * backend pair;
 * bridge realization mode;
+* callback policy identity;
 * generated companion artifact identities when materialized;
 * deployment prerequisites;
-* native or managed runtime identities required by the bridge when available.
+* native, managed, WASM, or bridge runtime identities required by the bridge when available.
 
 <!-- build_system.module_providers -->
 ### 19.9 Module providers
