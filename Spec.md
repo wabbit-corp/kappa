@@ -30021,8 +30021,9 @@ A generated output used in package mode MUST either:
 <!-- build_system.dependencies -->
 ### 19.6 Dependencies
 
-A dependency declaration in `BuildConfig` names a possible source of modules, artifacts, host metadata, or bridge
-providers.
+A dependency declaration in `BuildConfig` names a possible source of modules, artifacts, host metadata, bridge
+providers, tools, macro packages, generated outputs, managed ecosystem artifacts, native ecosystem artifacts, or publish
+metadata.
 
 Portable dependency source kinds include:
 
@@ -30032,17 +30033,60 @@ git
 path
 url
 artifact
+target-artifact
+maven
+nuget
+tool
+macro-package
+```
+
+A dependency declaration has at least:
+
+* dependency name;
+* dependency source;
+* dependency scope;
+* dependency use;
+* optional feature conditions;
+* optional version or identity constraint;
+* optional repository or source list;
+* optional exclusion rules;
+* optional deployment policy.
+
+Portable dependency scopes are:
+
+```text
+compile
+runtime
+test
+benchmark
+codegen
+macro
+tool
+host-binding
+bridge
+publish
+```
+
+Portable dependency uses are:
+
+```text
+kappa-modules
+kappa-artifact
+native-library
+native-headers
+jvm-artifact
+dotnet-artifact
+wasm-artifact
+host-metadata
+bridge-provider
+codegen-tool
+macro-provider
+test-fixture
+benchmark-dataset
+publish-metadata
 ```
 
 A dependency declaration may be unresolved in the authored `BuildConfig`.
-
-Examples:
-
-* a registry dependency may specify a version range;
-* a git dependency may specify a tag, branch, revision, or commit identity;
-* a path dependency may specify a local path;
-* a URL dependency may specify a pinned or unpinned URL according to build mode;
-* an artifact dependency may specify a prebuilt Kappa artifact.
 
 Build-plan resolution resolves each dependency to an immutable or explicitly transient identity.
 
@@ -30053,11 +30097,49 @@ In package mode:
 * URL dependencies MUST satisfy the pinning and digest rules of §2.3.2;
 * artifact dependencies MUST record artifact identity, compiler identity, exported module interface identities, backend
   profile, bridge metadata when relevant, and compatibility fingerprint;
+* target-artifact dependencies MUST resolve to target artifact references under §19.5E;
+* Maven dependencies MUST resolve to exact artifact coordinates, artifact digests, metadata digests, and transitive
+  graph identities under §19.6A;
+* NuGet dependencies MUST resolve to exact package identities, package digests, asset-selection identities, and
+  transitive graph identities under §19.6B;
+* tool dependencies MUST resolve to exact tool artifact identities and execution runtime identities;
+* macro dependencies MUST resolve to exact macro package identities and macro interface identities;
 * path dependencies MUST either be rejected for publishable package mode or represented by implementation-defined
   content identities sufficient for reproducibility.
 
 In script mode, unpinned or moving dependencies MAY be admitted, but the resulting build is not reproducible unless the
 resolution transcript is persisted and reused.
+
+A dependency used in scope `macro`, `tool`, or `codegen` MUST NOT be silently added to runtime dependency closure.
+
+A runtime dependency MUST NOT be silently made available to manifest evaluation.
+
+A host binding dependency under `host.native`, `host.jvm`, `host.dotnet`, or `host.jvm.jni` MUST remain a host binding
+provider selected through the resolved plan, not an ordinary project import.
+
+A managed dependency that contributes host binding modules under `host.jvm` or `host.dotnet` MUST record both its
+managed artifact identity and the generated host binding provider identity.
+
+A dependency may contribute multiple provider families, but each contribution is recorded separately in
+`ResolvedBuildPlan`.
+
+<!-- build_system.dependencies.maven -->
+### 19.6A Maven dependency resolution
+
+This subsection is reserved for the standardized Maven-resolution rules referenced by §19.6.
+
+Until those rules are specified in full, a conforming implementation that exposes Maven dependencies in portable build
+manifests MUST still record the exact artifact coordinates, artifact digests, metadata digests, and transitive graph
+identities required by §19.6.
+
+<!-- build_system.dependencies.nuget -->
+### 19.6B NuGet dependency resolution
+
+This subsection is reserved for the standardized NuGet-resolution rules referenced by §19.6.
+
+Until those rules are specified in full, a conforming implementation that exposes NuGet dependencies in portable build
+manifests MUST still record the exact package identities, package digests, asset-selection identities, and transitive
+graph identities required by §19.6.
 
 <!-- build_system.host_bindings_native_loading -->
 ### 19.7 Host bindings and native loading
