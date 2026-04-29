@@ -29357,8 +29357,66 @@ A script-mode build MAY admit unpinned, transient, or host-dependent facts, but 
 Compiler frontend analysis, interface generation, KCore construction, KBackendIR construction, and target lowering MUST
 use the `ResolvedBuildPlan`, not the raw `BuildConfig`, as the effective build configuration.
 
+<!-- build_system.resolution_materialization_phases -->
+### 19.3A Resolution and materialization phases
+
+Build-plan construction is divided into three normative phases:
+
+```text
+BuildPlanDraft
+MaterializationStep*
+ResolvedBuildPlanFinal
+```
+
+A `BuildPlanDraft` is the resolved build graph before executing build steps whose outputs are required for downstream
+compilation or module discovery.
+
+A `MaterializationStep` is a scheduled build step that produces, validates, or retrieves one of:
+
+* generated Kappa source;
+* generated Kappa interface artifacts;
+* generated host binding modules;
+* generated raw binding interfaces;
+* generated bridge companion artifacts;
+* generated headers;
+* generated ABI metadata;
+* generated source maps;
+* generated diagnostic fixtures;
+* generated resource roots; or
+* another declared generated output that can affect a selected target.
+
+A `ResolvedBuildPlanFinal` is a `BuildPlanDraft` plus all materialized, retrieved, or verified outputs required by every
+selected consumer target.
+
+A consuming target MUST NOT be compiled, typechecked, queried for module imports, lowered, linked, packaged, tested,
+benchmarked, or published from a `BuildPlanDraft` when that target requires a generated provider or generated output.
+
+For each selected target, the final resolved plan records whether every required generated output was:
+
+* produced during this build;
+* reused from a cache entry;
+* reused from a checked-in generated output;
+* verified against a lockfile entry;
+* omitted because the target does not consume it; or
+* rejected as missing, stale, or unreproducible.
+
+A generated output is valid for a consuming target only when its recorded input identities exactly match the identities
+required by the `BuildPlanDraft`, except when the build request explicitly permits an update mode that rewrites the
+corresponding lockfile or cache entry.
+
+Build-plan resolution itself MUST NOT be confused with manifest evaluation. Manifest evaluation produces typed authored
+data. Resolution and materialization consume that data and may perform external discovery or scheduled generation only
+under this chapter's lockfile, transcript, reproducibility, and provenance rules.
+
+Compiler frontend analysis, interface generation, KCore construction, KBackendIR construction, target lowering, and
+compiler query execution MUST use `ResolvedBuildPlanFinal` for every target whose effective module graph can depend on
+generated providers.
+
+Build tools MAY expose planning queries over `BuildPlanDraft`, but such queries MUST be clearly identified as planning
+queries and MUST NOT be used as the effective compilation configuration.
+
 <!-- build_system.reproducibility_status -->
-### 19.3A Reproducibility status
+### 19.3B Reproducibility status
 
 A `ResolvedBuildPlan` MUST record a reproducibility status for the whole build request and for each selected resolved
 target.
