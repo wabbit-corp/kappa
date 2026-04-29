@@ -29901,6 +29901,11 @@ The following rules apply to a fragment group:
 
 * Each fragment file has its own import declarations, local fixity declarations, source origins, and lexical file
   scope.
+* Every selected fragment header MUST name the same module.
+* Module attributes in selected fragment headers MUST be definitionally identical across the fragment group unless this
+  specification declares merge semantics for that attribute.
+* `@PrivateByDefault` has no merge semantics in fragment composition. Either every selected fragment header carries it,
+  or none do.
 * An import declaration in one fragment does not place imported names in lexical scope for another fragment.
 * A local fixity declaration in one fragment does not affect parsing or expression grouping in another fragment.
 * Top-level declarations from all selected fragments contribute to the effective module's top-level declaration set.
@@ -30461,7 +30466,7 @@ A build diagnostic for an invalid feature combination MUST identify the complete
 closure, not merely the last feature considered before failure.
 
 <!-- build_system.matrix_expansion -->
-### 19.5CA Matrix target expansion
+### 19.5D Matrix target expansion
 
 A matrix target is an authored aggregate target that expands into zero or more ordinary targets by taking combinations
 of declared axis values.
@@ -30518,7 +30523,7 @@ All compiler queries, diagnostics, test results, benchmark results, and publish 
 to the generated target identity and include a provenance backreference to the matrix target and selected axis values.
 
 <!-- build_system.provider_alternatives -->
-### 19.5D Provider alternatives and public facades
+### 19.5E Provider alternatives and public facades
 
 A provider alternative group declares that one effective module name may be supplied by one of several candidate
 providers for a target.
@@ -30570,7 +30575,7 @@ Resolved alias identity, collision behavior, and semantic-identity preservation 
 §19.9A.
 
 <!-- build_system.target_artifact_dependencies -->
-### 19.5E Target artifact dependencies
+### 19.5F Target artifact dependencies
 
 A target artifact dependency connects a consumer target to the artifact, module interface, export surface, or companion
 artifact produced by another target in the same resolved build graph.
@@ -30638,7 +30643,7 @@ A target dependency cycle is a build error unless the cycle is entirely within a
 mechanism. Portable v1 does not standardize mutually recursive static artifact targets.
 
 <!-- build_system.codegen_targets -->
-### 19.5F Codegen targets
+### 19.5G Codegen targets
 
 A codegen target describes generated outputs to be produced by a build step.
 
@@ -30803,7 +30808,7 @@ A generator diagnostic MUST carry provenance for the manifest expression selecti
 generator input, and the generated output span when available.
 
 <!-- build_system.platforms_toolchains -->
-### 19.5G Platforms and toolchains
+### 19.5H Platforms and toolchains
 
 A resolved target MUST distinguish:
 
@@ -30827,7 +30832,7 @@ A backend profile does not by itself determine the execution platform or host pl
 A target triple does not by itself determine the toolchain identity.
 
 <!-- build_system.variant_selection -->
-### 19.5H Variant selection
+### 19.5I Variant selection
 
 A variant is a producer capability selected to satisfy a consumer requirement.
 
@@ -30923,7 +30928,7 @@ In package mode:
 * URL dependencies MUST satisfy the pinning and digest rules of §2.3.2;
 * artifact dependencies MUST record artifact identity, compiler identity, exported module interface identities, backend
   profile, bridge metadata when relevant, and compatibility fingerprint;
-* target-artifact dependencies MUST resolve to target artifact references under §19.5E;
+* target-artifact dependencies MUST resolve to target artifact references under §19.5F;
 * Maven dependencies MUST resolve to exact artifact coordinates, artifact digests, metadata digests, and transitive
   graph identities under §19.6A;
 * NuGet dependencies MUST resolve to exact package identities, package digests, asset-selection identities, and
@@ -31115,6 +31120,11 @@ A resolved macro dependency records at least:
 * package/script mode;
 * unsafe/debug policy relevant to macro execution; and
 * provenance of the dependency declaration.
+
+A macro package, macro dependency, or config-safe helper selected by `BuildConfig` MUST NOT retroactively contribute
+config-safe schema helpers, bindings, or evaluation semantics used to elaborate or evaluate that same `BuildConfig`.
+Config-mode schema scope is fixed before manifest evaluation under Chapter 18. Macro dependencies selected by
+`BuildConfig` may affect only later compilation, code generation, or elaboration phases recorded in the resolved plan.
 
 A macro input transcript records observations made during elaboration-time execution that are not otherwise represented
 by immutable source, interface, lockfile, or resolved-plan identities.
@@ -32020,31 +32030,41 @@ E_BUILD_FRAGMENT_TAG_UNKNOWN
 E_BUILD_FRAGMENT_AXIS_CONFLICT
 E_BUILD_FRAGMENT_COMPOSITION_AMBIGUOUS
 E_BUILD_FRAGMENT_FIXITY_CONFLICT
+E_BUILD_SOURCE_TREE_UNPINNED
+E_BUILD_RESOURCE_COLLISION
 E_BUILD_SOURCE_COLLISION
 E_BUILD_PROVIDER_COLLISION
 E_BUILD_PROVIDER_ALIAS_COLLISION
 E_BUILD_PROVIDER_ALIAS_INVALID
 E_BUILD_PROVIDER_ALTERNATIVE_UNSELECTED
+E_BUILD_PROVIDER_AVAILABILITY_UNPINNED
 E_BUILD_FEATURE_UNKNOWN
 E_BUILD_FEATURE_CONFLICT
 E_BUILD_FEATURE_REQUIREMENT_UNSATISFIED
 E_BUILD_FEATURE_NON_MONOTONE
 E_BUILD_DEP_UNRESOLVED
+E_BUILD_DEP_RESOLVER_CONFLICT
 E_BUILD_DEP_IDENTITY_UNPINNED
+E_BUILD_PATH_DEP_CONTENT_UNPINNED
 E_BUILD_TARGET_ARTIFACT_UNKNOWN
 E_BUILD_TARGET_ARTIFACT_INCOMPATIBLE_USAGE
+E_BUILD_WORKSPACE_PACKAGE_DUPLICATE
+E_BUILD_WORKSPACE_TARGET_AMBIGUOUS
 E_BUILD_LOCK_MISSING
 E_BUILD_LOCK_MISMATCH
 E_BUILD_LOCK_SCHEMA_INCOMPATIBLE
 E_BUILD_LOCK_UPDATE_REQUIRED
 E_BUILD_BACKEND_UNAVAILABLE
 E_BUILD_ARTIFACT_UNSUPPORTED
+E_BUILD_ARTIFACT_IDENTITY_MISMATCH
 E_BUILD_EXPORT_SURFACE_UNSUPPORTED
 E_BUILD_C_ABI_UNSUPPORTED_SURFACE
 E_BUILD_INTERFACE_EQUIVALENCE_MISMATCH
 E_BUILD_HOST_BINDING_UNAVAILABLE
 E_BUILD_HOST_BINDING_UNPINNED
 E_BUILD_HOST_BINDING_PRECISION_UNSUPPORTED
+E_BUILD_ACTION_RESULT_STALE
+E_BUILD_ACTION_ENV_UNPINNED
 E_BUILD_NATIVE_ADAPTER_UNAVAILABLE
 E_BUILD_NATIVE_LOAD_UNSUPPORTED
 E_BUILD_RUNTIME_PREREQUISITE_UNRECORDED
@@ -32064,6 +32084,8 @@ E_BUILD_TEST_EXPECTATION_MISMATCH
 E_BUILD_TEST_UNSUPPORTED_BACKEND
 E_BUILD_BENCHMARK_DATASET_UNPINNED
 E_BUILD_BENCHMARK_ENVIRONMENT_UNPINNED
+E_BUILD_ENTRYPOINT_MISSING
+E_BUILD_ENTRYPOINT_INVALID
 E_BUILD_DEPLOYMENT_UNREPRODUCIBLE
 E_BUILD_PUBLISH_UNREPRODUCIBLE
 E_BUILD_PUBLISH_PATH_DEPENDENCY_REJECTED
