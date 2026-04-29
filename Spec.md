@@ -31364,11 +31364,32 @@ A bridge target has at least:
 * deployment prerequisites;
 * runtime prerequisite policy.
 
-Portable bridge realization names include those standardized by Chapter 17, including where implemented:
+Portable bridge realization names include, where implemented:
 
 ```text
 kappa.jni
+    Kappa-to-Kappa bridge between JVM and native artifacts using JNI or the JVM Invocation API.
+
+kappa.clr-native
+    Kappa-to-Kappa bridge between .NET/CLR and native artifacts using a CLR native interop realization such as
+    P/Invoke, reverse P/Invoke, generated native exports, or an implementation-defined equivalent recorded in the
+    bridge contract.
+
+kappa.wasm-component-host
+    Kappa-to-Kappa bridge between a WASM component artifact and a native, JVM, .NET, or other host artifact using the
+    WASM component model interface recorded in the bridge contract.
+
+kappa.c-abi-adapter
+    Kappa-to-Kappa or Kappa-to-foreign bridge through an explicitly declared C ABI adapter surface. This realization is
+    limited by the selected C ABI export/import surface and does not preserve full Kappa precision unless the adapter
+    contract explicitly proves that precision.
 ```
+
+Standardizing a bridge realization name does not require every implementation to support that realization.
+
+An implementation that advertises support for a standardized bridge realization MUST support the minimum metadata,
+callback-policy, deployment-prerequisite, generated-companion, and rejection-diagnostic requirements specified for that
+realization.
 
 A bridge target does not have one backend profile.
 
