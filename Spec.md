@@ -29794,6 +29794,58 @@ A transcript action records observations and is reproducible only with the trans
 
 An ambient action records observations as unreproducibility reasons.
 
+<!-- build_system.source_resource_tree_identity -->
+### 19.3G Source and resource tree identity
+
+A source tree identity records the content and selected path structure of a source root, generated source root,
+checked-in generated root, path dependency, or resource root.
+
+A `SourceTreeIdentity` records at least:
+
+* logical root identity;
+* root kind;
+* normalized relative path for every selected entry;
+* entry kind for every selected entry;
+* file content digest for every selected regular file;
+* symlink target identity or symlink rejection, according to the root policy;
+* executable-bit or permission identity when the selected backend or packaging policy observes it;
+* case-fold collision status;
+* include and exclude policy;
+* ignored-path policy;
+* generated-output identity when the root is generated; and
+* provenance or external observation entries that produced the tree listing.
+
+Path normalization for source tree identity MUST use `/` as the separator and MUST reject paths that escape the logical
+root after normalization.
+
+A source-root enumeration policy MUST specify whether symlinks are:
+
+```text
+reject-symlinks
+record-symlink-target
+follow-symlinks-with-cycle-detection
+implementation-defined-symlink-policy
+```
+
+Portable package mode defaults to `reject-symlinks` unless a later version of this specification standardizes a
+stronger portable symlink policy.
+
+A resource root is not a Kappa module provider merely because it contains `.kp` files. Resource roots contribute only
+to resource identities, deployment layouts, tests, benchmarks, or generated-output inputs unless explicitly also
+selected as source roots.
+
+A resource deployment record MUST record:
+
+* resource root identity;
+* logical resource path;
+* selected deployment path;
+* content digest;
+* collision policy; and
+* provenance of the resource selection.
+
+Two resources that map to the same deployment path are a build error unless the deployment policy explicitly selects
+one or defines a deterministic merge operation.
+
 <!-- build_system.fragments -->
 ### 19.4 Fragment selection
 
