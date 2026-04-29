@@ -28968,6 +28968,90 @@ generation, test execution, benchmark execution, publication, or filesystem enum
 Such effects occur only during build-plan resolution, build scheduling, or target execution as specified by this
 chapter.
 
+<!-- build_system.terms -->
+### 19.1A Build-system terms
+
+An **authored build value** is a value reachable from the manifest's final `buildConfig` binding.
+
+A **build request** is an invocation-time request to resolve, build, test, benchmark, publish, inspect, or otherwise act
+on one or more named targets. A build request is not part of the authored manifest unless the manifest explicitly reads
+it through the config-input mechanism of §18.4.
+
+A **target** is a named build graph node described by `BuildConfig`.
+
+A **target reference** identifies a target by name. In a workspace, target references are qualified by package when the
+unqualified name would be ambiguous.
+
+A **resolved target** is a target after feature selection, matrix expansion, dependency resolution, target-reference
+resolution, backend/profile resolution, fragment-tag computation, provider selection, and external discovery required for
+that target.
+
+An **artifact target** is a target whose purpose is to compile Kappa modules or selected source roots into one primary
+artifact family under exactly one backend profile.
+
+A **test target** is a target whose purpose is to check, compile, or run tests. A test target may contain multiple test
+executions, but each test execution has exactly one backend profile.
+
+A **codegen target** is a target whose purpose is to run a generator as a scheduled build step and materialize generated
+sources, generated interfaces, generated resources, or other declared generated outputs.
+
+A **bridge target** is a target whose purpose is to realize one bridge between provider and consumer artifacts or
+targets. A bridge target has a backend pair or bridge realization context. It does not itself select one compilation
+backend for a Kappa module graph.
+
+An **aggregate target** is a target that groups, aliases, or matrix-expands other targets. It has no backend profile and
+does not compile modules.
+
+A **publish target** is a target that packages already resolved and already built artifacts, package metadata, lockfile
+metadata, and publication metadata. It has no backend profile and does not compile modules.
+
+A **benchmark target** is a target whose purpose is to compile and execute benchmark code under a reproducible benchmark
+profile. A benchmark target may contain multiple benchmark executions, but each benchmark execution has exactly one
+backend profile.
+
+A **primary artifact family** is the single artifact family selected by an artifact target, such as native executable,
+native static library, native shared library, JVM JAR, JVM runtime image, .NET assembly, .NET application, WASM core
+module, WASM component, or Kappa interface-only artifact.
+
+A **companion artifact** is an artifact emitted as a consequence of a target or bridge but not counted as the target's
+primary artifact family. Examples include generated C headers, ABI metadata files, JNI registration tables, native
+bridge stubs, generated managed wrappers, source maps, interface artifacts, debug information, coverage maps, and
+deployment manifests.
+
+An **export surface** is a declared externally visible surface of an artifact. Export surfaces include Kappa module
+interfaces, C ABI exports, JVM wrapper surfaces, .NET wrapper surfaces, WASM component interfaces, and bridge surfaces.
+
+A **target artifact dependency** is a dependency from one target to the produced artifact or interface of another target
+in the same resolved build graph.
+
+A **tool dependency** is a dependency used to execute build-time tooling, code generation, diagnostics generation,
+benchmark harnesses, or packaging. Tool dependencies are distinct from runtime dependencies.
+
+A **macro dependency** is a dependency used by elaboration-time macros, prefixed-string handlers, derivation helpers, or
+other compile-time source generation. Macro dependencies are distinct from runtime dependencies and tool dependencies.
+
+A **runtime prerequisite** is a runtime dependency not necessarily bundled in the artifact. Runtime prerequisites include
+system libraries, platform SDKs, GPU drivers, JVM runtimes, CLR runtimes, OS frameworks, device drivers, native loaders,
+and bridge runtimes.
+
+A **system prerequisite** is a runtime prerequisite intentionally provided by the host platform, system loader, installed
+SDK, device driver, or deployment environment rather than by the built artifact.
+
+A **deployment layout** is the resolved placement of artifacts, companion artifacts, bundled native libraries, resources,
+runtime images, manifests, and loader metadata in a produced deployment.
+
+A **resolved fact** is any value discovered after manifest evaluation that can affect compilation, interface generation,
+artifact identity, host binding surfaces, bridge contracts, generated code, test behavior, benchmark behavior,
+deployment, publishing, reproducibility, query results, or diagnostics.
+
+A **materialized generated output** is an output of a codegen, binding-generation, or bridge-generation step after the
+build scheduler has executed that step and recorded its identity, path or logical root, digest, provenance, and provider
+role.
+
+A `ResolvedBuildPlan` is final for a consuming target only after every generated source root, generated interface, host
+binding surface, bridge companion, or codegen output required by that target has either been materialized or matched to a
+valid lockfile/cache entry.
+
 <!-- build_system.manifest_shape -->
 ### 19.2 Build manifest shape
 
