@@ -20108,13 +20108,18 @@ trait C1, ..., Cn => Tr args = ...
 
 Meaning:
 
-* every dictionary for `Tr args` contains coherent evidence for `C1` through `Cn`,
+* every evidence value of type `Tr args` provides coherent evidence for `C1` through `Cn`,
 * supertrait evidence is available inside the trait body,
-* inside local implicit resolution, an in-scope dictionary for `Tr args` may be projected to any of its declared
+* inside local implicit resolution, an in-scope evidence value for `Tr args` may be projected to any of its declared
   supertraits.
 
 Supertrait projection affects local implicit resolution only. It does not introduce additional global instance
 candidates. Global instance search remains based only on directly declared instances.
+
+The transitive supertrait closure of a trait is canonicalized by normalized trait evidence type. If multiple paths in a
+supertrait graph reach the same normalized evidence type, the projected evidence along those paths must be coherent
+under §15.2.1. A well-formed trait stores one canonical supertrait projection for each normalized supertrait evidence
+type in its closure.
 
 Example:
 
