@@ -115,6 +115,125 @@ raw foreign value
 A less precise boundary is acceptable when it is explicit. A precise boundary is acceptable only when the specification,
 implementation, or trusted summary states how that precision is enforced.
 
+<!-- design.language_profiles_feature_gates -->
+### 1.2 Language profiles, feature gates, and semantic acceptance
+
+A **language feature gate** is a named compile-time condition that governs whether a source form, semantic rule,
+elaboration behavior, backend obligation, diagnostic mode, or standard-library surface is accepted.
+
+Feature gates include:
+
+* standardized language-version gates, such as `kappa-v0.1`;
+* standardized optional gates named by this specification;
+* backend-capability gates, such as `rt-multishot-effects`;
+* unsafe/debug gates, such as `unhide`, `clarify`, and `assertReducible`;
+* implementation-defined extension gates; and
+* build-profile gates selected by a package manifest, compiler flag, source pragma, module attribute, or resolved build
+  plan.
+
+A **language profile** is a named set of active feature gates plus any stated implications among those gates.
+
+A conforming implementation MUST determine the active language profile and feature-gate set before successful
+elaboration of a compilation unit.
+
+Parser recognition is not acceptance:
+
+* A parser MAY recognize syntax belonging to an inactive feature gate for purposes of recovery, formatting,
+  highlighting, refactoring, or producing a better diagnostic.
+* Such recognition MUST NOT make the construct semantically accepted.
+* Successful elaboration MUST check the construct against the feature gate that owns its semantic meaning.
+* If the owning gate is inactive, compilation fails with a feature-gating diagnostic.
+
+Owning-gate rule:
+
+* Every gated surface construct, elaboration rule, typing rule, effect rule, backend requirement, and standard-library
+  surface has exactly one **owning gate**.
+* If a surface construct is syntactically shared by several features, the owning gate is the weakest gate that supplies
+  all semantic consequences needed by that occurrence.
+* If using a construct would require a stronger semantic consequence than its parsed surface shape suggests, acceptance
+  requires the stronger owning gate.
+
+For example:
+
+* recognizing `decreases sized x` for parser recovery does not enable sized termination;
+* recognizing a raw continuation-like form for implementation debugging does not enable portable continuation
+  semantics;
+* accepting a modal-extension surface requires the modal extension's owning gate, not merely successful parsing of its
+  binder syntax;
+* accepting a reachable multi-shot operation invocation requires the backend capability gate `rt-multishot-effects`.
+
+Feature implications:
+
+* One feature gate MAY imply another only when this specification or the selected build profile explicitly states that
+  implication.
+* Such implications are semantic facts of the active profile, not parser side effects.
+* If enabling feature `A` implies feature `B`, diagnostics and tooling MUST be able to report both the immediate
+  enabling source of `A` and the implication path that made `B` active.
+
+Feature provenance:
+
+For each active feature gate, the implementation MUST retain provenance sufficient for diagnostics and tooling.
+
+Feature provenance SHOULD identify one of:
+
+* the current language preset;
+* a command-line flag;
+* a package or target configuration entry;
+* a source pragma or module attribute;
+* an unsafe/debug build mode;
+* a backend profile or backend capability;
+* an implication from another active feature gate; or
+* an implementation-defined default.
+
+Extension-sensitive diagnostics:
+
+If a diagnostic, warning, help message, hover, REPL query, or tooling response says that behavior depends on an enabled
+or disabled language feature, it MUST be able to report:
+
+* the feature gate involved;
+* whether the gate is active or inactive;
+* the owning source construct or semantic rule;
+* the provenance of the active or inactive setting; and
+* when relevant, the stronger gate that would be required for successful elaboration.
+
+No accidental semantic drift:
+
+An implementation MUST NOT accept a program merely because:
+
+* the parser recognized the syntax;
+* an implementation-internal AST node exists for the construct;
+* a later phase happens not to reject it;
+* a backend can lower some approximate form of it;
+* a macro or plugin generated the construct; or
+* an implementation-defined extension was enabled without recording the corresponding semantic gate.
+
+Generated syntax:
+
+Generated syntax, macro output, elaboration recovery output, and plugin-generated obligations are subject to the same
+feature-gate checks as user-written source.
+
+A macro or plugin MUST NOT use generated syntax to bypass a feature gate that would reject the corresponding
+user-written source.
+
+Diagnostics:
+
+A feature-gate rejection belongs to diagnostic family `kappa.feature.gated`.
+
+A feature-gate diagnostic MUST identify:
+
+* the source or generated construct being rejected;
+* the owning feature gate;
+* the active language profile;
+* whether the gate is inactive or whether a stronger gate is required;
+* the provenance of the relevant gate settings;
+* any implication path that was considered; and
+* the most local source-preserving repair when one is known.
+
+Conformance:
+
+Portable conformance tests MAY assume that inactive feature gates are rejected during elaboration even when the tested
+syntax is accepted by the parser for recovery.
+
 
 
 ---
