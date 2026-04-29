@@ -30535,6 +30535,67 @@ A generated output used in package mode MUST either:
 * match a lockfile/cache entry whose inputs are identical; or
 * be checked in and recorded by content identity.
 
+<!-- build_system.codegen_targets.hermeticity -->
+#### Codegen execution boundary and hermeticity
+
+A codegen target is scheduled execution, not manifest evaluation.
+
+Package-mode codegen execution MUST use one of the following execution policies:
+
+```text
+hermetic-codegen
+transcript-codegen
+ambient-codegen
+```
+
+Meanings:
+
+* `hermetic-codegen` permits the generator to read only declared inputs and write only declared outputs. Undeclared
+  input reads and undeclared output writes are build errors when detected.
+* `transcript-codegen` permits the generator to observe additional implementation-exposed inputs only if every such
+  observation is recorded in a transcript entry that contributes to the generated-output identity.
+* `ambient-codegen` permits undeclared host observations but marks the generated output and every consuming target
+  `Unreproducible` unless the build request explicitly permits that status.
+
+A package-mode build SHOULD use `hermetic-codegen` for portable codegen targets.
+
+A codegen transcript records at least:
+
+* codegen target identity;
+* generator identity;
+* execution backend or tool runtime identity;
+* declared inputs;
+* observed undeclared inputs, when permitted;
+* environment values exposed to the generator;
+* working directory policy;
+* file digests or content identities for every observed file input;
+* network, registry, process, SDK, or host observations, when permitted;
+* generated outputs;
+* output digests;
+* diagnostics emitted by the generator; and
+* source map or provenance map from generated output back to generator inputs.
+
+A generated output cache key includes:
+
+* `std.build` schema identity;
+* codegen target identity;
+* generator identity;
+* execution backend or tool runtime identity;
+* generator arguments;
+* declared input identities;
+* transcript identity, when any;
+* output policy;
+* target backend/profile context when it affects generation; and
+* unsafe/debug policy when it affects generation.
+
+A generator used as a target artifact dependency MUST be built or resolved before the codegen target that executes it.
+
+A codegen target that emits Kappa modules contributes module providers only after the corresponding generated source root
+or generated interface artifact is materialized, cached, checked in, or verified by lockfile entry under §19.3B.
+
+A generator diagnostic MUST carry provenance for the manifest expression selecting the generator, each relevant
+generator input, and the generated output span when available.
+
 <!-- build_system.dependencies -->
 ### 19.6 Dependencies
 
