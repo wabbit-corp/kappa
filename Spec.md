@@ -9458,8 +9458,8 @@ at the splice site.
 
 `$(...)` and `reifyCore` are the only normative re-entry points from elaboration-time reflection to object-language
 code. Implementations MUST NOT provide a generic splice or coercion from arbitrary compile-time values, rows, labels,
-constraints, lexical contexts, exact-equality witnesses, or meta-phase ordinary values directly into ordinary runtime
-terms or types.
+trait-solver metadata, lexical contexts, exact-equality witnesses, or meta-phase ordinary values directly into ordinary
+runtime terms or types.
 
 `!` remains reserved for the monadic splice form inside `do` blocks (§5.7.1) and is not a synonym for `$(...)`.
 
@@ -9499,8 +9499,8 @@ A macro MAY inspect and transform code either at the surface level through `Synt
 reflection API of §5.8.5.
 
 Semantic reflection does not introduce a second user-visible source language or a separate macro lookup space. It is an
-elaboration-time interface for reasoning about ordinary Kappa terms, types, rows, labels, constraints, quantities,
-borrows, regions, captures, and visibility after elaboration.
+elaboration-time interface for reasoning about ordinary Kappa terms, types, rows, labels, trait obligations,
+quantities, borrows, regions, captures, and visibility after elaboration.
 
 <!-- types.macros.hygiene -->
 #### 5.8.4 Hygiene, scope metadata, and escape
@@ -9668,13 +9668,14 @@ The reflected terms may have different object-language type indices. A `CoreEq x
 elaboration can justify the comparison, including any required definitional equality between the reflected types of `x`
 and `y`.
 
-`Core` applies uniformly to reflected terms, reflected types, reflected rows, reflected labels, and reflected
-constraints. For example:
+`Core` applies uniformly to reflected terms, reflected types, reflected rows, and reflected labels. Trait obligations are
+reflected as ordinary type expressions whose resulting type has `IsTrait` evidence. For example:
 
 * `Core Γ Int` is a reflected term of type `Int`;
 * `Core Γ Type` is a reflected type expression;
 * `Core Γ RecRow`, `Core Γ VarRow`, and `Core Γ EffRow` are reflected row expressions;
-* `Core Γ Constraint` is a reflected constraint expression.
+* a reflected trait obligation such as `Eq Int` is represented as a `Core Γ Type` expression together with ordinary
+  semantic information that `IsTrait (Eq Int)` is available.
 
 `CoreCtx`, `Core Γ t`, `CoreEq x y`, and `Symbol` are compile-time reflection types. Values of these types are
 elaboration-time only, are erased, and MUST NOT be required at runtime or by `runCode`.
