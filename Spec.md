@@ -14797,6 +14797,67 @@ Accordingly:
 
 This subsection defines surface semantics only. KCore realization is given by §17.3.1.5.
 
+<!-- effects.monadic_core.effect_label_identity_handler_matching.examples -->
+#### 8.1.7D Handler selection worked examples
+
+Worked examples:
+
+Distinct labels with the same effect interface are handled independently.
+
+```kappa
+scoped effect State =
+    1 get : Unit -> Int
+    1 put : Int -> Unit
+
+let example : Eff <[outer : State, inner : State]> Int =
+    handle outer
+        handle inner
+            do
+                inner.put 1
+                outer.put 2
+                inner.get ()
+        with
+            case return x -> pure x
+            case get _ k -> k 10
+            case put _ k -> k ()
+    with
+        case return x -> pure x
+        case get _ k -> k 20
+        case put _ k -> k ()
+```
+
+The operation `inner.get` is intercepted by the handler for `inner`, not by the handler for `outer`, even though both
+labels carry the same effect interface.
+
+Nested handlers for the same exact label use the nearest dynamically enclosing matching handler.
+
+```kappa
+let sameLabel : Eff <[state : State]> Int =
+    handle state
+        handle state
+            state.get ()
+        with
+            case return x -> pure x
+            case get _ k -> k 1
+            case put _ k -> k ()
+    with
+        case return x -> pure x
+        case get _ k -> k 2
+        case put _ k -> k ()
+```
+
+The result is `1`, because the inner handler is the nearest dynamically enclosing handler for the exact label `state`.
+
+Lexical label identity still matters:
+
+```kappa
+let rebound = state
+handle rebound (state.get ()) with ...
+```
+
+This handles the operation only because `rebound` denotes the same effect-label value as `state`. Matching is by
+resolved effect-label identity, not by spelling.
+
 <!-- effects.monadic_core.effect_application_linear_soundness -->
 #### 8.1.8 Effect application and linear soundness
 
