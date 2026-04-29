@@ -22142,9 +22142,13 @@ In particular:
 <!-- identity.hash_uses.instance_coherence -->
 #### 15.2.1 Instance Coherence
 
-For any fully-applied, ground trait constraint `Tr args`, at most one distinct **semantic** implementation may exist in
-the compilation unit's module closure. Coherence is checked on the surviving instantiated candidate dictionaries for
-that goal, not merely on raw instance declarations.
+For any fully applied, ground trait evidence type `Tr args`, at most one distinct semantic implementation may exist in
+the compilation unit's module closure.
+
+Coherence is checked on instantiated evidence artifacts, not merely on raw instance declarations.
+
+Instance artifacts include ordinary top-level instances, local instances whose evidence escapes, intrinsic solver
+artifacts when those artifacts are materialized in interfaces, and trusted boundary-published evidence artifacts.
 
 In particular, overlap decisions are based on the canonical instance-artifact hashes exported by the defining modules.
 Those hashes are computed in the defining modules' own transparency environments, never in the importer's local
@@ -22152,14 +22156,27 @@ Those hashes are computed in the defining modules' own transparency environments
 In package mode, whenever a Hard Hash is needed for such a comparison, it MUST be available from the defining artifact
 or computable on demand; otherwise compilation is a hard error.
 
-Coherence check algorithm (normative):
+The coherence input for an evidence artifact includes all source-observable projections of that evidence, including:
 
-1. Let the comparison set be the surviving instantiated candidate dictionaries produced by the instance-resolution
+* runtime method fields;
+* associated static members;
+* supertrait evidence;
+* erased law fields;
+* compiler-generated evidence fields; and
+* intrinsic solver facts that affect any of the above.
+
+No implementation may hash only runtime methods when associated static members, supertraits, or erased law fields differ.
+If equality of two evidence values would imply equality of a projection, that projection contributes to the coherence
+artifact.
+
+Coherence check algorithm for instance resolution:
+
+1. Let the comparison set be the surviving instantiated evidence artifacts produced by the trait evidence resolution
    algorithm of §12.3.1.
-2. Compute or retrieve the canonical Easy Hash of each instantiated candidate dictionary from the defining module's
-   exported instance artifact.
-3. Group candidates by Easy Hash. Within each Easy-Hash group, all members are considered identical (harmless overlap).
-   The compiler may arbitrarily pick one for code generation.
+2. Compute or retrieve the canonical Easy Hash of each instantiated evidence artifact from the defining module's exported
+   instance artifact.
+3. Group candidates by Easy Hash. Within each Easy-Hash group, all members are considered identical harmless overlap.
+   The compiler may select the deterministic representative specified by §12.3.1.
 4. For candidates with different Easy Hashes:
    * if `coherence_mode = "structural"`, the compiler MUST treat the differing Easy Hashes as distinct implementations
      and reject the overlap;
@@ -22176,28 +22193,52 @@ Coherence check algorithm (normative):
      conservatively treat the differing Easy Hashes as distinct implementations and reject the overlap, while also
      emitting a warning that coherence was checked using structural identity only.
 
+Escaping evidence values:
+
+Any exported, stored, sealed, reflected, or otherwise escaping trait evidence value carries evidence provenance.
+Evidence provenance identifies either:
+
+* a concrete instance artifact;
+* an intrinsic solver artifact;
+* a local instance artifact together with its lexical nominal-scope restrictions;
+* a trusted boundary artifact checked against this coherence section; or
+* a symbolic evidence parameter whose caller must supply coherent evidence.
+
+When a compilation unit contains multiple concrete evidence artifacts for the same normalized ground trait evidence type,
+those artifacts must be coherent by the same algorithm used for implicit instance resolution, even if the evidence
+values are used only explicitly and never selected by implicit search.
+
+A local instance artifact may escape only when its evidence type may escape and its provenance can be represented in the
+escaping value or interface. If such provenance would mention a scoped local nominal declaration, anonymous rigid region,
+or other non-exportable entity, the ordinary escape rules reject the value.
+
 Hard-Hash policy for coherence:
 
 * The coherence policy is controlled by `coherence_mode = "structural" | "semantic" | "semantic-if-available"`.
-* In **script mode**, the default is `semantic-if-available`.
-* In **package mode** (the default for reproducible builds), the compiler MUST behave as if `coherence_mode =
-  "semantic"` for any coherence check that reaches the "different Easy Hash" branch above, and MUST compute Hard Hashes
-  for coherence comparisons on first need and persist them in the artifact cache keyed by Easy Hash. Subsequent builds
-  MAY reuse a cached canonical Hard Hash without recomputing normalization, provided the defining module's source and
-  its transitive dependencies (tracked by Easy Hash) are unchanged. If any required Hard Hash normalization fails or
-  otherwise cannot be completed, compilation is a hard error in package mode; the implementation MUST NOT fall back to
-  structural-only coherence checking there.
+* In script mode, the default is `semantic-if-available`.
+* In package mode, the compiler MUST behave as if `coherence_mode = "semantic"` for any coherence check that reaches the
+  “different Easy Hash” branch above, and MUST compute Hard Hashes for coherence comparisons on first need and persist
+  them in the artifact cache keyed by Easy Hash. Subsequent builds MAY reuse a cached canonical Hard Hash without
+  recomputing normalization, provided the defining module's source and its transitive dependencies tracked by Easy Hash
+  are unchanged. If any required Hard Hash normalization fails or otherwise cannot be completed, compilation is a hard
+  error in package mode; the implementation MUST NOT fall back to structural-only coherence checking there.
 * A compiler flag or manifest setting MAY request a different mode in script mode for debugging or performance work.
 * Implementations MAY reject `coherence_mode = "structural"` or `coherence_mode = "semantic-if-available"` in package
   mode; if they do not reject such a request, they MUST still apply the package-mode rule above.
 
 This rule guarantees that:
 
-* two instances that are structurally identical after Easy-Hash normalization are always accepted,
-* two instances that are extensionally equal after full normalization are also accepted when the Hard Hash is available,
-* two instances that are not extensionally equal are rejected whenever the required Hard-Hash comparison is available,
-* in script mode under `semantic-if-available`, if the Hard Hash is unavailable, structurally different instances are
+* two evidence artifacts that are structurally identical after Easy-Hash normalization are always accepted;
+* two evidence artifacts that are extensionally equal after full normalization are also accepted when the Hard Hash is
+  available;
+* two evidence artifacts that are not extensionally equal are rejected whenever the required Hard-Hash comparison is
+  available; and
+* in script mode under `semantic-if-available`, if the Hard Hash is unavailable, structurally different artifacts are
   conservatively rejected with a warning.
+
+The proof irrelevance of trait evidence in §12.4 is justified by this coherence invariant plus the abstract evidence
+construction rules of §5.1.3. If an implementation accepts a program without enforcing this coherence invariant, it MUST
+NOT expose compiler-generated `IsTrait` evidence for the affected trait evidence types.
 
 <!-- identity.hash_uses.fast_path_definitional_equality -->
 #### 15.2.2 Fast-Path Definitional Equality
