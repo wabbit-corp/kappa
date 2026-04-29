@@ -1075,7 +1075,7 @@ In addition to the ordinary exports listed below, implementations MUST provide t
 names referenced by §5.1.3, §5.3.1, and §5.3.2 whenever those names are user-nameable in source programs:
 
 ```text
-Universe, Quantity, Region, Constraint,
+Universe, Quantity, Region,
 RecRow, VarRow, EffRow,
 Label, EffLabel
 ```
@@ -1084,13 +1084,17 @@ These names denote intrinsic compile-time classifiers. Their implementation is p
 name-resolution behavior is ordinary: they are exported by `std.prelude`, participate in lexical lookup, may be rebound
 as compile-time values where §5.1.3 permits, and are erased according to §5.1.4.
 
-Implementations MUST provide the compile-time row and label constraint declarations referenced by §§5.3.1-5.3.2:
+Implementations MUST provide the intrinsic trait declarations referenced by §§5.1.3, 5.3.1, 5.3.2, and 12.4:
 
 ```text
+IsProp, IsTrait,
 ContainsRec, LacksRec,
 ContainsVar, LacksVar,
 ContainsEff, LacksEff, SplitEff
 ```
+
+`IsProp` is an ordinary proof trait. `IsTrait` and the row-membership traits above are intrinsic solver traits: their
+source-level names are ordinary prelude exports, but their evidence introduction rules are owned by the compiler.
 
 Implementations MUST provide the projector and accessor declarations referenced by §§5.1.7.3, 7.1.3A, 7.1.3B, 8.8, and
 17.3.1.3:
@@ -1108,7 +1112,7 @@ but source programs observe them as ordinary prelude exports.
 Types (type namespace):
 ```
 -- intrinsic compile-time classifiers
-Universe, Quantity, Region, Constraint,
+Universe, Quantity, Region,
 RecRow, VarRow, EffRow, Label, EffLabel,
 
 -- core ordinary types
@@ -1135,7 +1139,7 @@ RawComprehension a, ComprehensionPlan a,
 Option a, Result e a, List a, Array a, SizedArray n a, Set a, Map k v,
 
 -- resource and proof basics
-Res a r, Match a r, Dec p, Dict c,
+Res a r, Match a r, Dec p,
 WellFounded, Acc,
 
 -- algebraic effects and runtime effects
@@ -1199,7 +1203,6 @@ point including surrogates, extended grapheme cluster, or one-code-unit substrin
 Portable source code SHOULD use `UnicodeScalar`.
 
 `Integer`, `Double`, and `Real` are ordinary user-facing numeric types exported by `std.prelude`.
-`Dict c` is the standard explicit dictionary reification type for constraints.
 
 * `Integer` is an arbitrary-precision integer type.
 * `Double` is the IEEE-754 binary64 floating-point type.
@@ -1371,8 +1374,11 @@ Resolution follows the ordinary trait-member and implicit-evidence rules.
 `floatEq : Float -> Float -> Bool` compares floating-point values using IEEE numeric equality (so `NaN` is never equal
 and `+0.0` equals `-0.0`). It is not the default `(==)` for `Float`.
 
-Traits (constraint namespace, restricted to trait):
+Traits (trait declaration kind):
 ```
+-- proof and trait evidence
+IsProp, IsTrait,
+
 -- equality, ordering, display, sharing
 Equiv, Eq, Ord, Show, Shareable,
 
@@ -1624,15 +1630,12 @@ data Dec (p : Type) : Type =
     Yes p
     No (p -> Void)
 
-Dict : Constraint -> Type
-
 -- Intrinsic compile-time classifiers exported by std.prelude.
 -- These are primitive declarations with ordinary source-level name resolution.
 
-Universe   : Type0
-Quantity   : Type0
-Region     : Type0
-Constraint : Type0
+Universe : Type0
+Quantity : Type0
+Region   : Type0
 
 RecRow   : Type0
 VarRow   : Type0
@@ -1640,15 +1643,23 @@ EffRow   : Type0
 Label    : Type0
 EffLabel : Type0
 
-ContainsRec : RecRow -> Label -> Type -> Constraint
-LacksRec    : RecRow -> Label -> Constraint
+trait IsProp (t : Type) =
+    0 isProp :
+        (@0 x : t) ->
+        (@0 y : t) ->
+        x = y
 
-ContainsVar : VarRow -> Type -> Constraint
-LacksVar    : VarRow -> Type -> Constraint
+intrinsic trait IsProp t => IsTrait (t : Type)
 
-ContainsEff : EffRow -> EffLabel -> Type -> Constraint
-LacksEff    : EffRow -> EffLabel -> Constraint
-SplitEff    : EffRow -> EffLabel -> Type -> EffRow -> Constraint
+intrinsic trait ContainsRec (r : RecRow) (l : Label) (a : Type)
+intrinsic trait LacksRec    (r : RecRow) (l : Label)
+
+intrinsic trait ContainsVar (r : VarRow) (a : Type)
+intrinsic trait LacksVar    (r : VarRow) (a : Type)
+
+intrinsic trait ContainsEff (r : EffRow) (l : EffLabel) (e : Type)
+intrinsic trait LacksEff    (r : EffRow) (l : EffLabel)
+intrinsic trait SplitEff    (r : EffRow) (l : EffLabel) (e : Type) (rest : EffRow)
 
 Variant : VarRow -> Type
 
@@ -1859,8 +1870,10 @@ witness :
 let witness @value = value
 
 summon :
-    forall (c : Constraint).
-    (@evidence : c) -> Dict c
+    forall (t : Type).
+    (@_ : IsTrait t) ->
+    (@evidence : t) ->
+    t
 
 let summon @evidence = evidence
 
@@ -12870,8 +12883,8 @@ let summon @evidence = evidence
 
 `witness` reifies an implicit ordinary value as an ordinary explicit value.
 
-`summon` reifies coherent implicit constraint evidence as `Dict c`. It does not create evidence; it merely exposes
-evidence that implicit resolution has already found.
+`summon` reifies coherent implicit evidence for an intrinsic trait goal as an ordinary explicit value of that same
+trait type. It does not create evidence; it merely exposes evidence that implicit resolution has already found.
 
 Examples (using §5.6 coercion):
 
@@ -12879,8 +12892,8 @@ Examples (using §5.6 coercion):
 -- inside a context where (x > 0) = True is available implicitly:
 let p : (x > 0) = witness
 
--- retrieving an instance dictionary:
-let eqInt : Dict (Eq Int) = summon
+-- retrieving trait evidence:
+let eqInt : Eq Int = summon
 ```
 
 <!-- expressions.implicit_parameters.constructor_tag_test_expression_is -->
