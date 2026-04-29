@@ -32466,6 +32466,57 @@ whyRuntimePrerequisite(requiredBy)
 
 Each explanation query MUST return structured provenance, not prose only.
 
+<!-- build_system.event_stream -->
+### 19.10B Build event stream
+
+A conforming implementation intended for build-tool, editor, CI, or package-registry integration SHOULD expose a
+structured build event stream.
+
+A `BuildEventStream` records at least:
+
+* event stream schema version;
+* invocation identity;
+* build request identity;
+* resolved plan identity when available;
+* event sequence;
+* parent-child event relationships;
+* target identities;
+* action identities;
+* artifact identities;
+* diagnostic identities;
+* reproducibility records;
+* provenance records;
+* timestamps or deterministic ordering policy; and
+* final build outcome.
+
+Portable build event kinds include:
+
+```text
+BuildStarted
+ConfigEvaluationStarted
+ConfigEvaluationFinished
+ResolutionStarted
+ResolutionFinished
+MaterializationStarted
+MaterializationFinished
+TargetScheduled
+TargetStarted
+TargetFinished
+ActionStarted
+ActionFinished
+DiagnosticEmitted
+ArtifactProduced
+TestStarted
+TestFinished
+BenchmarkStarted
+BenchmarkFinished
+PublishStarted
+PublishFinished
+BuildFinished
+```
+
+Tools MUST NOT parse human-readable log output to recover information available in the build event stream.
+
 <!-- build_system.diagnostics -->
 ### 19.11 Build diagnostics
 
