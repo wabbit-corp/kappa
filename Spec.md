@@ -144,8 +144,10 @@ Normative mapping:
   * `main.win32.kp`           → module `main`
   * `std/base.posix.debug.kp` → module `std.base`
 * Source files whose path-derived module names are equal are fragments of the same module.
-* How a build selects, combines, or conditions such fragments is implementation-defined, except where this specification
-  explicitly relies on that mechanism (for example §6.5).
+* In a build without a standardized `ResolvedBuildPlan`, how a build selects, combines, or conditions such fragments is
+  implementation-defined, except where this specification explicitly relies on that mechanism.
+* In a project build governed by Chapter 19, fragment selection is specified by the target's selected fragment tags in
+  the `ResolvedBuildPlan`.
 * Module name segments are case-sensitive.
 * Implementations MUST reject a compilation unit that contains two source files whose path-derived module names are
   equal after case-folding but differ in case.
@@ -572,6 +574,10 @@ Rules:
   provides a native-ABI adapter realization under §17.7.
 * In package mode, every host binding module used by a build MUST be backed by a pinned host-source identity recorded in
   a lockfile or equivalent build artifact.
+* In a project build governed by Chapter 19, host binding modules are selected through host binding providers in the
+  `ResolvedBuildPlan`.
+  The provider records the host root, binding source, trusted summaries, adapter mode, link specification, load
+  specification, deployment prerequisites, and package-mode identity inputs.
 * A conforming implementation MAY realize a host binding module as a generated source module, a generated module
   interface artifact, a virtual module, or another observationally equivalent representation.
 
@@ -601,6 +607,8 @@ Rules:
 * A source module, URL module, package dependency module, host binding module, and bridge-supplied Kappa module that
   claim the same effective module name form a provider collision unless the build configuration explicitly selects or
   aliases exactly one provider.
+* In a project build governed by Chapter 19, that explicit provider selection or aliasing is represented in the
+  `ResolvedBuildPlan` derived from the build manifest.
 * Two bridge provider artifacts that supply the same effective module name also form a provider collision unless the
   build configuration explicitly selects or aliases exactly one provider.
 * A provider collision is a compile-time error. The diagnostic MUST identify all discovered providers and the mechanism
@@ -23668,6 +23676,12 @@ A query is identified by:
 * the selected backend profile and backend-intrinsic set when relevant; and
 * the analysis session or compilation session in which the query is evaluated.
 
+When a project is built through Chapter 19, the effective build configuration is the `ResolvedBuildPlan`, or a canonical
+projection of that plan sufficient to determine the query result.
+
+The authored `BuildConfig` alone is not sufficient as a query key, because dependency resolution, source discovery,
+host-binding generation, bridge selection, backend capability checks, and lockfile validation may affect the result.
+
 Query kinds are implementation-defined, but the implementation MUST behave as if at least the following conceptual
 queries exist:
 
@@ -28467,6 +28481,858 @@ Macros that operate on `Syntax` continue to use `SyntaxOrigin` and the source/sy
 
 A future revision may expose a public elaboration-time API for value provenance.
 Such an API must preserve hygiene, phase separation, source/synthetic origin discipline, and config-mode determinism.
+
+<!-- config_mode.build_manifest_role -->
+### 18.14 Build-manifest config role
+
+A Kappa build manifest is a config unit evaluated under the rules of this chapter.
+
+The canonical build-manifest path is:
+
+```text
+kappa.build.kp
+```
+
+A file at this path is evaluated in the `config-expression` profile unless the invoking build tool documents a stricter
+build-manifest profile.
+
+A build manifest MUST be checked under a loader-supplied schema scope containing at least:
+
+```text
+std.config
+std.build
+```
+
+The build-manifest schema scope supplies the build-description names of §19.1.
+
+A portable build manifest MUST NOT contain:
+
+* a `module` header;
+* ordinary `import` declarations;
+* `export` declarations;
+* top-level signatures separate from definitions;
+* user-defined functions;
+* user-defined macros;
+* ordinary project imports;
+* dependency imports;
+* host imports;
+* `IO`;
+* user-authored `Elab`.
+
+A build manifest MAY contain helper config bindings, but it MUST define exactly one final build-configuration binding:
+
+```kappa
+let buildConfig : BuildConfig = ...
+```
+
+or a value observationally equivalent under the build-schema API.
+
+The name `BuildConfig` is supplied by `std.build` in the loader-supplied schema scope.
+
+Build-manifest evaluation produces:
+
+* the value of `buildConfig`;
+* value provenance for `buildConfig`;
+* value provenance for every reachable subvalue of `buildConfig`;
+* diagnostics under §18.12.
+
+Build-manifest evaluation does not perform build resolution.
+
+In particular, build-manifest evaluation MUST NOT:
+
+* resolve package dependencies;
+* read source roots other than the manifest itself;
+* enumerate source files;
+* execute `pkg-config`;
+* scan native headers;
+* inspect native libraries;
+* inspect JVM classpaths or modules;
+* inspect CLR assemblies;
+* generate host bindings;
+* generate bridge bindings;
+* select a backend artifact kind;
+* update a lockfile.
+
+Those operations belong to build-plan resolution under Chapter 19.
+
+External inputs to a build manifest, such as selected target name, host platform, requested optimization mode, command
+line flags, or editor-supplied defaults, MUST enter through the explicit config-input mechanism of §18.4.
+
+The build tool SHOULD expose standard build config input keys for common request parameters, including:
+
+```text
+requestedTarget
+requestedBackend
+requestedPlatform
+requestedMode
+requestedProfile
+```
+
+when those parameters are meant to influence the authored manifest.
+
+If a command-line or editor parameter affects only target selection after `buildConfig` is produced, it need not be
+visible to the config evaluator.
+It must instead be represented in the build request consumed by build-plan resolution.
+
+Build-manifest diagnostics SHOULD use value provenance to point to the most useful source origin, not merely to the
+outer `buildConfig` binding.
+
+For example, if a dependency coordinate is produced by a prefixed string using helper bindings, a diagnostic about that
+coordinate SHOULD include related origins for the final dependency expression and for the helper bindings that
+contributed to it, as specified by §§18.8-18.10.
+
+---
+
+<!-- build_system -->
+## 19. Build system
+
+A Kappa project build is described by a build manifest evaluated through Chapter 18 config mode.
+
+The build system consumes:
+
+* a `BuildConfig` value produced by `kappa.build.kp`;
+* value provenance for that `BuildConfig`;
+* an explicit build request;
+* existing lockfile or transcript artifacts, when present;
+* toolchain identity and backend availability.
+
+It produces a `ResolvedBuildPlan`.
+
+A `BuildConfig` is authored configuration.
+
+A `ResolvedBuildPlan` is tool-resolved configuration.
+
+The distinction is normative.
+
+The authored `BuildConfig` may contain symbolic, relative, ranged, conditional, or declarative requests.
+
+The `ResolvedBuildPlan` records the exact selected source roots, targets, fragment sets, dependencies, host binding
+providers, bridge providers, backend profiles, artifact kinds, external discovery results, lockfile identities, and
+deployment prerequisites used by a build.
+
+Compiler frontend analysis, interface generation, KCore construction, KBackendIR construction, and target lowering use
+the `ResolvedBuildPlan`, not the raw `BuildConfig`, as the effective build configuration.
+
+<!-- build_system.std_build -->
+### 19.1 Standard build schema module `std.build`
+
+Implementations supporting build manifests MUST provide a config-safe schema module:
+
+```kappa
+std.build
+```
+
+`std.build` is not part of the ordinary implicit prelude.
+
+A build-manifest loader makes `std.build` available through the config schema scope of §18.3.
+
+Portable build manifests do not import `std.build`; its exported config-safe names are supplied by the loader.
+
+`std.build` provides the portable vocabulary for build manifests.
+
+At minimum, it supplies config-admissible types equivalent to:
+
+```text
+BuildConfig
+PackageName
+PackageVersion
+SourceRoot
+FragmentTag
+FragmentAxis
+TargetName
+Target
+TargetKind
+ModuleSelector
+BackendProfile
+ArtifactKind
+Dependency
+DependencySource
+HostBinding
+HostBindingSource
+NativeBinding
+NativeBindingSource
+NativeAbi
+NativeAdapterMode
+NativeLinkSpec
+NativeLoadSpec
+BridgeSpec
+BridgeRealization
+DeploymentMode
+UnsafePolicy
+ReproducibilityPolicy
+```
+
+At minimum, it supplies config-safe constructors or builder functions equivalent to:
+
+```text
+package
+semver
+
+sourceRoot
+tag
+axis
+tags
+
+module
+modules
+modulesUnder
+excludeModules
+
+executable
+library
+testTarget
+artifactTarget
+bridgeTarget
+
+native
+jvm
+dotnet
+wasmCore
+wasmComponent
+
+registry
+git
+pathDependency
+urlDependency
+artifactDependency
+
+hostBinding
+nativeBinding
+jvmBinding
+dotnetBinding
+
+pkgConfig
+headers
+moduleMap
+symbolList
+shim
+prebuiltNative
+
+cAbi
+dynamicLink
+staticLink
+runtimeLoad
+systemLoader
+bundledLoader
+providedByHost
+
+kappaJni
+```
+
+The exact surface spelling MAY be extended by implementations, but conforming implementations MUST provide an equivalent
+portable schema capable of expressing the concepts in this chapter.
+
+Every public declaration in `std.build` that is usable by portable manifests MUST be config-safe under §18.6.
+
+Constructing values from `std.build` MUST NOT perform source discovery, dependency resolution, host inspection,
+`pkg-config`, header preprocessing, classpath inspection, assembly inspection, bridge generation, native linking, or
+filesystem enumeration.
+
+Such effects occur only during build-plan resolution.
+
+<!-- build_system.manifest_shape -->
+### 19.2 Build manifest shape
+
+A portable build manifest has the following schematic form:
+
+```kappa
+let packageGroup = "one.wabbit"
+let version = semver "0.1.0"
+
+let buildConfig : BuildConfig =
+    package
+        ( name = "one.wabbit.image"
+        , version = version
+
+        , sourceRoots =
+            [ sourceRoot "src"
+            , sourceRoot "test"
+            ]
+
+        , fragmentAxes =
+            [ axis "backend" [tag "native", tag "jvm", tag "dotnet"]
+            , axis "os"      [tag "linux", tag "macos", tag "windows"]
+            , axis "mode"    [tag "debug", tag "release"]
+            ]
+
+        , dependencies =
+            [ registry
+                ( name = "std"
+                , version = "^0.1"
+                )
+            , git
+                ( name = "codec"
+                , url = "https://example.invalid/acme/codec.git"
+                , rev = "3f4a9c..."
+                )
+            ]
+
+        , hostBindings =
+            [ nativeBinding
+                ( name = "sqlite3"
+                , provides = [module "host.native.sqlite3"]
+                , source =
+                    pkgConfig
+                        ( package = "sqlite3"
+                        , minVersion = Some "3.40"
+                        )
+                , abi = cAbi
+                , headers = [headers ["sqlite3.h"]]
+                , link = dynamicLink ["sqlite3"]
+                , load = systemLoader
+                )
+            ]
+
+        , targets =
+            [ executable
+                ( name = "cli-native"
+                , backend = native
+                    ( toolchain = "zig"
+                    , targetTriple = "x86_64-linux-gnu"
+                    )
+                , fragments = tags ["native", "linux", "release"]
+                , main = module "acme.image.main"
+                , modules = modulesUnder "acme"
+                , dependencies = ["std", "codec"]
+                , hostBindings = ["sqlite3"]
+                )
+
+            , library
+                ( name = "core-jvm"
+                , backend = jvm ()
+                , fragments = tags ["jvm", "release"]
+                , modules = modulesUnder "acme"
+                , dependencies = ["std", "codec"]
+                )
+            ]
+        )
+```
+
+This example is illustrative.
+The normative requirement is that the manifest is an ordinary Chapter 18 config unit whose schema scope provides the
+build-description vocabulary.
+
+A build manifest may use helper config bindings to avoid repetition.
+
+Because config bindings are nonrecursive under §18.1, helper bindings are evaluated in source order.
+
+A build manifest may use config-safe prefixed strings and config-safe functions supplied by `std.config`, `std.build`,
+or the build loader's schema scope.
+
+A build manifest must not depend on ordinary project modules.
+A package dependency declared by `buildConfig` cannot be used to evaluate the same `buildConfig`.
+
+<!-- build_system.resolution -->
+### 19.3 Build-plan resolution
+
+Build-plan resolution consumes:
+
+* the evaluated `BuildConfig`;
+* its value provenance;
+* the explicit build request;
+* selected toolchain identity;
+* selected config-safe library identities;
+* existing lockfile or transcript artifacts, when applicable.
+
+It produces:
+
+```text
+ResolvedBuildPlan
+```
+
+A `ResolvedBuildPlan` records at least:
+
+* package identity;
+* source roots;
+* selected targets;
+* selected fragment tags per target;
+* selected source files per target;
+* effective modules per target;
+* selected module providers;
+* selected dependency identities;
+* selected host binding providers;
+* selected bridge providers;
+* selected backend profile per target;
+* selected artifact kind per target;
+* selected deployment mode per target;
+* unsafe/debug policy;
+* external discovery results;
+* lockfile identities;
+* diagnostics with config-value provenance.
+
+Build-plan resolution includes, when requested by the build:
+
+* source-root validation;
+* source-file enumeration;
+* module-name derivation;
+* fragment selection;
+* target validation;
+* dependency resolution;
+* registry lookup;
+* git resolution;
+* URL fetch or verification;
+* path dependency validation;
+* host binding provider selection;
+* `pkg-config` execution;
+* native header or module-map scanning;
+* native library lookup;
+* JVM classpath or module-path inspection;
+* CLR assembly inspection;
+* bridge-provider inspection;
+* backend capability checking;
+* artifact-kind checking;
+* lockfile validation or update.
+
+Build-plan resolution is not config evaluation.
+
+Any external fact discovered during build-plan resolution that affects compilation, interface generation, artifact
+identity, host binding surface, bridge contract, deployment, or diagnostics MUST be represented explicitly in the
+`ResolvedBuildPlan` and, in package mode, in a lockfile, transcript, or equivalent artifact.
+
+A build-plan resolver MUST NOT let hidden ambient host state affect compilation unless that state is represented in the
+`ResolvedBuildPlan`.
+
+The default lockfile path is:
+
+```text
+kappa.lock
+```
+
+A package-mode build MUST reject when `BuildConfig`, build request, resolved external facts, and lockfile entries
+disagree, unless the user explicitly requests a lockfile update operation.
+
+<!-- build_system.fragments -->
+### 19.4 Fragment selection
+
+Chapter 2 defines fragment suffixes in source-file paths.
+
+Under a `ResolvedBuildPlan`, fragment selection is no longer implementation-defined.
+
+A target has an enabled fragment-tag set.
+
+A source file is selected for a target iff:
+
+1. the file is under one of the target's selected source roots;
+2. the file has extension `.kp`;
+3. its path-derived module name is valid under §2.1;
+4. every fragment suffix on the file is declared or admitted by the build configuration; and
+5. every fragment suffix on the file is present in the target's enabled fragment-tag set.
+
+A file with no fragment suffixes is selected for every target that includes its source root.
+
+Example:
+
+```text
+src/acme/log.kp                    -> selected for all targets using src
+src/acme/log.jvm.kp                -> selected when tag jvm is enabled
+src/acme/log.native.linux.kp       -> selected when tags native and linux are enabled
+src/acme/log.native.linux.debug.kp -> selected when tags native, linux, and debug are enabled
+```
+
+Fragment axes declare mutually exclusive tags.
+
+A target MUST NOT enable more than one tag from the same exclusive axis.
+
+A source file MUST NOT use more than one tag from the same exclusive axis.
+
+Selected fragments with the same path-derived module name contribute to one effective module for that target.
+
+Unselected fragments do not participate in name resolution, import/export discovery, interface identity, hashing,
+diagnostics, or backend lowering for that target.
+
+If two selected fragments define conflicting declarations, incompatible module headers, incompatible exported surfaces,
+or multiple definitions for one `expect`, the effective module is rejected.
+
+Fragment selection must be deterministic for fixed `ResolvedBuildPlan` and source tree identity.
+
+<!-- build_system.targets_backends -->
+### 19.5 Targets, backends, and artifact kinds
+
+A target is one artifact-producing build request.
+
+A target has at least:
+
+* target name;
+* target kind;
+* backend profile;
+* artifact kind;
+* selected source roots;
+* enabled fragment tags;
+* module selector;
+* selected dependencies;
+* selected host bindings;
+* selected bridge providers;
+* unsafe/debug policy;
+* deployment mode.
+
+A target has exactly one backend profile.
+
+Portable target kinds include:
+
+```text
+executable
+library
+test
+artifact
+bridge
+```
+
+Portable backend-profile families include those standardized by Chapter 17, including where implemented:
+
+```text
+native
+jvm
+dotnet
+wasm-core
+wasm-component
+```
+
+JNI is not a backend profile.
+
+JNI-related functionality is expressed through one of:
+
+* a JVM target using a JNI-capable native adapter mode;
+* a `host.jvm.jni` host binding provider;
+* a Kappa-to-Kappa bridge realization such as `kappa.jni`.
+
+If a project needs both native and JVM artifacts, it defines separate native and JVM targets and connects them through a
+bridge target or bridge provider.
+
+A target MUST NOT silently degrade to another backend profile, artifact kind, bridge realization, adapter mode, or
+deployment mode.
+
+If the selected backend profile cannot support a requested host binding, ABI, bridge contract, callback shape, resource
+discipline, artifact kind, or deployment mode, build-plan resolution MUST reject the target.
+
+<!-- build_system.dependencies -->
+### 19.6 Dependencies
+
+A dependency declaration in `BuildConfig` names a possible source of modules, artifacts, host metadata, or bridge
+providers.
+
+Portable dependency source kinds include:
+
+```text
+registry
+git
+path
+url
+artifact
+```
+
+A dependency declaration may be unresolved in the authored `BuildConfig`.
+
+Examples:
+
+* a registry dependency may specify a version range;
+* a git dependency may specify a tag, branch, revision, or commit identity;
+* a path dependency may specify a local path;
+* a URL dependency may specify a pinned or unpinned URL according to build mode;
+* an artifact dependency may specify a prebuilt Kappa artifact.
+
+Build-plan resolution resolves each dependency to an immutable or explicitly transient identity.
+
+In package mode:
+
+* registry dependencies MUST resolve to exact package artifact identities;
+* git dependencies MUST resolve to exact commit identities and content digests;
+* URL dependencies MUST satisfy the pinning and digest rules of §2.3.2;
+* artifact dependencies MUST record artifact identity, compiler identity, exported module interface identities, backend
+  profile, bridge metadata when relevant, and compatibility fingerprint;
+* path dependencies MUST either be rejected for publishable package mode or represented by implementation-defined
+  content identities sufficient for reproducibility.
+
+In script mode, unpinned or moving dependencies MAY be admitted, but the resulting build is not reproducible unless the
+resolution transcript is persisted and reused.
+
+<!-- build_system.host_bindings_native_loading -->
+### 19.7 Host bindings and native loading
+
+A host binding provider describes how a target obtains a module under one of the reserved host roots of §2.3.3, or a
+toolchain-defined generated host binding module.
+
+A host binding provider has at least:
+
+* provider name;
+* provided module name or module-name prefix;
+* host root;
+* binding source;
+* trusted binding summaries, if any;
+* adapter mode;
+* link specification, when native linking is required;
+* load specification, when runtime loading is required;
+* deployment prerequisites;
+* package-mode identity inputs.
+
+Host binding sources include:
+
+```text
+pkg-config package
+native headers
+native module map
+symbol list
+shim source
+prebuilt native artifact
+JVM classpath or module-path metadata
+CLR assembly metadata
+JNI binding description
+implementation-defined host metadata
+```
+
+Native binding sources:
+
+* `pkgConfig` names one or more `pkg-config` packages and optional version constraints.
+* `headers` names explicit header files, include directories, preprocessor definitions, language mode, target triple,
+  calling convention, and ABI model.
+* `moduleMap` names a native module map or equivalent ABI description.
+* `symbolList` names exported symbols and ABI signatures.
+* `shim` names user-authored or generated shim source whose exported ABI is the binding surface.
+* `prebuiltNative` names a prebuilt native artifact and expected identity.
+
+Binding-source description is separate from link and load behavior.
+
+Native link kinds include:
+
+```text
+static-link
+dynamic-link
+no-link
+```
+
+Native load kinds include:
+
+```text
+system-loader
+bundled-loader
+runtime-load
+provided-by-host
+```
+
+Rules:
+
+* `static-link` means the native code is linked into the produced artifact or into an implementation-defined companion
+  artifact.
+* `dynamic-link` means the produced artifact records a dynamic link dependency.
+* `no-link` means the binding surface is used only for generation, checking, or runtime lookup.
+* `system-loader` means runtime loading uses the platform's ordinary loader search behavior.
+* `bundled-loader` means the build or packaging step places the native library in a deployment location recorded in
+  artifact metadata.
+* `runtime-load` means Kappa runtime code or generated bridge code explicitly loads the library by declared name, path,
+  handle, or package resource.
+* `provided-by-host` means the host runtime is expected to supply the symbol surface or library handle.
+
+Package-mode identity:
+
+For a host binding provider used in package mode, the lockfile or equivalent build artifact MUST record every input that
+can affect the generated host module interface, ABI surface, bridge contract, link behavior, or deployment metadata.
+
+For native bindings, this includes when applicable:
+
+* package names and resolved versions from `pkg-config`;
+* identity of `.pc` files used;
+* resolved compiler and linker flags used from `pkg-config`;
+* header file digests after resolving include paths;
+* transitive header or module-map digests required to derive the raw surface;
+* preprocessor definitions;
+* target triple;
+* data layout;
+* calling convention;
+* selected ABI language mode;
+* binding generator identity and version;
+* trusted binding summary identity;
+* shim source digests;
+* prebuilt library identities;
+* selected native adapter mode;
+* selected link and load specifications.
+
+A host binding provider MUST NOT silently infer ownership, nullability, thread-affinity, callback behavior, error
+mapping, blocking behavior, lifetime, or release behavior from headers alone.
+
+Such facts require a trusted binding summary, shim, refined overlay module, bridge contract, or conservative raw surface.
+
+If the required precision is unavailable, the generated raw binding must use conservative types such as `Option`,
+`std.ffi.RawPtr`, `std.ffi.OpaqueHandle`, checked boundary results, dynamic values, or another explicitly imprecise
+surface permitted by Chapter 17.
+
+<!-- build_system.bridges -->
+### 19.8 Bridge providers and bridge targets
+
+A bridge specification connects two Kappa artifacts or targets through a bridge realization.
+
+A bridge specification has at least:
+
+* bridge name;
+* provider target or artifact;
+* consumer target or artifact;
+* exported module set;
+* imported module names or aliases;
+* backend pair;
+* bridge realization mode;
+* deployment prerequisites;
+* generated companion artifact policy.
+
+Portable bridge realization names include those standardized by Chapter 17, including where implemented:
+
+```text
+kappa.jni
+```
+
+A bridge specification that supplies static modules to a consumer target creates bridge-supplied Kappa modules under
+§2.3.4.
+
+The provider artifact MUST supply Kappa module interface artifacts for every bridge-supplied module.
+
+The consumer target typechecks against those module interfaces exactly as it would against ordinary separately compiled
+Kappa modules.
+
+The bridge realization MUST supply or derive a bridge contract sufficient to preserve the exported Kappa surface.
+
+A bridge specification MUST NOT silently degrade a precise Kappa surface to `Dyn`, raw pointers, opaque handles, erased
+typed errors, serialized blobs, or lossy foreign values.
+
+If the selected bridge realization cannot preserve or enforce the requested surface, build-plan resolution MUST reject
+the bridge unless the user explicitly selects a less precise adapter module.
+
+In package mode, the lockfile or equivalent artifact MUST record at least:
+
+* provider artifact identity;
+* exported module interface identities;
+* bridge contract identity;
+* bridge generator identity;
+* backend pair;
+* bridge realization mode;
+* generated companion artifact identities when materialized;
+* deployment prerequisites;
+* native or managed runtime identities required by the bridge when available.
+
+<!-- build_system.module_providers -->
+### 19.9 Module providers
+
+A module provider is a selected source of effective Kappa modules for a target.
+
+Provider kinds include:
+
+* selected source fragments from the package itself;
+* selected source fragments from package dependencies;
+* URL modules resolved under §2.3.2;
+* host binding modules under §2.3.3;
+* bridge-supplied Kappa modules under §2.3.4;
+* generated source modules or generated interface modules produced by selected host bindings or bridge realizations.
+
+For a target, module discovery MUST resolve every effective module name to at most one selected provider.
+
+A provider collision is a compile-time error unless the build configuration explicitly selects, aliases, or excludes
+providers so that exactly one provider remains for the effective module name.
+
+Provider collision diagnostics MUST identify:
+
+* effective module name;
+* every provider claiming that module name;
+* provider kind;
+* dependency, source root, host binding, bridge, generated artifact, or URL source that introduced each provider;
+* target being built;
+* build-config source origin or value provenance that selected or failed to select the provider.
+
+An alias MUST NOT cause two different module interfaces to masquerade as one semantic module identity.
+
+<!-- build_system.query_integration -->
+### 19.10 Query integration
+
+The `ResolvedBuildPlan` is part of the effective build configuration used by the query model of §17.2.7.
+
+A query result whose answer can depend on any of the following MUST include the corresponding `ResolvedBuildPlan`
+projection in its query key:
+
+* selected source files;
+* selected source roots;
+* selected fragment tags;
+* selected dependencies;
+* dependency module interface identities;
+* selected module providers;
+* host binding surfaces;
+* bridge-supplied modules;
+* bridge contracts;
+* backend profile;
+* backend intrinsic set;
+* native adapter mode;
+* deployment mode;
+* unsafe/debug policy;
+* package mode vs script mode;
+* lockfile identities;
+* external discovery transcripts.
+
+Changing the `BuildConfig`, build request, lockfile, resolved dependency identity, selected backend, host binding
+identity, bridge identity, or source-root membership invalidates all affected queries from the earliest affected phase.
+
+The implementation MUST NOT maintain a separate build graph whose target selection, module providers, host bindings,
+bridge selections, or backend profiles can disagree with the `ResolvedBuildPlan`.
+
+<!-- build_system.diagnostics -->
+### 19.11 Build diagnostics
+
+Build diagnostics are ordinary compiler diagnostics.
+
+A build diagnostic MUST include, when applicable:
+
+* build manifest file;
+* config profile;
+* target name;
+* package or dependency name;
+* selected backend profile;
+* selected deployment mode;
+* source root or source file;
+* host binding provider;
+* bridge name;
+* lockfile entry;
+* primary source origin in `kappa.build.kp`;
+* relevant config value provenance.
+
+Required diagnostic classes include:
+
+```text
+E_BUILD_CONFIG_EXPECTED
+E_BUILD_TARGET_UNKNOWN
+E_BUILD_TARGET_DUPLICATE
+E_BUILD_FRAGMENT_TAG_UNKNOWN
+E_BUILD_FRAGMENT_AXIS_CONFLICT
+E_BUILD_SOURCE_COLLISION
+E_BUILD_PROVIDER_COLLISION
+E_BUILD_DEP_UNRESOLVED
+E_BUILD_LOCK_MISSING
+E_BUILD_LOCK_MISMATCH
+E_BUILD_BACKEND_UNAVAILABLE
+E_BUILD_ARTIFACT_UNSUPPORTED
+E_BUILD_HOST_BINDING_UNAVAILABLE
+E_BUILD_HOST_BINDING_UNPINNED
+E_BUILD_NATIVE_ADAPTER_UNAVAILABLE
+E_BUILD_NATIVE_LOAD_UNSUPPORTED
+E_BUILD_BRIDGE_UNAVAILABLE
+E_BUILD_BRIDGE_CONTRACT_MISMATCH
+E_BUILD_DEPLOYMENT_UNREPRODUCIBLE
+```
+
+A diagnostic for provider collision MUST identify every provider and the mechanism by which it was introduced.
+
+A diagnostic for native binding failure MUST distinguish:
+
+* binding-source failure;
+* ABI-description failure;
+* trusted-summary failure;
+* adapter-mode failure;
+* link failure;
+* runtime-load failure;
+* deployment failure.
+
+A diagnostic for lockfile mismatch MUST identify:
+
+* authored manifest source;
+* manifest value provenance;
+* previous lockfile entry;
+* newly resolved value when available;
+* command or mode needed to update the lockfile.
+
+When exact config provenance is available, a build diagnostic SHOULD point to the smallest manifest expression whose edit
+would repair the failing semantic value.
 
 ---
 
