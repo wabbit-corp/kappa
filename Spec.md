@@ -29571,6 +29571,116 @@ runtime artifact.
 A primary artifact family determines the primary artifact identity. Companion artifacts contribute to the target's full
 artifact identity and deployment identity, but they do not violate the one-primary-artifact-family rule.
 
+<!-- build_system.artifact_targets_export_surfaces -->
+### 19.5A Artifact targets and export surfaces
+
+An artifact target may declare zero or more export surfaces.
+
+Portable export surfaces are:
+
+```text
+kappa-interface
+c-abi
+jvm-wrapper
+dotnet-wrapper
+wasm-component-interface
+bridge-surface
+```
+
+A `kappa-interface` export surface records:
+
+* exported Kappa module names;
+* module interface artifact identities;
+* public declaration identities;
+* public instance identities;
+* public fixity metadata;
+* public export aliases;
+* opacity and visibility metadata;
+* unsafe/debug exposure metadata.
+
+A `c-abi` export surface records:
+
+* exported Kappa declarations;
+* exported C symbol names;
+* C header generation policy;
+* generated C header identity, when materialized;
+* ABI metadata identity;
+* selected native ABI identity;
+* selected foreign-ABI adapter identity;
+* symbol visibility policy;
+* calling convention;
+* layout and alignment policy;
+* string and byte ownership policy;
+* opaque handle ownership and release policy;
+* error mapping policy;
+* unsupported-surface rejection diagnostics.
+
+A `jvm-wrapper` export surface records:
+
+* generated JVM package or module name;
+* generated class/interface names;
+* selected JVM representation policy;
+* nullability policy;
+* exception/error mapping policy;
+* generated wrapper artifact identities.
+
+A `dotnet-wrapper` export surface records:
+
+* generated namespace;
+* generated type names;
+* selected CLR representation policy;
+* nullable metadata policy;
+* exception/error mapping policy;
+* generated wrapper artifact identities.
+
+A `wasm-component-interface` export surface records:
+
+* component interface identity;
+* imported and exported world/interface names;
+* adapter identity;
+* canonical ABI version;
+* runtime requirements;
+* generated binding metadata.
+
+A `bridge-surface` export surface records:
+
+* bridge realization;
+* exported module set or signature surface;
+* bridge contract identity;
+* bridge generator identity;
+* backend pair;
+* runtime representation table identity, when any;
+* callback policy;
+* resource and capture policy;
+* generated companion artifact identities.
+
+An artifact target MAY expose both a precise `kappa-interface` surface and a less precise foreign surface such as
+`c-abi`.
+
+The precise Kappa surface and the foreign ABI surface are distinct export surfaces.
+
+A declaration rejected from a `c-abi` export surface MAY remain valid and exported through a `kappa-interface` or
+precision-preserving bridge surface.
+
+Exporting a declaration through `c-abi` requires the ABI-visible erased surface of that declaration to satisfy
+`PortableAbi` under §17.7.1.
+
+If a declaration selected for `c-abi` export contains a runtime-visible parameter, result, field, callback, closure,
+effect, package, open row, dependent erased validity condition, borrowed value, or other surface not admitted by
+`PortableAbi`, build-plan resolution MUST reject that `c-abi` export and emit a diagnostic identifying the rejected
+declaration and the first unsupported ABI-visible component.
+
+A `c-abi` export MUST NOT silently replace unsupported Kappa precision with `RawPtr`, `OpaqueHandle`, `Dyn`, serialized
+bytes, integer handles, or an erased foreign facade.
+
+Such replacement is permitted only when the user explicitly exports a Kappa declaration whose type already exposes that
+less precise representation.
+
+Generated C headers and ABI metadata are companion artifacts of the artifact target.
+
+A native shared library with `c-abi` export therefore remains one artifact target with one primary artifact family
+`native-shared-library`; the generated header and ABI metadata are companion artifacts.
+
 <!-- build_system.dependencies -->
 ### 19.6 Dependencies
 
