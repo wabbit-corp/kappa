@@ -30360,6 +30360,9 @@ An alias MUST NOT cause two different module interfaces to masquerade as one sem
 A public facade module such as `crypto.Hashing` SHOULD be modeled as a provider alternative group when the build may
 choose among pure Kappa, native, JVM, .NET, or other implementations.
 
+Resolved alias identity, collision behavior, and semantic-identity preservation for provider aliases are governed by
+§19.9A.
+
 <!-- build_system.target_artifact_dependencies -->
 ### 19.5E Target artifact dependencies
 
@@ -31290,6 +31293,42 @@ Provider collision diagnostics MUST identify:
 * build-config source origin or value provenance that selected or failed to select the provider.
 
 An alias MUST NOT cause two different module interfaces to masquerade as one semantic module identity.
+
+<!-- build_system.module_providers.aliases -->
+### 19.9A Provider aliases
+
+A provider alias creates an additional effective module name for one selected module provider.
+
+A resolved provider alias records at least:
+
+* original effective module name;
+* alias effective module name;
+* original provider identity;
+* original module interface identity;
+* alias declaration provenance;
+* target in which the alias is active; and
+* alias compatibility fingerprint.
+
+A provider alias does not rewrite declaration semantic identities.
+
+A provider alias does not create a new provider identity.
+
+A provider alias does not permit two different provider identities to share one effective module identity.
+
+A provider alias contributes to import resolution exactly as if the aliased module interface were reachable under the
+alias effective module name, but every exported declaration retains its original semantic identity.
+
+If a module interface identity contains self-module references, those references remain references to the original
+provider identity unless the alias explicitly declares a self-aliasing policy. Portable v1 does not standardize
+self-alias rewriting.
+
+Two aliases collide when they introduce the same alias effective module name for different provider identities in the
+same target.
+
+An alias collision is a provider collision.
+
+The module interface identity visible through an alias records both the original provider identity and the alias
+effective module name. This prevents two aliases of distinct modules from masquerading as one semantic module.
 
 <!-- build_system.query_integration -->
 ### 19.10 Query integration
