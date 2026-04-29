@@ -27572,6 +27572,63 @@ Additional rules:
 * If a Lossy boundary produces a dependent value, the dependent indices refer to the produced Kappa value, not
   necessarily to the original foreign representation.
 
+<!-- compiler.ffi.boundary_contracts.bridge_failure_not_success -->
+##### 17.7.4A.1 Bridge failure is not successful completion
+
+A runtime bridge failure is not successful completion.
+
+If bridge binding, boundary validation, marshalling, member lookup, member invocation, callback ingress, callback
+egress, or later monitored higher-order use fails a bridge contract, the operation MUST report that failure through the
+contract's specified Kappa failure channel.
+
+Permitted failure channels include:
+
+* `std.bridge.BridgeFailure` injected into the handle-specific expected-error type through
+  `BridgeHandle.bridgeFailure`;
+* `std.gradual.CastBlame`;
+* a typed `Result.Err`;
+* an `IO` expected failure;
+* a documented defect when the boundary contract classifies the failure as unrecoverable.
+
+A conforming implementation MUST NOT:
+
+* print a host error and then return `Success`;
+* fabricate a default Kappa value;
+* fabricate an inhabitant of an empty or dependent type;
+* coerce an invalid foreign value into the demanded Kappa type;
+* silently replace a failed member lookup with `None` unless the bridge contract explicitly exposes lookup as `Option`;
+* silently replace a thrown host error with `Unit`;
+* treat a contract violation as ordinary successful bridge binding.
+
+Worked example:
+
+```kappa
+type ForeignCounter : Type =
+    (next : Unit -> IO BridgeError Int)
+
+let useCounter :
+    BridgeHandle h =>
+    (& h : h) -> IO BridgeError Int =
+    \handle ->
+        do
+            c <- bindModule @ForeignCounter handle "counter"
+            c.next ()
+```
+
+If binding `"counter"` succeeds but the later foreign member `next` returns a value that violates the contract for
+`Int`, the call to `c.next ()` fails through the bridge failure channel. It does not return an arbitrary `Int`.
+
+If binding `"counter"` fails because the module or member is absent, `bindModule` fails through the bridge failure
+channel. It does not fabricate a package whose members fail later unless the contract explicitly specifies lazy member
+validation.
+
+Eager versus lazy validation:
+
+* A bridge contract MAY validate an entire package eagerly at bind time.
+* A bridge contract MAY validate members lazily at first use.
+* The contract MUST state which strategy it uses when the difference is observable.
+* In both strategies, failure is failure. Lazy validation does not license successful completion with an invalid value.
+
 <!-- compiler.ffi.higher_order_boundaries -->
 #### 17.7.4B Higher-order boundaries
 
