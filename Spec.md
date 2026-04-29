@@ -12816,11 +12816,16 @@ Implicit binders:
   argument may discharge only an implicit binder.
 * Trait-instance resolution is specified (see Traits), and may be used to fill implicit constraint parameters.
 
-The default quantity of an implicit binder `(@x : T)` is determined by the classification of `T` alone; it does not
-consult trait or instance search.
+The default quantity of an implicit binder `(@x : T)` is determined by the classification of `T` alone; it does not run
+ordinary instance search to decide quantity.
 
-If `T` is a concrete constraint descriptor `C : Constraint`, or if `T` is a compile-time type in the sense of §5.1.4.1,
-the default is `0`. Otherwise, the default is the unrestricted quantity `ω`.
+If `T` is a compile-time type in the sense of §5.1.4.1, the default is `0`. Otherwise, the default is the unrestricted
+quantity `ω`.
+
+A trait evidence type such as `Eq a`, `Show a`, `ContainsRec r l a`, or `SplitEff r l e rest` is an ordinary type for
+this rule. Its implicit-binder default is therefore `ω`, unless the user writes a quantity explicitly. Evidence whose
+runtime representation is empty may still be erased by the trait-evidence erasure rules; erasure is not expressed by
+pretending the binder has quantity `0`.
 
 Users may override the default by writing the quantity explicitly, e.g. `(@0 x : T)`, `(@& x : T)`, `(@&[s] x : T)`, or
 `(@ω x : T)`.
@@ -12846,9 +12851,9 @@ let main =
 ```
 
 <!-- expressions.implicit_parameters.constraint_sugar -->
-#### 7.3.1 Constraint sugar
+#### 7.3.1 Trait-obligation sugar
 
-A constraint arrow
+A trait-obligation arrow
 
 ```kappa
 C => T
@@ -12860,7 +12865,11 @@ is syntactic sugar for an implicit parameter:
 (@_ : C) -> T
 ```
 
-where `C : Constraint`.
+where `C : Type u` for some universe `u` and the compiler can establish:
+
+```kappa
+IsTrait C
+```
 
 As a special case for boolean proposition sugar (§5.6.2), if the left side is a `Bool` expression `b`, then
 
@@ -12873,10 +12882,22 @@ elaborates to:
 ```kappa
 (@0 _ : b = True) -> T
 ```
-Multiple constraints associate to the right: `C1 => C2 => T` is equivalent to `(@_ : C1) -> (@_ : C2) -> T`, with each
-`Ci : Constraint`.
 
-`=>` is reserved for actual constraints, except for the boolean-proposition special case above. For ordinary proofs or
+Multiple trait obligations associate to the right:
+
+```kappa
+C1 => C2 => T
+```
+
+is equivalent to:
+
+```kappa
+(@_ : C1) -> (@_ : C2) -> T
+```
+
+with `IsTrait C1` and `IsTrait C2` available.
+
+`=>` is reserved for trait obligations, except for the boolean-proposition special case above. For ordinary proofs or
 other implicit values of type `P : Type`, write the implicit binder explicitly.
 
 <!-- expressions.implicit_parameters.expression_holes_named_holes -->
@@ -12946,8 +12967,8 @@ Resolution proceeds in this order:
    * explicit erased branch evidence introduced by control flow, including boolean equality evidence and constructor
      refinement evidence (§7.4.1, §7.5.4, and any later branch form that introduces such evidence),
    * local instance declarations in scope, and
-   * for an in-scope implicit value or dictionary `d : Tr args`, coherent evidence obtained by projecting any declared
-     supertraits of `Tr args` (§12.1.1).
+   * for an in-scope implicit value or trait evidence value `d : Tr args`, coherent evidence obtained by projecting any
+     declared supertraits of `Tr args` (§12.1.1).
 
    At the first lexical scope level containing one or more candidates whose types are definitionally equal to `G`:
    * if exactly one candidate is present, use it;
@@ -12956,10 +12977,10 @@ Resolution proceeds in this order:
    Search does not continue to outer lexical levels once such a level is found.
 
    Ordinary implicit-value search never consults imported top-level term bindings or exported module bindings. Only the
-   local implicit context is searched for non-`Constraint` goals.
+   local implicit context is searched for goals that are not trait evidence types.
 
-2. **Trait instance resolution**: if `G` is a trait constraint (e.g. `Eq Int`) and step 1 did not yield a unique local
-   candidate, attempt to resolve an instance from the instance environment using the algorithm of §12.3.1.
+2. **Trait evidence resolution**: if `G : Type u`, `IsTrait G` is available, and step 1 did not yield a unique local
+   candidate, attempt to resolve trait evidence using the algorithm of §12.3.1.
 
 3. **Boolean proposition normalization**:
     * If `G` is `b = True` and `b` normalizes under the current active refinement context (§14.3B) to `True`,
@@ -12997,24 +13018,26 @@ witness :
 let witness @value = value
 
 summon :
-    forall (c : Constraint).
-    (@evidence : c) -> Dict c
+    forall (t : Type).
+    (@_ : IsTrait t) ->
+    (@evidence : t) ->
+    t
 
 let summon @evidence = evidence
 ```
 
-`witness` reifies an implicit ordinary value as an ordinary explicit value.
+`witness` reifies any implicit ordinary value as an ordinary explicit value.
 
-`summon` reifies coherent implicit evidence for an intrinsic trait goal as an ordinary explicit value of that same
-trait type. It does not create evidence; it merely exposes evidence that implicit resolution has already found.
+`summon` is the trait-evidence-specialized convention. It does not create evidence; it merely exposes evidence that
+implicit resolution has already found.
 
-Examples (using §5.6 coercion):
+Examples using §5.6 coercion:
 
 ```kappa
 -- inside a context where (x > 0) = True is available implicitly:
 let p : (x > 0) = witness
 
--- retrieving trait evidence:
+-- retrieving instance evidence:
 let eqInt : Eq Int = summon
 ```
 
