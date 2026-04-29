@@ -28049,15 +28049,157 @@ An implementation MUST NOT fabricate precise provenance.
 
 Approximate provenance is permitted only when marked as approximate.
 
-<!-- config_mode.examples -->
-### 18.6 Config examples
+<!-- config_mode.string_interpolation_provenance -->
+### 18.6 Config string interpolation and string provenance
 
-This section is reserved for config-mode examples.
+In config mode, ordinary non-raw string literals support config interpolation.
 
-<!-- config_mode.evaluation_model -->
-### 18.7 Config evaluation model details
+Config interpolation admits:
 
-This section is reserved for additional config-mode evaluation-model rules.
+```text
+$name
+${expr}
+```
+
+A literal dollar sign may be escaped as:
+
+```text
+\$
+```
+
+Raw string literals do not interpolate.
+
+Config interpolation is config-mode syntax only. It does not change ordinary Kappa source-mode string literals.
+
+A config interpolated string evaluates to a `String`.
+
+Each interpolation expression must evaluate to a config-admissible value accepted by the implementation's config string
+conversion rules.
+
+The portable minimum conversions are:
+
+```text
+String
+Char
+Bool
+Int
+Nat
+Integer
+Ordering
+```
+
+An implementation MAY admit additional config-safe display conversions.
+
+Config string interpolation records per-slice provenance.
+
+For an interpolated string:
+
+```kappa
+"pre$name:${expr}post"
+```
+
+the resulting string has `SequenceProvenance` whose slices correspond to:
+
+* the literal segment `"pre"`;
+* the interpolation use site `$name`;
+* the literal segment `":"`;
+* the interpolation use site `${expr}`;
+* the literal segment `"post"`.
+
+A literal segment's provenance is the source range of that segment inside the string literal.
+
+An interpolation segment's provenance is `DerivedProvenance` containing:
+
+* the source range of the interpolation hole;
+* the source range of the interpolation expression;
+* the provenance of the evaluated interpolation value;
+* the config string conversion used.
+
+If the interpolated value is itself a string with per-slice provenance, the implementation SHOULD preserve and nest or
+flatten that string's existing slice provenance under the interpolation segment.
+
+A conforming implementation MUST preserve enough information to answer both:
+
+* “Which source range produced this substring in the final string?”
+* “Which earlier config binding or literal contributed to this substring?”
+
+Example:
+
+```kappa
+let majorVersion = 1
+let version = "$majorVersion.0.1"
+let packageGroup = "one.wabbit"
+let packageFullName = "$packageGroup:kappa"
+let buildConfig = (dependencies = [ "$packageFullName:$version" ])
+```
+
+The resulting dependency string:
+
+```text
+one.wabbit:kappa:1.0.1
+```
+
+has provenance that records at least:
+
+* the dependency list element source range in `buildConfig`;
+* the interpolation use of `packageFullName`;
+* the source of `packageFullName`;
+* the interpolation use of `packageGroup`;
+* the source of `packageGroup`;
+* the interpolation use of `version`;
+* the source of `version`;
+* the interpolation use of `majorVersion`;
+* the source of `majorVersion`.
+
+A tool that updates only the major version should therefore be able to identify the source range of `majorVersion`.
+
+A tool that updates the whole semantic version should be able to identify the source range of `version`.
+
+A tool that updates the final dependency coordinate may choose the outermost dependency string occurrence.
+
+<!-- config_mode.function_provenance -->
+### 18.7 Provenance through config-safe functions
+
+A config-safe function has a default provenance behavior.
+
+Unless a more precise provenance transformer is specified, evaluating:
+
+```kappa
+f arg1 ... argn
+```
+
+produces `DerivedProvenance` containing:
+
+* the call-site origin;
+* the resolved identity of `f`;
+* the provenance of each argument;
+* the resulting value provenance classified as approximate if the implementation cannot map result components to input
+  components precisely.
+
+A config-safe function MAY declare or be supplied with an implementation-defined provenance transformer.
+
+A provenance transformer maps argument provenances to result provenance without affecting the result value.
+
+Examples of functions that SHOULD have precise provenance transformers include:
+
+* string concatenation;
+* config string interpolation;
+* list append;
+* record merge;
+* semantic-version parsers;
+* dependency-coordinate parsers;
+* path-join helpers;
+* target-name helpers.
+
+A provenance transformer MUST be deterministic.
+
+A provenance transformer MUST NOT inspect the filesystem, network, environment, host runtime, mutable state, random
+state, or clock.
+
+A provenance transformer MUST NOT affect config evaluation semantics.
+
+If a provenance transformer fails, the config value remains valid if ordinary evaluation succeeded, but the result
+provenance is downgraded to `PartialProvenance` or `UnknownProvenance`.
 
 <!-- config_mode.tooling_queries -->
 ### 18.8 Config tooling queries
