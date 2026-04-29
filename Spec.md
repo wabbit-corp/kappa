@@ -23324,6 +23324,37 @@ A typechecker, implicit solver, quantity checker, borrow checker, effect-row che
 salvage-mode solving to collect additional facts after an obligation fails. Salvage mode is diagnostic-only. It MUST NOT
 change the accepted elaboration of a valid program.
 
+<!-- compiler.kfrontir.nondeferrable_correctness_failures -->
+##### 17.2.4.9A Non-deferrable correctness failures
+
+Some failures are non-deferrable because continuing as if they were ordinary recoverable holes would make later typing,
+normalization, execution, or backend lowering unsound or misleading.
+
+The following failures are non-deferrable hard errors in ordinary compilation:
+
+* inactive feature gate for a construct whose semantic consequences would affect typing, effects, ownership, totality,
+  ABI, or backend lowering;
+* failed totality certification for a transparent definition that would otherwise be conversion-reducible;
+* use of `assertReducible` when the selected build mode does not permit it;
+* unsatisfied positive lower-bound obligations;
+* linear-use violations that would duplicate, drop, or fabricate owned resources;
+* borrow escape of an anonymous rigid region;
+* incoherent instance selection;
+* unresolved associated-member owner evidence required for normalization of an accepted declaration;
+* trait refinement cycles;
+* malformed constructor or pattern arity after recovery has determined the constructor identity;
+* portable ABI exclusions for an exported portable ABI surface;
+* bridge contract failure during compile-time bridge validation;
+* backend incapability for reachable multi-shot effects;
+* KBackendIR legality-check failure.
+
+A diagnostic-only command or editor query MAY continue after recording such an error, but any produced KCore,
+KBackendIR, interface artifact, executable, or bridge artifact MUST be marked invalid and MUST NOT be used as a
+successful compilation result.
+
+A deferred-diagnostic mode MUST NOT turn any failure in this list into a runtime hole, bottom member, missing method, or
+fabricated value.
+
 <!-- compiler.kfrontir.incomplete_files_tooling_diagnostics -->
 ##### 17.2.4.10 Incomplete files and tooling diagnostics
 
