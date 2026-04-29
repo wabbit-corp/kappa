@@ -4771,7 +4771,8 @@ Contextual admissibility:
 
 * term-expression position primarily admits `term`, `ctor`, and `module`;
 * type position admits `type` and compile-time term expressions whose elaborated type is `Type u` for some universe `u`;
-* constraint position admits `trait` and compile-time term expressions whose elaborated type is `Constraint`;
+* trait-obligation position admits `trait`, type expressions, and compile-time term expressions whose elaborated type is
+  `Type u` for some universe `u`, provided the compiler can establish `IsTrait C` for the resulting type `C`;
 * pattern-head position admits `ctor` and terms declared with `pattern`;
 * effect-label position admits `effect-label` and compile-time term expressions whose elaborated type is `EffLabel`.
 
@@ -4808,8 +4809,8 @@ Rules:
 
 * `type T` resolves `T` by ordinary lookup in type position and yields the reified static-object term facet of that type
   declaration.
-* `trait C` resolves `C` by ordinary lookup in constraint position and yields the reified static-object term facet of
-  that trait declaration.
+* `trait C` resolves `C` by ordinary lookup in trait-obligation position and yields the reified static-object term facet
+  of that trait declaration.
 * `effect-label l` resolves `l` by ordinary lookup in effect-label position and yields the reified static-object term
   facet of that effect-label declaration.
 * `module M` resolves `M` by ordinary lookup in module position and yields the corresponding reified module value.
