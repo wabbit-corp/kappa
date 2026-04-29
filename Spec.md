@@ -20199,7 +20199,7 @@ If no such binders are introduced, this reduces to the simpler `forall params. T
 
 A bare occurrence of `m` elaborates to projection from synthesized implicit evidence for `Tr params`.
 
-An explicit dictionary projection such as `d.m` or `d.(op)` is the unsugared form.
+An explicit trait evidence projection such as `d.m` or `d.(op)` is the unsugared form.
 
 Associated static members:
 
@@ -20217,7 +20217,8 @@ Associated static members:
 * There is no trait-specific declaration form for associated static members.
   `opaque` has its ordinary meaning here.
 * Associated static members do not induce term-level overloaded names.
-* Associated static members are projected from an explicit dictionary binder or value using ordinary member selection.
+* Associated static members are projected from an explicit trait evidence binder or value using ordinary member
+  selection.
   For example, from:
 
   ```kappa
@@ -20237,14 +20238,17 @@ Associated static members:
   them.
 
 * There is no separate trait-scoped projection mechanism of the form `Trait.Name args`; ordinary projection from an
-  explicit or implicit dictionary remains the core mechanism.
+  explicit or implicit trait evidence value remains the core mechanism.
 
-Explicit dictionaries:
+Explicit evidence:
 
-For a dictionary `d : Dict (Tr args)`:
+For an explicit trait evidence value `d : Tr args`:
 
 * term members are projected as `d.name` or `d.(op)`,
-* associated static members are projected as `d.Name` in any syntactic position compatible with their compile-time type.
+* associated static members are projected as `d.Name` in any syntactic position compatible with their compile-time type,
+* declared supertraits are projected by the compiler as ordinary evidence projections.
+
+There is no `Dict (Tr args)` wrapper. A trait evidence value is already the explicit dictionary/evidence value.
 
 <!-- traits.instances -->
 ### 12.3 Instances
