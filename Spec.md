@@ -6192,10 +6192,9 @@ Kappa is dependently typed with a stratified universe hierarchy.
 Intrinsic compile-time types:
 
 ```text
-Universe   : Type0
-Quantity   : Type0
-Region     : Type0
-Constraint : Type0
+Universe : Type0
+Quantity : Type0
+Region   : Type0
 ```
 
 The intrinsic compile-time row and label types `RecRow`, `VarRow`, `EffRow`, `Label`, and `EffLabel` are introduced in
@@ -6269,9 +6268,8 @@ Universe variables:
 
 Kind and classifier variables:
 
-* A metavariable whose classifier would determine whether a binder ranges over `Type u`, `Constraint`, `RecRow`,
-  `VarRow`, `EffRow`, `Label`, `EffLabel`, `Region`, `Quantity`, or another intrinsic compile-time classifier MUST NOT
-  be defaulted.
+* A metavariable whose classifier would determine whether a binder ranges over `Type u`, `RecRow`, `VarRow`, `EffRow`,
+  `Label`, `EffLabel`, `Region`, `Quantity`, or another intrinsic compile-time classifier MUST NOT be defaulted.
 * Such a metavariable must be solved by context, generalized by an explicit rule, or rejected.
 
 Row variables:
