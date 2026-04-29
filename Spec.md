@@ -27780,12 +27780,157 @@ portable config mode.
 <!-- config_mode.profiles -->
 ### 18.2 Profiles
 
-This section is reserved for the detailed rules of the standardized config-mode profiles.
+<!-- config_mode.profiles.config_data -->
+#### 18.2.1 `config-data`
+
+The `config-data` profile admits only first-order data construction.
+
+It permits:
+
+* literals;
+* identifiers bound by earlier config `let`s;
+* records;
+* tuples;
+* lists;
+* closed data constructors imported from config-safe schema modules;
+* field projection from config values;
+* type ascription;
+* config string interpolation.
+
+It rejects ordinary function calls except constructor application.
+
+It rejects `if` and `match`.
+
+This profile is intended for bootstrap-safe data files and test fixtures.
+
+<!-- config_mode.profiles.config_expression -->
+#### 18.2.2 `config-expression`
+
+The `config-expression` profile includes all of `config-data`.
+
+It additionally permits:
+
+* saturated calls to config-safe functions;
+* `if` expressions whose condition has type `Bool`;
+* `match` expressions over config-admissible scrutinee types;
+* ordinary total normalization required to evaluate those expressions.
+
+A config-expression evaluator MUST NOT admit first-class function values.
+
+A function call in config-expression mode is well-formed only if:
+
+* the callee is imported from a config-safe module;
+* the callee is marked config-safe under §18.3;
+* all explicit arguments are supplied at the call site;
+* all implicit arguments can be resolved from config-safe evidence;
+* the result type is config-admissible under §18.3; and
+* the call can be evaluated deterministically by the config evaluator.
+
+Partial application is rejected in config mode.
+
+A config-safe function may be higher-order internally, but a config-mode source file cannot construct or pass lambda
+values unless a later extension profile explicitly permits that.
 
 <!-- config_mode.imports -->
 ### 18.3 Config imports
 
-This section is reserved for config-mode import restrictions and semantics.
+A **config-safe module** is a module whose interface explicitly marks some exported declarations as admissible in config
+mode.
+
+An implementation MUST provide at least:
+
+```text
+std.config
+```
+
+as a config-safe module.
+
+Other standard modules, such as `std.build` or `std.test.config`, may also expose config-safe declarations.
+
+Config mode does not implicitly import the ordinary `std.prelude`.
+
+Instead, a config unit is checked under a config prelude containing only config-safe names required for literals,
+records, tuples, lists, booleans, options, results, ordering, and ordinary config construction.
+
+A config unit may import only config-safe modules.
+
+A config-safe declaration may be:
+
+* a data type declaration;
+* a data constructor;
+* a type alias whose expansion is config-admissible;
+* a record/signature type whose fields are config-admissible;
+* a total transparent function whose arguments and result are config-admissible;
+* coherent erased evidence needed to elaborate config-safe functions.
+
+Config mode rejects imports of:
+
+* ordinary project modules;
+* package dependency modules unless already resolved as toolchain-provided config-safe schema modules;
+* host binding modules;
+* bridge-supplied modules;
+* modules requiring backend-specific intrinsics;
+* modules whose initialization or interface depends on ordinary build target selection.
+
+A type is **config-admissible** iff it is first-order and all runtime-relevant components are themselves
+config-admissible.
+
+The portable minimum config-admissible types include:
+
+```text
+Unit
+Bool
+Char
+String
+Int
+Nat
+Integer
+Ordering
+Option a
+Result e a
+List a
+Array a
+closed tuples of config-admissible types
+closed records of config-admissible fields
+closed data types explicitly marked config-safe
+```
+
+A config-admissible type MUST NOT contain runtime-relevant fields whose type is:
+
+```text
+function type
+IO e a
+Elab a
+Syntax a
+Core Γ a
+Code a
+ClosedCode a
+QueryCore ...
+Fiber ...
+Ref ...
+TVar ...
+AtomicRef ...
+RawPtr
+OpaqueHandle
+Dyn
+BridgePackage ...
+host binding type
+```
+
+unless a later section explicitly marks that type as config-admissible with a precise deterministic representation.
+
+A config-safe function MUST be:
+
+* pure;
+* total-certified;
+* deterministic;
+* independent of ordinary project dependency resolution;
+* independent of filesystem, network, subprocess, environment, wall-clock time, randomness, mutable global state, host
+  runtime reflection, and backend-specific code generation;
+* evaluable without executing macros or `Elab` actions;
+* evaluable without ordinary runtime `IO`.
+
+A config-safe function MUST NOT observe or branch on value provenance.
 
 <!-- config_mode.evaluator -->
 ### 18.4 Config evaluator
@@ -27796,6 +27941,124 @@ This section is reserved for config-mode evaluation semantics.
 ### 18.5 Value provenance
 
 This section is reserved for config-value provenance rules.
+
+<!-- config_mode.examples -->
+### 18.6 Config examples
+
+This section is reserved for config-mode examples.
+
+<!-- config_mode.evaluation_model -->
+### 18.7 Config evaluation model details
+
+This section is reserved for additional config-mode evaluation-model rules.
+
+<!-- config_mode.tooling_queries -->
+### 18.8 Config tooling queries
+
+A conforming implementation intended for editor, build-tool, or test-harness use SHOULD provide tooling queries for
+config mode.
+
+At minimum, such queries SHOULD include:
+
+* parse config file;
+* typecheck config file;
+* evaluate named config value;
+* return value provenance for a named config value;
+* return value provenance for a config value path;
+* return string-slice provenance for a config string value;
+* return all source ranges contributing to a config value;
+* return ranked editable source ranges for a config value or value slice;
+* return all config bindings contributing to a value;
+* return all final values affected by a source range or binding;
+* apply a provenance-preserving refactor when exact editable provenance is available.
+
+A config value path is a stable path through a config value, such as:
+
+```text
+buildConfig.dependencies[0]
+targets["cli"].backend
+fixtures[3].input
+```
+
+A value-provenance query for such a path returns the provenance of the selected subvalue.
+
+A string-slice provenance query additionally accepts a character range in the final string value and returns the
+provenance of the corresponding string slice.
+
+Editable-range ranking is implementation-defined, but SHOULD prefer:
+
+1. the smallest source range whose replacement updates exactly the selected semantic value;
+2. an explicitly named intermediate binding;
+3. the nearest enclosing interpolation expression;
+4. the nearest enclosing literal;
+5. the nearest enclosing final config field;
+6. unknown or whole-file fallback only when no precise range is available.
+
+<!-- config_mode.diagnostics -->
+### 18.9 Config diagnostics
+
+Config diagnostics are ordinary compiler diagnostics.
+
+A config diagnostic MUST identify:
+
+* the config file;
+* the config profile;
+* the failing config binding, if any;
+* the primary source origin;
+* relevant value provenance when the diagnostic concerns a derived value.
+
+When a diagnostic concerns a value derived through config bindings, interpolation, record construction, function calls,
+or list construction, the diagnostic SHOULD include related origins for the most relevant provenance contributors.
+
+Example diagnostic shape:
+
+```text
+error[E_CONFIG_DEP_VERSION]: dependency version does not satisfy the required range
+  --> kappa.build.kp:5:31
+   |
+5  | let buildConfig = (dependencies = [ "$packageFullName:$version" ])
+   |                               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ final dependency string
+   |
+note: version came from here
+  --> kappa.build.kp:2:15
+   |
+2  | let version = "$majorVersion.0.1"
+   |               ^^^^^^^^^^^^^^^^^^^
+
+note: major version came from here
+  --> kappa.build.kp:1:20
+   |
+1  | let majorVersion = 1
+   |                    ^
+help: update `version` or `majorVersion`
+```
+
+Required diagnostic classes include:
+
+```text
+E_CONFIG_PARSE
+E_CONFIG_RESTRICTED_FORM
+E_CONFIG_IMPORT_NOT_SAFE
+E_CONFIG_TYPE
+E_CONFIG_UNRESOLVED_NAME
+E_CONFIG_CALL_NOT_SAFE
+E_CONFIG_PARTIAL_APPLICATION
+E_CONFIG_EVAL
+E_CONFIG_PROVENANCE_UNAVAILABLE
+E_CONFIG_INTERPOLATION
+E_CONFIG_EXPECTED_VALUE
+```
+
+A diagnostic for `E_CONFIG_RESTRICTED_FORM` MUST identify the rejected form and the active config profile.
+
+A diagnostic for `E_CONFIG_CALL_NOT_SAFE` MUST identify the callee and why it is not config-safe.
+
+A diagnostic for `E_CONFIG_PROVENANCE_UNAVAILABLE` MUST distinguish:
+
+* unavailable because the value was produced by an opaque config-safe function;
+* unavailable because provenance was intentionally discarded by an implementation boundary;
+* unavailable because of an implementation limit;
+* unavailable because the value came from an explicit unknown external input.
 
 ---
 
