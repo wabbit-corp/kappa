@@ -11414,6 +11414,151 @@ Such helpers are admissible only if either:
 
 Desugaring is not a loophole for smuggling uncertified recursion into conversion.
 
+<!-- declarations.totality.local_recursion_examples -->
+#### 6.4.5A Local recursion
+
+Local recursive helpers are checked by the same termination rules as top-level recursive definitions.
+
+A local named binding is recursive only when enabled by the local-signature rule of §6.3.1. Every member of a mutually
+recursive local group must have a preceding local signature in the same block scope.
+
+Example:
+
+```kappa
+let lengthAcc (xs : List a) : Nat =
+    block
+        go : List a -> Nat -> Nat
+        let go ys acc decreases structural ys =
+            match ys
+            case Nil ->
+                acc
+            case (::) _ rest ->
+                go rest (acc + 1)
+
+        go xs 0
+```
+
+Here `go` is recursive because it has a preceding local signature. Its recursive call is accepted because `rest` is a
+constructor subterm of `ys`, so the selected structural argument decreases under §6.4.2A.
+
+A local recursive helper accepted as conversion-reducible may participate in definitional equality only within scopes
+where its local declaration is visible and only according to the conversion-reducibility rules of §6.4.1.
+
+A local recursive helper whose type mentions a scoped local nominal declaration, anonymous rigid region, local
+instance, or other non-exportable local entity MUST NOT escape its block except through an interface that hides those
+entities.
+
+<!-- declarations.totality.elaboration_preserved_evidence -->
+#### 6.4.5B Elaboration-preserved termination, refinement, and quantity evidence
+
+Elaboration may introduce helper functions, branch functions, join points, local recursive drivers, matcher functions,
+case splitters, deep-handler drivers, projection helpers, or other internal definitions.
+
+Such helper introduction is semantics-preserving only if the generated helper carries all evidence required to justify
+the source program.
+
+The implementation MUST preserve:
+
+* termination evidence;
+* selected structural arguments;
+* selected visible measures;
+* hidden phase components;
+* branch-local constructor facts;
+* branch-local boolean facts;
+* constructor-forced index equalities;
+* stable-alias facts;
+* transparent-family reduction facts available in the source branch;
+* equality transports inserted by elaboration;
+* binder quantities;
+* linear, affine, relevant, unrestricted, borrowed, and erased usage obligations;
+* borrow regions and capture annotations;
+* local implicit evidence;
+* local nominal-scope tokens;
+* source and synthetic origins needed for diagnostics.
+
+If a source construct is equivalent to an explicit nested `match`, explicit local helper, or explicit recursive helper
+that would typecheck, the implementation MUST NOT reject merely because its internal helper-lowering lost evidence that
+was available in the source-equivalent form.
+
+If the implementation cannot preserve the needed evidence through a chosen lowering, it must use a different lowering
+or reject the original source construct with a source-level diagnostic explaining the actual unsupported semantic case.
+
+Internal helper failures:
+
+A diagnostic for an elaboration-introduced helper MUST NOT blame only the generated helper declaration when the user
+wrote a higher-level construct.
+
+The primary origin SHOULD be the source construct whose lowering required the helper. Generated helper origins may
+appear as related origins.
+
+Example:
+
+```kappa
+let lenAppend :
+    forall (xs : List a) (ys : List a).
+    length (xs ++ ys) = length xs + length ys =
+    \xs ys ->
+        match xs
+        case Nil ->
+            refl
+        case (::) x rest ->
+            -- recursive proof branch may use the constructor fact
+            -- xs = (::) x rest and the transparent equation for (++).
+            ...
+```
+
+If the implementation lowers the match branch through an internal helper, that helper must receive the branch-local
+fact that `xs` has constructor `(::) x rest` and the corresponding recursive-family normalization facts. Losing those
+facts and then rejecting the recursive proof is not conforming.
+
+<!-- declarations.totality.recursive_group_elaboration_invariance -->
+#### 6.4.5C Recursive declaration-group elaboration invariance
+
+When a group of declarations is checked as one recursive strongly connected component, the group is elaborated from its
+semantic fixpoint, not from a source-order partial environment.
+
+This applies to:
+
+* mutually recursive term definitions;
+* mutually recursive local helpers;
+* mutually recursive type aliases, when admitted;
+* mutually recursive data declarations, when admitted;
+* mutually recursive trait/interface-style declarations, when admitted;
+* local recursive declaration groups inside `block` or `do`.
+
+Before checking any body in the group, the implementation MUST collect and publish the headers of every member of the
+same SCC into the group's internal checking environment.
+
+Header information includes:
+
+* term signatures;
+* type constructor headers;
+* data constructor names and result heads;
+* trait headers and member declarations;
+* associated static member declarations;
+* effect operation declarations;
+* quantities and erasedness of binders known from signatures;
+* local nominal-scope tokens for scoped declarations.
+
+Consequences:
+
+* Reordering members within one semantic SCC MUST NOT change accepted/rejected status, except where the source language
+  explicitly defines source-order behavior.
+* A constructor declared by one member of a mutually recursive data group is visible while checking sibling signatures
+  in the same SCC.
+* A trait declared later in a mutually recursive trait group is visible while checking earlier member signatures in that
+  same SCC, when such a group is admitted.
+* Quantity and relevance checking inside the SCC uses the completed group environment rather than whatever subset of
+  headers happened to appear earlier in source order.
+
+Diagnostics:
+
+If the implementation rejects a recursive group because the group form itself is not admitted, the diagnostic MUST say
+so directly.
+
+It MUST NOT surface a downstream unification, missing-constructor, missing-trait, or linearity error caused only by
+checking one member against an incomplete source-order environment.
+
 <!-- declarations.totality.relationship_assertions -->
 #### 6.4.6 Relationship to termination assertion escapes
 
