@@ -10465,8 +10465,8 @@ Portable minimum:
 Portable exclusions:
 
 * The portable minimum does not require `DynamicType` for arbitrary function types, open-row records or variants, trait
-  constraints, `Dict` values, fibers, TVars, handlers, resumption values, or types whose runtime classification depends
-  on erased proofs, erased indices, anonymous regions, or other compile-time-only data.
+  evidence types, fibers, TVars, handlers, resumption values, or types whose runtime classification depends on erased
+  proofs, erased indices, anonymous regions, or other compile-time-only data.
 * The portable minimum does not require `DynamicType` for `Code t` or `ClosedCode t`.
 * A library or implementation MAY provide `DynRep` values for indexed, refined, or higher-order types only when it also
   provides an explicit runtime witness scheme that justifies `sameDynRep` and `checkedCastWith` for those values.
