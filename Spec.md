@@ -30847,6 +30847,65 @@ The resolved plan MUST distinguish:
 * native ABI bindings selected through `host.native`;
 * runtime framework or runtime identifier prerequisites.
 
+<!-- build_system.dependencies.macros -->
+### 19.6C Macro dependencies and macro transcripts
+
+A macro dependency is a dependency used by elaboration-time macros, prefixed-string handlers, derivation helpers,
+comprehension hooks, config-safe schema helpers, or other compile-time source generation.
+
+Macro dependencies are distinct from runtime dependencies, tool dependencies, and codegen dependencies.
+
+A resolved macro dependency records at least:
+
+* macro dependency name;
+* macro package identity;
+* macro module interface identities;
+* exported macro symbol identities used by the consuming package;
+* macro evaluator identity;
+* macro dependency graph identity;
+* config-safe helper identities when the macro package contributes config-safe helpers;
+* package/script mode;
+* unsafe/debug policy relevant to macro execution; and
+* provenance of the dependency declaration.
+
+A macro input transcript records observations made during elaboration-time execution that are not otherwise represented
+by immutable source, interface, lockfile, or resolved-plan identities.
+
+A macro transcript entry records at least:
+
+* macro package identity;
+* macro symbol identity;
+* splice, prefixed-string, derive, comprehension hook, or config-safe helper invocation origin;
+* macro evaluator identity;
+* call-site effective import environment identity;
+* call-site provider identity projection;
+* call-site visibility, opacity, `unhide`, and `clarify` state relevant to the macro;
+* syntax input identities;
+* reflected core or interface query identities, when used;
+* external observations permitted in script mode, when any;
+* generated syntax identity or expansion fingerprint when cached;
+* diagnostics emitted by the macro; and
+* provenance backreferences to user-written source and manifest values.
+
+In package mode, elaboration-time macro execution MUST be deterministic with respect to explicit macro inputs, macro
+package identity, call-site semantic environment, effective import environment, provider identities, and recorded
+transcript entries.
+
+A package-mode macro that attempts to observe an external input not admitted by the elaboration-time evaluator is
+rejected.
+
+A script-mode macro MAY observe implementation-permitted external inputs. Such observations MUST be recorded in a macro
+transcript entry, and every target whose elaboration depends on that transcript MUST record the corresponding
+reproducibility vector.
+
+Macro transcript identity contributes to:
+
+* module interface identity for modules whose elaboration used the macro;
+* generated syntax cache identity;
+* lockfile identity;
+* diagnostics involving generated syntax; and
+* query keys for elaboration, normalization, interface generation, and downstream compilation.
+
 <!-- build_system.host_bindings_native_loading -->
 ### 19.7 Host bindings and native loading
 
