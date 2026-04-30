@@ -1,0 +1,12 @@
+module main
+
+-- Source issue: Idris2#214
+-- Kappa analogue: matching on erased equality evidence should refine types without collapsing distinct linear binders into one ownership obligation.
+-- Spec: §5.1.5, §5.6.1, §14.3
+pairAfterEq : (@0 a : Type) -> (1 x : a) -> (1 y : a) -> (@0 e : x = y) -> (a, a)
+let pairAfterEq (@0 a : Type) x y e =
+    match e
+      case refl -> (x, y)
+
+--! assertNoErrors
+--! assertType pairAfterEq (@0 a : Type) -> (1 x : a) -> (1 y : a) -> (@0 e : x = y) -> (a, a)

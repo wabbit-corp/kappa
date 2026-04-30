@@ -69,6 +69,44 @@ let ``zig backend emits float helpers for float arithmetic`` () =
     Assert.Contains("kappa_float_add", source)
 
 [<Fact>]
+let ``zig backend runs bundled inequality helper via builtin Eq evidence`` () =
+    let workspace =
+        compileInMemoryWorkspaceWithBackend
+            "memory-zig-neq-root"
+            "zig"
+            [
+                "main.kp",
+                [
+                    "module main"
+                    "let result = if True /= False then 1 else 0"
+                ]
+                |> String.concat "\n"
+            ]
+
+    Assert.False(workspace.HasErrors, sprintf "Expected no diagnostics, got %A" workspace.Diagnostics)
+
+    let outputDirectory = createScratchDirectory "zig-neq-backend"
+
+    let artifact =
+        match Backend.emitZigArtifact workspace "main.result" outputDirectory with
+        | Result.Ok artifact -> artifact
+        | Result.Error message -> failwith message
+
+    let compileResult =
+        runProcessWithEnvironment
+            artifact.OutputDirectory
+            (ensureRepoZigExecutablePath ())
+            $"cc -std=c11 -O0 -o \"{artifact.ExecutableFilePath}\" \"{artifact.SourceFilePath}\""
+            []
+
+    Assert.Equal(0, compileResult.ExitCode)
+
+    let runResult = runProcess artifact.OutputDirectory artifact.ExecutableFilePath ""
+    Assert.True(runResult.ExitCode = 0, runResult.StandardError + runResult.StandardOutput)
+    Assert.Equal("1", runResult.StandardOutput.Trim())
+    Assert.True(String.IsNullOrWhiteSpace(runResult.StandardError), runResult.StandardError)
+
+[<Fact>]
 let ``cli can run the zig backend for recursive list matches`` () =
     let workspaceRoot = createScratchDirectory "cli-zig-workspace"
 

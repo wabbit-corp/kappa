@@ -1,0 +1,30 @@
+module main
+
+-- Source issue: Idris2#696
+-- Kappa analogue: a transparent local helper used inside a type alias must still normalize when later signatures
+-- demand the instantiated alias.
+-- Spec: §5.1.4.2, §6.3.1, §14.3, §14.3A
+type SameBool (x : Bool) (y : Bool) : Type =
+    block
+        same : Bool -> Bool -> Type
+        let same left right =
+            match left
+              case False ->
+                  match right
+                    case False -> Unit
+                    case True -> Void
+              case True ->
+                  match right
+                    case False -> Void
+                    case True -> Unit
+
+        same x y
+
+diag : forall (flag : Bool). SameBool flag flag
+let diag flag =
+    match flag
+      case False -> ()
+      case True -> ()
+
+--! assertNoErrors
+--! assertType diag forall (flag : Bool). SameBool flag flag

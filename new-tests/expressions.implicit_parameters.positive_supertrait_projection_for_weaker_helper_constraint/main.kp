@@ -1,0 +1,36 @@
+module main
+
+trait Semigroup a =
+    append : a -> a -> a
+
+trait Semigroup a => Monoid a =
+    neutral : a
+
+trait Monoid a => VerifiedMonoid a =
+
+repeatTwice : (@_ : Monoid Int) -> Int -> Int
+let repeatTwice x =
+    append x (append x neutral)
+
+useVerified : (@_ : VerifiedMonoid Int) -> Int -> Int
+let useVerified x =
+    repeatTwice x
+
+instance Semigroup Int =
+    let append x y = x + y
+
+instance Monoid Int =
+    let neutral = 0
+
+instance VerifiedMonoid Int =
+
+result : Int
+let result = useVerified 21
+
+-- Source issue: Idris2#72
+-- Kappa analogue: an in-scope stronger trait dictionary may satisfy helper calls that require a declared supertrait.
+-- Spec: §7.3.3, §12.1.1, §12.3.1
+--! assertNoErrors
+--! assertType useVerified (@_ : VerifiedMonoid Int) -> Int -> Int
+--! assertType result Int
+--! assertEval result 42

@@ -1,0 +1,19 @@
+module main
+
+-- Source issue: Idris2#658
+-- Kappa analogue: a later trait member signature may mention an earlier trait member inside an implicit proof binder.
+-- Spec: §7.3.3, §12.2, §12.2.1
+trait ZeroTag a =
+    zeroValue : Nat
+    acceptZero : (@_ : zeroValue = 0) -> a -> Nat
+
+instance ZeroTag Int =
+    let zeroValue = 0
+    let acceptZero x = x
+
+result : Nat
+let result = acceptZero @refl 42
+
+--! assertNoErrors
+--! assertType result Nat
+--! assertEval result 42

@@ -12,7 +12,7 @@ module internal IlDotNetBackendTyping =
     open IlDotNetBackendModel
     open IlDotNetBackendInput
 
-    let internal buildEnvironment (modules: ClrAssemblyModule list) =
+    let internal buildEnvironment (modules: ClrAssemblyModule list) (roots: (string * string) list option) =
         let rawSkeletons, rawDataTypes = buildRawModuleSkeletons modules
 
         resolveDataTypes rawSkeletons rawDataTypes
@@ -21,6 +21,182 @@ module internal IlDotNetBackendTyping =
             let declaredBindingLookup = buildDeclaredBindingLookup modules
             buildTraitInstances rawModules modules
             |> Result.bind (fun traitInstances ->
+                let reachableBindings =
+                    let patternBoundNames pattern =
+                        let rec loop currentPattern =
+                            match currentPattern with
+                            | KRuntimeWildcardPattern
+                            | KRuntimeLiteralPattern _ -> []
+                            | KRuntimeNamePattern name -> [ name ]
+                            | KRuntimeConstructorPattern(_, arguments) ->
+                                arguments |> List.collect loop
+                            | KRuntimeOrPattern alternatives ->
+                                alternatives
+                                |> List.tryHead
+                                |> Option.map loop
+                                |> Option.defaultValue []
+
+                        loop pattern |> Set.ofList
+
+                    let routeBindings traitName memberName =
+                        traitInstances
+                        |> List.choose (fun instanceInfo ->
+                            if String.Equals(instanceInfo.TraitName, traitName, StringComparison.Ordinal) then
+                                instanceInfo.MemberBindings
+                                |> Map.tryFind memberName
+                                |> Option.map (fun bindingName -> instanceInfo.ModuleName, bindingName)
+                            else
+                                None)
+
+                    let rec visitExpression currentModule bound expression visited =
+                        let visitMany expressions state =
+                            expressions |> List.fold (fun current expression -> visitExpression currentModule bound expression current) state
+
+                        let visitBinding bindingKey visitedBindings =
+                            if Set.contains bindingKey visitedBindings then
+                                visitedBindings
+                            else
+                                match rawModules |> Map.tryFind (fst bindingKey) with
+                                | Some moduleInfo ->
+                                    match moduleInfo.Bindings |> Map.tryFind (snd bindingKey) with
+                                    | Some binding ->
+                                        let nextVisited = Set.add bindingKey visitedBindings
+
+                                        match binding.Body with
+                                        | Some body -> visitExpression (fst bindingKey) Set.empty body nextVisited
+                                        | None -> nextVisited
+                                    | None ->
+                                        Set.add bindingKey visitedBindings
+                                | None ->
+                                    Set.add bindingKey visitedBindings
+
+                        match expression with
+                        | KRuntimeLiteral _
+                        | KRuntimeEffectLabel _
+                        | KRuntimeEffectOperation _ ->
+                            visited
+                        | KRuntimeName [ name ] when Set.contains name bound ->
+                            visited
+                        | KRuntimeName segments ->
+                            match tryResolveBinding rawModules currentModule segments with
+                            | Some(moduleName, binding) ->
+                                visitBinding (moduleName, binding.Name) visited
+                            | None ->
+                                visited
+                        | KRuntimeClosure(parameters, body) ->
+                            visitExpression currentModule (Set.union bound (Set.ofList parameters)) body visited
+                        | KRuntimeIfThenElse(condition, whenTrue, whenFalse) ->
+                            visited
+                            |> visitExpression currentModule bound condition
+                            |> visitExpression currentModule bound whenTrue
+                            |> visitExpression currentModule bound whenFalse
+                        | KRuntimeHandle(_, label, body, returnClause, operationClauses) ->
+                            let visitedAfterCore =
+                                visited
+                                |> visitExpression currentModule bound label
+                                |> visitExpression currentModule bound body
+
+                            let returnBound =
+                                returnClause.Arguments
+                                |> List.choose (function
+                                    | KRuntimeEffectNameArgument name -> Some name
+                                    | _ -> None)
+                                |> Set.ofList
+
+                            let visitedAfterReturn =
+                                visitExpression
+                                    currentModule
+                                    (Set.union bound returnBound)
+                                    returnClause.Body
+                                    visitedAfterCore
+
+                            operationClauses
+                            |> List.fold (fun state clause ->
+                                let clauseBound =
+                                    clause.Arguments
+                                    |> List.choose (function
+                                        | KRuntimeEffectNameArgument name -> Some name
+                                        | _ -> None)
+                                    |> Set.ofList
+                                    |> fun names ->
+                                        match clause.ResumptionName with
+                                        | Some resumptionName -> Set.add resumptionName names
+                                        | None -> names
+
+                                visitExpression currentModule (Set.union bound clauseBound) clause.Body state)
+                                visitedAfterReturn
+                        | KRuntimeMatch(scrutinee, cases) ->
+                            let visitedAfterScrutinee = visitExpression currentModule bound scrutinee visited
+
+                            cases
+                            |> List.fold (fun state caseClause ->
+                                let caseBound = Set.union bound (patternBoundNames caseClause.Pattern)
+                                let stateAfterGuard =
+                                    caseClause.Guard
+                                    |> Option.map (fun guard -> visitExpression currentModule caseBound guard state)
+                                    |> Option.defaultValue state
+
+                                visitExpression currentModule caseBound caseClause.Body stateAfterGuard)
+                                visitedAfterScrutinee
+                        | KRuntimeExecute inner
+                        | KRuntimeDoScope(_, inner)
+                        | KRuntimeUnary(_, inner) ->
+                            visitExpression currentModule bound inner visited
+                        | KRuntimeLet(bindingName, value, body) ->
+                            visited
+                            |> visitExpression currentModule bound value
+                            |> visitExpression currentModule (Set.add bindingName bound) body
+                        | KRuntimeScheduleExit(_, action, body) ->
+                            let visitedAfterAction =
+                                match action with
+                                | KRuntimeDeferred deferred ->
+                                    visitExpression currentModule bound deferred visited
+                                | KRuntimeRelease(_, release, resource) ->
+                                    visited
+                                    |> visitExpression currentModule bound release
+                                    |> visitExpression currentModule bound resource
+
+                            visitExpression currentModule bound body visitedAfterAction
+                        | KRuntimeSequence(first, second)
+                        | KRuntimeWhile(first, second)
+                        | KRuntimeBinary(first, _, second) ->
+                            visited
+                            |> visitExpression currentModule bound first
+                            |> visitExpression currentModule bound second
+                        | KRuntimeApply(callee, arguments) ->
+                            visited
+                            |> visitExpression currentModule bound callee
+                            |> visitMany arguments
+                        | KRuntimeDictionaryValue(_, _, _, captures) ->
+                            visitMany captures visited
+                        | KRuntimeTraitCall(traitName, memberName, dictionary, arguments) ->
+                            let visitedAfterInputs =
+                                visited
+                                |> visitExpression currentModule bound dictionary
+                                |> visitMany arguments
+
+                            routeBindings traitName memberName
+                            |> List.fold (fun state bindingKey -> visitBinding bindingKey state) visitedAfterInputs
+                        | KRuntimePrefixedString(_, parts) ->
+                            parts
+                            |> List.fold (fun state part ->
+                                match part with
+                                | KRuntimeStringText _ -> state
+                                | KRuntimeStringInterpolation(expression, _) ->
+                                    visitExpression currentModule bound expression state)
+                                visited
+
+                    match roots with
+                    | None ->
+                        rawModules
+                        |> Map.toList
+                        |> List.collect (fun (moduleName, moduleInfo) ->
+                            moduleInfo.Bindings |> Map.toList |> List.map (fun (bindingName, _) -> moduleName, bindingName))
+                        |> Set.ofList
+                    | Some rootBindings ->
+                        rootBindings
+                        |> List.fold (fun state bindingKey -> visitExpression (fst bindingKey) Set.empty (KRuntimeName [ snd bindingKey ]) state) Set.empty
+
                 let cache = Dictionary<string * string, BindingInfo>()
 
                 let tryResolveDeclaredBindingTypes currentModule bindingName =
@@ -457,6 +633,9 @@ module internal IlDotNetBackendTyping =
                     | KRuntimeEffectOperation _
                     | KRuntimeHandle _ ->
                         Result.Error "IL backend does not support effect handlers yet."
+                    | KRuntimeName [ "True" ]
+                    | KRuntimeName [ "False" ] ->
+                        ensureExpected (IlPrimitive IlBool)
                     | KRuntimeName segments ->
                         inferNamedValue segments
                     | KRuntimeUnary("-", operand) ->
@@ -502,6 +681,8 @@ module internal IlDotNetBackendTyping =
                                                 ensureExpected (IlPrimitive IlBool)
                                             | ("==" | "!="), IlPrimitive IlBool, IlPrimitive IlBool ->
                                                 ensureExpected (IlPrimitive IlBool)
+                                            | ("==" | "!="), IlNamed (_, "Bool", []), IlNamed (_, "Bool", []) ->
+                                                ensureExpected (IlPrimitive IlBool)
                                             | ("==" | "!="), IlPrimitive IlString, IlPrimitive IlString ->
                                                 ensureExpected (IlPrimitive IlBool)
                                             | ("==" | "!="), IlPrimitive IlChar, IlPrimitive IlChar ->
@@ -512,8 +693,11 @@ module internal IlDotNetBackendTyping =
                                                 ensureExpected (IlPrimitive IlBool)
                                             | ("&&" | "||"), IlPrimitive IlBool, IlPrimitive IlBool ->
                                                 ensureExpected (IlPrimitive IlBool)
+                                            | ("&&" | "||"), IlNamed (_, "Bool", []), IlNamed (_, "Bool", []) ->
+                                                ensureExpected (IlPrimitive IlBool)
                                             | _ ->
-                                                Result.Error ""
+                                                Result.Error
+                                                    $"IL backend does not support '{operatorName}' for {formatIlType leftType} and {formatIlType rightType}."
                                 }
 
                             builtinResult
@@ -692,6 +876,7 @@ module internal IlDotNetBackendTyping =
                             let! bindingEntries =
                                 rawModule.Bindings
                                 |> Map.toList
+                                |> List.filter (fun (bindingName, _) -> Set.contains (moduleName, bindingName) reachableBindings)
                                 |> List.fold
                                     (fun bindingResult (bindingName, _) ->
                                         result {

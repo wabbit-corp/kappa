@@ -1,0 +1,25 @@
+module main
+
+-- Source issue: KT-458
+-- Spec: §3.1
+`class` : Int
+let `class` = 17
+
+`$$$$` : Int
+let `$$$$` = 25
+
+baseResult : Int
+let baseResult = `class` + `$$$$`
+
+step : Int -> Int
+let step value = value + 1
+
+back : Int -> Int
+let back value = value - 1
+
+result : Int
+let result = back (step baseResult)
+
+--! assertNoErrors
+--! assertType result Int
+--! assertExecute result 42

@@ -173,8 +173,10 @@ module internal ClrAssemblyLowering =
             | BackendRepEffectOperation ->
                 None
             | BackendRepClosure _
-            | BackendRepOpaque _ ->
+            | BackendRepOpaque None ->
                 None
+            | BackendRepOpaque(Some name) ->
+                Some name
 
         render representation
 

@@ -1,0 +1,23 @@
+module main
+
+-- Manual oracle seed: constructor application plus pattern matching.
+data Pair : Type =
+    Pair : Int -> Int -> Pair
+
+weighted : Pair -> Int
+let weighted pair =
+    match pair
+      case Pair left right -> left * 10 + right
+
+baseResult : Int
+let baseResult = weighted (Pair 4 2)
+
+liftResult : Int -> Int
+let liftResult value = value
+
+result : Int
+let result = liftResult baseResult
+
+--! assertNoErrors
+--! assertType result Int
+--! assertExecute result 42

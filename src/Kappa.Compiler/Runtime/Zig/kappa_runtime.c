@@ -204,6 +204,7 @@ static KValue* kappa_apply_value(KValue* callee, KValue** args, int argc);
 static KValue* kappa_expect_effect_label(KValue* value);
 static KValue* kappa_expect_io_action(KValue* value);
 static void kappa_expect_unit(KValue* value);
+static KValue* kappa_int_to_string(KValue* value);
 
 static void* kappa_alloc(size_t size)
 {
@@ -1154,6 +1155,120 @@ static KValue* kappa_value_not_equal(KValue* left, KValue* right)
 {
     KValue* equal = kappa_value_equal(left, right);
     return kappa_box_bool(!kappa_expect_bool(equal));
+}
+
+static KValue* kappa_ordering_value(int comparison)
+{
+    int ctor_tag = 1;
+
+    if (comparison < 0)
+    {
+        ctor_tag = 0;
+    }
+    else if (comparison > 0)
+    {
+        ctor_tag = 2;
+    }
+
+    return kappa_make_data(KTYPE_std_prelude_Ordering, ctor_tag, 0, NULL);
+}
+
+static KValue* kappa_builtin_compare(KValue* left, KValue* right)
+{
+    int comparison = 0;
+
+    if (left == NULL || right == NULL || left->tag != right->tag)
+    {
+        kappa_panic("builtin compare expects values with the same runtime representation");
+    }
+
+    switch (left->tag)
+    {
+        case K_TAG_INT:
+            comparison = (left->as.int_value > right->as.int_value) - (left->as.int_value < right->as.int_value);
+            break;
+        case K_TAG_FLOAT:
+            comparison = (left->as.float_value > right->as.float_value) - (left->as.float_value < right->as.float_value);
+            break;
+        case K_TAG_BOOL:
+            comparison = (left->as.bool_value > right->as.bool_value) - (left->as.bool_value < right->as.bool_value);
+            break;
+        case K_TAG_STRING:
+            comparison = strcmp(left->as.string_value, right->as.string_value);
+            break;
+        case K_TAG_CHAR:
+            comparison = (left->as.char_value > right->as.char_value) - (left->as.char_value < right->as.char_value);
+            break;
+        case K_TAG_UNIT:
+            comparison = 0;
+            break;
+        case K_TAG_DATA:
+            if (left->as.data_value.type_id == KTYPE_std_prelude_Ordering
+                && right->as.data_value.type_id == KTYPE_std_prelude_Ordering)
+            {
+                comparison =
+                    (left->as.data_value.ctor_tag > right->as.data_value.ctor_tag)
+                    - (left->as.data_value.ctor_tag < right->as.data_value.ctor_tag);
+                break;
+            }
+
+            kappa_panic("builtin compare is not supported for this data value");
+        default:
+            kappa_panic("builtin compare is not supported for this runtime value");
+    }
+
+    return kappa_ordering_value(comparison);
+}
+
+static KValue* kappa_builtin_show(KValue* value)
+{
+    if (value == NULL)
+    {
+        return kappa_box_string("()");
+    }
+
+    switch (value->tag)
+    {
+        case K_TAG_INT:
+            return kappa_int_to_string(value);
+        case K_TAG_FLOAT:
+        {
+            int length = snprintf(NULL, 0, "%.17g", value->as.float_value);
+            char* buffer = (char*)kappa_alloc((size_t)length + 1);
+            snprintf(buffer, (size_t)length + 1, "%.17g", value->as.float_value);
+            return kappa_box_string(buffer);
+        }
+        case K_TAG_BOOL:
+            return kappa_box_string(value->as.bool_value ? "True" : "False");
+        case K_TAG_STRING:
+            return kappa_box_string(value->as.string_value);
+        case K_TAG_CHAR:
+        {
+            char* buffer = (char*)kappa_alloc(2);
+            buffer[0] = (char)value->as.char_value;
+            buffer[1] = '\0';
+            return kappa_box_string(buffer);
+        }
+        case K_TAG_UNIT:
+            return kappa_box_string("()");
+        case K_TAG_DATA:
+            if (value->as.data_value.type_id == KTYPE_std_prelude_Ordering && value->as.data_value.field_count == 0)
+            {
+                switch (value->as.data_value.ctor_tag)
+                {
+                    case 0:
+                        return kappa_box_string("LT");
+                    case 1:
+                        return kappa_box_string("EQ");
+                    case 2:
+                        return kappa_box_string("GT");
+                }
+            }
+
+            return kappa_box_string("<data>");
+        default:
+            return kappa_box_string("<value>");
+    }
 }
 
 static void kappa_write_value(KValue* value)

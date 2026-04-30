@@ -240,7 +240,7 @@ internal static class Program
             let usesEffectRuntime = ClrAssemblyIR.modulesUseEffectRuntime workspace.ClrAssemblyIR
 
             let! clrAssembly =
-                ClrDotNetBackend.emitAssemblyArtifact workspace outputDirectory
+                ClrDotNetBackend.emitAssemblyArtifactForEntryPoint workspace moduleName bindingName outputDirectory
                 |> Result.mapError (fun message -> $"The CLR-backed dotnet profile could not lower '{entryPoint}': {message}")
 
             let projectDirectory = Path.GetFullPath(outputDirectory)

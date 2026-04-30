@@ -1,6 +1,6 @@
 module main
 
--- Source issue: scala3#1857
+-- Source issues: scala3#1857, ghc#961
 -- Spec: §12.2.1, §12.3, §7.3.3
 trait Builder a =
     Out : Type

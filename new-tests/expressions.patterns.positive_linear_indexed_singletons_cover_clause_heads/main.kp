@@ -1,0 +1,28 @@
+module main
+
+-- Source issue: Idris2#402
+-- Kappa analogue: two linear indexed-singleton arguments matched directly in a clause head should count as exhaustive
+-- without demanding a synthetic wildcard residue for either argument.
+-- Spec: §5.1.5, §7.5.1A, §17.3.6
+
+data ATag : Type =
+    ATag
+
+data BTag : Type =
+    BTag
+
+data OneA (x : ATag) : Type =
+    TheA : OneA ATag
+
+data OneB (x : BTag) : Type =
+    TheB : OneB BTag
+
+pairDone : (1 a : OneA ATag) -> (1 b : OneB BTag) -> Bool
+let pairDone TheA TheB = True
+
+result : Bool
+let result = pairDone TheA TheB
+
+--! assertNoErrors
+--! assertType pairDone (1 a : OneA ATag) -> (1 b : OneB BTag) -> Bool
+--! assertEval result True

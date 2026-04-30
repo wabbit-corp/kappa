@@ -1,0 +1,23 @@
+module main
+
+-- Source issue: Idris2#188
+-- Kappa analogue: tuple components may carry quantity annotations even when the component type is itself a function type.
+-- Spec: §4.5, §5.1.5, §5.5
+applyBoth : (1 f : (Int -> Int), 1 g : (Int -> Int)) -> Int -> Int
+let applyBoth (f, g) x =
+    let (left, right) = (f x, g x)
+    left + right
+
+inc : Int -> Int
+let inc x = x + 1
+
+double : Int -> Int
+let double x = x * 2
+
+result : Int
+let result = applyBoth (inc, double) 10
+
+--! assertNoErrors
+--! assertType applyBoth (1 f : (Int -> Int), 1 g : (Int -> Int)) -> Int -> Int
+--! assertType result Int
+--! assertEval result 31

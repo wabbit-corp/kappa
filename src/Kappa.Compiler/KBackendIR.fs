@@ -210,6 +210,13 @@ type KBackendFunction =
       Body: KBackendExpression option
       Provenance: KCoreOrigin }
 
+type KBackendTraitInstance =
+    { ModuleName: string
+      TraitName: string
+      InstanceKey: string
+      HeadTypeTexts: string list
+      MemberBindings: (string * string) list }
+
 type KBackendModule =
     { Name: string
       SourceFile: string
@@ -219,4 +226,5 @@ type KBackendModule =
       IntrinsicTerms: string list
       DataLayouts: KBackendDataLayout list
       EnvironmentLayouts: KBackendEnvironmentLayout list
+      TraitInstances: KBackendTraitInstance list
       Functions: KBackendFunction list }

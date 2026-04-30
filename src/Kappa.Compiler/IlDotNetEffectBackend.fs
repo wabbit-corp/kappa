@@ -27,6 +27,7 @@ module internal IlDotNetEffectBackend =
 
     type private EffectEmissionState =
         { Modules: Map<string, RawModuleInfo>
+          TraitInstances: TraitInstanceInfo list
           DataTypes: Map<string * string, DataTypeInfo>
           ModuleBuilders: Map<string, TypeBuilder>
           DataTypeBuilders: Map<string * string, DataTypeEmission>
@@ -84,6 +85,12 @@ module internal IlDotNetEffectBackend =
     let private runtimeValuesEqualMethod =
         typeof<KappaRuntime>.GetMethod("ValuesEqual", [| objectType; objectType |])
 
+    let private runtimeCompareBuiltinSignMethod =
+        typeof<KappaRuntime>.GetMethod("CompareBuiltinSign", [| objectType; objectType |])
+
+    let private runtimeShowBuiltinMethod =
+        typeof<KappaRuntime>.GetMethod("ShowBuiltin", [| objectType |])
+
     let private effectOperationMetadataCtor =
         typeof<KappaEffectOperationMetadata>.GetConstructor([| stringType; stringType; intType; boolType |])
 
@@ -92,6 +99,21 @@ module internal IlDotNetEffectBackend =
 
     let private constructorCallableCtor =
         typeof<KappaConstructorCallable>.GetConstructor([| stringType; intType; typeof<Func<obj array, obj>> |])
+
+    let private erasedDataValueCtor =
+        typeof<KappaErasedDataValue>.GetConstructor([| stringType; stringType; stringType; objectArrayType |])
+
+    let private erasedDataModuleGetter =
+        typeof<KappaErasedDataValue>.GetProperty("ModuleName").GetGetMethod()
+
+    let private erasedDataTypeGetter =
+        typeof<KappaErasedDataValue>.GetProperty("TypeName").GetGetMethod()
+
+    let private erasedDataConstructorGetter =
+        typeof<KappaErasedDataValue>.GetProperty("ConstructorName").GetGetMethod()
+
+    let private erasedDataFieldsGetter =
+        typeof<KappaErasedDataValue>.GetProperty("Fields").GetGetMethod()
 
     let private invokeDelegateCtor =
         typeof<KappaInvoke>.GetConstructor([| objectType; typeof<IntPtr> |])
@@ -206,6 +228,19 @@ module internal IlDotNetEffectBackend =
             |> Map.tryFind moduleName
             |> Option.bind (fun bindings -> bindings |> Map.tryFind binding.Name)
             |> Option.map (fun emission -> moduleName, binding, emission.Getter))
+
+    let private tryResolvePreludeBoolConstant (modules: Map<string, RawModuleInfo>) currentModule segments =
+        match tryResolveConstructor modules currentModule segments with
+        | Some(_, constructorInfo)
+            when String.Equals(constructorInfo.ModuleName, Stdlib.PreludeModuleText, StringComparison.Ordinal)
+                 && String.Equals(constructorInfo.TypeName, "Bool", StringComparison.Ordinal)
+                 && List.isEmpty constructorInfo.FieldTypes ->
+            match constructorInfo.Name with
+            | "True" -> Some true
+            | "False" -> Some false
+            | _ -> None
+        | _ ->
+            None
 
     let private resolveIntrinsic segments =
         match segments with
@@ -387,6 +422,7 @@ module internal IlDotNetEffectBackend =
                       TraitInstances = [] }
 
                 let dataTypeBuilders = defineDataTypes moduleBuilder environment
+                let! traitInstances = buildTraitInstances resolvedModules modules
 
                 let bindingEmissions =
                     resolvedModules
@@ -458,6 +494,7 @@ module internal IlDotNetEffectBackend =
                 return
                     resolvedModules,
                     { Modules = resolvedModules
+                      TraitInstances = traitInstances
                       DataTypes = dataTypes
                       ModuleBuilders = moduleBuilders
                       DataTypeBuilders = dataTypeBuilders
@@ -506,6 +543,502 @@ module internal IlDotNetEffectBackend =
                     il.Emit(OpCodes.Ldstr, intrinsicName)
                     il.Emit(OpCodes.Call, runtimeResolveIntrinsicMethod)
                     Result.Ok()
+
+                let emitDictionaryValue
+                    (moduleName: string)
+                    (traitName: string)
+                    (instanceKey: string)
+                    captures
+                    =
+                    result {
+                        let captureExpressions = captures |> List.toArray
+                        loadSmallInt il (captureExpressions.Length + 1)
+                        il.Emit(OpCodes.Newarr, objectType)
+
+                        il.Emit(OpCodes.Dup)
+                        loadSmallInt il 0
+                        il.Emit(OpCodes.Ldstr, moduleName)
+                        il.Emit(OpCodes.Ldstr, traitName)
+                        il.Emit(OpCodes.Ldstr, instanceKey)
+                        il.Emit(OpCodes.Newobj, dictionaryTupleConstructor)
+                        il.Emit(OpCodes.Stelem_Ref)
+
+                        do!
+                            captureExpressions
+                            |> Array.mapi (fun index expression -> index, expression)
+                            |> Array.fold
+                                (fun stateResult (index, captureExpression) ->
+                                    result {
+                                        do! stateResult
+                                        il.Emit(OpCodes.Dup)
+                                        loadSmallInt il (index + 1)
+                                        do! emitExpression currentModule locals il captureExpression
+                                        il.Emit(OpCodes.Stelem_Ref)
+                                    })
+                                (Result.Ok())
+                    }
+
+                let emitErasedDataValue
+                    (moduleName: string)
+                    (typeName: string)
+                    (constructorName: string)
+                    (fieldExpressions: KRuntimeExpression list)
+                    =
+                    result {
+                        il.Emit(OpCodes.Ldstr, moduleName)
+                        il.Emit(OpCodes.Ldstr, typeName)
+                        il.Emit(OpCodes.Ldstr, constructorName)
+                        do! emitObjectArrayFromExpressions fieldExpressions
+                        il.Emit(OpCodes.Newobj, erasedDataValueCtor)
+                    }
+
+                let emitBuiltinShowApply (arguments: KRuntimeExpression list) =
+                    result {
+                        match arguments with
+                        | [ argument ] ->
+                            do! emitExpression currentModule locals il argument
+                            il.Emit(OpCodes.Call, runtimeShowBuiltinMethod)
+                        | _ ->
+                            return!
+                                Result.Error
+                                    $"The effectful dotnet backend expected intrinsic '{IntrinsicCatalog.BuiltinPreludeShowIntrinsicName}' to receive 1 argument, but received {List.length arguments}."
+                    }
+
+                let emitBuiltinCompareApply (arguments: KRuntimeExpression list) =
+                    result {
+                        match arguments with
+                        | [ left; right ] ->
+                            let comparisonLocal = il.DeclareLocal(intType)
+                            let lessLabel = il.DefineLabel()
+                            let greaterLabel = il.DefineLabel()
+                            let equalLabel = il.DefineLabel()
+                            let doneLabel = il.DefineLabel()
+
+                            do! emitExpression currentModule locals il left
+                            do! emitExpression currentModule locals il right
+                            il.Emit(OpCodes.Call, runtimeCompareBuiltinSignMethod)
+                            il.Emit(OpCodes.Stloc, comparisonLocal)
+                            il.Emit(OpCodes.Ldloc, comparisonLocal)
+                            loadSmallInt il 0
+                            il.Emit(OpCodes.Blt, lessLabel)
+                            il.Emit(OpCodes.Ldloc, comparisonLocal)
+                            loadSmallInt il 0
+                            il.Emit(OpCodes.Bgt, greaterLabel)
+                            il.Emit(OpCodes.Br, equalLabel)
+                            il.MarkLabel(lessLabel)
+                            do! emitExpression currentModule locals il (KRuntimeName [ "std"; "prelude"; "LT" ])
+                            il.Emit(OpCodes.Br, doneLabel)
+                            il.MarkLabel(greaterLabel)
+                            do! emitExpression currentModule locals il (KRuntimeName [ "std"; "prelude"; "GT" ])
+                            il.Emit(OpCodes.Br, doneLabel)
+                            il.MarkLabel(equalLabel)
+                            do! emitExpression currentModule locals il (KRuntimeName [ "std"; "prelude"; "EQ" ])
+                            il.MarkLabel(doneLabel)
+                        | _ ->
+                            return!
+                                Result.Error
+                                    $"The effectful dotnet backend expected intrinsic '{IntrinsicCatalog.BuiltinPreludeCompareIntrinsicName}' to receive 2 arguments, but received {List.length arguments}."
+                    }
+
+                let emitTraitCall traitName memberName dictionary arguments =
+                    result {
+                        let routes =
+                            state.TraitInstances
+                            |> List.choose (fun instanceInfo ->
+                                instanceInfo.MemberBindings
+                                |> Map.tryFind memberName
+                                |> Option.bind (fun bindingName ->
+                                    if String.Equals(instanceInfo.TraitName, traitName, StringComparison.Ordinal) then
+                                        Some(instanceInfo, bindingName)
+                                    else
+                                        None))
+
+                        let dictionaryLocal = il.DeclareLocal(objectType)
+                        let dictionaryPartsLocal = il.DeclareLocal(objectArrayType)
+                        let tupleLocal = il.DeclareLocal(typeof<Tuple<string, string, string>>)
+                        let resultLocal = il.DeclareLocal(objectType)
+                        let argumentLocals = arguments |> List.map (fun _ -> il.DeclareLocal(objectType))
+
+                        do! emitExpression currentModule locals il dictionary
+                        il.Emit(OpCodes.Stloc, dictionaryLocal)
+                        il.Emit(OpCodes.Ldloc, dictionaryLocal)
+                        il.Emit(OpCodes.Ldstr, $"trait dictionary value for '{traitName}.{memberName}'")
+                        il.Emit(OpCodes.Call, runtimeExpectObjectArrayMethod)
+                        il.Emit(OpCodes.Stloc, dictionaryPartsLocal)
+                        il.Emit(OpCodes.Ldloc, dictionaryPartsLocal)
+                        loadSmallInt il 0
+                        il.Emit(OpCodes.Ldelem_Ref)
+                        il.Emit(OpCodes.Castclass, typeof<Tuple<string, string, string>>)
+                        il.Emit(OpCodes.Stloc, tupleLocal)
+
+                        do!
+                            List.zip arguments argumentLocals
+                            |> List.fold
+                                (fun stateResult (argumentExpression, argumentLocal) ->
+                                    result {
+                                        do! stateResult
+                                        do! emitExpression currentModule locals il argumentExpression
+                                        il.Emit(OpCodes.Stloc, argumentLocal)
+                                    })
+                                (Result.Ok())
+
+                        let endLabel = il.DefineLabel()
+
+                        do!
+                            routes
+                            |> List.fold
+                                (fun stateResult (instanceInfo, bindingName) ->
+                                    stateResult
+                                    |> Result.bind (fun () ->
+                                        result {
+                                            let nextRouteLabel = il.DefineLabel()
+                                            let callArgumentsLocal = il.DeclareLocal(objectArrayType)
+                                            let captureIndexLocal = il.DeclareLocal(intType)
+                                            let copyLabel = il.DefineLabel()
+                                            let copyDoneLabel = il.DefineLabel()
+                                            let getterMethod : MethodInfo =
+                                                (state.BindingEmissions
+                                                    |> Map.find instanceInfo.ModuleName
+                                                    |> Map.find bindingName)
+                                                    .Getter
+                                                :> MethodInfo
+
+                                            il.Emit(OpCodes.Ldloc, tupleLocal)
+                                            il.Emit(OpCodes.Callvirt, dictionaryModuleGetter)
+                                            il.Emit(OpCodes.Ldstr, instanceInfo.ModuleName)
+                                            il.Emit(OpCodes.Call, stringEqualityMethod)
+                                            il.Emit(OpCodes.Brfalse, nextRouteLabel)
+
+                                            il.Emit(OpCodes.Ldloc, tupleLocal)
+                                            il.Emit(OpCodes.Callvirt, dictionaryTraitGetter)
+                                            il.Emit(OpCodes.Ldstr, traitName)
+                                            il.Emit(OpCodes.Call, stringEqualityMethod)
+                                            il.Emit(OpCodes.Brfalse, nextRouteLabel)
+
+                                            il.Emit(OpCodes.Ldloc, tupleLocal)
+                                            il.Emit(OpCodes.Callvirt, dictionaryInstanceGetter)
+                                            il.Emit(OpCodes.Ldstr, instanceInfo.InstanceKey)
+                                            il.Emit(OpCodes.Call, stringEqualityMethod)
+                                            il.Emit(OpCodes.Brfalse, nextRouteLabel)
+
+                                            il.Emit(OpCodes.Ldloc, dictionaryPartsLocal)
+                                            il.Emit(OpCodes.Ldlen)
+                                            il.Emit(OpCodes.Conv_I4)
+                                            loadSmallInt il argumentLocals.Length
+                                            il.Emit(OpCodes.Add)
+                                            il.Emit(OpCodes.Newarr, objectType)
+                                            il.Emit(OpCodes.Stloc, callArgumentsLocal)
+
+                                            il.Emit(OpCodes.Ldloc, callArgumentsLocal)
+                                            loadSmallInt il 0
+                                            il.Emit(OpCodes.Ldloc, dictionaryLocal)
+                                            il.Emit(OpCodes.Stelem_Ref)
+
+                                            loadSmallInt il 1
+                                            il.Emit(OpCodes.Stloc, captureIndexLocal)
+                                            il.MarkLabel(copyLabel)
+                                            il.Emit(OpCodes.Ldloc, captureIndexLocal)
+                                            il.Emit(OpCodes.Ldloc, dictionaryPartsLocal)
+                                            il.Emit(OpCodes.Ldlen)
+                                            il.Emit(OpCodes.Conv_I4)
+                                            il.Emit(OpCodes.Bge, copyDoneLabel)
+                                            il.Emit(OpCodes.Ldloc, callArgumentsLocal)
+                                            il.Emit(OpCodes.Ldloc, captureIndexLocal)
+                                            il.Emit(OpCodes.Ldloc, dictionaryPartsLocal)
+                                            il.Emit(OpCodes.Ldloc, captureIndexLocal)
+                                            il.Emit(OpCodes.Ldelem_Ref)
+                                            il.Emit(OpCodes.Stelem_Ref)
+                                            il.Emit(OpCodes.Ldloc, captureIndexLocal)
+                                            loadSmallInt il 1
+                                            il.Emit(OpCodes.Add)
+                                            il.Emit(OpCodes.Stloc, captureIndexLocal)
+                                            il.Emit(OpCodes.Br, copyLabel)
+                                            il.MarkLabel(copyDoneLabel)
+
+                                            argumentLocals
+                                            |> List.iteri (fun argumentIndex argumentLocal ->
+                                                il.Emit(OpCodes.Ldloc, callArgumentsLocal)
+                                                il.Emit(OpCodes.Ldloc, dictionaryPartsLocal)
+                                                il.Emit(OpCodes.Ldlen)
+                                                il.Emit(OpCodes.Conv_I4)
+                                                loadSmallInt il argumentIndex
+                                                il.Emit(OpCodes.Add)
+                                                il.Emit(OpCodes.Ldloc, argumentLocal)
+                                                il.Emit(OpCodes.Stelem_Ref))
+
+                                            il.Emit(OpCodes.Call, getterMethod)
+                                            il.Emit(OpCodes.Ldloc, callArgumentsLocal)
+                                            il.Emit(OpCodes.Call, runtimeApplyMethod)
+                                            il.Emit(OpCodes.Stloc, resultLocal)
+                                            il.Emit(OpCodes.Br, endLabel)
+                                            il.MarkLabel(nextRouteLabel)
+                                        }))
+                                (Result.Ok())
+
+                        il.Emit(OpCodes.Ldstr, $"No trait route matched for '{traitName}.{memberName}'.")
+                        il.Emit(OpCodes.Newobj, invalidOperationCtor)
+                        il.Emit(OpCodes.Throw)
+                        il.MarkLabel(endLabel)
+                        il.Emit(OpCodes.Ldloc, resultLocal)
+                    }
+
+                let rec emitPatternMatch
+                    (currentScope: Map<string, RuntimeLocal>)
+                    (pattern: KRuntimePattern)
+                    (valueLocal: LocalBuilder)
+                    (failureLabel: Label)
+                    : Result<Map<string, RuntimeLocal>, string> =
+                    match pattern with
+                    | KRuntimeWildcardPattern ->
+                        Result.Ok currentScope
+                    | KRuntimeNamePattern name ->
+                        Result.Ok(currentScope |> Map.add name (Local valueLocal))
+                    | KRuntimeLiteralPattern literal ->
+                        result {
+                            il.Emit(OpCodes.Ldloc, valueLocal)
+                            emitBoxedLiteral il literal
+                            il.Emit(OpCodes.Call, runtimeValuesEqualMethod)
+                            il.Emit(OpCodes.Brfalse, failureLabel)
+                            return currentScope
+                        }
+                    | KRuntimeOrPattern alternatives ->
+                        result {
+                            let rec collectBindings currentPattern =
+                                match currentPattern with
+                                | KRuntimeWildcardPattern
+                                | KRuntimeLiteralPattern _ ->
+                                    Set.empty
+                                | KRuntimeNamePattern name ->
+                                    Set.singleton name
+                                | KRuntimeOrPattern nestedAlternatives ->
+                                    nestedAlternatives
+                                    |> List.tryHead
+                                    |> Option.map collectBindings
+                                    |> Option.defaultValue Set.empty
+                                | KRuntimeConstructorPattern(_, arguments) ->
+                                    arguments
+                                    |> List.fold (fun state argument -> Set.union state (collectBindings argument)) Set.empty
+
+                            let expectedBindings =
+                                alternatives
+                                |> List.tryHead
+                                |> Option.map collectBindings
+                                |> Option.defaultValue Set.empty
+
+                            if alternatives |> List.exists (fun alternative -> collectBindings alternative <> expectedBindings) then
+                                return!
+                                    Result.Error
+                                        "The effectful dotnet backend requires each or-pattern alternative to bind the same names."
+
+                            let sharedBindings =
+                                expectedBindings
+                                |> Set.toList
+                                |> List.sort
+                                |> List.map (fun name ->
+                                    let sharedLocal = il.DeclareLocal(objectType)
+                                    name, Local sharedLocal)
+
+                            let sharedScope =
+                                sharedBindings
+                                |> List.fold (fun scope (name, slot) -> scope |> Map.add name slot) currentScope
+
+                            let successLabel = il.DefineLabel()
+
+                            let emitSharedAssignments (alternativeScope: Map<string, RuntimeLocal>) =
+                                sharedBindings
+                                |> List.iter (fun (name, sharedSlot) ->
+                                    loadRuntimeLocal il alternativeScope[name]
+
+                                    match sharedSlot with
+                                    | Local sharedLocal ->
+                                        il.Emit(OpCodes.Stloc, sharedLocal)
+                                    | _ ->
+                                        invalidOp "shared or-pattern bindings must lower to locals.")
+
+                            let rec emitAlternatives remaining =
+                                match remaining with
+                                | [] ->
+                                    il.Emit(OpCodes.Br, failureLabel)
+                                    Result.Ok()
+                                | [ alternative ] ->
+                                    emitPatternMatch currentScope alternative valueLocal failureLabel
+                                    |> Result.map (fun alternativeScope ->
+                                        emitSharedAssignments alternativeScope
+                                        il.Emit(OpCodes.Br, successLabel))
+                                | alternative :: rest ->
+                                    let nextAlternativeLabel = il.DefineLabel()
+
+                                    emitPatternMatch currentScope alternative valueLocal nextAlternativeLabel
+                                    |> Result.bind (fun alternativeScope ->
+                                        emitSharedAssignments alternativeScope
+                                        il.Emit(OpCodes.Br, successLabel)
+                                        il.MarkLabel(nextAlternativeLabel)
+                                        emitAlternatives rest)
+
+                            do! emitAlternatives alternatives
+                            il.MarkLabel(successLabel)
+                            return sharedScope
+                        }
+                    | KRuntimeConstructorPattern(nameSegments, argumentPatterns) ->
+                        match tryResolvePreludeBoolConstant state.Modules currentModule nameSegments with
+                        | Some expectedBool ->
+                            result {
+                                if not (List.isEmpty argumentPatterns) then
+                                    let patternName = String.concat "." nameSegments
+                                    return!
+                                        Result.Error
+                                            $"The effectful dotnet backend expected Bool pattern '{patternName}' to receive 0 argument(s), but received {List.length argumentPatterns}."
+
+                                il.Emit(OpCodes.Ldloc, valueLocal)
+                                il.Emit(OpCodes.Call, runtimeExpectBoolMethod)
+
+                                if expectedBool then
+                                    il.Emit(OpCodes.Brfalse, failureLabel)
+                                else
+                                    il.Emit(OpCodes.Brtrue, failureLabel)
+
+                                return currentScope
+                            }
+                        | None ->
+                            match tryResolveConstructor state.Modules currentModule nameSegments with
+                            | None ->
+                                let patternName = String.concat "." nameSegments
+                                Result.Error $"The effectful dotnet backend could not resolve constructor pattern '{patternName}'."
+                            | Some(_, constructorInfo) ->
+                                result {
+                                    if List.isEmpty constructorInfo.TypeParameters then
+                                        let! constructor, fieldInfos = resolveNonGenericConstructor state constructorInfo
+
+                                        if List.length argumentPatterns <> fieldInfos.Length then
+                                            return!
+                                                Result.Error
+                                                    $"The effectful dotnet backend expected pattern '{constructorInfo.Name}' to receive {fieldInfos.Length} argument(s), but received {List.length argumentPatterns}."
+
+                                        let constructorType = constructor.DeclaringType
+                                        let castLocal = il.DeclareLocal(constructorType)
+                                        il.Emit(OpCodes.Ldloc, valueLocal)
+                                        il.Emit(OpCodes.Isinst, constructorType)
+                                        il.Emit(OpCodes.Stloc, castLocal)
+                                        il.Emit(OpCodes.Ldloc, castLocal)
+                                        il.Emit(OpCodes.Brfalse, failureLabel)
+
+                                        return!
+                                            List.zip argumentPatterns (fieldInfos |> Array.toList)
+                                            |> List.fold
+                                                (fun stateResult (argumentPattern, fieldInfo) ->
+                                                    stateResult
+                                                    |> Result.bind (fun scope ->
+                                                        let fieldLocal = il.DeclareLocal(objectType)
+                                                        il.Emit(OpCodes.Ldloc, castLocal)
+                                                        il.Emit(OpCodes.Ldfld, fieldInfo)
+
+                                                        if fieldInfo.FieldType.IsValueType then
+                                                            il.Emit(OpCodes.Box, fieldInfo.FieldType)
+
+                                                        il.Emit(OpCodes.Stloc, fieldLocal)
+                                                        emitPatternMatch scope argumentPattern fieldLocal failureLabel))
+                                                (Result.Ok currentScope)
+                                    else
+                                        let erasedLocal = il.DeclareLocal(typeof<KappaErasedDataValue>)
+                                        let fieldsLocal = il.DeclareLocal(objectArrayType)
+
+                                        if List.length argumentPatterns <> List.length constructorInfo.FieldTypes then
+                                            return!
+                                                Result.Error
+                                                    $"The effectful dotnet backend expected pattern '{constructorInfo.Name}' to receive {List.length constructorInfo.FieldTypes} argument(s), but received {List.length argumentPatterns}."
+
+                                        il.Emit(OpCodes.Ldloc, valueLocal)
+                                        il.Emit(OpCodes.Isinst, typeof<KappaErasedDataValue>)
+                                        il.Emit(OpCodes.Stloc, erasedLocal)
+                                        il.Emit(OpCodes.Ldloc, erasedLocal)
+                                        il.Emit(OpCodes.Brfalse, failureLabel)
+
+                                        il.Emit(OpCodes.Ldloc, erasedLocal)
+                                        il.Emit(OpCodes.Callvirt, erasedDataModuleGetter)
+                                        il.Emit(OpCodes.Ldstr, constructorInfo.ModuleName)
+                                        il.Emit(OpCodes.Call, stringEqualityMethod)
+                                        il.Emit(OpCodes.Brfalse, failureLabel)
+
+                                        il.Emit(OpCodes.Ldloc, erasedLocal)
+                                        il.Emit(OpCodes.Callvirt, erasedDataTypeGetter)
+                                        il.Emit(OpCodes.Ldstr, constructorInfo.TypeName)
+                                        il.Emit(OpCodes.Call, stringEqualityMethod)
+                                        il.Emit(OpCodes.Brfalse, failureLabel)
+
+                                        il.Emit(OpCodes.Ldloc, erasedLocal)
+                                        il.Emit(OpCodes.Callvirt, erasedDataConstructorGetter)
+                                        il.Emit(OpCodes.Ldstr, constructorInfo.Name)
+                                        il.Emit(OpCodes.Call, stringEqualityMethod)
+                                        il.Emit(OpCodes.Brfalse, failureLabel)
+
+                                        il.Emit(OpCodes.Ldloc, erasedLocal)
+                                        il.Emit(OpCodes.Callvirt, erasedDataFieldsGetter)
+                                        il.Emit(OpCodes.Stloc, fieldsLocal)
+                                        il.Emit(OpCodes.Ldloc, fieldsLocal)
+                                        il.Emit(OpCodes.Ldlen)
+                                        il.Emit(OpCodes.Conv_I4)
+                                        loadSmallInt il argumentPatterns.Length
+                                        il.Emit(OpCodes.Bne_Un, failureLabel)
+
+                                        return!
+                                            argumentPatterns
+                                            |> List.mapi (fun index argumentPattern -> index, argumentPattern)
+                                            |> List.fold
+                                                (fun stateResult (index, argumentPattern) ->
+                                                    stateResult
+                                                    |> Result.bind (fun scope ->
+                                                        let fieldLocal = il.DeclareLocal(objectType)
+                                                        il.Emit(OpCodes.Ldloc, fieldsLocal)
+                                                        loadSmallInt il index
+                                                        il.Emit(OpCodes.Ldelem_Ref)
+                                                        il.Emit(OpCodes.Stloc, fieldLocal)
+                                                        emitPatternMatch scope argumentPattern fieldLocal failureLabel))
+                                                (Result.Ok currentScope)
+                                }
+
+                let emitMatch (scrutinee: KRuntimeExpression) (cases: KRuntimeMatchCase list) =
+                    result {
+                        let scrutineeLocal = il.DeclareLocal(objectType)
+                        let resultLocal = il.DeclareLocal(objectType)
+                        let endLabel = il.DefineLabel()
+
+                        do! emitExpression currentModule locals il scrutinee
+                        il.Emit(OpCodes.Stloc, scrutineeLocal)
+
+                        let rec emitCases (remainingCases: KRuntimeMatchCase list) =
+                            match remainingCases with
+                            | [] ->
+                                il.Emit(OpCodes.Ldstr, "Non-exhaustive match.")
+                                il.Emit(OpCodes.Newobj, invalidOperationCtor)
+                                il.Emit(OpCodes.Throw)
+                                Result.Ok()
+                            | (caseClause: KRuntimeMatchCase) :: rest ->
+                                let nextCaseLabel = il.DefineLabel()
+
+                                emitPatternMatch locals caseClause.Pattern scrutineeLocal nextCaseLabel
+                                |> Result.bind (fun caseScope ->
+                                    let emitBody () =
+                                        emitExpression currentModule caseScope il caseClause.Body
+                                        |> Result.map (fun () ->
+                                            il.Emit(OpCodes.Stloc, resultLocal)
+                                            il.Emit(OpCodes.Br, endLabel)
+                                            il.MarkLabel(nextCaseLabel))
+
+                                    match caseClause.Guard with
+                                    | Some guard ->
+                                        emitExpression currentModule caseScope il guard
+                                        |> Result.map (fun () ->
+                                            il.Emit(OpCodes.Call, runtimeExpectBoolMethod)
+                                            il.Emit(OpCodes.Brfalse, nextCaseLabel))
+                                        |> Result.bind (fun () -> emitBody ())
+                                    | None ->
+                                        emitBody ())
+                                |> Result.bind (fun () -> emitCases rest)
+
+                        do! emitCases cases
+                        il.MarkLabel(endLabel)
+                        il.Emit(OpCodes.Ldloc, resultLocal)
+                    }
 
                 let emitClosureHelper
                     (captures: string list)
@@ -654,29 +1187,43 @@ module internal IlDotNetEffectBackend =
                     loadRuntimeLocal il locals[name]
                     Result.Ok()
                 | KRuntimeName segments ->
-                    match resolveBindingGetter state currentModule segments with
-                    | Some(_, _, getterMethod) ->
-                        il.Emit(OpCodes.Call, getterMethod)
+                    match tryResolvePreludeBoolConstant state.Modules currentModule segments with
+                    | Some value ->
+                        il.Emit(OpCodes.Ldc_I4, if value then 1 else 0)
+                        il.Emit(OpCodes.Box, boolType)
                         Result.Ok()
                     | None ->
-                        match resolveIntrinsic segments with
-                        | Some(moduleName, intrinsicName) ->
-                            emitIntrinsicValue moduleName intrinsicName
+                        match resolveBindingGetter state currentModule segments with
+                        | Some(_, _, getterMethod) ->
+                            il.Emit(OpCodes.Call, getterMethod)
+                            Result.Ok()
                         | None ->
-                            match tryResolveConstructor state.Modules currentModule segments with
-                            | Some(_, constructorInfo) when List.isEmpty constructorInfo.FieldTypes ->
-                                result {
-                                    let! constructor, _ = resolveNonGenericConstructor state constructorInfo
-                                    il.Emit(OpCodes.Newobj, constructor)
-                                    if constructor.DeclaringType.IsValueType then
-                                        il.Emit(OpCodes.Box, constructor.DeclaringType)
-                                }
-                            | Some(targetModule, constructorInfo) ->
-                                Result.Error
-                                    $"The effectful dotnet backend does not yet support constructor-valued name '{targetModule}.{constructorInfo.Name}'."
+                            match resolveIntrinsic segments with
+                            | Some(moduleName, intrinsicName) ->
+                                emitIntrinsicValue moduleName intrinsicName
                             | None ->
-                                let text = String.concat "." segments
-                                Result.Error $"The effectful dotnet backend could not resolve name '{text}'."
+                                match tryResolveConstructor state.Modules currentModule segments with
+                                | Some(_, constructorInfo) when List.isEmpty constructorInfo.FieldTypes ->
+                                    result {
+                                        if List.isEmpty constructorInfo.TypeParameters then
+                                            let! constructor, _ = resolveNonGenericConstructor state constructorInfo
+                                            il.Emit(OpCodes.Newobj, constructor)
+                                            if constructor.DeclaringType.IsValueType then
+                                                il.Emit(OpCodes.Box, constructor.DeclaringType)
+                                        else
+                                            do!
+                                                emitErasedDataValue
+                                                    constructorInfo.ModuleName
+                                                    constructorInfo.TypeName
+                                                    constructorInfo.Name
+                                                    []
+                                    }
+                                | Some(targetModule, constructorInfo) ->
+                                    Result.Error
+                                        $"The effectful dotnet backend does not yet support constructor-valued name '{targetModule}.{constructorInfo.Name}'."
+                                | None ->
+                                    let text = String.concat "." segments
+                                    Result.Error $"The effectful dotnet backend could not resolve name '{text}'."
                 | KRuntimeEffectLabel(labelName, interfaceId, labelId, operations) ->
                     let operationsLocal = il.DeclareLocal(typeof<KappaEffectOperationMetadata[]>)
 
@@ -946,8 +1493,8 @@ module internal IlDotNetEffectBackend =
                         il.Emit(OpCodes.Ldloc, dispatcherLocal)
                         il.Emit(OpCodes.Call, runtimeHandleMethod)
                     }
-                | KRuntimeMatch _ ->
-                    Result.Error "The effectful dotnet backend does not yet support match expressions."
+                | KRuntimeMatch(scrutinee, cases) ->
+                    emitMatch scrutinee cases
                 | KRuntimeExecute inner ->
                     result {
                         do! emitExpression currentModule locals il inner
@@ -1000,57 +1547,73 @@ module internal IlDotNetEffectBackend =
                         emitUnitValue il
                     }
                 | KRuntimeApply(KRuntimeName segments, arguments) ->
-                    match tryResolveConstructor state.Modules currentModule segments with
-                    | Some(_, constructorInfo) ->
-                        result {
-                            let! constructor, fieldInfos = resolveNonGenericConstructor state constructorInfo
-
-                            if List.length arguments <> fieldInfos.Length then
-                                return!
-                                    Result.Error
-                                        $"The effectful dotnet backend expected constructor '{constructorInfo.Name}' to receive {fieldInfos.Length} argument(s), but received {List.length arguments}."
-
-                            let fieldTypes =
+                    match segments with
+                    | [ intrinsicName ] when String.Equals(intrinsicName, IntrinsicCatalog.BuiltinPreludeShowIntrinsicName, StringComparison.Ordinal) ->
+                        emitBuiltinShowApply arguments
+                    | [ intrinsicName ] when String.Equals(intrinsicName, IntrinsicCatalog.BuiltinPreludeCompareIntrinsicName, StringComparison.Ordinal) ->
+                        emitBuiltinCompareApply arguments
+                    | _ ->
+                        match tryResolveConstructor state.Modules currentModule segments with
+                        | Some(_, constructorInfo) ->
+                            result {
                                 if List.isEmpty constructorInfo.TypeParameters then
-                                    constructorInfo.FieldTypes
+                                    let! constructor, fieldInfos = resolveNonGenericConstructor state constructorInfo
+
+                                    if List.length arguments <> fieldInfos.Length then
+                                        return!
+                                            Result.Error
+                                                $"The effectful dotnet backend expected constructor '{constructorInfo.Name}' to receive {fieldInfos.Length} argument(s), but received {List.length arguments}."
+
+                                    let fieldTypes = constructorInfo.FieldTypes
+
+                                    do!
+                                        List.zip arguments fieldTypes
+                                        |> List.fold
+                                            (fun stateResult (argumentExpression, fieldType) ->
+                                                result {
+                                                    do! stateResult
+                                                    do! emitExpression currentModule locals il argumentExpression
+                                                    let clrFieldType = resolveClrType clrResolverState Map.empty fieldType
+
+                                                    if clrFieldType.IsValueType then
+                                                        il.Emit(OpCodes.Unbox_Any, clrFieldType)
+                                                    else
+                                                        il.Emit(OpCodes.Castclass, clrFieldType)
+                                                })
+                                            (Result.Ok())
+
+                                    il.Emit(OpCodes.Newobj, constructor)
+                                    if constructor.DeclaringType.IsValueType then
+                                        il.Emit(OpCodes.Box, constructor.DeclaringType)
                                 else
-                                    []
+                                    if List.length arguments <> List.length constructorInfo.FieldTypes then
+                                        return!
+                                            Result.Error
+                                                $"The effectful dotnet backend expected constructor '{constructorInfo.Name}' to receive {List.length constructorInfo.FieldTypes} argument(s), but received {List.length arguments}."
 
-                            do!
-                                List.zip arguments fieldTypes
-                                |> List.fold
-                                    (fun stateResult (argumentExpression, fieldType) ->
-                                        result {
-                                            do! stateResult
-                                            do! emitExpression currentModule locals il argumentExpression
-                                            let clrFieldType = resolveClrType clrResolverState Map.empty fieldType
-
-                                            if clrFieldType.IsValueType then
-                                                il.Emit(OpCodes.Unbox_Any, clrFieldType)
-                                            else
-                                                il.Emit(OpCodes.Castclass, clrFieldType)
-                                        })
-                                    (Result.Ok())
-
-                            il.Emit(OpCodes.Newobj, constructor)
-                            if constructor.DeclaringType.IsValueType then
-                                il.Emit(OpCodes.Box, constructor.DeclaringType)
-                        }
-                    | None ->
-                        result {
-                            do! emitExpression currentModule locals il (KRuntimeName segments)
-                            do! emitObjectArrayFromExpressions arguments
-                            il.Emit(OpCodes.Call, runtimeApplyMethod)
-                        }
+                                    do!
+                                        emitErasedDataValue
+                                            constructorInfo.ModuleName
+                                            constructorInfo.TypeName
+                                            constructorInfo.Name
+                                            arguments
+                            }
+                        | None ->
+                            result {
+                                do! emitExpression currentModule locals il (KRuntimeName segments)
+                                do! emitObjectArrayFromExpressions arguments
+                                il.Emit(OpCodes.Call, runtimeApplyMethod)
+                            }
                 | KRuntimeApply(callee, arguments) ->
                     result {
                         do! emitExpression currentModule locals il callee
                         do! emitObjectArrayFromExpressions arguments
                         il.Emit(OpCodes.Call, runtimeApplyMethod)
                     }
-                | KRuntimeDictionaryValue _
-                | KRuntimeTraitCall _ ->
-                    Result.Error "The effectful dotnet backend does not yet support trait dictionary calls."
+                | KRuntimeDictionaryValue(moduleName, traitName, instanceKey, captures) ->
+                    emitDictionaryValue moduleName traitName instanceKey captures
+                | KRuntimeTraitCall(traitName, memberName, dictionary, arguments) ->
+                    emitTraitCall traitName memberName dictionary arguments
                 | KRuntimeUnary(operatorName, operand) ->
                     result {
                         il.Emit(OpCodes.Ldstr, operatorName)

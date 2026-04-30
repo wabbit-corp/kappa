@@ -1,6 +1,6 @@
 module main
 
--- Source issue: Idris2#493
+-- Source issues: Idris2#493, Idris2#300
 -- Spec: §6.3.1, §6.4.2, §6.4.5
 sizeViaAlias : List Int -> Int
 let sizeViaAlias xs =

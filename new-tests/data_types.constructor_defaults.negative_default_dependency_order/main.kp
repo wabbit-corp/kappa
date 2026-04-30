@@ -1,6 +1,6 @@
 module main
 
--- Source issue: KT-371
+-- Source issues: KT-371, KT-826
 -- Spec: §11.1, §11.1.1
 data BadLater : Type =
     BadLater {

@@ -52,6 +52,37 @@ let ``dotnet backend emits a managed project that runs`` () =
     Assert.True(String.IsNullOrWhiteSpace(runResult.StandardError), runResult.StandardError)
 
 [<Fact>]
+let ``dotnet backend runs bundled inequality helper via builtin Eq evidence`` () =
+    let workspace =
+        compileInMemoryWorkspaceWithBackend
+            "memory-dotnet-neq-root"
+            "dotnet"
+            [
+                "main.kp",
+                [
+                    "module main"
+                    "let result = if True /= False then 1 else 0"
+                ]
+                |> String.concat "\n"
+            ]
+
+    Assert.False(workspace.HasErrors, sprintf "Expected no diagnostics, got %A" workspace.Diagnostics)
+
+    let outputDirectory = createScratchDirectory "dotnet-neq-backend"
+
+    let artifact =
+        match Backend.emitDotNetArtifact workspace "main.result" outputDirectory DotNetDeployment.Managed with
+        | Result.Ok artifact -> artifact
+        | Result.Error message -> failwith message
+
+    let runResult =
+        runProcess outputDirectory "dotnet" $"run --project \"{artifact.ProjectFilePath}\" -c Release"
+
+    Assert.Equal(0, runResult.ExitCode)
+    Assert.Equal("1", runResult.StandardOutput.Trim())
+    Assert.True(String.IsNullOrWhiteSpace(runResult.StandardError), runResult.StandardError)
+
+[<Fact>]
 let ``dotnet backend runner copies host dotnet dependency assemblies`` () =
     let workspace =
         compileInMemoryWorkspaceWithBackend

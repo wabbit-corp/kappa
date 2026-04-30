@@ -1,0 +1,29 @@
+module main
+
+-- Source: idris-lang/Idris2#20
+-- Spec: §3.4, §6.3.1
+
+add : Int -> Int -> Int
+let add x y = x + y
+
+baseResult : Int
+let baseResult =
+    block
+        let u =
+            add
+                20
+                22
+        u
+
+step : Int -> Int
+let step value = value + 1
+
+back : Int -> Int
+let back value = value - 1
+
+result : Int
+let result = back (step baseResult)
+
+--! assertNoErrors
+--! assertType result Int
+--! assertExecute result 42

@@ -11,5 +11,8 @@ module IlDotNetBackend =
     let emitClrAssemblyArtifact modules outputDirectory =
         IlDotNetBackendEmit.emitClrAssemblyArtifact modules outputDirectory
 
+    let emitClrAssemblyArtifactWithRoots modules roots outputDirectory =
+        IlDotNetBackendEmit.emitClrAssemblyArtifactWithRoots modules roots outputDirectory
+
     let emitAssemblyArtifact workspace outputDirectory =
         IlDotNetBackendEmit.emitAssemblyArtifact workspace outputDirectory

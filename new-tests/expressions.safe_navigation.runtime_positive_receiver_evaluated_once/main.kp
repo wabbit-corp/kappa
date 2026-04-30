@@ -1,0 +1,25 @@
+module main
+
+import std.prelude.(type Option, ctor Some, ctor None)
+
+-- Source issue: KT-962
+-- Spec: §7.1.1.2, §8.2.2A, §14.1.1
+type Box = (value : Int)
+
+main : UIO Int
+let main = do
+    var calls = 0
+
+    next : Unit -> UIO (Option Box)
+    let next () = do
+        let current <- readRef calls
+        calls = current + 1
+        if current == 0 then pure (Some (value = 42)) else pure None
+
+    let result = (!(next ()))?.value ?: 0
+    let seen <- readRef calls
+    pure (100 * seen + result)
+
+--! assertNoErrors
+--! assertType main UIO Int
+--! assertExecute main 142

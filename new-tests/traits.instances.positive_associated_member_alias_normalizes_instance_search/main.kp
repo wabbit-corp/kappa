@@ -1,0 +1,29 @@
+module main
+
+-- Source issues: ghc#1834, ghc#2661, ghc#3038, ghc#8978
+-- Kappa analogue: associated-member projections and aliases should normalize before trait-instance search and ordinary let reuse.
+-- Spec: §7.3.3, §12.2.1, §12.3.1, §14.3
+trait HasBasis u =
+    Basis : Type
+
+trait Render a =
+    render : a -> String
+
+instance HasBasis Int =
+    let Basis = String
+
+instance Render String =
+    let render x = x
+
+type BasisRenderer (basis : HasBasis Int) = basis.Basis -> String
+
+showViaAlias : (@basis : HasBasis Int) -> BasisRenderer basis
+let showViaAlias (@basis : HasBasis Int) = render
+
+result : String
+let result = showViaAlias "ok"
+
+--! assertNoErrors
+--! assertType showViaAlias (@basis : HasBasis Int) -> BasisRenderer basis
+--! assertType result String
+--! assertEval result "ok"

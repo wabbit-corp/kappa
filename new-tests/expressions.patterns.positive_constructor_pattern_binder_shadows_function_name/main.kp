@@ -1,0 +1,17 @@
+module main
+
+data Tup (a : Type) (b : Type) : Type =
+    MkTup a b
+
+first : Tup Int Int -> Int
+let first (MkTup first second) = first
+
+result : Int
+let result = first (MkTup 42 0)
+
+-- Source issue: Idris2#110
+-- Kappa analogue: a constructor-pattern binder may shadow the surrounding function name without corrupting elaboration.
+-- Spec: §7.6.1, §7.6.2
+--! assertNoErrors
+--! assertType result Int
+--! assertEval result 42

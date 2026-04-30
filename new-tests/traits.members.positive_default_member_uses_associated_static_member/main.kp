@@ -1,0 +1,25 @@
+module main
+
+-- Source issue: Idris2#657
+-- Kappa analogue: a default trait member should typecheck with access to the current trait parameter and the current
+-- associated static member.
+-- Spec: §12.2, §12.2.1
+trait Carrier a =
+    Item : Type
+    make : a -> Item
+    measure : Item -> Int
+
+    score : a -> Int
+    let score x = measure (make x)
+
+instance Carrier Int =
+    let Item = Int
+    let make x = x + 1
+    let measure x = x
+
+result : Int
+let result = score 41
+
+--! assertNoErrors
+--! assertType result Int
+--! assertEval result 42

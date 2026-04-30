@@ -1,6 +1,7 @@
 namespace Kappa.Compiler
 
 open System
+open TypeSignatures
 
 type internal BundledPreludeExpectContract =
     { TypeNames: Set<string>
@@ -9,9 +10,14 @@ type internal BundledPreludeExpectContract =
 
 // Centralizes intrinsic names, operator classes, and backend-visible builtin metadata.
 module internal IntrinsicCatalog =
-    type internal TraitSensitiveIntrinsicLowering =
-        { EraseBuiltinPreludeConstraintEvidence: bool
-          PreferTraitDispatchForNonBuiltinInstances: bool }
+    type BuiltinPreludeTraitMemberLowering =
+        | ForwardToBuiltinBinaryOperator of string
+        | ForwardToIntrinsicTerm of string
+
+    type BuiltinPreludeTraitInstanceSpec =
+        { TraitName: string
+          HeadTypeText: string
+          MemberLowerings: (string * BuiltinPreludeTraitMemberLowering) list }
 
     let private aggregateDiagnostics diagnostics =
         diagnostics
@@ -70,6 +76,131 @@ module internal IntrinsicCatalog =
     let builtinBinaryOperatorNames =
         Set.ofList [ "+"; "-"; "*"; "/"; "=="; "!="; "<"; "<="; ">"; ">="; "&&"; "||"; "is" ]
 
+    [<Literal>]
+    let BuiltinPreludeShowIntrinsicName = "__kappa_builtin_show"
+
+    [<Literal>]
+    let BuiltinPreludeCompareIntrinsicName = "__kappa_builtin_compare"
+
+    let private eqBuiltinPreludeHeadTypeTexts =
+        [ "Unit"
+          "Bool"
+          "Byte"
+          "Bytes"
+          "UnicodeScalar"
+          "Grapheme"
+          "String"
+          "Int"
+          "Nat"
+          "Integer"
+          "Double"
+          "Real"
+          "Ordering"
+          "HashCode" ]
+
+    let private ordBuiltinPreludeHeadTypeTexts =
+        [ "Bool"
+          "Byte"
+          "Bytes"
+          "UnicodeScalar"
+          "String"
+          "Int"
+          "Nat"
+          "Integer"
+          "Double"
+          "Real"
+          "Ordering"
+          "HashCode" ]
+
+    let private showBuiltinPreludeHeadTypeTexts =
+        [ "Unit"
+          "Bool"
+          "Byte"
+          "Bytes"
+          "UnicodeScalar"
+          "Grapheme"
+          "String"
+          "Int"
+          "Nat"
+          "Integer"
+          "Double"
+          "Real"
+          "Ordering" ]
+
+    let private rangeableBuiltinPreludeHeadTypeTexts =
+        [ "Nat"
+          "Int"
+          "Integer"
+          "UnicodeScalar" ]
+
+    let private builtinPreludeTraitInstanceSpecsValue =
+        lazy
+            ([
+                 for headTypeText in eqBuiltinPreludeHeadTypeTexts do
+                     { TraitName = "Eq"
+                       HeadTypeText = headTypeText
+                       MemberLowerings = [ "==", ForwardToBuiltinBinaryOperator "==" ] }
+                 for headTypeText in ordBuiltinPreludeHeadTypeTexts do
+                     { TraitName = "Ord"
+                       HeadTypeText = headTypeText
+                       MemberLowerings = [ "compare", ForwardToIntrinsicTerm BuiltinPreludeCompareIntrinsicName ] }
+                 for headTypeText in showBuiltinPreludeHeadTypeTexts do
+                     { TraitName = "Show"
+                       HeadTypeText = headTypeText
+                       MemberLowerings = [ "show", ForwardToIntrinsicTerm BuiltinPreludeShowIntrinsicName ] }
+             ]
+             |> List.sortBy (fun spec -> spec.TraitName, spec.HeadTypeText))
+
+    let builtinPreludeTraitInstanceSpecs () =
+        builtinPreludeTraitInstanceSpecsValue.Value
+
+    let private matchesBuiltinPreludeTypeName expectedName nameSegments =
+        let actualName = SyntaxFacts.moduleNameToText nameSegments
+
+        String.Equals(actualName, expectedName, StringComparison.Ordinal)
+        || String.Equals(actualName, $"std.prelude.{expectedName}", StringComparison.Ordinal)
+
+    let private matchesBuiltinStdHashTypeName expectedName nameSegments =
+        let actualName = SyntaxFacts.moduleNameToText nameSegments
+
+        String.Equals(actualName, expectedName, StringComparison.Ordinal)
+        || String.Equals(actualName, $"std.hash.{expectedName}", StringComparison.Ordinal)
+
+    let private tryCanonicalBuiltinPreludeHeadTypeText
+        (canonicalNames: string list)
+        (normalizedTypeExpr: TypeExpr)
+        =
+        match normalizedTypeExpr with
+        | TypeName(nameSegments, []) ->
+            canonicalNames
+            |> List.tryFind (fun canonicalName ->
+                matchesBuiltinPreludeTypeName canonicalName nameSegments
+                || matchesBuiltinStdHashTypeName canonicalName nameSegments)
+        | _ ->
+            None
+
+    let tryCanonicalBuiltinPreludeEqHeadTypeText normalizedTypeExpr =
+        tryCanonicalBuiltinPreludeHeadTypeText eqBuiltinPreludeHeadTypeTexts normalizedTypeExpr
+
+    let tryCanonicalBuiltinPreludeOrdHeadTypeText normalizedTypeExpr =
+        tryCanonicalBuiltinPreludeHeadTypeText ordBuiltinPreludeHeadTypeTexts normalizedTypeExpr
+
+    let tryCanonicalBuiltinPreludeShowHeadTypeText normalizedTypeExpr =
+        tryCanonicalBuiltinPreludeHeadTypeText showBuiltinPreludeHeadTypeTexts normalizedTypeExpr
+
+    let tryCanonicalBuiltinPreludeRangeableHeadTypeText normalizedTypeExpr =
+        tryCanonicalBuiltinPreludeHeadTypeText rangeableBuiltinPreludeHeadTypeTexts normalizedTypeExpr
+
+    let hiddenRuntimePreludeIntrinsicTermNames =
+        builtinPreludeTraitInstanceSpecs ()
+        |> List.collect (fun spec ->
+            spec.MemberLowerings
+            |> List.choose (fun (_, lowering) ->
+                match lowering with
+                | ForwardToIntrinsicTerm intrinsicName -> Some intrinsicName
+                | ForwardToBuiltinBinaryOperator _ -> None))
+        |> Set.ofList
+
     let shortCircuitBinaryOperatorNames =
         Set.ofList [ "&&"; "||" ]
 
@@ -104,11 +235,11 @@ module internal IntrinsicCatalog =
 
     let runtimePreludeIntrinsicTermNames () =
         let contract = bundledPreludeExpectContract ()
-        Set.union contract.TermNames builtinBinaryOperatorNames
+        Set.unionMany [ contract.TermNames; builtinBinaryOperatorNames; hiddenRuntimePreludeIntrinsicTermNames ]
 
     let namedIntrinsicTermNames () =
         let contract = bundledPreludeExpectContract ()
-        Set.union contract.TermNames moduleLocalIntrinsicTermNames
+        Set.unionMany [ contract.TermNames; moduleLocalIntrinsicTermNames; hiddenRuntimePreludeIntrinsicTermNames ]
 
     let isBuiltinUnaryIntrinsic name =
         builtinUnaryIntrinsicNames.Contains name
@@ -122,27 +253,6 @@ module internal IntrinsicCatalog =
     let isEagerBuiltinBinaryOperator name =
         eagerBuiltinBinaryOperatorNames.Contains name
 
-    let private tryTraitSensitiveIntrinsicLowering moduleName bindingName =
-        if String.Equals(moduleName, "std.prelude", StringComparison.Ordinal) then
-            match bindingName with
-            | "show"
-            | "compare" ->
-                Some
-                    { EraseBuiltinPreludeConstraintEvidence = true
-                      PreferTraitDispatchForNonBuiltinInstances = true }
-            | _ ->
-                None
-        else
-            None
-
-    let erasesBuiltinPreludeConstraintEvidence moduleName bindingName =
-        tryTraitSensitiveIntrinsicLowering moduleName bindingName
-        |> Option.exists (fun lowering -> lowering.EraseBuiltinPreludeConstraintEvidence)
-
-    let prefersTraitDispatchForNonBuiltinInstances moduleName bindingName =
-        tryTraitSensitiveIntrinsicLowering moduleName bindingName
-        |> Option.exists (fun lowering -> lowering.PreferTraitDispatchForNonBuiltinInstances)
-
     let intrinsicRuntimeArity name =
         match name with
         | "True"
@@ -153,9 +263,6 @@ module internal IntrinsicCatalog =
         | "pure"
         | "print"
         | "println"
-        | "printlnString"
-        | "printInt"
-        | "printString"
         | "primitiveIntToString"
         | "closeCode"
         | "genlet"
@@ -165,6 +272,8 @@ module internal IntrinsicCatalog =
         | "primitiveReadData"
         | "readData"
         | "primitiveCloseFile"
+        | "print"
+        | "println"
         | "newRef"
         | "readRef"
         | "unicodeVersion"
@@ -189,6 +298,7 @@ module internal IntrinsicCatalog =
         | "graphemeToString"
         | "graphemeFromString"
         | "show"
+        | BuiltinPreludeShowIntrinsicName
         | "newHashState"
         | "finishHashState" ->
             1
@@ -196,8 +306,8 @@ module internal IntrinsicCatalog =
         | "or"
         | "writeRef"
         | ">>="
-        | ">>"
         | "compare"
+        | BuiltinPreludeCompareIntrinsicName
         | "normalize"
         | "isNormalized"
         | "canonicalEquivalent"
@@ -230,10 +340,9 @@ module internal IntrinsicCatalog =
             Some BackendRepBoolean
         | "primitiveIntToString" ->
             Some BackendRepString
-        | "compare" ->
+        | "compare"
+        | BuiltinPreludeCompareIntrinsicName ->
             Some(BackendRepOpaque(Some "Ordering"))
-        | "printlnString" ->
-            Some BackendRepIOAction
         | "utf8Bytes" ->
             Some(BackendRepOpaque(Some "Bytes"))
         | "decodeUtf8" ->
@@ -256,6 +365,7 @@ module internal IntrinsicCatalog =
         | "scalarToString"
         | "graphemeToString"
         | "show"
+        | BuiltinPreludeShowIntrinsicName
         | "normalize" ->
             Some BackendRepString
         | "isNormalized"
@@ -291,27 +401,17 @@ module internal IntrinsicCatalog =
         | "primitiveReadData"
         | "readData"
         | "primitiveCloseFile"
-        | "print"
-        | "println"
-        | "printlnString"
-        | "printInt"
-        | "printString"
         | "newRef"
         | "readRef"
         | "writeRef"
         | "pure"
-        | ">>="
-        | ">>" ->
+        | ">>=" ->
             Some BackendRepIOAction
         | _ ->
             None
 
     let executedIntrinsicResultRepresentation name =
         match name with
-        | "print"
-        | "println"
-        | "printInt"
-        | "printString"
         | "writeRef" ->
             Some BackendRepUnit
         | "primitiveIntToString" ->

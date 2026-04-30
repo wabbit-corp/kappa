@@ -1,0 +1,21 @@
+module main
+
+sumList : List Int -> Int
+let sumList xs =
+    match xs
+    case Nil -> 0
+    case head :: tail -> head + sumList tail
+
+baseResult : Int
+let baseResult = sumList (10 :: 20 :: 42 :: Nil)
+
+chooseResult : Bool -> Int -> Int -> Int
+let chooseResult flag left right =
+    if flag then left else right
+
+result : Int
+let result = chooseResult True baseResult 0
+
+--! assertNoErrors
+--! assertType result Int
+--! assertExecute result 72

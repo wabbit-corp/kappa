@@ -5,13 +5,7 @@ open System
 // Checks published checkpoints against the compiler's observable pipeline contract.
 module CheckpointVerification =
     let private makeDiagnostic message =
-        { Severity = Error
-          Code = DiagnosticCode.CheckpointVerification
-          Stage = Some "checkpoint-verification"
-          Phase = None
-          Message = message
-          Location = None
-          RelatedLocations = [] }
+        Diagnostics.errorFact "checkpoint-verification" None None [] (DiagnosticFact.simple SimpleDiagnosticKind.CheckpointVerification message)
 
     let private tokenName (token: Token) =
         match token.Kind with

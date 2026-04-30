@@ -74,7 +74,7 @@ module Lexer =
                 spaces <- spaces + 1
                 index <- index + 1
             | '\t' ->
-                diagnostics.AddError(DiagnosticCode.TabCharacterNotPermitted, "Tabs are not permitted in indentation.", source.GetLocation(TextSpan.FromBounds(lineStart + index, lineStart + index + 1)))
+                diagnostics.AddError(DiagnosticFact.simple SimpleDiagnosticKind.TabCharacterNotPermitted "Tabs are not permitted in indentation.", source.GetLocation(TextSpan.FromBounds(lineStart + index, lineStart + index + 1)))
                 index <- index + 1
             | _ ->
                 index <- lineText.Length
@@ -104,9 +104,7 @@ module Lexer =
                 keepPopping <- indent < indentStack.Peek()
 
             if indent <> indentStack.Peek() then
-                diagnostics.AddError(
-                    DiagnosticCode.UnexpectedIndentation,
-                    $"Unexpected indentation level {indent}; expected one of the previous block levels.",
+                diagnostics.AddError(DiagnosticFact.simple SimpleDiagnosticKind.UnexpectedIndentation $"Unexpected indentation level {indent}; expected one of the previous block levels.",
                     source.GetLocation(TextSpan.FromBounds(lineStart, lineStart + indent))
                 )
 
@@ -264,13 +262,12 @@ module Lexer =
 
             emit kind text startOffset
 
-        let emitQuotedLiteral kind startOffset quoteCharacter unterminatedMessage unterminatedCode =
+        let emitQuotedLiteral kind startOffset quoteCharacter unterminatedMessage unterminatedKind =
             let endIndex, closed = readQuotedLiteral lineText startOffset quoteCharacter
 
             if not closed then
                 diagnostics.AddError(
-                    unterminatedCode,
-                    unterminatedMessage,
+                    DiagnosticFact.simple unterminatedKind unterminatedMessage,
                     source.GetLocation(TextSpan.FromBounds(lineStart + startOffset, lineStart + endIndex))
                 )
 
@@ -290,9 +287,7 @@ module Lexer =
                       IsMultiline = false }
 
             if not scanned.Closed then
-                diagnostics.AddError(
-                    DiagnosticCode.UnterminatedStringLiteral,
-                    "Unterminated string literal.",
+                diagnostics.AddError(DiagnosticFact.simple SimpleDiagnosticKind.UnterminatedStringLiteral "Unterminated string literal.",
                     source.GetLocation(TextSpan.FromBounds(absoluteStartIndex, scanned.EndIndex))
                 )
 
@@ -356,9 +351,7 @@ module Lexer =
                         | '\r' ->
                             currentAbsoluteIndex <- currentAbsoluteIndex + 1
                         | '\t' ->
-                            diagnostics.AddError(
-                                DiagnosticCode.TabCharacterNotPermitted,
-                                "Tabs are not permitted.",
+                            diagnostics.AddError(DiagnosticFact.simple SimpleDiagnosticKind.TabCharacterNotPermitted "Tabs are not permitted.",
                                 source.GetLocation(TextSpan.FromBounds(currentAbsoluteIndex, currentAbsoluteIndex + 1))
                             )
 
@@ -453,9 +446,7 @@ module Lexer =
                                 let endIndex, closed = readQuotedLiteral text currentAbsoluteIndex '\''
 
                                 if not closed then
-                                    diagnostics.AddError(
-                                        DiagnosticCode.UnterminatedCharacterLiteral,
-                                        "Unterminated character literal.",
+                                    diagnostics.AddError(DiagnosticFact.simple SimpleDiagnosticKind.UnterminatedCharacterLiteral "Unterminated character literal.",
                                         source.GetLocation(TextSpan.FromBounds(currentAbsoluteIndex, endIndex))
                                     )
 
@@ -465,9 +456,7 @@ module Lexer =
                             let endIndex, closed = readBacktickIdentifier text currentAbsoluteIndex
 
                             if not closed then
-                                diagnostics.AddError(
-                                    DiagnosticCode.UnterminatedBacktickIdentifier,
-                                    "Unterminated backtick identifier.",
+                                diagnostics.AddError(DiagnosticFact.simple SimpleDiagnosticKind.UnterminatedBacktickIdentifier "Unterminated backtick identifier.",
                                     source.GetLocation(TextSpan.FromBounds(currentAbsoluteIndex, endIndex))
                                 )
 
@@ -479,9 +468,7 @@ module Lexer =
                                 emitAbsolute kind (text.Substring(currentAbsoluteIndex, endIndex - currentAbsoluteIndex)) currentAbsoluteIndex
                                 currentAbsoluteIndex <- endIndex
                             | Some(SyntaxFacts.InvalidNumericToken(message, endIndex)) ->
-                                diagnostics.AddError(
-                                    DiagnosticCode.MalformedNumericLiteral,
-                                    message,
+                                diagnostics.AddError(DiagnosticFact.simple SimpleDiagnosticKind.MalformedNumericLiteral message,
                                     source.GetLocation(TextSpan.FromBounds(currentAbsoluteIndex, endIndex))
                                 )
 
@@ -520,9 +507,7 @@ module Lexer =
                             emitAbsolute Operator (text.Substring(currentAbsoluteIndex, endIndex - currentAbsoluteIndex)) currentAbsoluteIndex
                             currentAbsoluteIndex <- endIndex
                         | _ ->
-                            diagnostics.AddError(
-                                DiagnosticCode.UnrecognizedCharacter,
-                                $"Unrecognized character '{current}'.",
+                            diagnostics.AddError(DiagnosticFact.simple SimpleDiagnosticKind.UnrecognizedCharacter $"Unrecognized character '{current}'.",
                                 source.GetLocation(TextSpan.FromBounds(currentAbsoluteIndex, currentAbsoluteIndex + 1))
                             )
 
@@ -530,9 +515,7 @@ module Lexer =
                             currentAbsoluteIndex <- currentAbsoluteIndex + 1
 
                 if blockCommentDepth > 0 || not terminated then
-                    diagnostics.AddError(
-                        DiagnosticCode.UnterminatedStringInterpolation,
-                        "Unterminated string interpolation.",
+                    diagnostics.AddError(DiagnosticFact.simple SimpleDiagnosticKind.UnterminatedStringInterpolation "Unterminated string interpolation.",
                         source.GetLocation(TextSpan.FromBounds(startAbsoluteIndex, currentAbsoluteIndex))
                     )
 
@@ -583,9 +566,7 @@ module Lexer =
                         let endIndex, closedIdentifier = readBacktickIdentifier text (currentAbsoluteIndex + 1)
 
                         if not closedIdentifier then
-                            diagnostics.AddError(
-                                DiagnosticCode.UnterminatedBacktickIdentifier,
-                                "Unterminated backtick identifier.",
+                            diagnostics.AddError(DiagnosticFact.simple SimpleDiagnosticKind.UnterminatedBacktickIdentifier "Unterminated backtick identifier.",
                                 source.GetLocation(TextSpan.FromBounds(currentAbsoluteIndex + 1, endIndex))
                             )
 
@@ -627,9 +608,7 @@ module Lexer =
                         currentAbsoluteIndex <- currentAbsoluteIndex + 1
 
                 if not closed then
-                    diagnostics.AddError(
-                        DiagnosticCode.UnterminatedStringLiteral,
-                        "Unterminated prefixed string literal.",
+                    diagnostics.AddError(DiagnosticFact.simple SimpleDiagnosticKind.UnterminatedStringLiteral "Unterminated prefixed string literal.",
                         source.GetLocation(TextSpan.FromBounds(absolutePrefixStart, currentAbsoluteIndex))
                     )
 
@@ -722,8 +701,7 @@ module Lexer =
                         currentIndex <- currentIndex + 1
 
                 if not closed then
-                    diagnostics.AddError(DiagnosticCode.UnterminatedStringLiteral, 
-                        "Unterminated prefixed string literal.",
+                    diagnostics.AddError(DiagnosticFact.simple SimpleDiagnosticKind.UnterminatedStringLiteral "Unterminated prefixed string literal.",
                         source.GetLocation(TextSpan.FromBounds(lineStart + prefixStart, lineStart + currentIndex))
                     )
 
@@ -735,9 +713,7 @@ module Lexer =
             let endIndex, closed = readBacktickIdentifier lineText startOffset
 
             if not closed then
-                diagnostics.AddError(
-                    DiagnosticCode.UnterminatedBacktickIdentifier,
-                    "Unterminated backtick identifier.",
+                diagnostics.AddError(DiagnosticFact.simple SimpleDiagnosticKind.UnterminatedBacktickIdentifier "Unterminated backtick identifier.",
                     source.GetLocation(TextSpan.FromBounds(lineStart + startOffset, lineStart + endIndex))
                 )
 
@@ -762,9 +738,7 @@ module Lexer =
             let endIndex, closed = readBacktickIdentifier lineText startOffset
 
             if not closed then
-                diagnostics.AddError(
-                    DiagnosticCode.UnterminatedBacktickIdentifier,
-                    "Unterminated backtick identifier.",
+                diagnostics.AddError(DiagnosticFact.simple SimpleDiagnosticKind.UnterminatedBacktickIdentifier "Unterminated backtick identifier.",
                     source.GetLocation(TextSpan.FromBounds(lineStart + startOffset, lineStart + endIndex))
                 )
 
@@ -810,9 +784,7 @@ module Lexer =
                 emit kind (lineText.Substring(startOffset, endIndex - startOffset)) startOffset
                 endIndex
             | Some(SyntaxFacts.InvalidNumericToken(message, endIndex)) ->
-                diagnostics.AddError(
-                    DiagnosticCode.MalformedNumericLiteral,
-                    message,
+                diagnostics.AddError(DiagnosticFact.simple SimpleDiagnosticKind.MalformedNumericLiteral message,
                     source.GetLocation(TextSpan.FromBounds(lineStart + startOffset, lineStart + endIndex))
                 )
 
@@ -857,8 +829,7 @@ module Lexer =
                     | ' ' ->
                         currentIndex <- currentIndex + 1
                     | '\t' ->
-                        diagnostics.AddError(DiagnosticCode.TabCharacterNotPermitted, 
-                            "Tabs are not permitted.",
+                        diagnostics.AddError(DiagnosticFact.simple SimpleDiagnosticKind.TabCharacterNotPermitted "Tabs are not permitted.",
                             source.GetLocation(TextSpan.FromBounds(lineStart + currentIndex, lineStart + currentIndex + 1))
                         )
 
@@ -956,7 +927,7 @@ module Lexer =
                                     currentIndex
                                     '\''
                                     "Unterminated character literal."
-                                    DiagnosticCode.UnterminatedCharacterLiteral
+                                    SimpleDiagnosticKind.UnterminatedCharacterLiteral
                     | '`' ->
                         currentIndex <- scanBacktickOrPrefixedString currentIndex
                     | _ when Char.IsDigit(current) ->
@@ -966,8 +937,7 @@ module Lexer =
                     | _ when SyntaxFacts.isOperatorCharacter current ->
                         currentIndex <- scanOperator currentIndex
                     | _ ->
-                        diagnostics.AddError(DiagnosticCode.UnrecognizedCharacter, 
-                            $"Unrecognized character '{current}'.",
+                        diagnostics.AddError(DiagnosticFact.simple SimpleDiagnosticKind.UnrecognizedCharacter $"Unrecognized character '{current}'.",
                             source.GetLocation(TextSpan.FromBounds(lineStart + currentIndex, lineStart + currentIndex + 1))
                         )
 
@@ -975,8 +945,7 @@ module Lexer =
                         currentIndex <- currentIndex + 1
 
             if blockCommentDepth > 0 || not terminated then
-                diagnostics.AddError(DiagnosticCode.UnterminatedStringInterpolation, 
-                    "Unterminated string interpolation.",
+                diagnostics.AddError(DiagnosticFact.simple SimpleDiagnosticKind.UnterminatedStringInterpolation "Unterminated string interpolation.",
                     source.GetLocation(TextSpan.FromBounds(lineStart + startOffset, lineStart + currentIndex))
                 )
 
@@ -999,7 +968,7 @@ module Lexer =
                 | ' ' ->
                     index <- index + 1
                 | '\t' ->
-                    diagnostics.AddError(DiagnosticCode.TabCharacterNotPermitted, "Tabs are not permitted.", source.GetLocation(TextSpan.FromBounds(lineStart + index, lineStart + index + 1)))
+                    diagnostics.AddError(DiagnosticFact.simple SimpleDiagnosticKind.TabCharacterNotPermitted "Tabs are not permitted.", source.GetLocation(TextSpan.FromBounds(lineStart + index, lineStart + index + 1)))
                     index <- index + 1
                 | '-' when isLineComment lineText index ->
                     index <- lineText.Length
@@ -1100,7 +1069,7 @@ module Lexer =
                                 index
                                 '\''
                                 "Unterminated character literal."
-                                DiagnosticCode.UnterminatedCharacterLiteral
+                                SimpleDiagnosticKind.UnterminatedCharacterLiteral
                 | '`' ->
                     index <- scanBacktickOrPrefixedString index
                 | _ when Char.IsDigit(current) ->
@@ -1110,8 +1079,7 @@ module Lexer =
                 | _ when SyntaxFacts.isOperatorCharacter current ->
                     index <- scanOperator index
                 | _ ->
-                    diagnostics.AddError(DiagnosticCode.UnrecognizedCharacter, 
-                        $"Unrecognized character '{current}'.",
+                    diagnostics.AddError(DiagnosticFact.simple SimpleDiagnosticKind.UnrecognizedCharacter $"Unrecognized character '{current}'.",
                         source.GetLocation(TextSpan.FromBounds(lineStart + index, lineStart + index + 1))
                     )
                     tokens.Add(token BadToken (string current) (lineStart + index))
@@ -1157,9 +1125,7 @@ module Lexer =
             consumedUntilAbsoluteIndex <- max consumedUntilAbsoluteIndex newConsumedUntilAbsoluteIndex
 
         if blockCommentDepth > 0 then
-            diagnostics.AddError(
-                DiagnosticCode.UnterminatedBlockComment,
-                "Unterminated block comment.",
+            diagnostics.AddError(DiagnosticFact.simple SimpleDiagnosticKind.UnterminatedBlockComment "Unterminated block comment.",
                 source.GetLocation(TextSpan.FromBounds(source.Length, source.Length))
             )
 

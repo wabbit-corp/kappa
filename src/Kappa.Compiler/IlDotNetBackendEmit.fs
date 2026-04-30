@@ -13,6 +13,12 @@ module internal IlDotNetBackendEmit =
     open IlDotNetBackendInput
     open IlDotNetBackendTyping
 
+    let private compareBuiltinSignMethod =
+        typeof<Kappa.Runtime.KappaRuntime>.GetMethod("CompareBuiltinSign", [| typeof<obj>; typeof<obj> |])
+
+    let private showBuiltinMethod =
+        typeof<Kappa.Runtime.KappaRuntime>.GetMethod("ShowBuiltin", [| typeof<obj> |])
+
     let internal emitLiteral (il: ILGenerator) literal =
         match literal with
         | LiteralValue.Integer value ->
@@ -544,6 +550,8 @@ module internal IlDotNetBackendEmit =
                                             ensureExpected (IlPrimitive IlBool)
                                         | ("==" | "!="), IlPrimitive IlBool, IlPrimitive IlBool ->
                                             ensureExpected (IlPrimitive IlBool)
+                                        | ("==" | "!="), IlNamed (_, "Bool", []), IlNamed (_, "Bool", []) ->
+                                            ensureExpected (IlPrimitive IlBool)
                                         | ("==" | "!="), IlPrimitive IlString, IlPrimitive IlString ->
                                             ensureExpected (IlPrimitive IlBool)
                                         | ("==" | "!="), IlPrimitive IlChar, IlPrimitive IlChar ->
@@ -554,8 +562,11 @@ module internal IlDotNetBackendEmit =
                                             ensureExpected (IlPrimitive IlBool)
                                         | ("&&" | "||"), IlPrimitive IlBool, IlPrimitive IlBool ->
                                             ensureExpected (IlPrimitive IlBool)
+                                        | ("&&" | "||"), IlNamed (_, "Bool", []), IlNamed (_, "Bool", []) ->
+                                            ensureExpected (IlPrimitive IlBool)
                                         | _ ->
-                                            Result.Error ""
+                                            Result.Error
+                                                $"IL backend does not support '{operatorName}' for {formatIlType leftType} and {formatIlType rightType}."
                             }
 
                         builtinResult
@@ -819,7 +830,11 @@ module internal IlDotNetBackendEmit =
                         emitComparisonFromCeq il true
                     | "==", IlPrimitive IlBool, IlPrimitive IlBool ->
                         emitComparisonFromCeq il false
+                    | "==", IlNamed (_, "Bool", []), IlNamed (_, "Bool", []) ->
+                        emitComparisonFromCeq il false
                     | "!=", IlPrimitive IlBool, IlPrimitive IlBool ->
+                        emitComparisonFromCeq il true
+                    | "!=", IlNamed (_, "Bool", []), IlNamed (_, "Bool", []) ->
                         emitComparisonFromCeq il true
                     | "==", IlPrimitive IlString, IlPrimitive IlString ->
                         emitStringEquality il false
@@ -947,15 +962,32 @@ module internal IlDotNetBackendEmit =
                                     emitExpression state currentModule typeParameters localValues (Some parameterType) il argumentExpression))
                             (Result.Ok())
 
+                    let emitBoxedArgument argumentExpression argumentType =
+                        result {
+                            do! emitExpression state currentModule typeParameters localValues (Some argumentType) il argumentExpression
+                            let clrArgumentType = resolveClrType state typeParameters argumentType
+
+                            if clrArgumentType.IsValueType then
+                                il.Emit(OpCodes.Box, clrArgumentType)
+                        }
+
+                    let emitOrderingConstructor constructorName =
+                        match tryResolveConstructor state.Environment.Modules currentModule [ constructorName ] with
+                        | Some(_, constructorInfo) ->
+                            let _, constructor, _ =
+                                resolveConstructorTypeAndMembers state typeParameters Map.empty constructorInfo
+
+                            il.Emit(OpCodes.Newobj, constructor)
+                            Result.Ok()
+                        | None ->
+                            Result.Error $"IL backend could not resolve Ordering constructor '{constructorName}'."
+
                     match name, resultType with
-                    | ("print" | "printString"), _ ->
+                    | "print", _ ->
                         il.Emit(OpCodes.Call, typeof<Console>.GetMethod("Write", [| typeof<string> |]))
                         do! emitUnitValue il
-                    | ("println" | "printlnString"), _ ->
+                    | "println", _ ->
                         il.Emit(OpCodes.Call, typeof<Console>.GetMethod("WriteLine", [| typeof<string> |]))
-                        do! emitUnitValue il
-                    | "printInt", _ ->
-                        il.Emit(OpCodes.Call, typeof<Console>.GetMethod("WriteLine", [| typeof<int64> |]))
                         do! emitUnitValue il
                     | "primitiveIntToString", _ ->
                         il.Emit(OpCodes.Call, typeof<Convert>.GetMethod("ToString", [| typeof<int64> |]))
@@ -997,6 +1029,35 @@ module internal IlDotNetBackendEmit =
                         il.Emit(OpCodes.Neg)
                     | ("and" | "or"), _ ->
                         il.Emit(if name = "and" then OpCodes.And else OpCodes.Or)
+                    | intrinsicName, IlPrimitive IlString when intrinsicName = IntrinsicCatalog.BuiltinPreludeShowIntrinsicName ->
+                        do! emitBoxedArgument arguments[0] argumentTypes[0]
+                        il.Emit(OpCodes.Call, showBuiltinMethod)
+                    | intrinsicName, IlNamed("std.prelude", "Ordering", []) when intrinsicName = IntrinsicCatalog.BuiltinPreludeCompareIntrinsicName ->
+                        let comparisonLocal = il.DeclareLocal(typeof<int>)
+                        let lessLabel = il.DefineLabel()
+                        let greaterLabel = il.DefineLabel()
+                        let equalLabel = il.DefineLabel()
+                        let doneLabel = il.DefineLabel()
+                        do! emitBoxedArgument arguments[0] argumentTypes[0]
+                        do! emitBoxedArgument arguments[1] argumentTypes[1]
+                        il.Emit(OpCodes.Call, compareBuiltinSignMethod)
+                        il.Emit(OpCodes.Stloc, comparisonLocal)
+                        il.Emit(OpCodes.Ldloc, comparisonLocal)
+                        il.Emit(OpCodes.Ldc_I4_0)
+                        il.Emit(OpCodes.Blt, lessLabel)
+                        il.Emit(OpCodes.Ldloc, comparisonLocal)
+                        il.Emit(OpCodes.Ldc_I4_0)
+                        il.Emit(OpCodes.Bgt, greaterLabel)
+                        il.Emit(OpCodes.Br, equalLabel)
+                        il.MarkLabel(lessLabel)
+                        do! emitOrderingConstructor "LT"
+                        il.Emit(OpCodes.Br, doneLabel)
+                        il.MarkLabel(greaterLabel)
+                        do! emitOrderingConstructor "GT"
+                        il.Emit(OpCodes.Br, doneLabel)
+                        il.MarkLabel(equalLabel)
+                        do! emitOrderingConstructor "EQ"
+                        il.MarkLabel(doneLabel)
                     | _ ->
                         return! Result.Error $"IL backend intrinsic '{name}' is not implemented yet."
             }
@@ -1958,8 +2019,12 @@ module internal IlDotNetBackendEmit =
 
             { dataEmission with Constructors = constructors })
 
-    let emitClrAssemblyArtifact (modules: ClrAssemblyModule list) (outputDirectory: string) =
-        match buildEnvironment modules with
+    let emitClrAssemblyArtifactWithRoots
+        (modules: ClrAssemblyModule list)
+        (roots: (string * string) list option)
+        (outputDirectory: string)
+        =
+        match buildEnvironment modules roots with
         | Result.Error message ->
             Result.Error message
         | Result.Ok environment ->
@@ -2082,6 +2147,29 @@ module internal IlDotNetBackendEmit =
                           AssemblyFilePath = assemblyPath }
             with ex ->
                 Result.Error $"IL backend emission failed: {ex}"
+
+    let private bundledStdlibRoot =
+        Path.GetFullPath("__kappa_stdlib__")
+
+    let private isBundledStdlibModule (moduleDump: ClrAssemblyModule) =
+        let sourcePath = Path.GetFullPath(moduleDump.SourceFile)
+        sourcePath.StartsWith(bundledStdlibRoot, StringComparison.Ordinal)
+
+    let private defaultAssemblyRoots (modules: ClrAssemblyModule list) =
+        let userDefinedRoots =
+            modules
+            |> List.filter (isBundledStdlibModule >> not)
+            |> List.collect (fun moduleDump ->
+                moduleDump.Bindings
+                |> List.filter (fun binding -> not binding.Intrinsic)
+                |> List.map (fun binding -> moduleDump.Name, binding.Name))
+
+        match userDefinedRoots with
+        | [] -> None
+        | roots -> Some roots
+
+    let emitClrAssemblyArtifact (modules: ClrAssemblyModule list) (outputDirectory: string) =
+        emitClrAssemblyArtifactWithRoots modules (defaultAssemblyRoots modules) outputDirectory
 
     let emitAssemblyArtifact (workspace: WorkspaceCompilation) (outputDirectory: string) =
         if workspace.HasErrors then

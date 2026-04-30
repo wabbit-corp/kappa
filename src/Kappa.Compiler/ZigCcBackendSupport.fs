@@ -92,8 +92,25 @@ module internal ZigCcBackendSupport =
     let internal functionName moduleName bindingName =
         $"kappa_module_{sanitizeIdentifier moduleName}_{sanitizeIdentifier bindingName}"
 
-    let internal typeIdName moduleName typeName =
-        $"KTYPE_{sanitizeIdentifier moduleName}_{sanitizeIdentifier typeName}"
+    let internal typeIdName (moduleName: string) (typeName: string) =
+        let sanitizeTypeIdPart (value: string) =
+            value
+            |> Seq.map (fun ch -> if Char.IsLetterOrDigit(ch) then string ch else "_")
+            |> String.concat ""
+            |> fun text ->
+                if String.IsNullOrWhiteSpace(text) then
+                    "_"
+                elif Char.IsLetter(text[0]) || text[0] = '_' then
+                    text
+                else
+                    "_" + text
+
+        let moduleText =
+            moduleName.Split('.', StringSplitOptions.RemoveEmptyEntries)
+            |> Array.map sanitizeTypeIdPart
+            |> String.concat "_"
+
+        $"KTYPE_{moduleText}_{sanitizeTypeIdPart typeName}"
 
     let internal traitDispatchFunctionName traitName memberName =
         $"kappa_trait_dispatch_{sanitizeIdentifier traitName}_{sanitizeIdentifier memberName}"

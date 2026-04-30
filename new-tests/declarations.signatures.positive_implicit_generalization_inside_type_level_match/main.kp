@@ -1,0 +1,20 @@
+module main
+
+-- Source issue: Idris2#409
+-- Kappa analogue: declaration-level universalization should still introduce a binder when the free lowercase
+-- identifier first appears only inside a type-level `match` in the signature.
+-- Spec: §5.3.3, §7.5, §14.3
+
+isZero : Nat -> Bool
+let isZero n =
+    match n
+      case 0 -> True
+      case _ -> False
+
+carrier : match isZero n
+    case True -> Unit
+    case False -> Unit
+let carrier n = ()
+
+--! assertNoErrors
+--! assertType carrier Nat -> Unit

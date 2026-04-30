@@ -1,0 +1,20 @@
+module main
+
+-- Source issue: Idris2#225
+-- Kappa analogue: an implicit binder introduced by a type alias should alpha-separate from the same spelling in an enclosing signature.
+-- Spec: §5.3.3, §7.3, §17.3.4
+data Elem (@0 a : Type) (x : a) : List a -> Type =
+    Here : Elem a x (x :: xs)
+    There : Elem a x xs -> Elem a x (y :: xs)
+
+type Subset (@0 a : Type) (xs : List a) (ys : List a) : Type =
+    (@0 x : a) -> Elem a x xs -> Elem a x ys
+
+contract : (@0 a : Type) -> Elem a x d -> Subset a (x :: d) d
+let contract (@0 a : Type) el =
+    \(@0 witness : a) proof ->
+        match proof
+          case Here -> el
+          case There tail -> tail
+
+--! assertNoErrors

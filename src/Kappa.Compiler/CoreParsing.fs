@@ -92,7 +92,7 @@ module private SurfaceBinderParsing =
 
     let parseParameterFromTokens (diagnostics: DiagnosticBag) (source: SourceText) eofSpan (tokens: Token list) =
         let unsupported span =
-            diagnostics.AddError(DiagnosticCode.ExpectedSyntaxToken, "Unsupported parameter binder syntax.", source.GetLocation(span))
+            diagnostics.AddError(DiagnosticFact.simple SimpleDiagnosticKind.ExpectedSyntaxToken "Unsupported parameter binder syntax.", source.GetLocation(span))
 
         let rec parseBody isImplicit isInout explicitQuantity remaining =
             let quantity, bodyTokens =
@@ -113,7 +113,7 @@ module private SurfaceBinderParsing =
 
             match bodyTokens with
             | [] ->
-                diagnostics.AddError(DiagnosticCode.ExpectedSyntaxToken, "Expected a parameter binder.", source.GetLocation(eofSpan))
+                diagnostics.AddError(DiagnosticFact.simple SimpleDiagnosticKind.ExpectedSyntaxToken "Expected a parameter binder.", source.GetLocation(eofSpan))
                 None
             | thisToken :: colon :: typeTokens
                 when (not isImplicit)
@@ -157,12 +157,12 @@ module private SurfaceBinderParsing =
 
                 Some(makeParameter name typeTokens quantity isImplicit isInout)
             | head :: _ ->
-                diagnostics.AddError(DiagnosticCode.ExpectedSyntaxToken, "Expected a parameter name.", source.GetLocation(head.Span))
+                diagnostics.AddError(DiagnosticFact.simple SimpleDiagnosticKind.ExpectedSyntaxToken "Expected a parameter name.", source.GetLocation(head.Span))
                 None
 
         match tokens with
         | [] ->
-            diagnostics.AddError(DiagnosticCode.ExpectedSyntaxToken, "Expected a parameter binder.", source.GetLocation(eofSpan))
+            diagnostics.AddError(DiagnosticFact.simple SimpleDiagnosticKind.ExpectedSyntaxToken "Expected a parameter binder.", source.GetLocation(eofSpan))
             None
         | { Kind = AtSign } :: rest ->
             parseBody true false None rest
@@ -578,7 +578,7 @@ type private PatternParser(tokens: Token list, source: SourceText, diagnostics: 
                 this.Advance() |> ignore
                 segments.Add(SyntaxFacts.trimIdentifierQuotes (this.Advance().Text))
         else
-            diagnostics.AddError(DiagnosticCode.ExpectedSyntaxToken, "Expected a pattern name.", source.GetLocation(this.Current.Span))
+            diagnostics.AddError(DiagnosticFact.simple SimpleDiagnosticKind.ExpectedSyntaxToken "Expected a pattern name.", source.GetLocation(this.Current.Span))
 
         List.ofSeq segments
 
@@ -647,9 +647,7 @@ type private PatternParser(tokens: Token list, source: SourceText, diagnostics: 
                     (this.CollectPatternNames alternative |> Set.ofList) <> firstNames)
 
             if mismatched then
-                diagnostics.AddError(
-                    DiagnosticCode.OrPatternBinderMismatch,
-                    "Each or-pattern alternative must bind the same set of names.",
+                diagnostics.AddError(DiagnosticFact.simple SimpleDiagnosticKind.OrPatternBinderMismatch "Each or-pattern alternative must bind the same set of names.",
                     source.GetLocation(operatorToken.Span)
                 )
 
@@ -674,9 +672,7 @@ type private PatternParser(tokens: Token list, source: SourceText, diagnostics: 
             | Result.Ok parsed ->
                 match parsed.Suffix with
                 | Some _ ->
-                    diagnostics.AddError(
-                        DiagnosticCode.ExpectedSyntaxToken,
-                        $"Numeric literal suffixes are not permitted in patterns: '{token.Text}'.",
+                    diagnostics.AddError(DiagnosticFact.simple SimpleDiagnosticKind.ExpectedSyntaxToken $"Numeric literal suffixes are not permitted in patterns: '{token.Text}'.",
                         source.GetLocation(token.Span)
                     )
 
@@ -684,9 +680,7 @@ type private PatternParser(tokens: Token list, source: SourceText, diagnostics: 
                     | Some literal ->
                         LiteralPattern literal
                     | None ->
-                        diagnostics.AddError(
-                            DiagnosticCode.ExpectedSyntaxToken,
-                            $"Numeric literal '{token.Text}' is not representable in patterns.",
+                        diagnostics.AddError(DiagnosticFact.simple SimpleDiagnosticKind.ExpectedSyntaxToken $"Numeric literal '{token.Text}' is not representable in patterns.",
                             source.GetLocation(token.Span)
                         )
 
@@ -696,24 +690,20 @@ type private PatternParser(tokens: Token list, source: SourceText, diagnostics: 
                     | Some literal ->
                         LiteralPattern literal
                     | None ->
-                        diagnostics.AddError(
-                            DiagnosticCode.ExpectedSyntaxToken,
-                            $"Numeric literal '{token.Text}' is not representable in patterns.",
+                        diagnostics.AddError(DiagnosticFact.simple SimpleDiagnosticKind.ExpectedSyntaxToken $"Numeric literal '{token.Text}' is not representable in patterns.",
                             source.GetLocation(token.Span)
                         )
 
                         LiteralPattern(LiteralValue.Integer 0L)
             | Result.Error message ->
-                diagnostics.AddError(DiagnosticCode.ExpectedSyntaxToken, message, source.GetLocation(token.Span))
+                diagnostics.AddError(DiagnosticFact.simple SimpleDiagnosticKind.ExpectedSyntaxToken message, source.GetLocation(token.Span))
                 LiteralPattern(LiteralValue.Integer 0L)
         | FloatLiteral ->
             match SyntaxFacts.tryParseNumericLiteral token.Text with
             | Result.Ok parsed ->
                 match parsed.Suffix with
                 | Some _ ->
-                    diagnostics.AddError(
-                        DiagnosticCode.ExpectedSyntaxToken,
-                        $"Numeric literal suffixes are not permitted in patterns: '{token.Text}'.",
+                    diagnostics.AddError(DiagnosticFact.simple SimpleDiagnosticKind.ExpectedSyntaxToken $"Numeric literal suffixes are not permitted in patterns: '{token.Text}'.",
                         source.GetLocation(token.Span)
                     )
 
@@ -721,9 +711,7 @@ type private PatternParser(tokens: Token list, source: SourceText, diagnostics: 
                     | Some literal ->
                         LiteralPattern literal
                     | None ->
-                        diagnostics.AddError(
-                            DiagnosticCode.ExpectedSyntaxToken,
-                            $"Numeric literal '{token.Text}' is not representable in patterns.",
+                        diagnostics.AddError(DiagnosticFact.simple SimpleDiagnosticKind.ExpectedSyntaxToken $"Numeric literal '{token.Text}' is not representable in patterns.",
                             source.GetLocation(token.Span)
                         )
 
@@ -733,30 +721,28 @@ type private PatternParser(tokens: Token list, source: SourceText, diagnostics: 
                     | Some literal ->
                         LiteralPattern literal
                     | None ->
-                        diagnostics.AddError(
-                            DiagnosticCode.ExpectedSyntaxToken,
-                            $"Numeric literal '{token.Text}' is not representable in patterns.",
+                        diagnostics.AddError(DiagnosticFact.simple SimpleDiagnosticKind.ExpectedSyntaxToken $"Numeric literal '{token.Text}' is not representable in patterns.",
                             source.GetLocation(token.Span)
                         )
 
                         LiteralPattern(LiteralValue.Float 0.0)
             | Result.Error message ->
-                diagnostics.AddError(DiagnosticCode.ExpectedSyntaxToken, message, source.GetLocation(token.Span))
+                diagnostics.AddError(DiagnosticFact.simple SimpleDiagnosticKind.ExpectedSyntaxToken message, source.GetLocation(token.Span))
                 LiteralPattern(LiteralValue.Float 0.0)
         | StringLiteral ->
             match SyntaxFacts.tryDecodeStringLiteral token.Text with
             | Result.Ok value -> LiteralPattern(LiteralValue.String value)
             | Result.Error message ->
-                diagnostics.AddError(DiagnosticCode.ExpectedSyntaxToken, message, source.GetLocation(token.Span))
+                diagnostics.AddError(DiagnosticFact.simple SimpleDiagnosticKind.ExpectedSyntaxToken message, source.GetLocation(token.Span))
                 LiteralPattern(LiteralValue.String(SyntaxFacts.trimStringQuotes token.Text))
         | CharacterLiteral ->
             match SyntaxFacts.tryDecodeCharacterLiteral token.Text with
             | Result.Ok value -> LiteralPattern(LiteralValue.Character value)
             | Result.Error message ->
-                diagnostics.AddError(DiagnosticCode.UnicodeInvalidScalarLiteral, message, source.GetLocation(token.Span))
+                diagnostics.AddError(DiagnosticFact.simple SimpleDiagnosticKind.UnicodeInvalidScalarLiteral message, source.GetLocation(token.Span))
                 LiteralPattern(LiteralValue.Character "\u0000")
         | _ ->
-            diagnostics.AddError(DiagnosticCode.ExpectedSyntaxToken, "Expected a literal pattern.", source.GetLocation(token.Span))
+            diagnostics.AddError(DiagnosticFact.simple SimpleDiagnosticKind.ExpectedSyntaxToken "Expected a literal pattern.", source.GetLocation(token.Span))
             LiteralPattern LiteralValue.Unit
 
     member private this.CollectParenthesizedTokens() =
@@ -782,7 +768,7 @@ type private PatternParser(tokens: Token list, source: SourceText, diagnostics: 
                 innerTokens.Add(this.Advance())
 
         if depth > 0 then
-            diagnostics.AddError(DiagnosticCode.ExpectedSyntaxToken, "Expected ')' to close the pattern.", source.GetLocation(start.Span))
+            diagnostics.AddError(DiagnosticFact.simple SimpleDiagnosticKind.ExpectedSyntaxToken "Expected ')' to close the pattern.", source.GetLocation(start.Span))
 
         List.ofSeq innerTokens
 
@@ -981,13 +967,13 @@ type private PatternParser(tokens: Token list, source: SourceText, diagnostics: 
                                   IsImplicit = true
                                   Pattern = nestedParser.Parse() }
                         | labelToken :: _ ->
-                            diagnostics.AddError(DiagnosticCode.ExpectedSyntaxToken, "Expected a record pattern field label.", source.GetLocation(labelToken.Span))
+                            diagnostics.AddError(DiagnosticFact.simple SimpleDiagnosticKind.ExpectedSyntaxToken "Expected a record pattern field label.", source.GetLocation(labelToken.Span))
                             Some
                                 { Name = "<missing>"
                                   IsImplicit = false
                                   Pattern = WildcardPattern }
                         | [] ->
-                            diagnostics.AddError(DiagnosticCode.ExpectedSyntaxToken, "Expected a record pattern field label.", source.GetLocation(eofSpan))
+                            diagnostics.AddError(DiagnosticFact.simple SimpleDiagnosticKind.ExpectedSyntaxToken "Expected a record pattern field label.", source.GetLocation(eofSpan))
                             Some
                                 { Name = "<missing>"
                                   IsImplicit = false
@@ -1012,7 +998,7 @@ type private PatternParser(tokens: Token list, source: SourceText, diagnostics: 
                                 | token :: _ -> token.Span
                                 | [] -> eofSpan
 
-                            diagnostics.AddError(DiagnosticCode.ExpectedSyntaxToken, "Expected a record pattern field of the form 'name = pattern'.", source.GetLocation(errorSpan))
+                            diagnostics.AddError(DiagnosticFact.simple SimpleDiagnosticKind.ExpectedSyntaxToken "Expected a record pattern field of the form 'name = pattern'.", source.GetLocation(errorSpan))
                             Some
                                 { Name = "<missing>"
                                   IsImplicit = false
@@ -1062,7 +1048,7 @@ type private PatternParser(tokens: Token list, source: SourceText, diagnostics: 
                 innerTokens.Add(this.Advance())
 
         if depth > 0 then
-            diagnostics.AddError(DiagnosticCode.ExpectedSyntaxToken, "Expected '}' to close the pattern.", source.GetLocation(start.Span))
+            diagnostics.AddError(DiagnosticFact.simple SimpleDiagnosticKind.ExpectedSyntaxToken "Expected '}' to close the pattern.", source.GetLocation(start.Span))
 
         List.ofSeq innerTokens
 
@@ -1096,12 +1082,12 @@ type private PatternParser(tokens: Token list, source: SourceText, diagnostics: 
                           IsImplicit = true
                           Pattern = nestedParser.Parse() }
                     | labelToken :: _ ->
-                        diagnostics.AddError(DiagnosticCode.ExpectedSyntaxToken, "Expected a named constructor pattern field label.", source.GetLocation(labelToken.Span))
+                        diagnostics.AddError(DiagnosticFact.simple SimpleDiagnosticKind.ExpectedSyntaxToken "Expected a named constructor pattern field label.", source.GetLocation(labelToken.Span))
                         { Name = "<missing>"
                           IsImplicit = false
                           Pattern = WildcardPattern }
                     | [] ->
-                        diagnostics.AddError(DiagnosticCode.ExpectedSyntaxToken, "Expected a named constructor pattern field label.", source.GetLocation(eofSpan))
+                        diagnostics.AddError(DiagnosticFact.simple SimpleDiagnosticKind.ExpectedSyntaxToken "Expected a named constructor pattern field label.", source.GetLocation(eofSpan))
                         { Name = "<missing>"
                           IsImplicit = false
                           Pattern = WildcardPattern }
@@ -1118,7 +1104,7 @@ type private PatternParser(tokens: Token list, source: SourceText, diagnostics: 
                           IsImplicit = true
                           Pattern = NamePattern name }
                     | token :: _ ->
-                        diagnostics.AddError(DiagnosticCode.ExpectedSyntaxToken, "Expected a named constructor pattern field.", source.GetLocation(token.Span))
+                        diagnostics.AddError(DiagnosticFact.simple SimpleDiagnosticKind.ExpectedSyntaxToken "Expected a named constructor pattern field.", source.GetLocation(token.Span))
                         { Name = "<missing>"
                           IsImplicit = false
                           Pattern = WildcardPattern }
@@ -1176,7 +1162,7 @@ type private PatternParser(tokens: Token list, source: SourceText, diagnostics: 
                 | [ name ] -> NamePattern name
                 | _ -> ConstructorPattern(segments, [])
         | _ ->
-            diagnostics.AddError(DiagnosticCode.ExpectedSyntaxToken, "Expected a pattern.", source.GetLocation(this.Current.Span))
+            diagnostics.AddError(DiagnosticFact.simple SimpleDiagnosticKind.ExpectedSyntaxToken "Expected a pattern.", source.GetLocation(this.Current.Span))
             WildcardPattern
 
     member private this.ParseApplicationPattern() =
@@ -1190,7 +1176,7 @@ type private PatternParser(tokens: Token list, source: SourceText, diagnostics: 
         | ConstructorPattern(name, existingArguments), additionalArguments ->
             ConstructorPattern(name, existingArguments @ additionalArguments)
         | NamedConstructorPattern _, _ :: _ ->
-            diagnostics.AddError(DiagnosticCode.ExpectedSyntaxToken, "Named constructor patterns cannot take positional subpatterns.", source.GetLocation(this.Current.Span))
+            diagnostics.AddError(DiagnosticFact.simple SimpleDiagnosticKind.ExpectedSyntaxToken "Named constructor patterns cannot take positional subpatterns.", source.GetLocation(this.Current.Span))
             head
         | NamePattern name, [] ->
             NamePattern name
@@ -1199,7 +1185,7 @@ type private PatternParser(tokens: Token list, source: SourceText, diagnostics: 
         | literalPattern, [] ->
             literalPattern
         | _, _ ->
-            diagnostics.AddError(DiagnosticCode.ExpectedSyntaxToken, "Only constructor patterns may take arguments.", source.GetLocation(this.Current.Span))
+            diagnostics.AddError(DiagnosticFact.simple SimpleDiagnosticKind.ExpectedSyntaxToken "Only constructor patterns may take arguments.", source.GetLocation(this.Current.Span))
             head
 
     member private this.ParsePattern(minimumPrecedence: int) =
@@ -1258,7 +1244,7 @@ type private PatternParser(tokens: Token list, source: SourceText, diagnostics: 
             this.SkipLayout()
 
             if this.Current.Kind <> EndOfFile then
-                diagnostics.AddError(DiagnosticCode.ExpectedSyntaxToken, "Unexpected tokens at the end of the pattern.", source.GetLocation(this.Current.Span))
+                diagnostics.AddError(DiagnosticFact.simple SimpleDiagnosticKind.ExpectedSyntaxToken "Unexpected tokens at the end of the pattern.", source.GetLocation(this.Current.Span))
 
             pattern
 
@@ -1358,7 +1344,7 @@ type private ExpressionParser
             this.Advance() |> ignore
             true
         else
-            diagnostics.AddError(DiagnosticCode.ExpectedSyntaxToken, message, source.GetLocation(this.Current.Span))
+            diagnostics.AddError(DiagnosticFact.simple SimpleDiagnosticKind.ExpectedSyntaxToken message, source.GetLocation(this.Current.Span))
             false
 
     member private this.IsNameToken(token: Token) =
@@ -1395,7 +1381,7 @@ type private ExpressionParser
         | Result.Ok value ->
             value
         | Result.Error message ->
-            diagnostics.AddError(DiagnosticCode.ExpectedSyntaxToken, message, source.GetLocation(token.Span))
+            diagnostics.AddError(DiagnosticFact.simple SimpleDiagnosticKind.ExpectedSyntaxToken message, source.GetLocation(token.Span))
             SyntaxFacts.trimStringQuotes token.Text
 
     member private this.DecodeCharacterLiteral(token: Token) =
@@ -1403,7 +1389,7 @@ type private ExpressionParser
         | Result.Ok value ->
             value
         | Result.Error message ->
-            diagnostics.AddError(DiagnosticCode.UnicodeInvalidScalarLiteral, message, source.GetLocation(token.Span))
+            diagnostics.AddError(DiagnosticFact.simple SimpleDiagnosticKind.UnicodeInvalidScalarLiteral message, source.GetLocation(token.Span))
             "\u0000"
 
     member private this.DecodeGraphemeLiteral(prefixToken: Token, token: Token) =
@@ -1414,7 +1400,7 @@ type private ExpressionParser
         | Result.Ok value ->
             value
         | Result.Error message ->
-            diagnostics.AddError(DiagnosticCode.UnicodeInvalidGraphemeLiteral, message, location)
+            diagnostics.AddError(DiagnosticFact.simple SimpleDiagnosticKind.UnicodeInvalidGraphemeLiteral message, location)
             "\u0000"
 
     member private this.DecodeByteLiteral(prefixToken: Token, token: Token) =
@@ -1425,7 +1411,7 @@ type private ExpressionParser
         | Result.Ok value ->
             value
         | Result.Error message ->
-            diagnostics.AddError(DiagnosticCode.UnicodeInvalidByteLiteral, message, location)
+            diagnostics.AddError(DiagnosticFact.simple SimpleDiagnosticKind.UnicodeInvalidByteLiteral message, location)
             0uy
 
     member private this.IsAdjacentPrefixedCharacterLiteral(prefix: string) =
@@ -1457,7 +1443,7 @@ type private ExpressionParser
                 innerTokens.Add(this.Advance())
 
         if depth > 0 then
-            diagnostics.AddError(DiagnosticCode.ExpectedSyntaxToken, errorMessage, source.GetLocation(start.Span))
+            diagnostics.AddError(DiagnosticFact.simple SimpleDiagnosticKind.ExpectedSyntaxToken errorMessage, source.GetLocation(start.Span))
 
         List.ofSeq innerTokens
 
@@ -1484,7 +1470,7 @@ type private ExpressionParser
                 innerTokens.Add(this.Advance())
 
         if depth > 0 then
-            diagnostics.AddError(DiagnosticCode.ExpectedSyntaxToken, errorMessage, source.GetLocation(start.Span))
+            diagnostics.AddError(DiagnosticFact.simple SimpleDiagnosticKind.ExpectedSyntaxToken errorMessage, source.GetLocation(start.Span))
 
         List.ofSeq innerTokens
 
@@ -2125,16 +2111,12 @@ type private ExpressionParser
                               IsImplicit = false
                               Value = this.ParseStandaloneExpression(valueTokens) }
                     | _ ->
-                        diagnostics.AddError(
-                            DiagnosticCode.ExpectedSyntaxToken,
-                            "Expected a named aggregation of the form 'name = expr' in the group clause.",
+                        diagnostics.AddError(DiagnosticFact.simple SimpleDiagnosticKind.ExpectedSyntaxToken "Expected a named aggregation of the form 'name = expr' in the group clause.",
                             source.GetLocation((trimmed |> List.tryHead |> Option.defaultValue { Kind = EndOfFile; Text = ""; Span = eofSpan }).Span)
                         )
                         None
                 | _ ->
-                    diagnostics.AddError(
-                        DiagnosticCode.ExpectedSyntaxToken,
-                        "Expected '=' in the group aggregation.",
+                    diagnostics.AddError(DiagnosticFact.simple SimpleDiagnosticKind.ExpectedSyntaxToken "Expected '=' in the group aggregation.",
                         source.GetLocation((trimmed |> List.tryHead |> Option.defaultValue { Kind = EndOfFile; Text = ""; Span = eofSpan }).Span)
                     )
                     None
@@ -2189,7 +2171,7 @@ type private ExpressionParser
                     )
                 )
             | None ->
-                diagnostics.AddError(DiagnosticCode.ExpectedSyntaxToken, "Expected 'in' in the comprehension generator.", source.GetLocation(generatorToken.Span))
+                diagnostics.AddError(DiagnosticFact.simple SimpleDiagnosticKind.ExpectedSyntaxToken "Expected 'in' in the comprehension generator.", source.GetLocation(generatorToken.Span))
                 None
 
         let parseYieldClause (remainingTokens: Token list) =
@@ -2224,16 +2206,12 @@ type private ExpressionParser
                 | Some nameSegments ->
                     Some(Choice2Of3(CombineUsing nameSegments))
                 | None ->
-                    diagnostics.AddError(
-                        DiagnosticCode.ExpectedSyntaxToken,
-                        "Expected a qualified name after 'on conflict combine using'.",
+                    diagnostics.AddError(DiagnosticFact.simple SimpleDiagnosticKind.ExpectedSyntaxToken "Expected a qualified name after 'on conflict combine using'.",
                         source.GetLocation(startToken.Span)
                     )
                     None
             | _ ->
-                diagnostics.AddError(
-                    DiagnosticCode.ExpectedSyntaxToken,
-                    "Expected 'on conflict keep last', 'on conflict keep first', 'on conflict combine using <name>', or 'on conflict combine with <expr>'.",
+                diagnostics.AddError(DiagnosticFact.simple SimpleDiagnosticKind.ExpectedSyntaxToken "Expected 'on conflict keep last', 'on conflict keep first', 'on conflict combine using <name>', or 'on conflict combine with <expr>'.",
                     source.GetLocation(startToken.Span)
                 )
                 None
@@ -2254,7 +2232,7 @@ type private ExpressionParser
                     let valueTokens = tokenArray[equalsIndex + 1 ..] |> Array.toList
                     Some(Choice3Of3(LetClause(false, this.ParseBindPatternFromTokens bindingTokens, this.ParseStandaloneExpression(valueTokens))))
                 | None ->
-                    diagnostics.AddError(DiagnosticCode.ExpectedSyntaxToken, "Expected '=' in the comprehension let clause.", source.GetLocation(letToken.Span))
+                    diagnostics.AddError(DiagnosticFact.simple SimpleDiagnosticKind.ExpectedSyntaxToken "Expected '=' in the comprehension let clause.", source.GetLocation(letToken.Span))
                     None
             | ifToken :: rest when Token.isKeyword Keyword.If ifToken ->
                 Some(Choice3Of3(IfClause(this.ParseStandaloneExpression(rest))))
@@ -2279,9 +2257,7 @@ type private ExpressionParser
                         )
                     )
                 | _ ->
-                    diagnostics.AddError(
-                        DiagnosticCode.ExpectedSyntaxToken,
-                        "Expected 'join <pat> in <source> on <condition>' in the comprehension clause.",
+                    diagnostics.AddError(DiagnosticFact.simple SimpleDiagnosticKind.ExpectedSyntaxToken "Expected 'join <pat> in <source> on <condition>' in the comprehension clause.",
                         source.GetLocation(joinToken.Span)
                     )
                     None
@@ -2311,23 +2287,17 @@ type private ExpressionParser
                                 )
                             )
                         | _ ->
-                            diagnostics.AddError(
-                                DiagnosticCode.ExpectedSyntaxToken,
-                                "Expected 'into <name>' after the group aggregation block.",
+                            diagnostics.AddError(DiagnosticFact.simple SimpleDiagnosticKind.ExpectedSyntaxToken "Expected 'into <name>' after the group aggregation block.",
                                 source.GetLocation(groupToken.Span)
                             )
                             None
                     | None ->
-                        diagnostics.AddError(
-                            DiagnosticCode.ExpectedSyntaxToken,
-                            "Expected '}' to close the group aggregation block.",
+                        diagnostics.AddError(DiagnosticFact.simple SimpleDiagnosticKind.ExpectedSyntaxToken "Expected '}' to close the group aggregation block.",
                             source.GetLocation(groupToken.Span)
                         )
                         None
                 | None ->
-                    diagnostics.AddError(
-                        DiagnosticCode.ExpectedSyntaxToken,
-                        "Expected '{ ... }' after 'group by <expr>'.",
+                    diagnostics.AddError(DiagnosticFact.simple SimpleDiagnosticKind.ExpectedSyntaxToken "Expected '{ ... }' after 'group by <expr>'.",
                         source.GetLocation(groupToken.Span)
                     )
                     None
@@ -2376,23 +2346,19 @@ type private ExpressionParser
                             )
                         )
                     | _ ->
-                        diagnostics.AddError(
-                            DiagnosticCode.ExpectedSyntaxToken,
-                            "Expected a single binder name after 'into' in the left-join clause.",
+                        diagnostics.AddError(DiagnosticFact.simple SimpleDiagnosticKind.ExpectedSyntaxToken "Expected a single binder name after 'into' in the left-join clause.",
                             source.GetLocation(leftToken.Span)
                         )
                         None
                 | _ ->
-                    diagnostics.AddError(
-                        DiagnosticCode.ExpectedSyntaxToken,
-                        "Expected 'left join <pat> in <source> on <condition> into <name>' in the comprehension clause.",
+                    diagnostics.AddError(DiagnosticFact.simple SimpleDiagnosticKind.ExpectedSyntaxToken "Expected 'left join <pat> in <source> on <condition> into <name>' in the comprehension clause.",
                         source.GetLocation(leftToken.Span)
                     )
                     None
             | onToken :: conflictToken :: rest when isContextualName "on" onToken && isContextualName "conflict" conflictToken ->
                 parseConflictClause onToken rest
             | token :: _ ->
-                diagnostics.AddError(DiagnosticCode.ExpectedSyntaxToken, "Unsupported comprehension clause.", source.GetLocation(token.Span))
+                diagnostics.AddError(DiagnosticFact.simple SimpleDiagnosticKind.ExpectedSyntaxToken "Unsupported comprehension clause.", source.GetLocation(token.Span))
                 None
             | [] ->
                 None
@@ -2637,9 +2603,7 @@ type private ExpressionParser
                 |> Option.defaultValue { Kind = Keyword Keyword.Skip; Text = "skip"; Span = eofSpan }
 
             if orderedness = KnownUnordered then
-                diagnostics.AddError(
-                    DiagnosticCode.ExpectedSyntaxToken,
-                    "skip and take require an ordered query pipeline; the current pipeline is unordered.",
+                diagnostics.AddError(DiagnosticFact.simple SimpleDiagnosticKind.ExpectedSyntaxToken "skip and take require an ordered query pipeline; the current pipeline is unordered.",
                     source.GetLocation(skipToken.Span)
                 )
 
@@ -2680,9 +2644,7 @@ type private ExpressionParser
                 |> Option.defaultValue { Kind = Keyword Keyword.Take; Text = "take"; Span = eofSpan }
 
             if orderedness = KnownUnordered then
-                diagnostics.AddError(
-                    DiagnosticCode.ExpectedSyntaxToken,
-                    "skip and take require an ordered query pipeline; the current pipeline is unordered.",
+                diagnostics.AddError(DiagnosticFact.simple SimpleDiagnosticKind.ExpectedSyntaxToken "skip and take require an ordered query pipeline; the current pipeline is unordered.",
                     source.GetLocation(takeToken.Span)
                 )
 
@@ -3015,7 +2977,7 @@ type private ExpressionParser
                       ConflictPolicy = conflictPolicy
                       Lowered = lowered }
             | _ ->
-                diagnostics.AddError(DiagnosticCode.ExpectedSyntaxToken, "A comprehension must end with a yield clause.", source.GetLocation(eofSpan))
+                diagnostics.AddError(DiagnosticFact.simple SimpleDiagnosticKind.ExpectedSyntaxToken "A comprehension must end with a yield clause.", source.GetLocation(eofSpan))
 
                 match kind with
                 | ListCollection -> listNil
@@ -3027,7 +2989,7 @@ type private ExpressionParser
         | Result.Ok value ->
             value
         | Result.Error message ->
-            diagnostics.AddError(DiagnosticCode.ExpectedSyntaxToken, message, source.GetLocation(token.Span))
+            diagnostics.AddError(DiagnosticFact.simple SimpleDiagnosticKind.ExpectedSyntaxToken message, source.GetLocation(token.Span))
             token.Text
 
     member private this.TryParseStandaloneExpression(tokens: Token list) =
@@ -3180,6 +3142,9 @@ type private ExpressionParser
 
             let bindingName, bindingNameSpan, parameterHeaderTokens =
                 match headerTokens with
+                | leftToken :: operatorToken :: rest
+                    when Token.isName leftToken && operatorToken.Kind = Operator ->
+                    operatorToken.Text, operatorToken.Span, leftToken :: rest
                 | nameToken :: rest ->
                     SyntaxFacts.trimIdentifierQuotes nameToken.Text, nameToken.Span, rest
                 | [] ->
@@ -3227,7 +3192,7 @@ type private ExpressionParser
                 match tokenArray[index].Kind with
                 | AtSign ->
                     if index + 1 >= tokenArray.Length then
-                        diagnostics.AddError(DiagnosticCode.ExpectedSyntaxToken, "Expected an implicit parameter after '@' in the local function header.", source.GetLocation(tokenArray[index].Span))
+                        diagnostics.AddError(DiagnosticFact.simple SimpleDiagnosticKind.ExpectedSyntaxToken "Expected an implicit parameter after '@' in the local function header.", source.GetLocation(tokenArray[index].Span))
                         index <- tokenArray.Length
                     else
                         match tokenArray[index + 1].Kind with
@@ -3257,7 +3222,7 @@ type private ExpressionParser
                                 endIndex <- endIndex + 1
 
                             if depth > 0 then
-                                diagnostics.AddError(DiagnosticCode.ExpectedSyntaxToken, "Unterminated implicit parameter binder in local function header.", source.GetLocation(startToken.Span))
+                                diagnostics.AddError(DiagnosticFact.simple SimpleDiagnosticKind.ExpectedSyntaxToken "Unterminated implicit parameter binder in local function header.", source.GetLocation(startToken.Span))
                                 index <- tokenArray.Length
                             else
                                 let innerTokens = List.ofArray tokenArray[index + 2 .. endIndex - 2]
@@ -3268,7 +3233,7 @@ type private ExpressionParser
 
                                 index <- endIndex
                         | _ ->
-                            diagnostics.AddError(DiagnosticCode.ExpectedSyntaxToken, "Unsupported implicit parameter syntax in local function header.", source.GetLocation(tokenArray[index + 1].Span))
+                            diagnostics.AddError(DiagnosticFact.simple SimpleDiagnosticKind.ExpectedSyntaxToken "Unsupported implicit parameter syntax in local function header.", source.GetLocation(tokenArray[index + 1].Span))
                             index <- index + 2
                 | Identifier
                 | Keyword _ ->
@@ -3307,7 +3272,7 @@ type private ExpressionParser
                         endIndex <- endIndex + 1
 
                     if depth > 0 then
-                        diagnostics.AddError(DiagnosticCode.ExpectedSyntaxToken, "Unterminated parameter binder in local function header.", source.GetLocation(startToken.Span))
+                        diagnostics.AddError(DiagnosticFact.simple SimpleDiagnosticKind.ExpectedSyntaxToken "Unterminated parameter binder in local function header.", source.GetLocation(startToken.Span))
                         index <- tokenArray.Length
                     else
                         let innerTokens = List.ofArray tokenArray[index + 1 .. endIndex - 2]
@@ -3328,7 +3293,7 @@ type private ExpressionParser
 
                         index <- endIndex
                 | _ ->
-                    diagnostics.AddError(DiagnosticCode.ExpectedSyntaxToken, "Unsupported local function header syntax.", source.GetLocation(tokenArray[index].Span))
+                    diagnostics.AddError(DiagnosticFact.simple SimpleDiagnosticKind.ExpectedSyntaxToken "Unsupported local function header syntax.", source.GetLocation(tokenArray[index].Span))
                     index <- index + 1
 
             let parsedParameters = List.ofSeq parameters
@@ -3465,7 +3430,7 @@ type private ExpressionParser
 
         match lines with
         | [] ->
-            diagnostics.AddError(DiagnosticCode.ExpectedSyntaxToken, emptyMessage, source.GetLocation(errorSpan))
+            diagnostics.AddError(DiagnosticFact.simple SimpleDiagnosticKind.ExpectedSyntaxToken emptyMessage, source.GetLocation(errorSpan))
             Literal LiteralValue.Unit
         | _ ->
             let parsedItems =
@@ -3500,7 +3465,7 @@ type private ExpressionParser
                    && startsStructuredFinalExpression then
                     buildNestedExpression (bindingLines |> List.choose snd) (bodyLines |> List.map fst |> joinIndentedBodyLines)
                 else
-                    diagnostics.AddError(DiagnosticCode.ExpectedSyntaxToken, malformedMessage, source.GetLocation(errorSpan))
+                    diagnostics.AddError(DiagnosticFact.simple SimpleDiagnosticKind.ExpectedSyntaxToken malformedMessage, source.GetLocation(errorSpan))
                     Literal LiteralValue.Unit
 
     member private this.MakeOperatorSection body =
@@ -3676,7 +3641,7 @@ type private ExpressionParser
                 innerTokens.Add(this.Advance())
 
         if depth > 0 then
-            diagnostics.AddError(DiagnosticCode.ExpectedSyntaxToken, "Expected ')' to close the expression.", source.GetLocation(start.Span))
+            diagnostics.AddError(DiagnosticFact.simple SimpleDiagnosticKind.ExpectedSyntaxToken "Expected ')' to close the expression.", source.GetLocation(start.Span))
 
         List.ofSeq innerTokens
 
@@ -3703,7 +3668,7 @@ type private ExpressionParser
                 innerTokens.Add(this.Advance())
 
         if depth > 0 then
-            diagnostics.AddError(DiagnosticCode.ExpectedSyntaxToken, errorMessage, source.GetLocation(start.Span))
+            diagnostics.AddError(DiagnosticFact.simple SimpleDiagnosticKind.ExpectedSyntaxToken errorMessage, source.GetLocation(start.Span))
 
         List.ofSeq innerTokens
 
@@ -3714,7 +3679,7 @@ type private ExpressionParser
         if this.Current.Kind = Operator && this.Current.Text = "<" then
             this.Advance() |> ignore
         else
-            diagnostics.AddError(DiagnosticCode.ExpectedSyntaxToken, errorMessage, source.GetLocation(openingDot.Span))
+            diagnostics.AddError(DiagnosticFact.simple SimpleDiagnosticKind.ExpectedSyntaxToken errorMessage, source.GetLocation(openingDot.Span))
 
         let innerTokens = ResizeArray<Token>()
         let mutable quoteDepth = 1
@@ -3735,7 +3700,7 @@ type private ExpressionParser
                 innerTokens.Add(this.Advance())
 
         if quoteDepth > 0 then
-            diagnostics.AddError(DiagnosticCode.ExpectedSyntaxToken, errorMessage, source.GetLocation(start.Span))
+            diagnostics.AddError(DiagnosticFact.simple SimpleDiagnosticKind.ExpectedSyntaxToken errorMessage, source.GetLocation(start.Span))
 
         List.ofSeq innerTokens
 
@@ -3751,7 +3716,7 @@ type private ExpressionParser
                 this.Advance() |> ignore
                 segments.Add(SyntaxFacts.trimIdentifierQuotes (this.Advance().Text))
         else
-            diagnostics.AddError(DiagnosticCode.ExpectedSyntaxToken, "Expected a name.", source.GetLocation(this.Current.Span))
+            diagnostics.AddError(DiagnosticFact.simple SimpleDiagnosticKind.ExpectedSyntaxToken "Expected a name.", source.GetLocation(this.Current.Span))
 
         List.ofSeq segments
 
@@ -3781,7 +3746,7 @@ type private ExpressionParser
                 innerTokens.Add(this.Advance())
 
         if depth > 0 then
-            diagnostics.AddError(DiagnosticCode.ExpectedSyntaxToken, "Unterminated parameter binder.", source.GetLocation(start.Span))
+            diagnostics.AddError(DiagnosticFact.simple SimpleDiagnosticKind.ExpectedSyntaxToken "Unterminated parameter binder.", source.GetLocation(start.Span))
             None
         else
             let tokens = List.ofSeq innerTokens
@@ -3833,11 +3798,11 @@ type private ExpressionParser
                         false
                 )
             | _ ->
-                diagnostics.AddError(DiagnosticCode.ExpectedSyntaxToken, "Expected a lambda parameter or '->'.", source.GetLocation(this.Current.Span))
+                diagnostics.AddError(DiagnosticFact.simple SimpleDiagnosticKind.ExpectedSyntaxToken "Expected a lambda parameter or '->'.", source.GetLocation(this.Current.Span))
                 keepReading <- false
 
         if parameters.Count = 0 then
-            diagnostics.AddError(DiagnosticCode.ExpectedSyntaxToken, "A lambda must declare at least one parameter.", source.GetLocation(this.Current.Span))
+            diagnostics.AddError(DiagnosticFact.simple SimpleDiagnosticKind.ExpectedSyntaxToken "A lambda must declare at least one parameter.", source.GetLocation(this.Current.Span))
 
         List.ofSeq parameters
 
@@ -3904,7 +3869,7 @@ type private ExpressionParser
             elif this.Current.Kind = EndOfFile && nestedIndents = 0 then
                 ()
             else
-                diagnostics.AddError(DiagnosticCode.ExpectedSyntaxToken, "Expected the do block to dedent.", source.GetLocation(this.Current.Span))
+                diagnostics.AddError(DiagnosticFact.simple SimpleDiagnosticKind.ExpectedSyntaxToken "Expected the do block to dedent.", source.GetLocation(this.Current.Span))
         else
             let inlineTokens = ResizeArray<Token>()
 
@@ -3940,7 +3905,7 @@ type private ExpressionParser
         match result with
         | Some tokens -> tokens
         | None ->
-            diagnostics.AddError(DiagnosticCode.ExpectedSyntaxToken, "Expected '->' in the case clause.", source.GetLocation(this.Current.Span))
+            diagnostics.AddError(DiagnosticFact.simple SimpleDiagnosticKind.ExpectedSyntaxToken "Expected '->' in the case clause.", source.GetLocation(this.Current.Span))
             List.ofSeq tokens
 
     member private this.CollectCurrentIndentedExpressionTokens() =
@@ -3964,7 +3929,7 @@ type private ExpressionParser
             if this.Current.Kind = Dedent then
                 this.Advance() |> ignore
             else
-                diagnostics.AddError(DiagnosticCode.ExpectedSyntaxToken, "Expected the indented expression to dedent.", source.GetLocation(this.Current.Span))
+                diagnostics.AddError(DiagnosticFact.simple SimpleDiagnosticKind.ExpectedSyntaxToken "Expected the indented expression to dedent.", source.GetLocation(this.Current.Span))
 
         List.ofSeq tokens
 
@@ -4049,9 +4014,7 @@ type private ExpressionParser
                 let body =
                     match bodyTokens with
                     | [ doToken ] when Token.isKeyword Keyword.Do doToken && this.Current.Kind = LeftBrace ->
-                        diagnostics.AddError(
-                            DiagnosticCode.ExpectedSyntaxToken,
-                            "Explicit braces are not permitted after a layout-introduced block.",
+                        diagnostics.AddError(DiagnosticFact.simple SimpleDiagnosticKind.ExpectedSyntaxToken "Explicit braces are not permitted after a layout-introduced block.",
                             source.GetLocation(this.Current.Span)
                         )
 
@@ -4065,9 +4028,7 @@ type private ExpressionParser
                     | [] when this.Current.Kind = Indent ->
                         this.ParseStandaloneExpression(this.CollectCurrentIndentedExpressionTokens())
                     | [] when this.Current.Kind = Dedent && not (Token.isKeyword Keyword.Case (this.Peek(1))) ->
-                        diagnostics.AddError(
-                            DiagnosticCode.UnexpectedIndentation,
-                            "Unexpected indentation.",
+                        diagnostics.AddError(DiagnosticFact.simple SimpleDiagnosticKind.UnexpectedIndentation "Unexpected indentation.",
                             source.GetLocation(this.Peek(1).Span)
                         )
 
@@ -4095,16 +4056,16 @@ type private ExpressionParser
                 while this.Current.Kind = Newline do
                     this.Advance() |> ignore
             | None ->
-                diagnostics.AddError(DiagnosticCode.ExpectedSyntaxToken, "Expected '->' in the case clause.", source.GetLocation(this.Current.Span))
+                diagnostics.AddError(DiagnosticFact.simple SimpleDiagnosticKind.ExpectedSyntaxToken "Expected '->' in the case clause.", source.GetLocation(this.Current.Span))
 
         if cases.Count = 0 then
-            diagnostics.AddError(DiagnosticCode.ExpectedSyntaxToken, "A match expression must declare at least one case.", source.GetLocation(this.Current.Span))
+            diagnostics.AddError(DiagnosticFact.simple SimpleDiagnosticKind.ExpectedSyntaxToken "A match expression must declare at least one case.", source.GetLocation(this.Current.Span))
 
         if hasIndentedCases then
             if this.Current.Kind = Dedent then
                 this.Advance() |> ignore
             else
-                diagnostics.AddError(DiagnosticCode.ExpectedSyntaxToken, "Expected the match cases to dedent.", source.GetLocation(this.Current.Span))
+                diagnostics.AddError(DiagnosticFact.simple SimpleDiagnosticKind.ExpectedSyntaxToken "Expected the match cases to dedent.", source.GetLocation(this.Current.Span))
 
         Match(scrutinee, List.ofSeq cases)
 
@@ -4279,7 +4240,7 @@ type private ExpressionParser
                 elif (current ()).Kind = EndOfFile && nestedIndents = 0 then
                     ()
                 else
-                    diagnostics.AddError(DiagnosticCode.ExpectedSyntaxToken, "Expected the while body to dedent.", source.GetLocation((current ()).Span))
+                    diagnostics.AddError(DiagnosticFact.simple SimpleDiagnosticKind.ExpectedSyntaxToken "Expected the while body to dedent.", source.GetLocation((current ()).Span))
             else
                 let inlineTokens =
                     tokens
@@ -4334,14 +4295,14 @@ type private ExpressionParser
                                 { ResiduePattern = this.ParseBindPatternFromTokens residuePatternTokens
                                   Body = body }
                         | None ->
-                            diagnostics.AddError(DiagnosticCode.ExpectedSyntaxToken, "Expected '->' in the let? failure arm.", source.GetLocation(letQuestionToken.Span))
+                            diagnostics.AddError(DiagnosticFact.simple SimpleDiagnosticKind.ExpectedSyntaxToken "Expected '->' in the let? failure arm.", source.GetLocation(letQuestionToken.Span))
                             valueTokens, None
                     | None ->
                         afterEquals, None
 
                 DoLetQuestion(this.ParseBindPatternFromTokens patternTokens, this.ParseStandaloneExpression(valueTokens), failure)
             | None ->
-                diagnostics.AddError(DiagnosticCode.ExpectedSyntaxToken, "Expected '=' in the let? binding.", source.GetLocation(letQuestionToken.Span))
+                diagnostics.AddError(DiagnosticFact.simple SimpleDiagnosticKind.ExpectedSyntaxToken "Expected '=' in the let? binding.", source.GetLocation(letQuestionToken.Span))
                 DoExpression(Literal LiteralValue.Unit)
 
         let parseDoIf (ifToken: Token) (rest: Token list) =
@@ -4363,7 +4324,7 @@ type private ExpressionParser
                     if List.isEmpty whenFalseTokens then [] else parseDoBlockTokens whenFalseTokens
                 )
             | None ->
-                diagnostics.AddError(DiagnosticCode.ExpectedSyntaxToken, "Expected 'then' in the do if statement.", source.GetLocation(ifToken.Span))
+                diagnostics.AddError(DiagnosticFact.simple SimpleDiagnosticKind.ExpectedSyntaxToken "Expected 'then' in the do if statement.", source.GetLocation(ifToken.Span))
                 DoExpression(Literal LiteralValue.Unit)
 
         match lineTokens with
@@ -4375,7 +4336,7 @@ type private ExpressionParser
             DoReturn(this.ParseStandaloneExpression(rest))
         | deferToken :: rest when Token.isKeyword Keyword.Defer deferToken ->
             if List.isEmpty rest then
-                diagnostics.AddError(DiagnosticCode.ExpectedSyntaxToken, "Expected an expression after 'defer'.", source.GetLocation(deferToken.Span))
+                diagnostics.AddError(DiagnosticFact.simple SimpleDiagnosticKind.ExpectedSyntaxToken "Expected an expression after 'defer'.", source.GetLocation(deferToken.Span))
                 DoExpression(Literal LiteralValue.Unit)
             else
                 DoDefer(this.ParseStandaloneExpression(rest))
@@ -4394,9 +4355,7 @@ type private ExpressionParser
                             | head :: _ -> head.Span
                             | [] -> usingToken.Span
 
-                        diagnostics.AddError(
-                            DiagnosticCode.QttUsingExplicitQuantity,
-                            "'using' binds its pattern at borrowed quantity '&'; explicit quantity markers are not permitted.",
+                        diagnostics.AddError(DiagnosticFact.simple SimpleDiagnosticKind.QttUsingExplicitQuantity "'using' binds its pattern at borrowed quantity '&'; explicit quantity markers are not permitted.",
                             source.GetLocation(location)
                         )
 
@@ -4405,8 +4364,7 @@ type private ExpressionParser
                         patternTokens
 
                 if List.isEmpty patternTokens then
-                    diagnostics.AddError(DiagnosticCode.ExpectedSyntaxToken, 
-                        "Expected a pattern in the using binding.",
+                    diagnostics.AddError(DiagnosticFact.simple SimpleDiagnosticKind.ExpectedSyntaxToken "Expected a pattern in the using binding.",
                         source.GetLocation(usingToken.Span)
                     )
 
@@ -4415,7 +4373,7 @@ type private ExpressionParser
                 let binding = SurfaceBinderParsing.makeBindPattern pattern (Some(QuantityBorrow None)) patternTokens
                 DoUsing(binding, this.ParseStandaloneExpression(expressionTokens))
             | None ->
-                diagnostics.AddError(DiagnosticCode.ExpectedSyntaxToken, "Expected '<-' in the using binding.", source.GetLocation(usingToken.Span))
+                diagnostics.AddError(DiagnosticFact.simple SimpleDiagnosticKind.ExpectedSyntaxToken "Expected '<-' in the using binding.", source.GetLocation(usingToken.Span))
                 DoExpression(Literal LiteralValue.Unit)
         | letQuestionToken :: rest when Token.isKeyword Keyword.LetQuestion letQuestionToken ->
             parseLetQuestion letQuestionToken rest
@@ -4443,9 +4401,7 @@ type private ExpressionParser
                             TypeTokens = bindingTypeTokens |> Option.orElse current.TypeTokens }
 
                 if containsInvalidIndentedExpressionContinuation expressionTokens then
-                    diagnostics.AddError(
-                        DiagnosticCode.ExpectedSyntaxToken,
-                        "Unexpected indented expression continuation in the do binding.",
+                    diagnostics.AddError(DiagnosticFact.simple SimpleDiagnosticKind.ExpectedSyntaxToken "Unexpected indented expression continuation in the do binding.",
                         source.GetLocation(letToken.Span)
                     )
 
@@ -4454,7 +4410,7 @@ type private ExpressionParser
                 else
                     DoLet(binding, this.ParseStandaloneExpression(expressionTokens))
             | None ->
-                diagnostics.AddError(DiagnosticCode.ExpectedSyntaxToken, "Expected '=' or '<-' in the do binding.", source.GetLocation(letToken.Span))
+                diagnostics.AddError(DiagnosticFact.simple SimpleDiagnosticKind.ExpectedSyntaxToken "Expected '=' or '<-' in the do binding.", source.GetLocation(letToken.Span))
                 DoExpression(Literal LiteralValue.Unit)
         | whileToken :: rest when Token.isKeyword Keyword.While whileToken ->
             let tokenArray = List.toArray rest
@@ -4472,7 +4428,7 @@ type private ExpressionParser
                 index <- index + 1
 
             if splitIndex < 0 then
-                diagnostics.AddError(DiagnosticCode.ExpectedSyntaxToken, "Expected 'do' in the while statement.", source.GetLocation(whileToken.Span))
+                diagnostics.AddError(DiagnosticFact.simple SimpleDiagnosticKind.ExpectedSyntaxToken "Expected 'do' in the while statement.", source.GetLocation(whileToken.Span))
                 DoExpression(Literal LiteralValue.Unit)
             else
                 let conditionTokens = tokenArray[0 .. splitIndex - 1] |> Array.toList
@@ -4501,9 +4457,7 @@ type private ExpressionParser
                         | [] -> this.Current.Span
 
                 if containsInvalidIndentedExpressionContinuation expressionTokens then
-                    diagnostics.AddError(
-                        DiagnosticCode.ExpectedSyntaxToken,
-                        "Unexpected indented expression continuation in the do binding.",
+                    diagnostics.AddError(DiagnosticFact.simple SimpleDiagnosticKind.ExpectedSyntaxToken "Unexpected indented expression continuation in the do binding.",
                         source.GetLocation(bindingLocation)
                     )
 
@@ -4521,7 +4475,7 @@ type private ExpressionParser
 
         match statements with
         | [] ->
-            diagnostics.AddError(DiagnosticCode.ExpectedSyntaxToken, "A do block must contain at least one statement.", source.GetLocation(this.Current.Span))
+            diagnostics.AddError(DiagnosticFact.simple SimpleDiagnosticKind.ExpectedSyntaxToken "A do block must contain at least one statement.", source.GetLocation(this.Current.Span))
         | _ ->
             ()
 
@@ -4535,7 +4489,7 @@ type private ExpressionParser
         if this.Current.Kind = Arrow then
             this.Advance() |> ignore
         else
-            diagnostics.AddError(DiagnosticCode.ExpectedSyntaxToken, "Expected '->' after the lambda parameters.", source.GetLocation(this.Current.Span))
+            diagnostics.AddError(DiagnosticFact.simple SimpleDiagnosticKind.ExpectedSyntaxToken "Expected '->' after the lambda parameters.", source.GetLocation(this.Current.Span))
 
         let body =
             match this.Current.Kind, this.Peek(1).Kind with
@@ -4704,19 +4658,18 @@ type private ExpressionParser
                 if this.Current.Kind = InterpolationEnd then
                     this.Advance() |> ignore
                 else
-                    diagnostics.AddError(DiagnosticCode.ExpectedSyntaxToken, 
-                        "Expected the interpolation to end before the string resumes.",
+                    diagnostics.AddError(DiagnosticFact.simple SimpleDiagnosticKind.ExpectedSyntaxToken "Expected the interpolation to end before the string resumes.",
                         source.GetLocation(this.Current.Span)
                     )
             | InterpolatedStringEnd ->
                 this.Advance() |> ignore
                 closed <- true
             | _ ->
-                diagnostics.AddError(DiagnosticCode.ExpectedSyntaxToken, "Expected interpolated string content.", source.GetLocation(this.Current.Span))
+                diagnostics.AddError(DiagnosticFact.simple SimpleDiagnosticKind.ExpectedSyntaxToken "Expected interpolated string content.", source.GetLocation(this.Current.Span))
                 closed <- true
 
         if not closed then
-            diagnostics.AddError(DiagnosticCode.ExpectedSyntaxToken, "Unterminated interpolated string.", source.GetLocation(startToken.Span))
+            diagnostics.AddError(DiagnosticFact.simple SimpleDiagnosticKind.ExpectedSyntaxToken "Unterminated interpolated string.", source.GetLocation(startToken.Span))
 
         PrefixedString(prefix, List.ofSeq parts)
 
@@ -4748,7 +4701,7 @@ type private ExpressionParser
                 valueTokens.Add(this.Advance())
 
         if not foundAs then
-            diagnostics.AddError(DiagnosticCode.ExpectedSyntaxToken, "Expected 'as' in the seal expression.", source.GetLocation(this.Current.Span))
+            diagnostics.AddError(DiagnosticFact.simple SimpleDiagnosticKind.ExpectedSyntaxToken "Expected 'as' in the seal expression.", source.GetLocation(this.Current.Span))
 
         let ascriptionTokens = ResizeArray<Token>()
 
@@ -4757,7 +4710,7 @@ type private ExpressionParser
 
         let value =
             if valueTokens.Count = 0 then
-                diagnostics.AddError(DiagnosticCode.ExpectedSyntaxToken, "Expected a value to seal.", source.GetLocation(this.Current.Span))
+                diagnostics.AddError(DiagnosticFact.simple SimpleDiagnosticKind.ExpectedSyntaxToken "Expected a value to seal.", source.GetLocation(this.Current.Span))
                 Literal LiteralValue.Unit
             else
                 this.ParseStandaloneExpression(List.ofSeq valueTokens)
@@ -4895,12 +4848,12 @@ type private ExpressionParser
                           IsImplicit = isImplicit
                           Value = this.ParseStandaloneExpression(valueTokens) }
                     | labelToken :: _ ->
-                        diagnostics.AddError(DiagnosticCode.ExpectedSyntaxToken, "Expected a record field label.", source.GetLocation(labelToken.Span))
+                        diagnostics.AddError(DiagnosticFact.simple SimpleDiagnosticKind.ExpectedSyntaxToken "Expected a record field label.", source.GetLocation(labelToken.Span))
                         { Name = "<missing>"
                           IsImplicit = isImplicit
                           Value = Literal LiteralValue.Unit }
                     | [] ->
-                        diagnostics.AddError(DiagnosticCode.ExpectedSyntaxToken, "Expected a record field label.", source.GetLocation(eofSpan))
+                        diagnostics.AddError(DiagnosticFact.simple SimpleDiagnosticKind.ExpectedSyntaxToken "Expected a record field label.", source.GetLocation(eofSpan))
                         { Name = "<missing>"
                           IsImplicit = isImplicit
                           Value = Literal LiteralValue.Unit }
@@ -4913,9 +4866,7 @@ type private ExpressionParser
                           IsImplicit = false
                           Value = Name [ fieldName ] }
                     | token :: _ ->
-                        diagnostics.AddError(
-                            DiagnosticCode.ExpectedSyntaxToken,
-                            "Expected a record field of the form 'name = expr' or a punned field name.",
+                        diagnostics.AddError(DiagnosticFact.simple SimpleDiagnosticKind.ExpectedSyntaxToken "Expected a record field of the form 'name = expr' or a punned field name.",
                             source.GetLocation(token.Span)
                         )
 
@@ -4923,9 +4874,7 @@ type private ExpressionParser
                           IsImplicit = isImplicit
                           Value = Literal LiteralValue.Unit }
                     | [] ->
-                        diagnostics.AddError(
-                            DiagnosticCode.ExpectedSyntaxToken,
-                            "Expected a record field of the form 'name = expr' or a punned field name.",
+                        diagnostics.AddError(DiagnosticFact.simple SimpleDiagnosticKind.ExpectedSyntaxToken "Expected a record field of the form 'name = expr' or a punned field name.",
                             source.GetLocation(eofSpan)
                         )
 
@@ -5053,12 +5002,12 @@ type private ExpressionParser
                           IsImplicit = isImplicit
                           Value = this.ParseStandaloneExpression(valueTokens) }
                     | labelToken :: _ ->
-                        diagnostics.AddError(DiagnosticCode.ExpectedSyntaxToken, "Expected a named application field label.", source.GetLocation(labelToken.Span))
+                        diagnostics.AddError(DiagnosticFact.simple SimpleDiagnosticKind.ExpectedSyntaxToken "Expected a named application field label.", source.GetLocation(labelToken.Span))
                         { Name = "<missing>"
                           IsImplicit = isImplicit
                           Value = Literal LiteralValue.Unit }
                     | [] ->
-                        diagnostics.AddError(DiagnosticCode.ExpectedSyntaxToken, "Expected a named application field label.", source.GetLocation(eofSpan))
+                        diagnostics.AddError(DiagnosticFact.simple SimpleDiagnosticKind.ExpectedSyntaxToken "Expected a named application field label.", source.GetLocation(eofSpan))
                         { Name = "<missing>"
                           IsImplicit = isImplicit
                           Value = Literal LiteralValue.Unit }
@@ -5071,9 +5020,7 @@ type private ExpressionParser
                           IsImplicit = false
                           Value = Name [ fieldName ] }
                     | token :: _ ->
-                        diagnostics.AddError(
-                            DiagnosticCode.ExpectedSyntaxToken,
-                            "Expected a named application field of the form 'name = expr' or a punned field name.",
+                        diagnostics.AddError(DiagnosticFact.simple SimpleDiagnosticKind.ExpectedSyntaxToken "Expected a named application field of the form 'name = expr' or a punned field name.",
                             source.GetLocation(token.Span)
                         )
 
@@ -5081,9 +5028,7 @@ type private ExpressionParser
                           IsImplicit = isImplicit
                           Value = Literal LiteralValue.Unit }
                     | [] ->
-                        diagnostics.AddError(
-                            DiagnosticCode.ExpectedSyntaxToken,
-                            "Expected a named application field of the form 'name = expr' or a punned field name.",
+                        diagnostics.AddError(DiagnosticFact.simple SimpleDiagnosticKind.ExpectedSyntaxToken "Expected a named application field of the form 'name = expr' or a punned field name.",
                             source.GetLocation(eofSpan)
                         )
 
@@ -5104,9 +5049,7 @@ type private ExpressionParser
         if this.IsNameToken(this.Current) then
             KindQualifiedName(selector, this.ParseQualifiedName())
         else
-            diagnostics.AddError(
-                DiagnosticCode.ExpectedSyntaxToken,
-                $"Expected a name after '{selectorDescription}'.",
+            diagnostics.AddError(DiagnosticFact.simple SimpleDiagnosticKind.ExpectedSyntaxToken $"Expected a name after '{selectorDescription}'.",
                 source.GetLocation(this.Current.Span)
             )
 
@@ -5138,9 +5081,7 @@ type private ExpressionParser
         if this.IsNameToken(this.Current) then
             KindQualifiedName(EffectLabelKind, this.ParseQualifiedName())
         else
-            diagnostics.AddError(
-                DiagnosticCode.ExpectedSyntaxToken,
-                "Expected a name after 'effect-label'.",
+            diagnostics.AddError(DiagnosticFact.simple SimpleDiagnosticKind.ExpectedSyntaxToken "Expected a name after 'effect-label'.",
                 source.GetLocation(this.Current.Span)
             )
 
@@ -5306,7 +5247,7 @@ type private ExpressionParser
                 index <- index + 1
 
             if splitIndex < 0 then
-                diagnostics.AddError(DiagnosticCode.ExpectedSyntaxToken, "Expected '->' in the handler clause.", source.GetLocation(caseToken.Span))
+                diagnostics.AddError(DiagnosticFact.simple SimpleDiagnosticKind.ExpectedSyntaxToken "Expected '->' in the handler clause.", source.GetLocation(caseToken.Span))
                 { OperationName = "<missing>"
                   ArgumentTokens = []
                   ResumptionName = None
@@ -5331,9 +5272,7 @@ type private ExpressionParser
                         else
                             match List.rev argumentGroups with
                             | [ ] ->
-                                diagnostics.AddError(
-                                    DiagnosticCode.ExpectedSyntaxToken,
-                                    "Expected a resumption binder in the handler clause.",
+                                diagnostics.AddError(DiagnosticFact.simple SimpleDiagnosticKind.ExpectedSyntaxToken "Expected a resumption binder in the handler clause.",
                                     source.GetLocation(operationToken.Span)
                                 )
 
@@ -5344,9 +5283,7 @@ type private ExpressionParser
                                     | [ nameToken ] when this.IsNameToken(nameToken) ->
                                         Some(SyntaxFacts.trimIdentifierQuotes nameToken.Text)
                                     | _ ->
-                                        diagnostics.AddError(
-                                            DiagnosticCode.ExpectedSyntaxToken,
-                                            "Expected a resumption binder in the handler clause.",
+                                        diagnostics.AddError(DiagnosticFact.simple SimpleDiagnosticKind.ExpectedSyntaxToken "Expected a resumption binder in the handler clause.",
                                             source.GetLocation(operationToken.Span)
                                         )
 
@@ -5359,19 +5296,19 @@ type private ExpressionParser
                       ResumptionName = resumptionName
                       Body = this.ParseStandaloneExpression(bodyTokens) }
                 | _ ->
-                    diagnostics.AddError(DiagnosticCode.ExpectedSyntaxToken, "Expected a handler clause head after 'case'.", source.GetLocation(caseToken.Span))
+                    diagnostics.AddError(DiagnosticFact.simple SimpleDiagnosticKind.ExpectedSyntaxToken "Expected a handler clause head after 'case'.", source.GetLocation(caseToken.Span))
                     { OperationName = "<missing>"
                       ArgumentTokens = []
                       ResumptionName = None
                       Body = Literal LiteralValue.Unit }
         | token :: _ ->
-            diagnostics.AddError(DiagnosticCode.ExpectedSyntaxToken, "Expected a handler clause starting with 'case'.", source.GetLocation(token.Span))
+            diagnostics.AddError(DiagnosticFact.simple SimpleDiagnosticKind.ExpectedSyntaxToken "Expected a handler clause starting with 'case'.", source.GetLocation(token.Span))
             { OperationName = "<missing>"
               ArgumentTokens = []
               ResumptionName = None
               Body = Literal LiteralValue.Unit }
         | [] ->
-            diagnostics.AddError(DiagnosticCode.ExpectedSyntaxToken, "Expected a handler clause.", source.GetLocation(this.Current.Span))
+            diagnostics.AddError(DiagnosticFact.simple SimpleDiagnosticKind.ExpectedSyntaxToken "Expected a handler clause.", source.GetLocation(this.Current.Span))
             { OperationName = "<missing>"
               ArgumentTokens = []
               ResumptionName = None
@@ -5390,7 +5327,7 @@ type private ExpressionParser
         let bodyTokens = this.CollectUntilTopLevelWith()
 
         if not (this.IsContextualIdentifier("with")) then
-            diagnostics.AddError(DiagnosticCode.ExpectedSyntaxToken, "Expected 'with' in the handler expression.", source.GetLocation(this.Current.Span))
+            diagnostics.AddError(DiagnosticFact.simple SimpleDiagnosticKind.ExpectedSyntaxToken "Expected 'with' in the handler expression.", source.GetLocation(this.Current.Span))
 
         this.Advance() |> ignore
         let handledBody = this.ParseStandaloneExpression(bodyTokens)
@@ -5399,9 +5336,7 @@ type private ExpressionParser
         let operationClauses = clauses |> List.filter (fun clause -> not (String.Equals(clause.OperationName, "return", StringComparison.Ordinal)))
 
         if List.length returnClauses > 1 then
-            diagnostics.AddError(
-                DiagnosticCode.HandlerClauseDuplicate,
-                "A handler must not define more than one return clause.",
+            diagnostics.AddError(DiagnosticFact.simple SimpleDiagnosticKind.HandlerClauseDuplicate "A handler must not define more than one return clause.",
                 source.GetLocation(this.Current.Span)
             )
 
@@ -5409,9 +5344,7 @@ type private ExpressionParser
             match returnClauses with
             | clause :: _ -> clause
             | [] ->
-                diagnostics.AddError(
-                    DiagnosticCode.HandlerClauseMissing,
-                    "A handler must define exactly one return clause of the form 'case return x -> ...'.",
+                diagnostics.AddError(DiagnosticFact.simple SimpleDiagnosticKind.HandlerClauseMissing "A handler must define exactly one return clause of the form 'case return x -> ...'.",
                     source.GetLocation(this.Current.Span)
                 )
                 { OperationName = "return"
@@ -5420,9 +5353,7 @@ type private ExpressionParser
                   Body = Literal LiteralValue.Unit }
 
         if List.length returnClause.ArgumentTokens <> 1 then
-            diagnostics.AddError(
-                DiagnosticCode.HandlerClauseArityMismatch,
-                $"A handler return clause must bind exactly one payload argument, but binds {List.length returnClause.ArgumentTokens}.",
+            diagnostics.AddError(DiagnosticFact.simple SimpleDiagnosticKind.HandlerClauseArityMismatch $"A handler return clause must bind exactly one payload argument, but binds {List.length returnClause.ArgumentTokens}.",
                 source.GetLocation(this.Current.Span)
             )
 
@@ -5514,6 +5445,9 @@ type private ExpressionParser
 
             let bindingName, bindingNameSpan, parameterHeaderTokens =
                 match headerTokens with
+                | leftToken :: operatorToken :: rest
+                    when Token.isName leftToken && operatorToken.Kind = Operator ->
+                    operatorToken.Text, operatorToken.Span, leftToken :: rest
                 | nameToken :: rest ->
                     SyntaxFacts.trimIdentifierQuotes nameToken.Text, nameToken.Span, rest
                 | [] ->
@@ -5561,9 +5495,7 @@ type private ExpressionParser
                 match tokenArray[index].Kind with
                 | AtSign ->
                     if index + 1 >= tokenArray.Length then
-                        diagnostics.AddError(
-                            DiagnosticCode.ExpectedSyntaxToken,
-                            "Expected an implicit parameter after '@' in the local function header.",
+                        diagnostics.AddError(DiagnosticFact.simple SimpleDiagnosticKind.ExpectedSyntaxToken "Expected an implicit parameter after '@' in the local function header.",
                             source.GetLocation(tokenArray[index].Span)
                         )
 
@@ -5596,9 +5528,7 @@ type private ExpressionParser
                                 endIndex <- endIndex + 1
 
                             if depth > 0 then
-                                diagnostics.AddError(
-                                    DiagnosticCode.ExpectedSyntaxToken,
-                                    "Unterminated implicit parameter binder in local function header.",
+                                diagnostics.AddError(DiagnosticFact.simple SimpleDiagnosticKind.ExpectedSyntaxToken "Unterminated implicit parameter binder in local function header.",
                                     source.GetLocation(startToken.Span)
                                 )
 
@@ -5612,9 +5542,7 @@ type private ExpressionParser
 
                                 index <- endIndex
                         | _ ->
-                            diagnostics.AddError(
-                                DiagnosticCode.ExpectedSyntaxToken,
-                                "Unsupported implicit parameter syntax in local function header.",
+                            diagnostics.AddError(DiagnosticFact.simple SimpleDiagnosticKind.ExpectedSyntaxToken "Unsupported implicit parameter syntax in local function header.",
                                 source.GetLocation(tokenArray[index + 1].Span)
                             )
 
@@ -5656,9 +5584,7 @@ type private ExpressionParser
                         endIndex <- endIndex + 1
 
                     if depth > 0 then
-                        diagnostics.AddError(
-                            DiagnosticCode.ExpectedSyntaxToken,
-                            "Unterminated parameter binder in local function header.",
+                        diagnostics.AddError(DiagnosticFact.simple SimpleDiagnosticKind.ExpectedSyntaxToken "Unterminated parameter binder in local function header.",
                             source.GetLocation(startToken.Span)
                         )
 
@@ -5682,9 +5608,7 @@ type private ExpressionParser
 
                         index <- endIndex
                 | _ ->
-                    diagnostics.AddError(
-                        DiagnosticCode.ExpectedSyntaxToken,
-                        "Unsupported local function header syntax.",
+                    diagnostics.AddError(DiagnosticFact.simple SimpleDiagnosticKind.ExpectedSyntaxToken "Unsupported local function header syntax.",
                         source.GetLocation(tokenArray[index].Span)
                     )
 
@@ -5713,13 +5637,21 @@ type private ExpressionParser
         let bindingAndValueTokens = ResizeArray<Token>()
         let mutable bracketDepth = 0
         let mutable layoutDepth = 0
+        let mutable nestedLocalLetDepth = 0
         let mutable foundIn = false
 
         while not foundIn && this.Current.Kind <> EndOfFile do
-            if bracketDepth = 0 && layoutDepth = 0 && Token.isKeyword Keyword.In this.Current then
-                foundIn <- true
+            if bracketDepth = 0 && Token.isKeyword Keyword.In this.Current then
+                if nestedLocalLetDepth = 0 then
+                    foundIn <- true
+                else
+                    nestedLocalLetDepth <- nestedLocalLetDepth - 1
+                    bindingAndValueTokens.Add(this.Advance())
             else
                 match this.Current.Kind with
+                | Keyword Keyword.Let when bracketDepth = 0 ->
+                    nestedLocalLetDepth <- nestedLocalLetDepth + 1
+                    bindingAndValueTokens.Add(this.Advance())
                 | LeftParen
                 | LeftBracket
                 | LeftBrace
@@ -5742,9 +5674,7 @@ type private ExpressionParser
                     bindingAndValueTokens.Add(this.Advance())
 
         if this.Current.Kind = EndOfFile then
-            diagnostics.AddError(
-                DiagnosticCode.ExpectedSyntaxToken,
-                "Expected 'in' after the local let binding.",
+            diagnostics.AddError(DiagnosticFact.simple SimpleDiagnosticKind.ExpectedSyntaxToken "Expected 'in' after the local let binding.",
                 source.GetLocation(eofSpan)
             )
 
@@ -5781,9 +5711,7 @@ type private ExpressionParser
                 let body = this.ParseExpression(0)
                 LocalLet(binding, value, body)
             | None ->
-                diagnostics.AddError(
-                    DiagnosticCode.ExpectedSyntaxToken,
-                    "Expected '=' in the local let binding.",
+                diagnostics.AddError(DiagnosticFact.simple SimpleDiagnosticKind.ExpectedSyntaxToken "Expected '=' in the local let binding.",
                     source.GetLocation(eofSpan)
                 )
 
@@ -5831,7 +5759,7 @@ type private ExpressionParser
             | Result.Ok parsed ->
                 NumericLiteral parsed.Literal
             | Result.Error message ->
-                diagnostics.AddError(DiagnosticCode.ExpectedSyntaxToken, message, source.GetLocation(token.Span))
+                diagnostics.AddError(DiagnosticFact.simple SimpleDiagnosticKind.ExpectedSyntaxToken message, source.GetLocation(token.Span))
                 Literal(Integer 0L)
         | FloatLiteral ->
             let token = this.Advance()
@@ -5840,7 +5768,7 @@ type private ExpressionParser
             | Result.Ok parsed ->
                 NumericLiteral parsed.Literal
             | Result.Error message ->
-                diagnostics.AddError(DiagnosticCode.ExpectedSyntaxToken, message, source.GetLocation(token.Span))
+                diagnostics.AddError(DiagnosticFact.simple SimpleDiagnosticKind.ExpectedSyntaxToken message, source.GetLocation(token.Span))
                 Literal(Float 0.0)
         | StringLiteral ->
             let token = this.Advance()
@@ -6000,7 +5928,7 @@ type private ExpressionParser
                                     | Some expression ->
                                         expression
                                     | None ->
-                                        diagnostics.AddError(DiagnosticCode.ExpectedSyntaxToken, "Expected an expression inside parentheses.", source.GetLocation(this.Current.Span))
+                                        diagnostics.AddError(DiagnosticFact.simple SimpleDiagnosticKind.ExpectedSyntaxToken "Expected an expression inside parentheses.", source.GetLocation(this.Current.Span))
                                         Literal Unit
         | LeftBracket ->
             let innerTokens = this.CollectBracketedTokens("Expected ']' to close the list expression.")
@@ -6015,7 +5943,7 @@ type private ExpressionParser
             let segments = this.ParseQualifiedName()
             Name segments
         | _ ->
-            diagnostics.AddError(DiagnosticCode.ExpectedSyntaxToken, "Expected an expression.", source.GetLocation(this.Current.Span))
+            diagnostics.AddError(DiagnosticFact.simple SimpleDiagnosticKind.ExpectedSyntaxToken "Expected an expression.", source.GetLocation(this.Current.Span))
             Literal Unit
 
     member private this.ParsePrefixExpression() =
@@ -6117,9 +6045,7 @@ type private ExpressionParser
         if this.IsNameToken(this.Current) then
             this.ParseQualifiedName()
         else
-            diagnostics.AddError(
-                DiagnosticCode.ExpectedSyntaxToken,
-                "Expected a constructor name after 'is'.",
+            diagnostics.AddError(DiagnosticFact.simple SimpleDiagnosticKind.ExpectedSyntaxToken "Expected a constructor name after 'is'.",
                 source.GetLocation(this.Current.Span)
             )
 
@@ -6164,7 +6090,7 @@ type private ExpressionParser
                     innerTokens.Add(this.Advance())
 
             if depth > 0 then
-                diagnostics.AddError(DiagnosticCode.ExpectedSyntaxToken, "Expected '}' to close the record update.", source.GetLocation(startToken.Span))
+                diagnostics.AddError(DiagnosticFact.simple SimpleDiagnosticKind.ExpectedSyntaxToken "Expected '}' to close the record update.", source.GetLocation(startToken.Span))
 
             List.ofSeq innerTokens
 
@@ -6320,7 +6246,7 @@ type private ExpressionParser
                       Path = path
                       Value = this.ParseStandaloneExpression(valueTokens) }
                 | Some _ ->
-                    diagnostics.AddError(DiagnosticCode.RecordPatchInvalidItem, "Row-extension fields must be top-level labels of the form 'name := expr'.", source.GetLocation(tokenArray[operatorStart].Span))
+                    diagnostics.AddError(DiagnosticFact.simple SimpleDiagnosticKind.RecordPatchInvalidItem "Row-extension fields must be top-level labels of the form 'name := expr'.", source.GetLocation(tokenArray[operatorStart].Span))
                     { Name = "<missing>"
                       IsImplicit = false
                       IsExtension = isExtension
@@ -6332,7 +6258,7 @@ type private ExpressionParser
                         | token :: _ -> token.Span
                         | [] -> tokenArray[operatorStart].Span
 
-                    diagnostics.AddError(DiagnosticCode.RecordPatchInvalidItem, "Expected a record patch path before '=' or ':='.", source.GetLocation(errorSpan))
+                    diagnostics.AddError(DiagnosticFact.simple SimpleDiagnosticKind.RecordPatchInvalidItem "Expected a record patch path before '=' or ':='.", source.GetLocation(errorSpan))
                     { Name = "<missing>"
                       IsImplicit = false
                       IsExtension = isExtension
@@ -6344,7 +6270,7 @@ type private ExpressionParser
                     | token :: _ -> token.Span
                     | [] -> this.Current.Span
 
-                diagnostics.AddError(DiagnosticCode.RecordPatchInvalidItem, "Expected a record patch item of the form 'path = expr' or 'name := expr'.", source.GetLocation(errorSpan))
+                diagnostics.AddError(DiagnosticFact.simple SimpleDiagnosticKind.RecordPatchInvalidItem "Expected a record patch item of the form 'path = expr' or 'name := expr'.", source.GetLocation(errorSpan))
                 { Name = "<missing>"
                   IsImplicit = false
                   IsExtension = false
@@ -6367,6 +6293,49 @@ type private ExpressionParser
                     |> List.map parseRecordUpdateField
 
                 expression <- RecordUpdate(expression, fields)
+            elif this.Current.Kind = Dot && this.Peek(1).Kind = LeftParen then
+                this.Advance() |> ignore
+
+                let innerTokens = this.CollectParenthesizedTokens()
+
+                let memberName =
+                    innerTokens
+                    |> List.filter (fun token ->
+                        match token.Kind with
+                        | Newline
+                        | Indent
+                        | Dedent
+                        | EndOfFile -> false
+                        | _ -> true)
+                    |> function
+                        | [ token ] when this.IsNameToken(token) || token.Kind = Operator ->
+                            Some(SyntaxFacts.trimIdentifierQuotes token.Text)
+                        | tokens when tokens |> List.forall (fun token -> token.Kind = Operator) ->
+                            tokens
+                            |> List.map (fun token -> token.Text)
+                            |> String.concat ""
+                            |> Some
+                        | _ ->
+                            None
+
+                match memberName with
+                | Some memberName ->
+                    let memberArguments = ResizeArray<SurfaceExpression>()
+                    let mutable keepReadingMemberArguments = true
+
+                    while keepReadingMemberArguments do
+                        this.SkipLayout()
+
+                        if this.CanStartApplicationArgumentAfterHead(this.Current) then
+                            memberArguments.Add(this.ParseApplicationArgument())
+                        else
+                            keepReadingMemberArguments <- false
+
+                    expression <- MemberAccess(expression, [ memberName ], List.ofSeq memberArguments)
+                | None ->
+                    diagnostics.AddError(DiagnosticFact.simple SimpleDiagnosticKind.ExpectedSyntaxToken "Expected an operator or member name inside explicit member projection.",
+                        source.GetLocation(this.Current.Span)
+                    )
             elif this.Current.Kind = Dot && this.IsNameToken(this.Peek(1)) then
                 this.Advance() |> ignore
                 let memberToken = this.Advance()
@@ -6391,9 +6360,7 @@ type private ExpressionParser
                 | Some navigation ->
                     expression <- SafeNavigation(expression, navigation)
                 | None ->
-                    diagnostics.AddError(
-                        DiagnosticCode.ExpectedSyntaxToken,
-                        "Expected a member access after '?.'.",
+                    diagnostics.AddError(DiagnosticFact.simple SimpleDiagnosticKind.ExpectedSyntaxToken "Expected a member access after '?.'.",
                         source.GetLocation(safeNavigationToken.Span)
                     )
 
@@ -6422,9 +6389,7 @@ type private ExpressionParser
 
                     match left with
                     | TagTest _ ->
-                        diagnostics.AddError(
-                            DiagnosticCode.ExpectedSyntaxToken,
-                            "Constructor tag tests cannot be chained without parentheses.",
+                        diagnostics.AddError(DiagnosticFact.simple SimpleDiagnosticKind.ExpectedSyntaxToken "Constructor tag tests cannot be chained without parentheses.",
                             source.GetLocation(isToken.Span)
                         )
                     | _ ->
@@ -6477,7 +6442,7 @@ type private ExpressionParser
             this.SkipLayout()
 
             if this.Current.Kind <> EndOfFile then
-                diagnostics.AddError(DiagnosticCode.ExpectedSyntaxToken, "Unexpected tokens at the end of the expression.", source.GetLocation(this.Current.Span))
+                diagnostics.AddError(DiagnosticFact.simple SimpleDiagnosticKind.ExpectedSyntaxToken "Unexpected tokens at the end of the expression.", source.GetLocation(this.Current.Span))
 
             Some expression
 
@@ -6606,7 +6571,7 @@ module CoreParsing =
             match tokenArray[index].Kind with
             | AtSign ->
                 if index + 1 >= tokenArray.Length then
-                    diagnostics.AddError(DiagnosticCode.ExpectedSyntaxToken, "Expected an implicit parameter after '@' in the function header.", source.GetLocation(tokenArray[index].Span))
+                    diagnostics.AddError(DiagnosticFact.simple SimpleDiagnosticKind.ExpectedSyntaxToken "Expected an implicit parameter after '@' in the function header.", source.GetLocation(tokenArray[index].Span))
                     index <- tokenArray.Length
                 else
                     match tokenArray[index + 1].Kind with
@@ -6636,7 +6601,7 @@ module CoreParsing =
                             endIndex <- endIndex + 1
 
                         if depth > 0 then
-                            diagnostics.AddError(DiagnosticCode.ExpectedSyntaxToken, "Unterminated implicit parameter binder in function header.", source.GetLocation(startToken.Span))
+                            diagnostics.AddError(DiagnosticFact.simple SimpleDiagnosticKind.ExpectedSyntaxToken "Unterminated implicit parameter binder in function header.", source.GetLocation(startToken.Span))
                             index <- tokenArray.Length
                         else
                             let innerTokens = List.ofArray tokenArray[index + 2 .. endIndex - 2]
@@ -6647,7 +6612,7 @@ module CoreParsing =
 
                             index <- endIndex
                     | _ ->
-                        diagnostics.AddError(DiagnosticCode.ExpectedSyntaxToken, "Unsupported implicit parameter syntax in function header.", source.GetLocation(tokenArray[index + 1].Span))
+                        diagnostics.AddError(DiagnosticFact.simple SimpleDiagnosticKind.ExpectedSyntaxToken "Unsupported implicit parameter syntax in function header.", source.GetLocation(tokenArray[index + 1].Span))
                         index <- index + 2
             | Identifier
             | Keyword _ ->
@@ -6660,6 +6625,10 @@ module CoreParsing =
                         false
                 )
 
+                index <- index + 1
+            | Operator ->
+                // In an infix binding header like `let x |> f = ...`, the operator token is the
+                // binding name and the surrounding tokens are the real parameters.
                 index <- index + 1
             | Underscore ->
                 parameters.Add(
@@ -6686,7 +6655,7 @@ module CoreParsing =
                     endIndex <- endIndex + 1
 
                 if depth > 0 then
-                    diagnostics.AddError(DiagnosticCode.ExpectedSyntaxToken, "Unterminated parameter binder in function header.", source.GetLocation(startToken.Span))
+                    diagnostics.AddError(DiagnosticFact.simple SimpleDiagnosticKind.ExpectedSyntaxToken "Unterminated parameter binder in function header.", source.GetLocation(startToken.Span))
                     index <- tokenArray.Length
                 else
                     let innerTokens = List.ofArray tokenArray[index + 1 .. endIndex - 2]
@@ -6707,7 +6676,7 @@ module CoreParsing =
 
                     index <- endIndex
             | _ ->
-                diagnostics.AddError(DiagnosticCode.ExpectedSyntaxToken, "Unsupported function header syntax.", source.GetLocation(tokenArray[index].Span))
+                diagnostics.AddError(DiagnosticFact.simple SimpleDiagnosticKind.ExpectedSyntaxToken "Unsupported function header syntax.", source.GetLocation(tokenArray[index].Span))
                 index <- index + 1
 
         { Parameters = List.ofSeq parameters
@@ -6747,12 +6716,12 @@ module CoreParsing =
                               IsReceiver = false }
                     )
                 | _ ->
-                    diagnostics.AddError(DiagnosticCode.ExpectedSyntaxToken, "Expected a projection place binder of the form '(place name : Type)'.", source.GetLocation(startSpan))
+                    diagnostics.AddError(DiagnosticFact.simple SimpleDiagnosticKind.ExpectedSyntaxToken "Expected a projection place binder of the form '(place name : Type)'.", source.GetLocation(startSpan))
                     None
             | _ ->
                 match SurfaceBinderParsing.parseParameterFromTokens diagnostics source startSpan trimmed with
                 | Some parameter when parameter.IsInout ->
-                    diagnostics.AddError(DiagnosticCode.ExpectedSyntaxToken, "Projection parameters must not use 'inout'.", source.GetLocation(startSpan))
+                    diagnostics.AddError(DiagnosticFact.simple SimpleDiagnosticKind.ExpectedSyntaxToken "Projection parameters must not use 'inout'.", source.GetLocation(startSpan))
                     Some(ProjectionValueBinder { parameter with IsInout = false })
                 | Some parameter ->
                     Some(ProjectionValueBinder parameter)
@@ -6764,7 +6733,7 @@ module CoreParsing =
             | Some(parameterTokens, returnTypeTokens) ->
                 parameterTokens, returnTypeTokens
             | None ->
-                diagnostics.AddError(DiagnosticCode.ExpectedSyntaxToken, "Expected ':' before the projection result type.", source.GetLocation(TextSpan.FromBounds(source.Length, source.Length)))
+                diagnostics.AddError(DiagnosticFact.simple SimpleDiagnosticKind.ExpectedSyntaxToken "Expected ':' before the projection result type.", source.GetLocation(TextSpan.FromBounds(source.Length, source.Length)))
                 tokens, []
 
         let tokenArray = List.toArray parameterTokens
@@ -6787,7 +6756,7 @@ module CoreParsing =
                     endIndex <- endIndex + 1
 
                 if depth > 0 then
-                    diagnostics.AddError(DiagnosticCode.ExpectedSyntaxToken, "Unterminated projection binder.", source.GetLocation(startToken.Span))
+                    diagnostics.AddError(DiagnosticFact.simple SimpleDiagnosticKind.ExpectedSyntaxToken "Unterminated projection binder.", source.GetLocation(startToken.Span))
                     index <- tokenArray.Length
                 else
                     let innerTokens = List.ofArray tokenArray[index + 1 .. endIndex - 2]
@@ -6808,7 +6777,7 @@ module CoreParsing =
 
                 index <- index + 1
             | _ ->
-                diagnostics.AddError(DiagnosticCode.ExpectedSyntaxToken, "Unsupported projection binder syntax.", source.GetLocation(tokenArray[index].Span))
+                diagnostics.AddError(DiagnosticFact.simple SimpleDiagnosticKind.ExpectedSyntaxToken "Unsupported projection binder syntax.", source.GetLocation(tokenArray[index].Span))
                 index <- index + 1
 
         { Binders = List.ofSeq binders
@@ -6943,22 +6912,22 @@ module CoreParsing =
                         match parameter.TypeTokens with
                         | Some typeTokens ->
                             if parameter.IsImplicit || parameter.IsInout || Option.isSome parameter.Quantity then
-                                diagnostics.AddError(DiagnosticCode.ExpectedSyntaxToken, "Projection set accessors use an ordinary '(name : Type)' parameter.", source.GetLocation(startSpan))
+                                diagnostics.AddError(DiagnosticFact.simple SimpleDiagnosticKind.ExpectedSyntaxToken "Projection set accessors use an ordinary '(name : Type)' parameter.", source.GetLocation(startSpan))
 
                             Some(ProjectionSet(parameter.Name, typeTokens, parseExpr bodyTokens))
                         | None ->
-                            diagnostics.AddError(DiagnosticCode.ExpectedSyntaxToken, "Projection set accessors require a typed parameter.", source.GetLocation(startSpan))
+                            diagnostics.AddError(DiagnosticFact.simple SimpleDiagnosticKind.ExpectedSyntaxToken "Projection set accessors require a typed parameter.", source.GetLocation(startSpan))
                             None
                     | None ->
                         None
                 | _ ->
-                    diagnostics.AddError(DiagnosticCode.ExpectedSyntaxToken, "Expected a projection set accessor parameter of the form '(name : Type)'.", source.GetLocation(startSpan))
+                    diagnostics.AddError(DiagnosticFact.simple SimpleDiagnosticKind.ExpectedSyntaxToken "Expected a projection set accessor parameter of the form '(name : Type)'.", source.GetLocation(startSpan))
                     None
             | token :: _ ->
-                diagnostics.AddError(DiagnosticCode.ExpectedSyntaxToken, "Expected a projection set accessor.", source.GetLocation(token.Span))
+                diagnostics.AddError(DiagnosticFact.simple SimpleDiagnosticKind.ExpectedSyntaxToken "Expected a projection set accessor.", source.GetLocation(token.Span))
                 None
             | [] ->
-                diagnostics.AddError(DiagnosticCode.ExpectedSyntaxToken, "Expected a projection set accessor.", source.GetLocation(TextSpan.FromBounds(source.Length, source.Length)))
+                diagnostics.AddError(DiagnosticFact.simple SimpleDiagnosticKind.ExpectedSyntaxToken "Expected a projection set accessor.", source.GetLocation(TextSpan.FromBounds(source.Length, source.Length)))
                 None
 
         let parseAccessorClause clauseTokens =
@@ -6978,17 +6947,17 @@ module CoreParsing =
                 | setToken :: _ when isNamedAccessor "set" setToken ->
                     parseSetClauseHeader setToken.Span headerTokens bodyTokens
                 | token :: _ ->
-                    diagnostics.AddError(DiagnosticCode.ExpectedSyntaxToken, "Expected a projection accessor clause.", source.GetLocation(token.Span))
+                    diagnostics.AddError(DiagnosticFact.simple SimpleDiagnosticKind.ExpectedSyntaxToken "Expected a projection accessor clause.", source.GetLocation(token.Span))
                     None
                 | [] ->
-                    diagnostics.AddError(DiagnosticCode.ExpectedSyntaxToken, "Expected a projection accessor clause.", source.GetLocation(TextSpan.FromBounds(source.Length, source.Length)))
+                    diagnostics.AddError(DiagnosticFact.simple SimpleDiagnosticKind.ExpectedSyntaxToken "Expected a projection accessor clause.", source.GetLocation(TextSpan.FromBounds(source.Length, source.Length)))
                     None
             | None ->
                 match clauseTokens with
                 | token :: _ ->
-                    diagnostics.AddError(DiagnosticCode.ExpectedSyntaxToken, "Expected '->' in the projection accessor clause.", source.GetLocation(token.Span))
+                    diagnostics.AddError(DiagnosticFact.simple SimpleDiagnosticKind.ExpectedSyntaxToken "Expected '->' in the projection accessor clause.", source.GetLocation(token.Span))
                 | [] ->
-                    diagnostics.AddError(DiagnosticCode.ExpectedSyntaxToken, "Expected '->' in the projection accessor clause.", source.GetLocation(TextSpan.FromBounds(source.Length, source.Length)))
+                    diagnostics.AddError(DiagnosticFact.simple SimpleDiagnosticKind.ExpectedSyntaxToken "Expected '->' in the projection accessor clause.", source.GetLocation(TextSpan.FromBounds(source.Length, source.Length)))
 
                 None
 
@@ -7005,12 +6974,12 @@ module CoreParsing =
         let parseIfBody rest =
             match splitTopLevelAtKeyword Keyword.Then rest with
             | None ->
-                diagnostics.AddError(DiagnosticCode.ExpectedSyntaxToken, "Expected 'then' in the projection body.", source.GetLocation(TextSpan.FromBounds(source.Length, source.Length)))
+                diagnostics.AddError(DiagnosticFact.simple SimpleDiagnosticKind.ExpectedSyntaxToken "Expected 'then' in the projection body.", source.GetLocation(TextSpan.FromBounds(source.Length, source.Length)))
                 parseYield rest
             | Some(conditionTokens, afterThen) ->
                 match splitTopLevelAtKeyword Keyword.Else afterThen with
                 | None ->
-                    diagnostics.AddError(DiagnosticCode.ExpectedSyntaxToken, "Expected 'else' in the projection body.", source.GetLocation(TextSpan.FromBounds(source.Length, source.Length)))
+                    diagnostics.AddError(DiagnosticFact.simple SimpleDiagnosticKind.ExpectedSyntaxToken "Expected 'else' in the projection body.", source.GetLocation(TextSpan.FromBounds(source.Length, source.Length)))
                     parseYield afterThen
                 | Some(whenTrueTokens, whenFalseTokens) ->
                     let condition =
@@ -7095,7 +7064,7 @@ module CoreParsing =
                     tokenArray[0 .. index - 1] |> Array.toList,
                     tokenArray[index ..] |> Array.toList
                 | None ->
-                    diagnostics.AddError(DiagnosticCode.ExpectedSyntaxToken, "Expected an indented case block in the projection match body.", source.GetLocation(TextSpan.FromBounds(source.Length, source.Length)))
+                    diagnostics.AddError(DiagnosticFact.simple SimpleDiagnosticKind.ExpectedSyntaxToken "Expected an indented case block in the projection match body.", source.GetLocation(TextSpan.FromBounds(source.Length, source.Length)))
                     rest, []
 
             let scrutinee =
@@ -7133,13 +7102,13 @@ module CoreParsing =
                                         parseProjectionBody fixities source diagnostics bodyTokens
                                         |> Option.defaultValue (ProjectionYield(Literal LiteralValue.Unit)) }
                             | None ->
-                                diagnostics.AddError(DiagnosticCode.ExpectedSyntaxToken, "Expected '->' in the projection case clause.", source.GetLocation(caseToken.Span))
+                                diagnostics.AddError(DiagnosticFact.simple SimpleDiagnosticKind.ExpectedSyntaxToken "Expected '->' in the projection case clause.", source.GetLocation(caseToken.Span))
                                 None
                         | _ ->
-                            diagnostics.AddError(DiagnosticCode.ExpectedSyntaxToken, "Expected a 'case' clause in the projection match body.", source.GetLocation(TextSpan.FromBounds(source.Length, source.Length)))
+                            diagnostics.AddError(DiagnosticFact.simple SimpleDiagnosticKind.ExpectedSyntaxToken "Expected a 'case' clause in the projection match body.", source.GetLocation(TextSpan.FromBounds(source.Length, source.Length)))
                             None)
                 | None ->
-                    diagnostics.AddError(DiagnosticCode.ExpectedSyntaxToken, "Expected an indented case block in the projection match body.", source.GetLocation(TextSpan.FromBounds(source.Length, source.Length)))
+                    diagnostics.AddError(DiagnosticFact.simple SimpleDiagnosticKind.ExpectedSyntaxToken "Expected an indented case block in the projection match body.", source.GetLocation(TextSpan.FromBounds(source.Length, source.Length)))
                     []
 
             ProjectionMatch(scrutinee, cases)
@@ -7154,7 +7123,7 @@ module CoreParsing =
         | head :: _ when isAccessorHead head ->
             parseAccessorBody tokens
         | head :: _ ->
-            diagnostics.AddError(DiagnosticCode.ExpectedSyntaxToken, "Expected 'yield', 'if', or 'match' in the projection body.", source.GetLocation(head.Span))
+            diagnostics.AddError(DiagnosticFact.simple SimpleDiagnosticKind.ExpectedSyntaxToken "Expected 'yield', 'if', or 'match' in the projection body.", source.GetLocation(head.Span))
             Some(parseYield tokens)
         | [] ->
             None

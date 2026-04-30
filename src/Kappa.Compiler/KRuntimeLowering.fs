@@ -32,6 +32,16 @@ module internal KRuntimeLowering =
         else
             TypeSignatures.parseType lexResult.Tokens
 
+    let private isIntrinsicCompileTimeTraitName nameSegments =
+        match nameSegments with
+        | [ "IsProp" ]
+        | [ "IsTrait" ]
+        | [ "std"; "prelude"; "IsProp" ]
+        | [ "std"; "prelude"; "IsTrait" ] ->
+            true
+        | _ ->
+            false
+
     let rec private eraseRuntimeTypeExpr typeExpr =
         match typeExpr with
         | TypeSignatures.TypeLevelLiteral _ ->
@@ -69,6 +79,8 @@ module internal KRuntimeLowering =
             | [ "Code" ]
             | [ "std"; "prelude"; "Syntax" ]
             | [ "std"; "prelude"; "Code" ] ->
+                TypeSignatures.TypeName([ "Unit" ], [])
+            | _ when isIntrinsicCompileTimeTraitName nameSegments ->
                 TypeSignatures.TypeName([ "Unit" ], [])
             | _ ->
                 TypeSignatures.TypeName(nameSegments, arguments |> List.map eraseRuntimeTypeExpr)
@@ -207,11 +219,17 @@ module internal KRuntimeLowering =
         | TypeSignatures.TypeName([ "std"; "prelude"; "Syntax" ], _)
         | TypeSignatures.TypeName([ "std"; "prelude"; "Code" ], _) ->
             true
+        | TypeSignatures.TypeName(nameSegments, _) when isIntrinsicCompileTimeTraitName nameSegments ->
+            true
         | _ ->
             false
 
     let private isCompileTimeKCoreParameter (parameter: KCoreParameter) =
-        parameter.Type |> Option.exists isCompileTimeParameterType
+        match parameter.Quantity with
+        | Some QuantityZero ->
+            true
+        | _ ->
+            parameter.Type |> Option.exists isCompileTimeParameterType
 
     let private filterRuntimeParameters (parameters: KCoreParameter list) =
         parameters |> List.filter (isCompileTimeKCoreParameter >> not)
@@ -334,20 +352,361 @@ module internal KRuntimeLowering =
                 || (constraintInfo.Arguments |> List.exists touches)))
 
     let private tryParseTraitMemberScheme (memberDeclaration: TraitMember) =
-        let tokens = significantTokens memberDeclaration.Tokens
+        let rawTokens = significantTokens memberDeclaration.Tokens
+        let tokens =
+            match rawTokens with
+            | { Kind = IntegerLiteral; Text = "0" } :: rest ->
+                rest
+            | { Kind = IntegerLiteral; Text = "1" } :: rest ->
+                rest
+            | { Kind = Operator; Text = "<=" } :: { Kind = IntegerLiteral; Text = "1" } :: rest ->
+                rest
+            | { Kind = Operator; Text = ">=" } :: { Kind = IntegerLiteral; Text = "1" } :: rest ->
+                rest
+            | { Kind = Operator; Text = "&" } :: { Kind = LeftBracket } :: regionToken :: { Kind = RightBracket } :: rest
+                when Token.isName regionToken ->
+                rest
+            | { Kind = Operator; Text = "&" } :: rest ->
+                rest
+            | head :: rest
+                when Token.isName head
+                     && (String.Equals(SyntaxFacts.trimIdentifierQuotes head.Text, "\u03c9", StringComparison.Ordinal)
+                         || String.Equals(SyntaxFacts.trimIdentifierQuotes head.Text, "omega", StringComparison.Ordinal)) ->
+                rest
+            | _ ->
+                rawTokens
 
         match tokens with
         | head :: colon :: rest when Token.isName head && colon.Kind = Colon ->
             TypeSignatures.parseScheme rest
+        | { Kind = LeftParen } :: { Kind = Operator } :: { Kind = RightParen } :: colon :: rest when colon.Kind = Colon ->
+            TypeSignatures.parseScheme rest
         | _ ->
             None
 
-    let private filterRuntimeArguments (keepMask: bool list) (arguments: KCoreArgument list) =
-        if List.length keepMask = List.length arguments then
-            List.zip keepMask arguments
-            |> List.choose (fun (keep, argument) -> if keep then Some argument else None)
+    let private synthesizeBuiltinPreludeTraitArtifacts (coreModule: KCoreModule) : KRuntimeBinding list * KRuntimeTraitInstance list =
+        if not (String.Equals(coreModule.Name, Stdlib.PreludeModuleText, StringComparison.Ordinal)) then
+            [], []
         else
+            let traitDeclarationsByName =
+                coreModule.Declarations
+                |> List.choose (fun declaration ->
+                    match declaration.Source with
+                    | TraitDeclarationNode traitDeclaration -> Some(traitDeclaration.Name, traitDeclaration)
+                    | _ -> None)
+                |> Map.ofList
+
+            let makeProvenance declarationName introductionKind =
+                { FilePath = coreModule.SourceFile
+                  ModuleName = coreModule.Name
+                  DeclarationName = Some declarationName
+                  IntroductionKind = introductionKind }
+
+            let parseHeadType headTypeText =
+                match tryParseTypeText headTypeText with
+                | Some parsed -> parsed
+                | None -> invalidOp $"Could not parse synthesized builtin prelude head type '{headTypeText}'."
+
+            let buildMemberBinding
+                (traitDeclaration: TraitDeclaration)
+                (spec: IntrinsicCatalog.BuiltinPreludeTraitInstanceSpec)
+                instanceKey
+                (memberName, lowering)
+                : string * KRuntimeBinding
+                =
+                let traitTypeParameters =
+                    TypeSignatures.collectLeadingTypeParameters traitDeclaration.HeaderTokens
+
+                let headTypeExprs =
+                    [ spec.HeadTypeText ] |> List.map parseHeadType
+
+                let substitution =
+                    if List.length traitTypeParameters = List.length headTypeExprs then
+                        List.zip traitTypeParameters headTypeExprs |> Map.ofList
+                    else
+                        invalidOp
+                            $"Builtin prelude instance synthesis expected trait '{traitDeclaration.Name}' to have {headTypeExprs.Length} type parameters."
+
+                let memberDeclaration =
+                    traitDeclaration.Members
+                    |> List.tryFind (fun declaration -> declaration.Name = Some memberName)
+                    |> Option.defaultWith (fun () ->
+                        invalidOp
+                            $"Builtin prelude instance synthesis could not find trait member '{traitDeclaration.Name}.{memberName}' in std.prelude.")
+
+                let memberScheme =
+                    tryParseTraitMemberScheme memberDeclaration
+                    |> Option.defaultWith (fun () ->
+                        invalidOp
+                            $"Builtin prelude instance synthesis could not parse trait member scheme for '{traitDeclaration.Name}.{memberName}'.")
+                    |> TypeSignatures.applySchemeSubstitution substitution
+
+                let parameterTypes, resultType = TypeSignatures.schemeParts memberScheme
+                let runtimeParameterTypes = parameterTypes |> List.filter (isCompileTimeParameterType >> not)
+
+                let valueParameterNames =
+                    runtimeParameterTypes |> List.mapi (fun index _ -> $"arg{index}")
+
+                let valueParameters : KRuntimeParameter list =
+                    runtimeParameterTypes
+                    |> List.zip valueParameterNames
+                    |> List.map (fun (parameterName, parameterType) ->
+                        { Name = parameterName
+                          TypeText = Some(parameterType |> eraseRuntimeTypeExpr |> TypeSignatures.toText) })
+
+                let selfDictionaryType =
+                    TypeSignatures.TypeName([ spec.TraitName ], headTypeExprs) |> TypeSignatures.toText
+
+                let body =
+                    match lowering, valueParameterNames with
+                    | IntrinsicCatalog.ForwardToBuiltinBinaryOperator operatorName, [ leftName; rightName ] ->
+                        KRuntimeBinary(KRuntimeName [ leftName ], operatorName, KRuntimeName [ rightName ])
+                    | IntrinsicCatalog.ForwardToIntrinsicTerm intrinsicName, _ ->
+                        KRuntimeApply(
+                            KRuntimeName [ intrinsicName ],
+                            valueParameterNames |> List.map (fun parameterName -> KRuntimeName [ parameterName ])
+                        )
+                    | IntrinsicCatalog.ForwardToBuiltinBinaryOperator operatorName, _ ->
+                        invalidOp
+                            $"Builtin prelude member '{traitDeclaration.Name}.{memberName}' expected two runtime arguments for operator '{operatorName}'."
+
+                let bindingName = TraitRuntime.instanceMemberBindingName spec.TraitName instanceKey memberName
+
+                (memberName,
+                 { Name = bindingName
+                   Parameters =
+                     { Name = "__kappa_self_dict"
+                       TypeText = Some selfDictionaryType }
+                     :: valueParameters
+                   ReturnTypeText = Some(resultType |> runtimeValueTypeExpr |> TypeSignatures.toText)
+                   ExternalBinding = None
+                   Body = Some body
+                   Intrinsic = false
+                   Provenance = makeProvenance bindingName "builtin-prelude-instance-member" })
+
+            let synthesizedArtifacts : (KRuntimeBinding list * KRuntimeTraitInstance) list =
+                IntrinsicCatalog.builtinPreludeTraitInstanceSpecs ()
+                |> List.map (fun spec ->
+                    let traitDeclaration =
+                        traitDeclarationsByName
+                        |> Map.tryFind spec.TraitName
+                        |> Option.defaultWith (fun () ->
+                            invalidOp $"Builtin prelude instance synthesis could not find trait '{spec.TraitName}' in std.prelude.")
+
+                    let instanceKey = $"builtin-prelude:{spec.TraitName}:{spec.HeadTypeText}"
+
+                    let memberBindingNames, memberBindingDeclarations =
+                        spec.MemberLowerings
+                        |> List.map (buildMemberBinding traitDeclaration spec instanceKey)
+                        |> List.unzip
+
+                    let dictionaryHeadTypeText =
+                        TypeSignatures.TypeName([ spec.TraitName ], [ parseHeadType spec.HeadTypeText ]) |> TypeSignatures.toText
+
+                    let dictionaryBindingName =
+                        TraitRuntime.instanceDictionaryBindingName spec.TraitName instanceKey
+
+                    let dictionaryBinding : KRuntimeBinding =
+                        { Name = dictionaryBindingName
+                          Parameters = []
+                          ReturnTypeText = Some dictionaryHeadTypeText
+                          ExternalBinding = None
+                          Body = Some(KRuntimeDictionaryValue(coreModule.Name, spec.TraitName, instanceKey, []))
+                          Intrinsic = false
+                          Provenance = makeProvenance dictionaryBindingName "builtin-prelude-instance-dictionary" }
+
+                    let traitInstance : KRuntimeTraitInstance =
+                        { TraitName = spec.TraitName
+                          InstanceKey = instanceKey
+                          HeadTypeTexts = [ spec.HeadTypeText ]
+                          MemberBindings =
+                            List.zip
+                                memberBindingNames
+                                (memberBindingDeclarations |> List.map (fun binding -> binding.Name)) }
+
+                    (memberBindingDeclarations @ [ dictionaryBinding ], traitInstance))
+
+            synthesizedArtifacts
+            |> List.fold
+                (fun ((bindings: KRuntimeBinding list), (instances: KRuntimeTraitInstance list)) (nextBindings, nextInstance) ->
+                    (bindings @ nextBindings, instances @ [ nextInstance ]))
+                (([] : KRuntimeBinding list), ([] : KRuntimeTraitInstance list))
+
+    let private tryAlignKeepMaskToArguments (keepMask: bool list) (arguments: KCoreArgument list) =
+        let argumentCount = List.length arguments
+        let maskCount = List.length keepMask
+
+        if maskCount = argumentCount then
+            Some keepMask
+        elif maskCount > argumentCount then
+            let omittedCount = maskCount - argumentCount
+            let omittedPrefix = keepMask |> List.take omittedCount
+
+            if omittedPrefix |> List.forall not then
+                Some(keepMask |> List.skip omittedCount)
+            else
+                None
+        else
+            None
+
+    let private filterRuntimeArguments (keepMask: bool list) (arguments: KCoreArgument list) =
+        match tryAlignKeepMaskToArguments keepMask arguments with
+        | Some alignedKeepMask ->
+            List.zip alignedKeepMask arguments
+            |> List.choose (fun (keep, argument) -> if keep then Some argument else None)
+        | None ->
             arguments
+
+    let private isCompileTimeOnlyRuntimeArgument (argument: KCoreArgument) =
+        let rec isCompileTimeOnlyExpression expression =
+            match expression with
+            | KCoreDictionaryValue(_, traitName, _, captures) ->
+                List.isEmpty captures && isIntrinsicCompileTimeTraitName [ traitName ]
+            | KCoreName [ name ] ->
+                name.StartsWith("__kappa_dict_IsTrait_", StringComparison.Ordinal)
+                || name.StartsWith("__kappa_dict_IsProp_", StringComparison.Ordinal)
+            | _ ->
+                false
+
+        isCompileTimeOnlyExpression argument.Expression
+
+    let private filterProvablyCompileTimeOnlyArguments (keepMask: bool list) (arguments: KCoreArgument list) =
+        match tryAlignKeepMaskToArguments keepMask arguments with
+        | Some alignedKeepMask ->
+            let zipped = List.zip alignedKeepMask arguments
+
+            let canFilter =
+                zipped
+                |> List.forall (fun (keep, argument) -> keep || isCompileTimeOnlyRuntimeArgument argument)
+
+            if canFilter then
+                zipped
+                |> List.choose (fun (keep, argument) -> if keep then Some argument else None)
+            else
+                arguments
+        | None ->
+            arguments
+
+    let private isBuiltinPreludeInstanceKey (traitName: string) (instanceKey: string) =
+        instanceKey.StartsWith($"builtin-prelude:{traitName}:", StringComparison.Ordinal)
+
+    let private isBuiltinPreludeDictionary (moduleName: string) (traitName: string) (instanceKey: string) captures =
+        String.Equals(moduleName, Stdlib.PreludeModuleText, StringComparison.Ordinal)
+        && isBuiltinPreludeInstanceKey traitName instanceKey
+        && List.isEmpty captures
+
+    let private runtimeNameEndsWith (expectedName: string) (segments: string list) =
+        match List.tryLast segments with
+        | Some actualName -> String.Equals(actualName, expectedName, StringComparison.Ordinal)
+        | None -> false
+
+    let private specializeBuiltinPreludeRuntimeExpression expression =
+        let rec rewrite expression =
+            let rebuilt =
+                match expression with
+                | KRuntimeLiteral _
+                | KRuntimeName _
+                | KRuntimeEffectLabel _ ->
+                    expression
+                | KRuntimeEffectOperation(label, operationId, operationName) ->
+                    KRuntimeEffectOperation(rewrite label, operationId, operationName)
+                | KRuntimeClosure(parameters, body) ->
+                    KRuntimeClosure(parameters, rewrite body)
+                | KRuntimeIfThenElse(condition, whenTrue, whenFalse) ->
+                    KRuntimeIfThenElse(rewrite condition, rewrite whenTrue, rewrite whenFalse)
+                | KRuntimeHandle(isDeep, label, body, returnClause, operationClauses) ->
+                    let rewriteClause (clause: KRuntimeEffectHandlerClause) =
+                        { clause with Body = rewrite clause.Body }
+
+                    KRuntimeHandle(
+                        isDeep,
+                        rewrite label,
+                        rewrite body,
+                        rewriteClause returnClause,
+                        operationClauses |> List.map rewriteClause
+                    )
+                | KRuntimeMatch(scrutinee, cases) ->
+                    KRuntimeMatch(
+                        rewrite scrutinee,
+                        cases
+                        |> List.map (fun caseClause ->
+                            { caseClause with
+                                Guard = caseClause.Guard |> Option.map rewrite
+                                Body = rewrite caseClause.Body })
+                    )
+                | KRuntimeExecute inner ->
+                    KRuntimeExecute(rewrite inner)
+                | KRuntimeLet(bindingName, value, body) ->
+                    KRuntimeLet(bindingName, rewrite value, rewrite body)
+                | KRuntimeDoScope(scopeLabel, body) ->
+                    KRuntimeDoScope(scopeLabel, rewrite body)
+                | KRuntimeScheduleExit(scopeLabel, action, body) ->
+                    let rewrittenAction =
+                        match action with
+                        | KRuntimeDeferred deferred -> KRuntimeDeferred(rewrite deferred)
+                        | KRuntimeRelease(resourceTypeText, release, resource) ->
+                            KRuntimeRelease(resourceTypeText, rewrite release, rewrite resource)
+
+                    KRuntimeScheduleExit(scopeLabel, rewrittenAction, rewrite body)
+                | KRuntimeSequence(first, second) ->
+                    KRuntimeSequence(rewrite first, rewrite second)
+                | KRuntimeWhile(condition, body) ->
+                    KRuntimeWhile(rewrite condition, rewrite body)
+                | KRuntimeApply(callee, arguments) ->
+                    KRuntimeApply(rewrite callee, arguments |> List.map rewrite)
+                | KRuntimeDictionaryValue(moduleName, traitName, instanceKey, captures) ->
+                    KRuntimeDictionaryValue(moduleName, traitName, instanceKey, captures |> List.map rewrite)
+                | KRuntimeTraitCall(traitName, memberName, dictionary, arguments) ->
+                    KRuntimeTraitCall(traitName, memberName, rewrite dictionary, arguments |> List.map rewrite)
+                | KRuntimeUnary(operatorName, operand) ->
+                    KRuntimeUnary(operatorName, rewrite operand)
+                | KRuntimeBinary(left, operatorName, right) ->
+                    KRuntimeBinary(rewrite left, operatorName, rewrite right)
+                | KRuntimePrefixedString(prefix, parts) ->
+                    KRuntimePrefixedString(
+                        prefix,
+                        parts
+                        |> List.map (function
+                            | KRuntimeStringText _ as part -> part
+                            | KRuntimeStringInterpolation(inner, format) ->
+                                KRuntimeStringInterpolation(rewrite inner, format))
+                    )
+
+            match rebuilt with
+            | KRuntimeApply(
+                KRuntimeName calleeSegments,
+                [ KRuntimeDictionaryValue(moduleName, "Eq", instanceKey, captures)
+                  left
+                  right ]
+              )
+                when runtimeNameEndsWith "/=" calleeSegments
+                     && isBuiltinPreludeDictionary moduleName "Eq" instanceKey captures ->
+                KRuntimeBinary(left, "!=", right)
+            | KRuntimeApply(
+                KRuntimeName calleeSegments,
+                [ KRuntimeDictionaryValue(moduleName, "Ord", instanceKey, captures)
+                  left
+                  right ]
+              )
+                when ((runtimeNameEndsWith "<" calleeSegments)
+                      || (runtimeNameEndsWith "<=" calleeSegments)
+                      || (runtimeNameEndsWith ">" calleeSegments)
+                      || (runtimeNameEndsWith ">=" calleeSegments))
+                     && isBuiltinPreludeDictionary moduleName "Ord" instanceKey captures ->
+                let operatorName = List.last calleeSegments
+                KRuntimeBinary(left, operatorName, right)
+            | KRuntimeTraitCall(
+                "Eq",
+                "==",
+                KRuntimeDictionaryValue(moduleName, "Eq", instanceKey, captures),
+                [ left; right ]
+              )
+                when isBuiltinPreludeDictionary moduleName "Eq" instanceKey captures ->
+                KRuntimeBinary(left, "==", right)
+            | other ->
+                other
+
+        rewrite expression
 
     let rec private lowerKRuntimePattern pattern =
         match pattern with
@@ -529,7 +888,7 @@ module internal KRuntimeLowering =
                 | KCoreName [ calleeName ] ->
                     runtimeParameterMasks
                     |> Map.tryFind calleeName
-                    |> Option.map (fun keepMask -> filterRuntimeArguments keepMask arguments)
+                    |> Option.map (fun keepMask -> filterProvablyCompileTimeOnlyArguments keepMask arguments)
                     |> Option.defaultValue arguments
                 | _ ->
                     arguments
@@ -618,6 +977,8 @@ module internal KRuntimeLowering =
             | [ "Code" ]
             | [ "std"; "prelude"; "Syntax" ]
             | [ "std"; "prelude"; "Code" ] ->
+                true
+            | _ when isIntrinsicCompileTimeTraitName nameSegments ->
                 true
             | _ ->
                 false
@@ -764,7 +1125,27 @@ module internal KRuntimeLowering =
 
             parameters, Some(runtimeValueTypeExpr resultType |> TypeSignatures.toText))
 
-    let lowerKRuntimeModule (coreModule: KCoreModule) : KRuntimeModule =
+    let buildSharedRuntimeParameterMasks (coreModules: KCoreModule list) : Map<string, bool list> =
+        coreModules
+        |> List.collect (fun coreModule ->
+            coreModule.Declarations
+            |> List.choose (fun declaration ->
+                declaration.Binding
+                |> Option.bind (fun binding ->
+                    binding.Name
+                    |> Option.map (fun bindingName ->
+                        bindingName,
+                        (binding.Parameters |> List.map (isCompileTimeKCoreParameter >> not))))))
+        |> List.groupBy fst
+        |> List.choose (fun (bindingName, entries) ->
+            let candidateMasks = entries |> List.map snd |> List.distinct
+
+            match candidateMasks with
+            | [ keepMask ] -> Some(bindingName, keepMask)
+            | _ -> None)
+        |> Map.ofList
+
+    let lowerKRuntimeModule (sharedRuntimeParameterMasks: Map<string, bool list>) (coreModule: KCoreModule) : KRuntimeModule =
         let compileTimeOnlyTraitNames =
             coreModule.Declarations
             |> List.choose (fun declaration ->
@@ -790,15 +1171,22 @@ module internal KRuntimeLowering =
         let visibleTraitArities = coreModule.VisibleTraitTypeParameterCounts
 
         let runtimeParameterMasks =
-            coreModule.Declarations
-            |> List.choose (fun declaration ->
-                declaration.Binding
-                |> Option.bind (fun binding ->
-                    binding.Name
-                    |> Option.map (fun bindingName ->
-                        bindingName,
-                        (binding.Parameters |> List.map (isCompileTimeKCoreParameter >> not)))))
-            |> Map.ofList
+            let localRuntimeParameterMasks =
+                coreModule.Declarations
+                |> List.choose (fun declaration ->
+                    declaration.Binding
+                    |> Option.bind (fun binding ->
+                        binding.Name
+                        |> Option.map (fun bindingName ->
+                            bindingName,
+                            (binding.Parameters |> List.map (isCompileTimeKCoreParameter >> not)))))
+                |> Map.ofList
+
+            localRuntimeParameterMasks
+            |> Map.fold (fun current bindingName keepMask -> Map.add bindingName keepMask current) sharedRuntimeParameterMasks
+
+        let builtinPreludeBindings, builtinPreludeTraitInstances =
+            synthesizeBuiltinPreludeTraitArtifacts coreModule
 
         let termBindings : KRuntimeBinding list =
             coreModule.Declarations
@@ -820,7 +1208,9 @@ module internal KRuntimeLowering =
                              || (binding.Name
                                  |> Option.bind TraitRuntime.tryParseDispatchBindingName
                                  |> Option.exists (fun (traitName, _) -> Set.contains traitName compileTimeOnlyTraitNames))) ->
-                    let loweredBody = binding.Body |> Option.map (lowerKRuntimeExpression runtimeParameterMasks)
+                    let loweredBody =
+                        binding.Body
+                        |> Option.map (lowerKRuntimeExpression runtimeParameterMasks >> specializeBuiltinPreludeRuntimeExpression)
                     let loweredParameters = binding.Parameters |> filterRuntimeParameters |> List.map lowerRuntimeParameter
                     let loweredReturnType = binding.ReturnTypeText |> Option.map runtimeValueTypeText
                     let parameters, returnType, body =
@@ -832,15 +1222,17 @@ module internal KRuntimeLowering =
                             loweredParameters, loweredReturnType, loweredBody
 
                     Some
-                        { Name = binding.Name.Value
-                          Parameters = parameters
-                          ReturnTypeText = returnType
-                          ExternalBinding = None
-                          Body = body
-                          Intrinsic = false
-                          Provenance = binding.Provenance }
+                        ({ Name = binding.Name.Value
+                           Parameters = parameters
+                           ReturnTypeText = returnType
+                           ExternalBinding = None
+                           Body = body
+                           Intrinsic = false
+                           Provenance = binding.Provenance }
+                         : KRuntimeBinding)
                 | _ ->
                     None)
+            |> List.append builtinPreludeBindings
 
         let intrinsicBindings : KRuntimeBinding list =
             let intrinsicSignatures =
@@ -965,12 +1357,14 @@ module internal KRuntimeLowering =
                                     memberName))
 
                     Some
-                        { TraitName = instanceDeclaration.TraitName
-                          InstanceKey = instanceKey
-                          HeadTypeTexts = headTypeTexts
-                          MemberBindings = memberBindings }
+                        ({ TraitName = instanceDeclaration.TraitName
+                           InstanceKey = instanceKey
+                           HeadTypeTexts = headTypeTexts
+                           MemberBindings = memberBindings }
+                         : KRuntimeTraitInstance)
                 | _ ->
                     None)
+            |> List.append builtinPreludeTraitInstances
 
         let dataTypes, termBindings, traitInstances =
             let knownTypeNames =
@@ -984,10 +1378,29 @@ module internal KRuntimeLowering =
                   DeclarationName = Some typeName
                   IntroductionKind = "runtime-record" }
 
+            let tryVisibleTraitRuntimeName nameSegments =
+                let qualifiedName = SyntaxFacts.moduleNameToText nameSegments
+
+                match visibleTraitArities |> Map.tryFind qualifiedName with
+                | Some arity ->
+                    Some(qualifiedName, arity)
+                | None ->
+                    match nameSegments with
+                    | [ traitName ] ->
+                        visibleTraitArities |> Map.tryFind traitName |> Option.map (fun arity -> traitName, arity)
+                    | _ ->
+                        None
+
             let rec rewriteRuntimeTypeExpr typeExpr =
                 match typeExpr with
                 | TypeSignatures.TypeName(name, arguments) ->
-                    TypeSignatures.TypeName(name, arguments |> List.map rewriteRuntimeTypeExpr)
+                    let rewrittenArguments = arguments |> List.map rewriteRuntimeTypeExpr
+
+                    match tryVisibleTraitRuntimeName name with
+                    | Some(traitName, arity) when rewrittenArguments.Length = arity ->
+                        TypeSignatures.TypeName([ TraitRuntime.dictionaryTypeName traitName ], rewrittenArguments)
+                    | _ ->
+                        TypeSignatures.TypeName(name, rewrittenArguments)
                 | TypeSignatures.TypeVariable _
                 | TypeSignatures.TypeLevelLiteral _
                 | TypeSignatures.TypeIntrinsic _ ->

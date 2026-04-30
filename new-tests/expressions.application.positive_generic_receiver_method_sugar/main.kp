@@ -1,6 +1,6 @@
 module main
 
--- Source issue: KT-125
+-- Source issues: KT-125, KT-911
 -- Spec: §2.8.4, §7.1.3
 echo : forall (a : Type). (this x : a) -> a
 let echo @a (this x : a) = x

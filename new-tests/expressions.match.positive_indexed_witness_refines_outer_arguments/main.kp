@@ -1,0 +1,30 @@
+module main
+
+-- Source issue: Idris2#733
+-- Kappa analogue: matching an indexed witness constructor should refine the outer arguments and their hidden indices
+-- strongly enough for branch-local equality proofs to reduce by `refl`.
+-- Spec: §5.6.1, §7.5.1A, §14.3A
+data ShapeView (@0 a : Type) : List a -> List a -> Type =
+    BothNil : ShapeView a Nil Nil
+    LeftOnly : ShapeView a (x :: xs) Nil
+    RightOnly : ShapeView a Nil (y :: ys)
+    BothCons : ShapeView a xs ys -> ShapeView a (x :: xs) (y :: ys)
+
+confirmWitness : (@0 a : Type) -> (xs : List a) -> (ys : List a) -> ShapeView a xs ys -> Int
+let confirmWitness (@0 a : Type) xs ys witness =
+    match witness
+      case BothNil ->
+          block
+              let leftNil : xs = Nil = refl
+              let rightNil : ys = Nil = refl
+              1
+      case LeftOnly -> 2
+      case RightOnly -> 3
+      case BothCons rest -> 4
+
+result : Int
+let result = confirmWitness @Int Nil Nil BothNil
+
+--! assertNoErrors
+--! assertType confirmWitness (@0 a : Type) -> (xs : List a) -> (ys : List a) -> ShapeView a xs ys -> Int
+--! assertEval result 1

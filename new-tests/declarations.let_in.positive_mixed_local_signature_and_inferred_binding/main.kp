@@ -1,0 +1,18 @@
+module main
+
+pick : Int -> Int
+let pick seed =
+    block
+        let a = seed
+        inc : Int -> Int
+        let inc x = x + 1
+        let c = inc a
+        c
+
+-- Source issues: Idris2#63, Idris2#255
+-- Kappa analogue: one local signature does not force every sibling local binding before or after it to become top-level
+-- or require its own signature.
+-- Spec: §6.3.1
+--! assertNoErrors
+--! assertType pick Int -> Int
+--! assertEval (pick 41) 42

@@ -1,0 +1,22 @@
+module main
+
+-- Manual oracle seed: explicit conditional branch selection.
+choose : Bool -> Int -> Int -> Int
+let choose flag left right =
+    if flag then left else right
+
+baseResult : Int
+let baseResult = choose True 42 0
+
+step : Int -> Int
+let step value = value + 1
+
+back : Int -> Int
+let back value = value - 1
+
+result : Int
+let result = back (step baseResult)
+
+--! assertNoErrors
+--! assertType result Int
+--! assertExecute result 42

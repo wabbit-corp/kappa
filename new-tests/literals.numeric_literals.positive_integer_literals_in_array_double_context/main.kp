@@ -1,0 +1,16 @@
+module main
+
+-- Kappa analogue: an explicitly typed `Array Double` should contextually elaborate
+-- unsuffixed integer literals as `Double` values, without requiring per-element
+-- `the Double ...` annotations.
+-- Source issue: Idris2#802
+
+singleton : Array Double
+let singleton = arraySingleton 1
+
+pair : Array Double
+let pair = arrayFromList [1, 2]
+
+--! assertNoErrors
+--! assertType singleton Array Double
+--! assertType pair Array Double

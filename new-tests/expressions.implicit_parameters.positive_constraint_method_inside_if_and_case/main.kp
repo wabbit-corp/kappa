@@ -1,0 +1,39 @@
+module main
+
+-- Source issue: Idris2#647
+-- Kappa analogue: a constrained higher-kinded method call should solve its hidden type parameters the same way when it
+-- appears directly under `if` or `match` as when it is first let-bound.
+-- Spec: §7.3.3, §7.4, §12.3.1
+trait TypeEq (c : Type -> Type) =
+    typeEq : c a -> c b -> Bool
+
+data Wrap a : Type =
+    Wrap Int
+
+instance TypeEq Wrap =
+    let typeEq _ _ = True
+
+viaLet : (@_ : TypeEq Wrap) -> Wrap Int -> Wrap String -> Int
+let viaLet left right =
+    block
+        let same = typeEq left right
+        if same then 1 else 0
+
+viaIf : (@_ : TypeEq Wrap) -> Wrap Int -> Wrap String -> Int
+let viaIf left right =
+    if typeEq left right then 1 else 0
+
+viaCase : (@_ : TypeEq Wrap) -> Wrap Int -> Wrap String -> Int
+let viaCase left right =
+    match typeEq left right
+      case True -> 1
+      case False -> 0
+
+result : Int
+let result = viaLet (Wrap 1) (Wrap 2) + viaIf (Wrap 3) (Wrap 4) + viaCase (Wrap 5) (Wrap 6)
+
+--! assertNoErrors
+--! assertType viaLet (@_ : TypeEq Wrap) -> Wrap Int -> Wrap String -> Int
+--! assertType viaIf (@_ : TypeEq Wrap) -> Wrap Int -> Wrap String -> Int
+--! assertType viaCase (@_ : TypeEq Wrap) -> Wrap Int -> Wrap String -> Int
+--! assertEval result 3

@@ -757,23 +757,20 @@ let ``interpreter resolves dependent implicit helpers as ordinary bindings`` () 
         [
             "module main"
             ""
-            "type Dict (c : Constraint) = c"
-            ""
             "trait Score a ="
             "    score : a -> Int"
             ""
             "instance Score Int ="
             "    let score x = x"
             ""
-            "resolve : (c : Constraint) -> (@v : c) -> Dict c"
-            "let resolve (c : Constraint) (@v : c) = v"
+            "resolve : forall (t : Type). (@_ : IsTrait t) -> (@v : t) -> t"
+            "let resolve @v = v"
+            ""
+            "scoreInt : Score Int"
+            "let scoreInt = resolve"
             ""
             "result : Int"
-            "let result ="
-            "    let"
-            "        dict = resolve (Score Int)"
-            "    in"
-            "        dict.score 42"
+            "let result = scoreInt.score 42"
         ]
         |> String.concat "\n"
 
@@ -799,17 +796,14 @@ let ``interpreter resolves ordinary implicit helpers across imported trait modul
             ""
             "import providers.score.(trait Score)"
             ""
-            "type Dict (c : Constraint) = c"
+            "resolve : forall (t : Type). (@_ : IsTrait t) -> (@v : t) -> t"
+            "let resolve @v = v"
             ""
-            "resolve : (c : Constraint) -> (@v : c) -> Dict c"
-            "let resolve (c : Constraint) (@v : c) = v"
+            "scoreInt : Score Int"
+            "let scoreInt = resolve"
             ""
             "result : Int"
-            "let result ="
-            "    let"
-            "        dict = resolve (Score Int)"
-            "    in"
-            "        dict.score 42"
+            "let result = scoreInt.score 42"
         ]
         |> String.concat "\n"
 
@@ -841,7 +835,7 @@ let ``interpreter resolves ordinary implicit helpers across imported trait modul
         failwithf "Expected imported helper-based dictionary resolution to succeed, got %s" issue.Message
 
 [<Fact>]
-let ``resource checking does not demand runtime use for compile time constraint parameters`` () =
+let ``resource checking does not demand runtime use for compile time trait evidence classifiers`` () =
     let sqlSource =
         [
             "module dsl.sql"
@@ -849,16 +843,18 @@ let ``resource checking does not demand runtime use for compile time constraint 
             "data PreparedSql (row : Type) : Type ="
             "    PreparedSql (text : String)"
             ""
-            "summonDict : (c : Constraint) -> (@v : c) -> Dict c"
-            "let summonDict c @v = v"
+            "resolve : forall (t : Type). (@_ : IsTrait t) -> (@v : t) -> t"
+            "let resolve @v = v"
             ""
             "instance InterpolatedMacro (PreparedSql row) ="
             "    let buildInterpolated fragments ="
             "        pure '{ PreparedSql \"prepared-sql-from-fragments\" }"
             ""
-            "sql : forall (row : Type). Elab (Dict (InterpolatedMacro (PreparedSql row)))"
-            "let sql @row ="
-            "    pure (summonDict (InterpolatedMacro (PreparedSql row)))"
+            "macro : forall (row : Type). InterpolatedMacro (PreparedSql row)"
+            "let macro @row = resolve"
+            ""
+            "sql : forall (row : Type). Elab (InterpolatedMacro (PreparedSql row))"
+            "let sql @row = pure (macro @row)"
         ]
         |> String.concat "\n"
 
@@ -867,7 +863,7 @@ let ``resource checking does not demand runtime use for compile time constraint 
             "memory-compile-time-constraint-parameter-root"
             [ "dsl/sql.kp", sqlSource ]
 
-    Assert.False(workspace.HasErrors, sprintf "Expected compile-time Constraint parameters not to trigger runtime quantity demand, got %A" workspace.Diagnostics)
+    Assert.False(workspace.HasErrors, sprintf "Expected compile-time IsTrait parameters not to trigger runtime quantity demand, got %A" workspace.Diagnostics)
 
 [<Fact>]
 let ``resource checking allows payload pattern matching without double consuming the scrutinee root`` () =
@@ -905,12 +901,11 @@ let ``interpreter resolves bundled summon helper as an ordinary binding`` () =
             "instance Score Int ="
             "    let score x = x"
             ""
+            "scoreInt : Score Int"
+            "let scoreInt = summon"
+            ""
             "result : Int"
-            "let result ="
-            "    let"
-            "        dict = summon (Score Int)"
-            "    in"
-            "        dict.score 42"
+            "let result = scoreInt.score 42"
         ]
         |> String.concat "\n"
 
@@ -936,12 +931,11 @@ let ``interpreter resolves bundled summon helper across imported trait modules``
             ""
             "import providers.score.(trait Score)"
             ""
+            "scoreInt : Score Int"
+            "let scoreInt = summon"
+            ""
             "result : Int"
-            "let result ="
-            "    let"
-            "        dict = summon (Score Int)"
-            "    in"
-            "        dict.score 42"
+            "let result = scoreInt.score 42"
         ]
         |> String.concat "\n"
 
@@ -973,40 +967,166 @@ let ``interpreter resolves bundled summon helper across imported trait modules``
         failwithf "Expected imported bundled summon helper resolution to succeed, got %s" issue.Message
 
 [<Fact>]
-let ``bundled prelude comparison helpers and range operators are ordinary working bindings`` () =
+let ``explicit trait evidence values do not satisfy implicit trait constraints`` () =
     let mainSource =
         [
             "module main"
+            "trait Score (a : Type) ="
+            "    score : a -> Int"
             ""
-            "neq : Bool"
-            "let neq = 1 /= 2"
+            "needsImplicit : (@s : Score Int) -> Int"
+            "let needsImplicit @s = s.score 42"
             ""
-            "lt : Bool"
-            "let lt = 1 < 2"
-            ""
-            "lte : Bool"
-            "let lte = 2 <= 2"
-            ""
-            "gt : Bool"
-            "let gt = 3 > 2"
-            ""
-            "gte : Bool"
-            "let gte = 3 >= 3"
-            ""
-            "intRange : Rangeable.Range Int"
-            "let intRange = 1 .. 3"
-            ""
-            "intRangeExclusive : Rangeable.Range Int"
-            "let intRangeExclusive = 1 ..< 3"
+            "bad : Score Int -> Int"
+            "let bad dict = needsImplicit"
         ]
         |> String.concat "\n"
 
     let workspace =
         compileInMemoryWorkspace
-            "memory-prelude-comparison-and-range-helpers-root"
+            "memory-explicit-trait-value-does-not-satisfy-implicit-root"
             [ "main.kp", mainSource ]
 
-    Assert.False(workspace.HasErrors, sprintf "Expected prelude comparison and range helper bindings to compile, got %A" workspace.Diagnostics)
+    Assert.True(workspace.HasErrors, "Expected explicit trait evidence values not to satisfy implicit trait constraints.")
+
+    Assert.Contains(
+        workspace.Diagnostics,
+        fun diagnostic ->
+            diagnostic.Code = DiagnosticCode.TypeEqualityMismatch
+            && diagnostic.Message.Contains("Trait constraint 'Score Int' could not be resolved.", StringComparison.Ordinal)
+    )
+
+[<Fact>]
+let ``interpreter resolves bundled orElse helper as an ordinary binding`` () =
+    let mainSource =
+        [
+            "module main"
+            ""
+            "result : Int"
+            "let result ="
+            "    match orElse None (Some 42)"
+            "    case Some value -> value"
+            "    case None -> 0"
+        ]
+        |> String.concat "\n"
+
+    let workspace, result =
+        evaluateInMemoryBinding
+            "memory-prelude-orelse-root"
+            "main.result"
+            [ "main.kp", mainSource ]
+
+    Assert.False(workspace.HasErrors, sprintf "Expected no diagnostics, got %A" workspace.Diagnostics)
+
+    match result with
+    | Result.Ok value ->
+        Assert.Equal("42", RuntimeValue.format value)
+    | Result.Error issue ->
+        failwithf "Expected bundled orElse helper resolution to succeed, got %s" issue.Message
+
+[<Fact>]
+let ``interpreter resolves bundled ordering helpers as ordinary bindings`` () =
+    let mainSource =
+        [
+            "module main"
+            ""
+            "result : Int"
+            "let result ="
+            "    if (1 /= 2) && (1 < 2) && (1 <= 1) && (2 > 1) && (2 >= 2) then 1 else 0"
+        ]
+        |> String.concat "\n"
+
+    let workspace, result =
+        evaluateInMemoryBinding
+            "memory-prelude-ordering-helpers-root"
+            "main.result"
+            [ "main.kp", mainSource ]
+
+    Assert.False(workspace.HasErrors, sprintf "Expected no diagnostics, got %A" workspace.Diagnostics)
+
+    match result with
+    | Result.Ok value ->
+        Assert.Equal("1", RuntimeValue.format value)
+    | Result.Error issue ->
+        failwithf "Expected bundled ordering helpers to resolve as ordinary bindings, got %s" issue.Message
+
+[<Fact>]
+let ``interpreter resolves bundled range operators as ordinary bindings`` () =
+    let mainSource =
+        [
+            "module main"
+            ""
+            "data Span : Type ="
+            "    Span Int Int Bool"
+            ""
+            "instance Rangeable Int ="
+            "    let Range = Span"
+            "    let range from to exclusive = Span from to exclusive"
+            ""
+            "closedValue : Int"
+            "let closedValue ="
+            "    match 2 .. 5"
+            "    case Span from to exclusive ->"
+            "        if exclusive then 0 else from + to"
+            ""
+            "openValue : Int"
+            "let openValue ="
+            "    match 2 ..< 5"
+            "    case Span from to exclusive ->"
+            "        if exclusive then from + to + 100 else 0"
+            ""
+            "result : Int"
+            "let result = closedValue + openValue"
+        ]
+        |> String.concat "\n"
+
+    let workspace, result =
+        evaluateInMemoryBinding
+            "memory-prelude-range-operators-root"
+            "main.result"
+            [ "main.kp", mainSource ]
+
+    Assert.False(workspace.HasErrors, sprintf "Expected no diagnostics, got %A" workspace.Diagnostics)
+
+    match result with
+    | Result.Ok value ->
+        Assert.Equal("114", RuntimeValue.format value)
+    | Result.Error issue ->
+        failwithf "Expected bundled range operators to resolve as ordinary bindings, got %s" issue.Message
+
+[<Fact>]
+let ``interpreter resolves bundled equality proof helpers as ordinary bindings`` () =
+    let mainSource =
+        [
+            "module main"
+            ""
+            "proof1 : 1 = 1"
+            "let proof1 = sym refl"
+            ""
+            "proof2 : 1 = 1"
+            "let proof2 = trans proof1 refl"
+            ""
+            "proof3 : (1 + 1) = (1 + 1)"
+            "let proof3 = cong (\\x -> x + 1) proof2"
+            ""
+            "result : Int"
+            "let result = 1"
+        ]
+        |> String.concat "\n"
+
+    let workspace, result =
+        evaluateInMemoryBinding
+            "memory-prelude-equality-helpers-root"
+            "main.result"
+            [ "main.kp", mainSource ]
+
+    Assert.False(workspace.HasErrors, sprintf "Expected no diagnostics, got %A" workspace.Diagnostics)
+
+    match result with
+    | Result.Ok value ->
+        Assert.Equal("1", RuntimeValue.format value)
+    | Result.Error issue ->
+        failwithf "Expected bundled equality proof helpers to resolve as ordinary bindings, got %s" issue.Message
 
 [<Fact>]
 let ``resource checker lets parameters shadow prelude interpolation helpers`` () =

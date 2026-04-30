@@ -1,0 +1,5 @@
+module lib.classes
+
+public trait Build a =
+    Output : Type
+    build : a -> Output

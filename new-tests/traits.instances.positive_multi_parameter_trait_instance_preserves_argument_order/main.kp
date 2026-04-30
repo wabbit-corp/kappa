@@ -1,0 +1,19 @@
+module main
+
+trait Transformer (f : Type -> Type -> Type) (tag : Type) =
+    applyT : (a -> b) -> f tag a -> f tag b
+
+data Dummy tag a : Type =
+    Dummy a
+
+instance Transformer Dummy String =
+    let applyT f (Dummy x) = Dummy (f x)
+
+result : Dummy String Int
+let result = applyT (\x -> x + 1) (Dummy 41)
+
+-- Source issue: Idris2#60
+-- Kappa analogue: multi-parameter trait implementations must preserve written argument order through member types.
+-- Spec: §12.1, §12.2.2
+--! assertNoErrors
+--! assertType result Dummy String Int

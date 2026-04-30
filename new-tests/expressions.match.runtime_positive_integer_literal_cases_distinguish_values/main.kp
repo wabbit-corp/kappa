@@ -1,0 +1,17 @@
+module main
+
+classify : Int -> Int
+let classify x =
+    match x
+      case 0x100 -> 42
+      case 0o100 -> 43
+      case _ -> 0
+
+-- Source issue: Idris2#112
+-- Kappa analogue: integer literal case arms distinguish decimal, hexadecimal, and octal values correctly.
+-- Spec: §4.1, §7.5, §7.6.1
+--! assertNoErrors
+--! assertType classify Int -> Int
+--! assertEval (classify 0) 0
+--! assertEval (classify 64) 43
+--! assertEval (classify 256) 42

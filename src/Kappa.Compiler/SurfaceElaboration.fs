@@ -2775,7 +2775,7 @@ module SurfaceElaboration =
             | Some(QuantityBorrow _ as quantity) ->
                 Some(
                     makeDiagnostic
-                        DiagnosticCode.EffectResumptionQuantityBorrowed
+                        SimpleDiagnosticKind.EffectResumptionQuantityBorrowed
                         $"Effect operation '{declaration.Name}.{operation.Name}' declares borrowed resumption quantity '{Quantity.toSurfaceText quantity}'. Resumption quantities quantify the handler-bound resumption value itself, and borrowed resumptions are not part of the language."
                 )
             | _ ->
@@ -10130,14 +10130,8 @@ module SurfaceElaboration =
             | parameters, body, None ->
                 parameters, body
 
-        let makeDiagnostic code message =
-            { Severity = DiagnosticSeverity.Error
-              Code = code
-              Stage = Some "KFrontIR"
-              Phase = Some(KFrontIRPhase.phaseName CORE_LOWERING)
-              Message = message
-              Location = None
-              RelatedLocations = [] }
+        let makeDiagnostic kind message =
+            Diagnostics.errorFact "KFrontIR" (Some(KFrontIRPhase.phaseName CORE_LOWERING)) None [] (DiagnosticFact.simple kind message)
 
         let sourceText =
             lazy (
@@ -10147,8 +10141,8 @@ module SurfaceElaboration =
                     None
             )
 
-        let makeLocatedDiagnostic code message location =
-            { (makeDiagnostic code message) with
+        let makeLocatedDiagnostic kind message location =
+            { (makeDiagnostic kind message) with
                 Location = location }
 
         let tokenMatchesName expectedName (token: Token) =
@@ -10265,7 +10259,7 @@ module SurfaceElaboration =
                 | Some _ ->
                     [
                         makeLocatedDiagnostic
-                            DiagnosticCode.QttInoutThreadedFieldMissing
+                            SimpleDiagnosticKind.QttInoutThreadedFieldMissing
                             $"An 'inout' parameter '{parameter.Name}' requires the result type to contain a quantity-1 field named '{parameter.Name}' after peeling any enclosing monad."
                             (tryFindHeaderBinderLocation parameter.Name)
                     ]
@@ -10600,14 +10594,16 @@ module SurfaceElaboration =
             |> fun names -> Set.difference names environment.VisibleModules
             |> Set.remove "<anonymous>"
 
-        let makeDiagnostic code message =
-            { Severity = DiagnosticSeverity.Error
-              Code = code
-              Stage = Some "KFrontIR"
-              Phase = Some(KFrontIRPhase.phaseName CORE_LOWERING)
-              Message = message
-              Location = None
-              RelatedLocations = [] }
+        let makeDiagnostic kind message =
+            Diagnostics.errorFact "KFrontIR" (Some(KFrontIRPhase.phaseName CORE_LOWERING)) None [] (DiagnosticFact.simple kind message)
+
+        let makeNameUnresolvedDiagnostic name =
+            Diagnostics.errorFact
+                "KFrontIR"
+                (Some(KFrontIRPhase.phaseName CORE_LOWERING))
+                None
+                []
+                (DiagnosticFact.nameUnresolved name)
 
         let tryVisibleOrdinaryTermAmbiguityCandidates localName =
             environment.AmbiguousVisibleOrdinaryTerms |> Map.tryFind localName
@@ -10625,9 +10621,12 @@ module SurfaceElaboration =
                 if List.length admissible > 1 then Some admissible else None)
 
         let ordinaryNameAmbiguityDiagnostic name candidates =
-            makeDiagnostic
-                DiagnosticCode.NameAmbiguous
-                (ordinaryNameAmbiguityMessage name candidates)
+            Diagnostics.errorFact
+                "KFrontIR"
+                (Some(KFrontIRPhase.phaseName CORE_LOWERING))
+                None
+                []
+                (DiagnosticFact.nameAmbiguous name (candidates |> List.map renderOrdinaryVisibleTermCandidate))
 
         let declaredParameterContextConflictDiagnostics =
             bodyInferredNumericParameterTypes
@@ -10644,7 +10643,7 @@ module SurfaceElaboration =
                         when not (TypeSignatures.definitionallyEqual normalizedDeclaredType normalizedInferredType) ->
                         Some(
                             makeDiagnostic
-                                DiagnosticCode.TypeEqualityMismatch
+                                SimpleDiagnosticKind.TypeEqualityMismatch
                                 $"Parameter '{parameterName}' is used in a numeric context that requires '{TypeSignatures.toText inferredType}', but its declared type is '{TypeSignatures.toText declaredType}'."
                         )
                     | _ ->
@@ -11913,7 +11912,7 @@ module SurfaceElaboration =
 
                     [
                         makeDiagnostic
-                            DiagnosticCode.TypeEqualityMismatch
+                            SimpleDiagnosticKind.TypeEqualityMismatch
                             $"Syntax value captures binder(s) '{escapedText}' that do not remain in scope at the binding site; captured locals and borrows cannot escape through Syntax."
                     ]
             | None ->
@@ -11943,19 +11942,19 @@ module SurfaceElaboration =
 
                 match resolvedResultType with
                 | Some _ -> []
-                | None -> [ makeDiagnostic DiagnosticCode.TypeEqualityMismatch mismatchMessage ]
+                | None -> [ makeDiagnostic SimpleDiagnosticKind.TypeEqualityMismatch mismatchMessage ]
             | None when Set.contains prefix lexicalNames ->
                 []
             | None when allowUnresolvedCallDiagnostics && not (Set.contains prefix knownValueNames) ->
-                [ makeDiagnostic DiagnosticCode.NameUnresolved $"Name '{prefix}' is not in scope." ]
+                [ makeNameUnresolvedDiagnostic prefix ]
             | None when Set.contains prefix knownSurfaceTermNames ->
-                [ makeDiagnostic DiagnosticCode.TypeEqualityMismatch mismatchMessage ]
+                [ makeDiagnostic SimpleDiagnosticKind.TypeEqualityMismatch mismatchMessage ]
             | None ->
                 []
 
         let numericLiteralRangeDiagnostic literal =
             let sourceText = SurfaceNumericLiteral.toSurfaceText literal
-            makeDiagnostic DiagnosticCode.NumericLiteralOutOfRange $"Numeric literal '{sourceText}' is outside the currently supported runtime range for its target type."
+            makeDiagnostic SimpleDiagnosticKind.NumericLiteralOutOfRange $"Numeric literal '{sourceText}' is outside the currently supported runtime range for its target type."
 
         let tryNumericLiteralRangeDiagnostic expectedType expression =
             match tryInferNumericExpressionTypeFromContext environment expectedType expression with
@@ -12125,7 +12124,7 @@ module SurfaceElaboration =
         let staticConstructorIdentityDiagnostic locals receiver memberName =
             if isVisibleConstructorName memberName
                && not (hasProvenStaticObjectIdentity locals receiver) then
-                [ makeDiagnostic DiagnosticCode.StaticObjectUnresolved $"Static constructor '{memberName}' requires a receiver with preserved static-object identity." ]
+                [ makeDiagnostic SimpleDiagnosticKind.StaticObjectUnresolved $"Static constructor '{memberName}' requires a receiver with preserved static-object identity." ]
             else
                 []
 
@@ -12352,7 +12351,7 @@ module SurfaceElaboration =
 
                             match environment.VisibleBindings |> Map.tryFind headName with
                             | Some bindingInfo when not bindingInfo.IsPattern && not isConstructor ->
-                                [ makeDiagnostic DiagnosticCode.PatternHeadNotConstructorOrActivePattern $"Pattern head '{headName}' resolves to an ordinary term, not a constructor or active pattern." ]
+                                [ makeDiagnostic SimpleDiagnosticKind.PatternHeadNotConstructorOrActivePattern $"Pattern head '{headName}' resolves to an ordinary term, not a constructor or active pattern." ]
                             | _ ->
                                 []
 
@@ -12377,9 +12376,9 @@ module SurfaceElaboration =
             | Some bindingInfo ->
                 match activePatternResultKind bindingInfo, activePatternScrutineeQuantity bindingInfo with
                 | Some "Option", Some QuantityOne ->
-                    [ makeDiagnostic DiagnosticCode.ActivePatternLinearityViolation $"Option-returning active pattern '{bindingInfo.Name}' consumes its scrutinee linearly in a refutable {context}." ]
+                    [ makeDiagnostic SimpleDiagnosticKind.ActivePatternLinearityViolation $"Option-returning active pattern '{bindingInfo.Name}' consumes its scrutinee linearly in a refutable {context}." ]
                 | Some "Match", _ when String.Equals(context, "let?", StringComparison.Ordinal) ->
-                    [ makeDiagnostic DiagnosticCode.ActivePatternMatchResultNotAllowedInPlainLetQuestion $"Match-returning active pattern '{bindingInfo.Name}' is not permitted in plain let? destructuring." ]
+                    [ makeDiagnostic SimpleDiagnosticKind.ActivePatternMatchResultNotAllowedInPlainLetQuestion $"Match-returning active pattern '{bindingInfo.Name}' is not permitted in plain let? destructuring." ]
                 | _ ->
                     []
             | None ->
@@ -12662,7 +12661,7 @@ module SurfaceElaboration =
                 then
                     []
                 else
-                    [ makeDiagnostic DiagnosticCode.RecordProjectionMissingField $"Record type has no field named '{fieldName}'." ]
+                    [ makeDiagnostic SimpleDiagnosticKind.RecordProjectionMissingField $"Record type has no field named '{fieldName}'." ]
             | None ->
                 match possibleConstructorsForRoot aliases constructorFacts locals root with
                 | Some [] ->
@@ -12675,7 +12674,7 @@ module SurfaceElaboration =
                 | Some _ ->
                     [
                         makeDiagnostic
-                            DiagnosticCode.TypeEqualityMismatch
+                            SimpleDiagnosticKind.TypeEqualityMismatch
                             $"Constructor-field projection '{root}.{fieldName}' requires a unique constructor refinement in this branch."
                     ]
                 | None ->
@@ -13033,7 +13032,7 @@ module SurfaceElaboration =
                 else
                     $"{context} type mismatch: expected '{TypeSignatures.toText expectedType}' but found '{TypeSignatures.toText actualType}'."
 
-            makeDiagnostic DiagnosticCode.TypeEqualityMismatch message
+            makeDiagnostic SimpleDiagnosticKind.TypeEqualityMismatch message
 
         let expectedTypeDiagnostics locals refinements context expectedType expression =
             match tryNumericLiteralRangeDiagnostic expectedType expression with
@@ -13262,7 +13261,7 @@ module SurfaceElaboration =
                 |> List.countBy (fun field -> field.Name)
                 |> List.choose (fun (name, count) ->
                     if count > 1 then
-                        Some(makeDiagnostic DiagnosticCode.RecordDuplicateField $"Record field '{name}' is declared more than once.")
+                        Some(makeDiagnostic SimpleDiagnosticKind.RecordDuplicateField $"Record field '{name}' is declared more than once.")
                     else
                         None)
 
@@ -13278,7 +13277,7 @@ module SurfaceElaboration =
                         else
                             Some(
                                 makeDiagnostic
-                                    DiagnosticCode.RecordDependencyInvalid
+                                    SimpleDiagnosticKind.RecordDependencyInvalid
                                     $"Record field '{field.Name}' depends on field '{referencedField}', which is not in the explicit record telescope."
                             )))
 
@@ -13295,7 +13294,7 @@ module SurfaceElaboration =
                     |> Map.ofList
 
                 if hasCycle dependencyMap then
-                    [ makeDiagnostic DiagnosticCode.RecordDependencyCycle "Record type field dependencies must be acyclic." ]
+                    [ makeDiagnostic SimpleDiagnosticKind.RecordDependencyCycle "Record type field dependencies must be acyclic." ]
                 else
                     []
 
@@ -13372,7 +13371,7 @@ module SurfaceElaboration =
                 |> List.countBy pathKey
                 |> List.choose (fun (path, count) ->
                     if count > 1 then
-                        Some(makeDiagnostic DiagnosticCode.RecordPatchDuplicatePath $"Record patch updates path '{path}' more than once.")
+                        Some(makeDiagnostic SimpleDiagnosticKind.RecordPatchDuplicatePath $"Record patch updates path '{path}' more than once.")
                     else
                         None)
 
@@ -13383,7 +13382,7 @@ module SurfaceElaboration =
                     if isStrictPrefix left.Path right.Path then
                         Some(
                             makeDiagnostic
-                                DiagnosticCode.RecordPatchPrefixConflict
+                                SimpleDiagnosticKind.RecordPatchPrefixConflict
                                 $"Record patch path '{pathKey left}' is a strict prefix of '{pathKey right}'."
                         )
                     else
@@ -13395,7 +13394,7 @@ module SurfaceElaboration =
                 |> List.countBy (fun field -> field.Name)
                 |> List.choose (fun (name, count) ->
                     if count > 1 then
-                        Some(makeDiagnostic DiagnosticCode.RowExtensionDuplicateLabel $"Row extension label '{name}' appears more than once.")
+                        Some(makeDiagnostic SimpleDiagnosticKind.RowExtensionDuplicateLabel $"Row extension label '{name}' appears more than once.")
                     else
                         None)
 
@@ -13409,13 +13408,13 @@ module SurfaceElaboration =
                     extensionFields
                     |> List.choose (fun field ->
                         if Set.contains field.Name explicitFields then
-                            Some(makeDiagnostic DiagnosticCode.RowExtensionExistingField $"Row extension label '{field.Name}' already exists in the receiver record.")
+                            Some(makeDiagnostic SimpleDiagnosticKind.RowExtensionExistingField $"Row extension label '{field.Name}' already exists in the receiver record.")
                         else
                             match recordInfo.RowTail with
                             | Some rowName when not (hasLacksConstraint rowName field.Name) ->
                                 Some(
                                     makeDiagnostic
-                                        DiagnosticCode.RowExtensionMissingLacksConstraint
+                                        SimpleDiagnosticKind.RowExtensionMissingLacksConstraint
                                         $"Row extension label '{field.Name}' for row '{rowName}' requires a matching LacksRec constraint."
                                 )
                             | _ ->
@@ -13431,14 +13430,14 @@ module SurfaceElaboration =
                     | segment :: rest ->
                         match currentRecordInfo.Fields |> List.tryFind (fun (field: RecordSurfaceFieldInfo) -> String.Equals(field.Name, segment.Name, StringComparison.Ordinal)) with
                         | None ->
-                            [ makeDiagnostic DiagnosticCode.RecordPatchUnknownPath $"Record patch path contains unknown field '{segment.Name}'." ]
+                            [ makeDiagnostic SimpleDiagnosticKind.RecordPatchUnknownPath $"Record patch path contains unknown field '{segment.Name}'." ]
                         | Some field when List.isEmpty rest ->
                             []
                         | Some field ->
                             match tryRecordInfoFromTypeTokens field.TypeTokens with
                             | Some nestedRecordInfo -> validatePath nestedRecordInfo rest
                             | None ->
-                                [ makeDiagnostic DiagnosticCode.RecordPatchUnknownPath $"Record patch path continues through non-record field '{field.Name}'." ]
+                                [ makeDiagnostic SimpleDiagnosticKind.RecordPatchUnknownPath $"Record patch path continues through non-record field '{field.Name}'." ]
 
                 match receiverRecordInfo with
                 | Some recordInfo ->
@@ -13458,7 +13457,7 @@ module SurfaceElaboration =
                         if projectionSupportsSet projectionInfo then
                             None
                         else
-                            Some(makeDiagnostic DiagnosticCode.ProjectionUpdateTargetUnsupported "Projection-section update requires an accessor/setter or selector projection.")))
+                            Some(makeDiagnostic SimpleDiagnosticKind.ProjectionUpdateTargetUnsupported "Projection-section update requires an accessor/setter or selector projection.")))
 
             duplicatePathDiagnostics
             @ prefixDiagnostics
@@ -13480,7 +13479,7 @@ module SurfaceElaboration =
                 |> Map.ofList
 
             if hasCycle dependencyMap then
-                [ makeDiagnostic DiagnosticCode.RecordDependencyCycle "Record literal field dependencies must be acyclic." ]
+                [ makeDiagnostic SimpleDiagnosticKind.RecordDependencyCycle "Record literal field dependencies must be acyclic." ]
             else
                 []
 
@@ -13568,7 +13567,7 @@ module SurfaceElaboration =
                             if opaqueNames |> List.exists (fun opaqueName -> expectedText.Contains(opaqueName, StringComparison.Ordinal)) then
                                 None
                             else
-                                Some(makeDiagnostic DiagnosticCode.SealOpaqueUnfolding $"Projection '{root}.{memberName}' would expose a member whose type depends on an opaque package member.")
+                                Some(makeDiagnostic SimpleDiagnosticKind.SealOpaqueUnfolding $"Projection '{root}.{memberName}' would expose a member whose type depends on an opaque package member.")
                         else
                             None))
 
@@ -13604,7 +13603,7 @@ module SurfaceElaboration =
                             unstableDependencies
                             |> List.exists (fun dependencyName -> expectedText.Contains($"{root}.{dependencyName}", StringComparison.Ordinal) |> not)
                         then
-                            [ makeDiagnostic DiagnosticCode.TypeEqualityMismatch "Projected field type does not match the declared result type." ]
+                            [ makeDiagnostic SimpleDiagnosticKind.TypeEqualityMismatch "Projected field type does not match the declared result type." ]
                         else
                             []
                 | None ->
@@ -13676,7 +13675,7 @@ module SurfaceElaboration =
             let directSignatureLiteralDiagnostic =
                 match body, definition.ReturnTypeTokens |> Option.bind tryRecordInfoFromTypeTokens with
                 | RecordLiteral _, Some recordInfo when recordInfoHasOpaqueMembers recordInfo ->
-                    [ makeDiagnostic DiagnosticCode.SealDirectLiteralForSignature "A record literal cannot be checked directly against a signature type; use 'seal ... as ...'." ]
+                    [ makeDiagnostic SimpleDiagnosticKind.SealDirectLiteralForSignature "A record literal cannot be checked directly against a signature type; use 'seal ... as ...'." ]
                 | _ ->
                     []
 
@@ -13688,7 +13687,7 @@ module SurfaceElaboration =
 
                         match tryParseRecordSurfaceInfo ascriptionTokens with
                         | Some recordInfo when recordInfo.RowTail.IsSome ->
-                            makeDiagnostic DiagnosticCode.SealOpenRecordAscription "The ascribed type of 'seal' must be a closed record type." :: nested
+                            makeDiagnostic SimpleDiagnosticKind.SealOpenRecordAscription "The ascribed type of 'seal' must be a closed record type." :: nested
                         | _ ->
                             nested
                     | LocalLet(_, value, nestedBody) -> loop value @ loop nestedBody
@@ -13825,7 +13824,7 @@ module SurfaceElaboration =
                                 else
                                     [
                                         makeDiagnostic
-                                            DiagnosticCode.TypeEqualityMismatch
+                                            SimpleDiagnosticKind.TypeEqualityMismatch
                                             $"List cons tail must have type '{TypeSignatures.toText expectedType}', but found '{TypeSignatures.toText tailType}'."
                                     ]
 
@@ -13835,7 +13834,7 @@ module SurfaceElaboration =
                     | normalizedExpectedType ->
                         [
                             makeDiagnostic
-                                DiagnosticCode.TypeEqualityMismatch
+                                SimpleDiagnosticKind.TypeEqualityMismatch
                                 $"Definition body uses list-cons syntax and therefore must have a List result type, but the declared result type is '{TypeSignatures.toText normalizedExpectedType}'."
                         ]
                 | _ ->
@@ -13867,7 +13866,7 @@ module SurfaceElaboration =
                             []
                         | None ->
                             [ makeDiagnostic
-                                DiagnosticCode.TypeEqualityMismatch
+                                SimpleDiagnosticKind.TypeEqualityMismatch
                                 "A type or static object value cannot satisfy this definition body." ]
                     | None ->
                         []
@@ -13886,7 +13885,7 @@ module SurfaceElaboration =
                     | Some _ ->
                         []
                     | None ->
-                        [ makeDiagnostic DiagnosticCode.NameUnresolved $"Name '{name}' is not in scope." ]
+                        [ makeNameUnresolvedDiagnostic name ]
                 | _ ->
                     []
 
@@ -13897,7 +13896,7 @@ module SurfaceElaboration =
                          && TypeSignatures.definitionallyEqual
                              (normalizeTypeAliases environment.VisibleTypeAliases expectedType)
                              typeObjectType ->
-                    [ makeDiagnostic DiagnosticCode.TypeEqualityMismatch "A data constructor term cannot satisfy a Type-valued definition body; use an explicit kind-qualified type object when the type facet is intended." ]
+                    [ makeDiagnostic SimpleDiagnosticKind.TypeEqualityMismatch "A data constructor term cannot satisfy a Type-valued definition body; use an explicit kind-qualified type object when the type facet is intended." ]
                 | _ ->
                     []
 
@@ -13978,7 +13977,7 @@ module SurfaceElaboration =
                                                     | ConstraintUnresolved ->
                                                         Some(
                                                             [ makeDiagnostic
-                                                                DiagnosticCode.TypeEqualityMismatch
+                                                                SimpleDiagnosticKind.TypeEqualityMismatch
                                                                 $"Trait constraint '{renderTraitConstraint environment constraintInfo}' could not be resolved." ]
                                                         )
                                                     | ConstraintAmbiguous(ambiguousGoal, candidates) ->
@@ -13989,13 +13988,13 @@ module SurfaceElaboration =
 
                                                         Some(
                                                             [ makeDiagnostic
-                                                                DiagnosticCode.TraitInstanceAmbiguous
+                                                                SimpleDiagnosticKind.TraitInstanceAmbiguous
                                                                 $"Multiple instance candidates survive for constraint '{renderTraitConstraint environment ambiguousGoal}': {candidateText}." ]
                                                         )
                                                 | None ->
                                                     Some(
                                                         [ makeDiagnostic
-                                                            DiagnosticCode.TypeEqualityMismatch
+                                                            SimpleDiagnosticKind.TypeEqualityMismatch
                                                             "Implicit application argument could not be resolved or does not match the implicit parameter." ]
                                                     )
                                             else
@@ -14026,7 +14025,7 @@ module SurfaceElaboration =
                                             | ConstraintUnresolved ->
                                                 Some(
                                                     [ makeDiagnostic
-                                                        DiagnosticCode.TypeEqualityMismatch
+                                                        SimpleDiagnosticKind.TypeEqualityMismatch
                                                         $"Trait constraint '{renderTraitConstraint environment constraintInfo}' could not be resolved." ]
                                                 )
                                             | ConstraintAmbiguous(ambiguousGoal, candidates) ->
@@ -14037,13 +14036,13 @@ module SurfaceElaboration =
 
                                                 Some(
                                                     [ makeDiagnostic
-                                                        DiagnosticCode.TraitInstanceAmbiguous
+                                                        SimpleDiagnosticKind.TraitInstanceAmbiguous
                                                         $"Multiple instance candidates survive for constraint '{renderTraitConstraint environment ambiguousGoal}': {candidateText}." ]
                                                 )
                                         | None ->
                                             Some(
                                                 [ makeDiagnostic
-                                                    DiagnosticCode.TypeEqualityMismatch
+                                                    SimpleDiagnosticKind.TypeEqualityMismatch
                                                     "Implicit application argument could not be resolved or does not match the implicit parameter." ]
                                             ))
                                 |> Option.defaultValue []
@@ -14063,13 +14062,13 @@ module SurfaceElaboration =
                                     | Some constraintInfo ->
                                         Some(
                                             [ makeDiagnostic
-                                                DiagnosticCode.TypeEqualityMismatch
+                                                SimpleDiagnosticKind.TypeEqualityMismatch
                                                 $"Trait constraint '{renderTraitConstraint environment constraintInfo}' could not be resolved." ]
                                         )
                                     | None ->
                                         Some(
                                             [ makeDiagnostic
-                                                DiagnosticCode.TypeEqualityMismatch
+                                                SimpleDiagnosticKind.TypeEqualityMismatch
                                                 "Implicit application argument could not be resolved or does not match the implicit parameter." ]
                                         ))
                             |> Option.defaultValue [])
@@ -14476,7 +14475,7 @@ module SurfaceElaboration =
                                                         | ConstraintUnresolved ->
                                                             Some(
                                                                 [ makeDiagnostic
-                                                                    DiagnosticCode.TypeEqualityMismatch
+                                                                    SimpleDiagnosticKind.TypeEqualityMismatch
                                                                     $"Trait constraint '{renderTraitConstraint environment constraintInfo}' could not be resolved." ]
                                                             )
                                                         | ConstraintAmbiguous(ambiguousGoal, candidates) ->
@@ -14487,13 +14486,13 @@ module SurfaceElaboration =
 
                                                             Some(
                                                                 [ makeDiagnostic
-                                                                    DiagnosticCode.TraitInstanceAmbiguous
+                                                                    SimpleDiagnosticKind.TraitInstanceAmbiguous
                                                                     $"Multiple instance candidates survive for constraint '{renderTraitConstraint environment ambiguousGoal}': {candidateText}." ]
                                                             )
                                                     | None ->
                                                         Some(
                                                             [ makeDiagnostic
-                                                                DiagnosticCode.TypeEqualityMismatch
+                                                                SimpleDiagnosticKind.TypeEqualityMismatch
                                                                 "Implicit application argument could not be resolved or does not match the implicit parameter." ]
                                                         )
                                                 else
@@ -14660,14 +14659,14 @@ module SurfaceElaboration =
                                         | true, _ ->
                                             diagnostics.Add(
                                                 makeLocatedDiagnostic
-                                                    DiagnosticCode.QttInoutMarkerRequired
+                                                    SimpleDiagnosticKind.QttInoutMarkerRequired
                                                     "An argument supplied to an 'inout' parameter must be marked with '~'."
                                                     (tryFindArgumentLocation bindingInfo.Name nextArgument)
                                             )
                                         | false, InoutArgument _ ->
                                             diagnostics.Add(
                                                 makeLocatedDiagnostic
-                                                    DiagnosticCode.QttInoutMarkerUnexpected
+                                                    SimpleDiagnosticKind.QttInoutMarkerUnexpected
                                                     "The '~' marker can only be used for an 'inout' parameter."
                                                     (tryFindArgumentLocation bindingInfo.Name nextArgument)
                                             )
@@ -14889,7 +14888,7 @@ module SurfaceElaboration =
                         | Some calleeType when not (isCallableValidationType environment.VisibleTypeAliases calleeType) ->
                             [
                                 makeDiagnostic
-                                    DiagnosticCode.ApplicationNonCallable
+                                    SimpleDiagnosticKind.ApplicationNonCallable
                                     $"Expression of type '{TypeSignatures.toText (normalize calleeType)}' is not callable."
                             ]
                         | Some calleeType ->
@@ -14902,7 +14901,7 @@ module SurfaceElaboration =
                 | Some calleeType when not (isCallableValidationType environment.VisibleTypeAliases calleeType) ->
                     [
                         makeDiagnostic
-                            DiagnosticCode.ApplicationNonCallable
+                            SimpleDiagnosticKind.ApplicationNonCallable
                             $"Expression of type '{TypeSignatures.toText (normalize calleeType)}' is not callable."
                     ]
                 | _ ->
@@ -14946,7 +14945,7 @@ module SurfaceElaboration =
                     | Some leftType, Some rightType ->
                         [
                             makeDiagnostic
-                                DiagnosticCode.TypeEqualityMismatch
+                                SimpleDiagnosticKind.TypeEqualityMismatch
                                 $"Arithmetic operator operands must both be numeric, but found '{TypeSignatures.toText (normalize leftType)}' and '{TypeSignatures.toText (normalize rightType)}'."
                         ]
                     | _ ->
@@ -15139,7 +15138,7 @@ module SurfaceElaboration =
                             | Some sourceType when tryUnwrapBindablePayloadType environment.VisibleTypeAliases sourceType |> Option.isNone ->
                                 [
                                     makeDiagnostic
-                                        DiagnosticCode.TypeEqualityMismatch
+                                        SimpleDiagnosticKind.TypeEqualityMismatch
                                         $"A '<-' do binding requires a bindable carrier value, but found '{TypeSignatures.toText sourceType}'."
                                 ]
                             | _ ->
@@ -15459,7 +15458,7 @@ module SurfaceElaboration =
                                 if not isRefutable && not (patternIsDefinitelyIrrefutable binding.Pattern) then
                                     [
                                         makeDiagnostic
-                                            DiagnosticCode.TypeEqualityMismatch
+                                            SimpleDiagnosticKind.TypeEqualityMismatch
                                             "Refutable generator patterns must use 'for?'; plain 'for' requires an irrefutable pattern."
                                     ]
                                 else
@@ -15575,7 +15574,7 @@ module SurfaceElaboration =
                                 leakedBindingNames
                                 |> List.map (fun bindingName ->
                                     makeDiagnostic
-                                        DiagnosticCode.NameUnresolved
+                                        SimpleDiagnosticKind.NameUnresolved
                                         $"Left-join binder '{bindingName}' is not in scope after the clause; only '{intoName}' remains available.")
 
                             let nextLexical =
@@ -15800,13 +15799,13 @@ module SurfaceElaboration =
                         | Some _ ->
                             [
                                 makeDiagnostic
-                                    DiagnosticCode.TypeEqualityMismatch
+                                    SimpleDiagnosticKind.TypeEqualityMismatch
                                     "Quote splice `${...}` requires `Syntax t`; `Elab (Syntax t)` is not run implicitly inside a quote."
                             ]
                         | None ->
                             [
                                 makeDiagnostic
-                                    DiagnosticCode.TypeEqualityMismatch
+                                    SimpleDiagnosticKind.TypeEqualityMismatch
                                     $"Quote splice `${{...}}` requires `Syntax t`, but found '{TypeSignatures.toText actualType}'."
                             ]
                 | None ->
@@ -15821,7 +15820,7 @@ module SurfaceElaboration =
                     | Some actualType ->
                         [
                             makeDiagnostic
-                                DiagnosticCode.TypeEqualityMismatch
+                                SimpleDiagnosticKind.TypeEqualityMismatch
                                 $"Top-level splice `$(...)` requires `Syntax t` or `Elab (Syntax t)`, but found '{TypeSignatures.toText actualType}'."
                         ]
                     | None ->
@@ -16221,7 +16220,7 @@ module SurfaceElaboration =
                             if countNameUses parameter.Name Set.empty expandedBody > 1 then
                                 [
                                     makeDiagnostic
-                                        DiagnosticCode.QttLinearOveruse
+                                        SimpleDiagnosticKind.QttLinearOveruse
                                         $"Macro-expanded syntax uses linear binder '{parameter.Name}' more than once."
                                 ]
                             else
@@ -16234,7 +16233,7 @@ module SurfaceElaboration =
             let topLevelSpliceElabPhaseDiagnostics inner =
                 let objectPhaseEscapeDiagnostic name =
                     makeDiagnostic
-                        DiagnosticCode.TypeEqualityMismatch
+                        SimpleDiagnosticKind.TypeEqualityMismatch
                         $"Object-phase/runtime value '{name}' cannot be passed directly to elaboration. Quote it as Syntax or rebind it inside Elab."
 
                 let localIsCompileTimeOnly name =
@@ -16397,7 +16396,7 @@ module SurfaceElaboration =
                 @ topLevelSpliceElabPhaseDiagnostics inner
                 @ topLevelSpliceLinearityDiagnostics inner
                 @ (tryExtractFailElabDiagnosticMessage inner
-                   |> Option.map (fun message -> [ makeDiagnostic DiagnosticCode.ElaborationFailed message ])
+                   |> Option.map (fun message -> [ makeDiagnostic SimpleDiagnosticKind.ElaborationFailed message ])
                    |> Option.defaultValue [])
             | TypeSyntaxTokens _ ->
                 []
@@ -16516,7 +16515,7 @@ module SurfaceElaboration =
                         |> Option.map (fun actualType ->
                             [
                                 makeDiagnostic
-                                    DiagnosticCode.TypeEqualityMismatch
+                                    SimpleDiagnosticKind.TypeEqualityMismatch
                                     $"Handler clauses must return a carrier-applied result type 'm b', but inferred '{TypeSignatures.toText actualType}'."
                             ])
                         |> Option.defaultValue []
@@ -16553,13 +16552,13 @@ module SurfaceElaboration =
                     | Some(declaration, effectRow, _, SplitMismatch), _ ->
                         [
                             makeDiagnostic
-                                DiagnosticCode.HandlerEffectRowMismatch
+                                SimpleDiagnosticKind.HandlerEffectRowMismatch
                                 $"Handler for '{declaration.VisibleName}' expects the handled computation to carry label '{declaration.VisibleName}' in its effect row, but found '{TypeSignatures.toText effectRow}'."
                         ]
                     | Some(declaration, effectRow, _, SplitNeedsTailRefinement), _ ->
                         [
                             makeDiagnostic
-                                DiagnosticCode.HandlerEffectRowMismatch
+                                SimpleDiagnosticKind.HandlerEffectRowMismatch
                                 $"Handler for '{declaration.VisibleName}' cannot split label '{declaration.VisibleName}' out of open effect row '{TypeSignatures.toText effectRow}' without explicit row refinement. Mention '{declaration.VisibleName}' explicitly in the handled computation type."
                         ]
                     | Some(_, _, _, SplitResolved _), _ ->
@@ -16567,7 +16566,7 @@ module SurfaceElaboration =
                     | None, Some handledType when tryUnwrapEffType handledType |> Option.isNone ->
                         [
                             makeDiagnostic
-                                DiagnosticCode.HandlerEffectRowMismatch
+                                SimpleDiagnosticKind.HandlerEffectRowMismatch
                                 $"Handler expects an Eff computation, but the handled expression has type '{TypeSignatures.toText handledType}'."
                         ]
                     | _ ->
@@ -16598,7 +16597,7 @@ module SurfaceElaboration =
                                 else
                                     Some(
                                         makeDiagnostic
-                                            DiagnosticCode.HandlerClauseMissing
+                                            SimpleDiagnosticKind.HandlerClauseMissing
                                             $"Handler for '{declaration.VisibleName}' is missing a clause for operation '{operation.Name}'."
                                     ))
 
@@ -16608,7 +16607,7 @@ module SurfaceElaboration =
                                 if List.length clauses > 1 then
                                     [
                                         makeDiagnostic
-                                            DiagnosticCode.HandlerClauseDuplicate
+                                            SimpleDiagnosticKind.HandlerClauseDuplicate
                                             $"Handler for '{declaration.VisibleName}' defines more than one clause for operation '{operationName}'."
                                     ]
                                 else
@@ -16622,7 +16621,7 @@ module SurfaceElaboration =
                                 else
                                     [
                                         makeDiagnostic
-                                            DiagnosticCode.HandlerClauseUnexpected
+                                            SimpleDiagnosticKind.HandlerClauseUnexpected
                                             $"Handler for '{declaration.VisibleName}' defines a clause for undeclared operation '{operationName}'."
                                     ])
 
@@ -16643,7 +16642,7 @@ module SurfaceElaboration =
                                         | Some expectedArity when expectedArity <> List.length clause.ArgumentTokens ->
                                             [
                                                 makeDiagnostic
-                                                    DiagnosticCode.HandlerClauseArityMismatch
+                                                    SimpleDiagnosticKind.HandlerClauseArityMismatch
                                                     $"Handler clause for operation '{clause.OperationName}' binds {List.length clause.ArgumentTokens} argument(s), but the effect declaration requires {expectedArity}."
                                             ]
                                         | _ ->
@@ -16659,7 +16658,7 @@ module SurfaceElaboration =
                                             when not (expressionReferencesName resumptionName Set.empty clause.Body) ->
                                             [
                                                 makeDiagnostic
-                                                    DiagnosticCode.QttLinearDrop
+                                                    SimpleDiagnosticKind.QttLinearDrop
                                                     $"Handler clause for operation '{clause.OperationName}' must use relevant resumption '{resumptionName}'."
                                             ]
                                         | Some _, _ ->
@@ -16711,7 +16710,7 @@ module SurfaceElaboration =
 
                     [
                         makeDiagnostic
-                            DiagnosticCode.StaticObjectUnresolved
+                            SimpleDiagnosticKind.StaticObjectUnresolved
                             $"No {kindText} static object named '{nameText}' is visible."
                     ]
             | Name(root :: fieldName :: _) ->
@@ -16758,7 +16757,7 @@ module SurfaceElaboration =
                                 when recordInfo.Fields
                                      |> List.exists (fun (field: RecordSurfaceFieldInfo) -> String.Equals(field.Name, fieldName, StringComparison.Ordinal))
                                      |> not ->
-                                [ makeDiagnostic DiagnosticCode.RecordProjectionMissingField $"Record type has no field named '{fieldName}'." ]
+                                [ makeDiagnostic SimpleDiagnosticKind.RecordProjectionMissingField $"Record type has no field named '{fieldName}'." ]
                             | _ ->
                                 constructorProjectionDiagnostics aliases constructorFacts locals root fieldName
                 let staticMemberDiagnostics =
@@ -16789,7 +16788,7 @@ module SurfaceElaboration =
                        && not receiverHasStructuredProjectionTarget
                        && List.isEmpty missingFieldDiagnostics
                        && List.isEmpty staticMemberDiagnostics then
-                        [ makeDiagnostic DiagnosticCode.NameUnresolved $"Name '{fieldName}' is not in scope." ]
+                        [ makeNameUnresolvedDiagnostic fieldName ]
                     else
                         []
                 let unresolvedRootDiagnostics =
@@ -16803,7 +16802,7 @@ module SurfaceElaboration =
                             else
                                 $"Name '{root}' is not in scope."
 
-                        [ makeDiagnostic DiagnosticCode.NameUnresolved message ]
+                        [ makeDiagnostic SimpleDiagnosticKind.NameUnresolved message ]
                     else
                         []
 
@@ -16822,7 +16821,7 @@ module SurfaceElaboration =
                        && not rootNamesRuntimeValue
                        && isVisibleQualifiedRootName locals lexicalNames root
                        && not (qualifiedNamePreservesResolution (root :: fieldName :: [])) then
-                        [ makeDiagnostic DiagnosticCode.NameUnresolved $"Name '{fieldName}' is not in scope." ]
+                        [ makeNameUnresolvedDiagnostic fieldName ]
                     else
                         []
 
@@ -16840,7 +16839,7 @@ module SurfaceElaboration =
                 | Some _ ->
                     []
                 | None ->
-                    [ makeDiagnostic DiagnosticCode.NameUnresolved $"Name '{name}' is not in scope." ]
+                    [ makeNameUnresolvedDiagnostic name ]
             | Name _ ->
                 []
             | Comprehension comprehension ->
@@ -16909,7 +16908,7 @@ module SurfaceElaboration =
                         []
                     | None ->
                         [ makeDiagnostic
-                              DiagnosticCode.TypeEqualityMismatch
+                              SimpleDiagnosticKind.TypeEqualityMismatch
                               $"{mismatchPrefix}: declared '{TypeSignatures.toText normalizedDeclaredType}' but inferred '{TypeSignatures.toText normalizedInferredType}'." ]
 
                 let bindingTypeDiagnostics =
@@ -17355,11 +17354,11 @@ module SurfaceElaboration =
                                     |> fun count -> max 0 (count - 1)
 
                                 if List.length receiverParameters <> 1 then
-                                    [ makeDiagnostic DiagnosticCode.TypeEqualityMismatch $"Member-call sugar for '{memberName}' requires exactly one receiver binder." ]
+                                    [ makeDiagnostic SimpleDiagnosticKind.TypeEqualityMismatch $"Member-call sugar for '{memberName}' requires exactly one receiver binder." ]
                                 elif List.length arguments < precedingExplicitCount then
-                                    [ makeDiagnostic DiagnosticCode.TypeEqualityMismatch $"Member-call sugar for '{memberName}' is missing preceding explicit argument(s)." ]
+                                    [ makeDiagnostic SimpleDiagnosticKind.TypeEqualityMismatch $"Member-call sugar for '{memberName}' is missing preceding explicit argument(s)." ]
                                 elif List.length arguments < requiredExplicitArgumentCount then
-                                    [ makeDiagnostic DiagnosticCode.TypeEqualityMismatch $"Member-call sugar for '{memberName}' is missing explicit argument(s)." ]
+                                    [ makeDiagnostic SimpleDiagnosticKind.TypeEqualityMismatch $"Member-call sugar for '{memberName}' is missing explicit argument(s)." ]
                                 else
                                     []
                             | _ ->
@@ -17383,11 +17382,11 @@ module SurfaceElaboration =
                             | None ->
                                 match inferValidationExpressionType environment freshCounter locals receiver with
                                 | Some receiverType when not (Set.contains memberName knownValueNames) ->
-                                    [ makeDiagnostic DiagnosticCode.NameUnresolved $"Name '{memberName}' is not in scope." ]
+                                    [ makeNameUnresolvedDiagnostic memberName ]
                                 | Some receiverType ->
                                     [
                                         makeDiagnostic
-                                            DiagnosticCode.TypeEqualityMismatch
+                                            SimpleDiagnosticKind.TypeEqualityMismatch
                                             $"Member access '.{memberName}' is not well-formed for receiver type '{TypeSignatures.toText receiverType}'."
                                     ]
                                 | None ->
@@ -17419,15 +17418,15 @@ module SurfaceElaboration =
                                 []
                             | None ->
                                 [ makeDiagnostic
-                                      DiagnosticCode.SafeNavigationAmbiguous
+                                      SimpleDiagnosticKind.SafeNavigationAmbiguous
                                       $"Safe-navigation `?.` requires knowing the result type of '{memberText navigation}' to decide whether to wrap or flatten." ]
                         | None ->
                             [ makeDiagnostic
-                                  DiagnosticCode.SafeNavigationReceiverNotOption
+                                  SimpleDiagnosticKind.SafeNavigationReceiverNotOption
                                   "Safe-navigation `?.` requires its receiver to have type `Option T` for some `T`." ]
                     | None ->
                         [ makeDiagnostic
-                              DiagnosticCode.SafeNavigationAmbiguous
+                              SimpleDiagnosticKind.SafeNavigationAmbiguous
                               $"Safe-navigation `?.` requires knowing the result type of '{memberText navigation}' to decide whether to wrap or flatten." ]
 
                 receiverDiagnostics @ argumentDiagnostics @ builtinDiagnostics
@@ -17469,13 +17468,13 @@ module SurfaceElaboration =
                         | MapCollection ->
                             [
                                 makeDiagnostic
-                                    DiagnosticCode.TypeEqualityMismatch
+                                    SimpleDiagnosticKind.TypeEqualityMismatch
                                     "Query carrier is ill-formed for a map comprehension; Query cannot silently discard map metadata."
                             ]
                         | SetCollection ->
                             [
                                 makeDiagnostic
-                                    DiagnosticCode.TypeEqualityMismatch
+                                    SimpleDiagnosticKind.TypeEqualityMismatch
                                     "Query carrier is ill-formed for a set comprehension; Query cannot silently discard set metadata."
                             ]
 
@@ -17491,15 +17490,15 @@ module SurfaceElaboration =
                         with
                         | Some plan when not (QuerySemantics.canCheckUse plan.InferredMode.Use carrier.ExpectedMode.Use) ->
                             [ makeDiagnostic
-                                DiagnosticCode.TypeEqualityMismatch
+                                SimpleDiagnosticKind.TypeEqualityMismatch
                                 $"Query carrier expects a {queryUseText carrier.ExpectedMode.Use} query, but the comprehension infers {queryUseText plan.InferredMode.Use}; use OnceQuery or an explicitly one-shot QueryCore carrier." ]
                         | Some plan when not (QuerySemantics.canCheckCard plan.InferredMode.Card carrier.ExpectedMode.Card) ->
                             [ makeDiagnostic
-                                DiagnosticCode.TypeEqualityMismatch
+                                SimpleDiagnosticKind.TypeEqualityMismatch
                                 $"Query cardinality mismatch: inferred {queryCardText plan.InferredMode.Card} cannot be checked as {queryCardText carrier.ExpectedMode.Card}." ]
                         | Some plan when not (QuerySemantics.canCheckItemQuantity plan.InferredItemQuantity carrier.ExpectedItemQuantity) ->
                             [ makeDiagnostic
-                                DiagnosticCode.TypeEqualityMismatch
+                                SimpleDiagnosticKind.TypeEqualityMismatch
                                 $"Query item quantity mismatch: inferred item quantity '{ResourceQuantity.toSurfaceText plan.InferredItemQuantity}' cannot be checked as '{ResourceQuantity.toSurfaceText carrier.ExpectedItemQuantity}'." ]
                         | _ ->
                             []
@@ -17542,7 +17541,7 @@ module SurfaceElaboration =
                                     else
                                         [
                                             makeDiagnostic
-                                                DiagnosticCode.TypeEqualityMismatch
+                                                SimpleDiagnosticKind.TypeEqualityMismatch
                                                 $"Selected comprehension sink expects Item '{TypeSignatures.toText expectedItemType}', but the yielded item type is '{TypeSignatures.toText actualItemType}'."
                                         ])
                                 |> Option.defaultValue []
@@ -17881,7 +17880,7 @@ module SurfaceElaboration =
                                                                     | ConstraintUnresolved ->
                                                                         Some(
                                                                             makeDiagnostic
-                                                                                DiagnosticCode.TypeEqualityMismatch
+                                                                                SimpleDiagnosticKind.TypeEqualityMismatch
                                                                                 $"Implicit trait constraint '{renderTraitConstraint environment constraintInfo}' could not be resolved."
                                                                         )
                                                                     | ConstraintAmbiguous(ambiguousGoal, candidates) ->
@@ -17892,7 +17891,7 @@ module SurfaceElaboration =
 
                                                                         Some(
                                                                             makeDiagnostic
-                                                                                DiagnosticCode.TraitInstanceAmbiguous
+                                                                                SimpleDiagnosticKind.TraitInstanceAmbiguous
                                                                                 $"Multiple instance candidates survive for constraint '{renderTraitConstraint environment ambiguousGoal}': {candidateText}."
                                                                         )
                                                                 | None ->
@@ -17928,7 +17927,7 @@ module SurfaceElaboration =
                                     | ConstraintUnresolved ->
                                         Some(
                                             makeDiagnostic
-                                                DiagnosticCode.TypeEqualityMismatch
+                                                SimpleDiagnosticKind.TypeEqualityMismatch
                                                 $"Implicit trait constraint '{renderTraitConstraint environment constraintInfo}' could not be resolved."
                                         )
                                     | ConstraintAmbiguous(ambiguousGoal, candidates) ->
@@ -17939,7 +17938,7 @@ module SurfaceElaboration =
 
                                         Some(
                                             makeDiagnostic
-                                                DiagnosticCode.TraitInstanceAmbiguous
+                                                SimpleDiagnosticKind.TraitInstanceAmbiguous
                                                 $"Multiple instance candidates survive for constraint '{renderTraitConstraint environment ambiguousGoal}': {candidateText}."
                                         )
 
@@ -18085,7 +18084,7 @@ module SurfaceElaboration =
                                                         | ConstraintUnresolved ->
                                                             Some(
                                                                 makeDiagnostic
-                                                                    DiagnosticCode.TypeEqualityMismatch
+                                                                    SimpleDiagnosticKind.TypeEqualityMismatch
                                                                     $"Implicit trait constraint '{renderTraitConstraint environment constraintInfo}' could not be resolved."
                                                             )
                                                         | ConstraintAmbiguous(ambiguousGoal, candidates) ->
@@ -18096,7 +18095,7 @@ module SurfaceElaboration =
 
                                                             Some(
                                                                 makeDiagnostic
-                                                                    DiagnosticCode.TraitInstanceAmbiguous
+                                                                    SimpleDiagnosticKind.TraitInstanceAmbiguous
                                                                     $"Multiple instance candidates survive for constraint '{renderTraitConstraint environment ambiguousGoal}': {candidateText}."
                                                             )
                                                     | None ->
@@ -18151,10 +18150,10 @@ module SurfaceElaboration =
                                     | [], [] ->
                                         []
                                     | [], _ :: _ ->
-                                        [ makeDiagnostic DiagnosticCode.TypeEqualityMismatch "Application argument types do not match the callee parameters." ]
+                                        [ makeDiagnostic SimpleDiagnosticKind.TypeEqualityMismatch "Application argument types do not match the callee parameters." ]
                                     | (layout, parameterType) :: restParameters, ExplicitImplicitArgument explicitArgument :: restArguments ->
                                         if not layout.IsImplicit then
-                                            [ makeDiagnostic DiagnosticCode.TypeEqualityMismatch "Implicit application argument could not be resolved or does not match the implicit parameter." ]
+                                            [ makeDiagnostic SimpleDiagnosticKind.TypeEqualityMismatch "Implicit application argument could not be resolved or does not match the implicit parameter." ]
                                         else
                                             if isCompileTimeArgumentType environment.VisibleTypeAliases parameterType then
                                                 walk restParameters restArguments
@@ -18194,7 +18193,7 @@ module SurfaceElaboration =
                                         elif List.isEmpty pending then
                                             []
                                         else
-                                            [ makeDiagnostic DiagnosticCode.TypeEqualityMismatch "Implicit application argument could not be resolved or does not match the implicit parameter." ]
+                                            [ makeDiagnostic SimpleDiagnosticKind.TypeEqualityMismatch "Implicit application argument could not be resolved or does not match the implicit parameter." ]
                                     | _ :: restParameters, _ :: restArguments ->
                                         walk restParameters restArguments
                                     | _ :: _, [] ->
@@ -18229,7 +18228,7 @@ module SurfaceElaboration =
                                     | ConstraintUnresolved ->
                                         [
                                             makeDiagnostic
-                                                DiagnosticCode.TypeEqualityMismatch
+                                                SimpleDiagnosticKind.TypeEqualityMismatch
                                                 $"Trait constraint '{renderTraitConstraint environment constraintInfo}' could not be resolved."
                                         ]
                                     | ConstraintAmbiguous(ambiguousGoal, candidates) ->
@@ -18240,7 +18239,7 @@ module SurfaceElaboration =
 
                                         [
                                             makeDiagnostic
-                                                DiagnosticCode.TraitInstanceAmbiguous
+                                                SimpleDiagnosticKind.TraitInstanceAmbiguous
                                                 $"Multiple instance candidates survive for constraint '{renderTraitConstraint environment ambiguousGoal}': {candidateText}."
                                         ])
 
@@ -18374,7 +18373,7 @@ module SurfaceElaboration =
                                                 else
                                                     [
                                                         makeDiagnostic
-                                                            DiagnosticCode.ApplicationNonCallable
+                                                            SimpleDiagnosticKind.ApplicationNonCallable
                                                             $"Expression of type '{TypeSignatures.toText (normalizeTypeAliases environment.VisibleTypeAliases apparentCalleeType)}' is not callable."
                                                     ]
 
@@ -18419,7 +18418,7 @@ module SurfaceElaboration =
                                                 @ (if String.IsNullOrEmpty message then
                                                        []
                                                    else
-                                                       [ makeDiagnostic DiagnosticCode.TypeEqualityMismatch message ])
+                                                       [ makeDiagnostic SimpleDiagnosticKind.TypeEqualityMismatch message ])
                                             | None when localCanSatisfyImplicitParameter bindingInfo && not hasExplicitImplicitArgument ->
                                                 expectedArgumentDiagnostics
                                             | None
@@ -18449,13 +18448,13 @@ module SurfaceElaboration =
 
                                         [
                                             makeDiagnostic
-                                                DiagnosticCode.TypeEqualityMismatch
+                                                SimpleDiagnosticKind.TypeEqualityMismatch
                                                 $"Overloaded trait member '{calleeName}' from [{traitOwnerText}] could not be resolved for argument types '{inferredArgumentTypes}'."
                                         ]
                                     | None
                                         when allowUnresolvedCallDiagnostics
                                              && not isKnownVisibleCallee ->
-                                        [ makeDiagnostic DiagnosticCode.NameUnresolved $"Name '{calleeName}' is not in scope." ]
+                                        [ makeNameUnresolvedDiagnostic calleeName ]
                                     | None when localBindingType |> Option.exists (fun _ -> not hasNamedBlock) ->
                                         localApplicationExpectedArgumentDiagnostics
                                             locals
@@ -18463,11 +18462,11 @@ module SurfaceElaboration =
                                             (localBindingType.Value)
                                             arguments
                                     | None when hasNamedBlock ->
-                                        [ makeDiagnostic DiagnosticCode.TypeEqualityMismatch "Named application requires a callee with preserved parameter metadata." ]
+                                        [ makeDiagnostic SimpleDiagnosticKind.TypeEqualityMismatch "Named application requires a callee with preserved parameter metadata." ]
                                     | _ ->
                                         []
                                 | _ when hasNamedBlock ->
-                                    [ makeDiagnostic DiagnosticCode.TypeEqualityMismatch "Named application requires a callee with preserved parameter metadata." ]
+                                    [ makeDiagnostic SimpleDiagnosticKind.TypeEqualityMismatch "Named application requires a callee with preserved parameter metadata." ]
                                 | _ ->
                                     []
 
@@ -18522,7 +18521,7 @@ module SurfaceElaboration =
                                         | _ ->
                                             [
                                                 makeDiagnostic
-                                                    DiagnosticCode.ApplicationNonCallable
+                                                    SimpleDiagnosticKind.ApplicationNonCallable
                                                     $"Expression of type '{TypeSignatures.toText normalizedCalleeType}' is not callable."
                                             ]
                                     | None ->
@@ -18538,7 +18537,7 @@ module SurfaceElaboration =
                 | Some leftType when tryOptionPayloadType environment.VisibleTypeAliases leftType |> Option.isNone ->
                     diagnostics
                     @ [ makeDiagnostic
-                            DiagnosticCode.ElvisReceiverNotOption
+                            SimpleDiagnosticKind.ElvisReceiverNotOption
                             "Elvis `?:` requires its left-hand side to have type `Option T` for some `T`." ]
                 | _ ->
                     diagnostics
@@ -18572,7 +18571,7 @@ module SurfaceElaboration =
                         | Some operandType when not (expectedTypeAccepts locals refinements boolType operandType) ->
                             [
                                 makeDiagnostic
-                                    DiagnosticCode.TypeEqualityMismatch
+                                    SimpleDiagnosticKind.TypeEqualityMismatch
                                     $"Short-circuit operator {operandLabel} must match the expected suspended Bool operand type, but found '{TypeSignatures.toText operandType}'."
                             ]
                         | _ ->
@@ -18609,7 +18608,7 @@ module SurfaceElaboration =
                                     | ConstraintUnresolved ->
                                         [
                                             makeDiagnostic
-                                                DiagnosticCode.TypeEqualityMismatch
+                                                SimpleDiagnosticKind.TypeEqualityMismatch
                                                 $"Trait constraint '{renderTraitConstraint environment constraintInfo}' could not be resolved."
                                         ]
                                     | ConstraintAmbiguous(ambiguousGoal, candidates) ->
@@ -18620,7 +18619,7 @@ module SurfaceElaboration =
 
                                         [
                                             makeDiagnostic
-                                                DiagnosticCode.TraitInstanceAmbiguous
+                                                SimpleDiagnosticKind.TraitInstanceAmbiguous
                                                 $"Multiple instance candidates survive for constraint '{renderTraitConstraint environment ambiguousGoal}': {candidateText}."
                                         ]
                         | None ->
@@ -18652,7 +18651,7 @@ module SurfaceElaboration =
                                     | ConstraintUnresolved ->
                                         [
                                             makeDiagnostic
-                                                DiagnosticCode.TypeEqualityMismatch
+                                                SimpleDiagnosticKind.TypeEqualityMismatch
                                                 $"Trait constraint '{renderTraitConstraint environment constraintInfo}' could not be resolved."
                                         ]
                                     | ConstraintAmbiguous(ambiguousGoal, candidates) ->
@@ -18663,7 +18662,7 @@ module SurfaceElaboration =
 
                                         [
                                             makeDiagnostic
-                                                DiagnosticCode.TraitInstanceAmbiguous
+                                                SimpleDiagnosticKind.TraitInstanceAmbiguous
                                                 $"Multiple instance candidates survive for constraint '{renderTraitConstraint environment ambiguousGoal}': {candidateText}."
                                         ]
                         | None ->
@@ -18694,7 +18693,7 @@ module SurfaceElaboration =
                             | Some operandType when typeIsCallableLikeForValidation operandType ->
                                     [
                                         makeDiagnostic
-                                            DiagnosticCode.TypeEqualityMismatch
+                                            SimpleDiagnosticKind.TypeEqualityMismatch
                                             $"Arithmetic operator {operandLabel} must be a numeric value, but '{name}' resolves to a callable binding."
                                     ]
                             | _ ->
@@ -18702,7 +18701,7 @@ module SurfaceElaboration =
                                 | Some bindingInfo when not (List.isEmpty bindingInfo.Parameters) ->
                                     [
                                         makeDiagnostic
-                                            DiagnosticCode.TypeEqualityMismatch
+                                            SimpleDiagnosticKind.TypeEqualityMismatch
                                             $"Arithmetic operator {operandLabel} must be a numeric value, but '{name}' resolves to a callable binding."
                                     ]
                                 | None ->
@@ -18739,7 +18738,7 @@ module SurfaceElaboration =
                                 || isCompileTimeArgumentType environment.VisibleTypeAliases normalizedRightType ->
                                 [
                                     makeDiagnostic
-                                        DiagnosticCode.TypeEqualityMismatch
+                                        SimpleDiagnosticKind.TypeEqualityMismatch
                                         $"Arithmetic operator operands must both be numeric, but found '{TypeSignatures.toText leftType}' and '{TypeSignatures.toText rightType}'."
                                 ]
                             | _ when isSupportedArithmeticType normalizedLeftType && isSupportedArithmeticType normalizedRightType ->
@@ -18749,7 +18748,7 @@ module SurfaceElaboration =
                             | _ ->
                                 [
                                     makeDiagnostic
-                                        DiagnosticCode.TypeEqualityMismatch
+                                        SimpleDiagnosticKind.TypeEqualityMismatch
                                         $"Arithmetic operator operands must both be numeric, but found '{TypeSignatures.toText leftType}' and '{TypeSignatures.toText rightType}'."
                                 ]
                         | _ ->
@@ -18802,7 +18801,7 @@ module SurfaceElaboration =
             | PrefixedString(prefix, parts) ->
                 prefixedStringPrefixDiagnostics locals lexicalNames prefix
                 @ (tryResolvePrefixedStringFailureDiagnostic prefix
-                   |> Option.map (fun message -> [ makeDiagnostic DiagnosticCode.ElaborationFailed message ])
+                   |> Option.map (fun message -> [ makeDiagnostic SimpleDiagnosticKind.ElaborationFailed message ])
                    |> Option.defaultValue [])
                 @ (parts
                    |> List.collect (function
@@ -18865,7 +18864,7 @@ module SurfaceElaboration =
                         | Some sourceType when tryUnwrapBindablePayloadType environment.VisibleTypeAliases sourceType |> Option.isNone ->
                             [
                                 makeDiagnostic
-                                    DiagnosticCode.TypeEqualityMismatch
+                                    SimpleDiagnosticKind.TypeEqualityMismatch
                                     $"A '<-' do binding requires a bindable carrier value, but found '{TypeSignatures.toText sourceType}'."
                             ]
                         | _ ->
@@ -19027,7 +19026,7 @@ module SurfaceElaboration =
                     if insideDo then
                         []
                     else
-                        [ makeDiagnostic DiagnosticCode.QttInoutMarkerUnexpected "The '~' inout marker is only valid inside do blocks." ]
+                        [ makeDiagnostic SimpleDiagnosticKind.QttInoutMarkerUnexpected "The '~' inout marker is only valid inside do blocks." ]
 
                 markerDiagnostics @ recurse inner
             | TypeSyntaxTokens _ ->
@@ -19186,11 +19185,11 @@ module SurfaceElaboration =
                     if isStableDescriptorPlace expression then
                         None
                     else
-                        Some(makeDiagnostic DiagnosticCode.ProjectionRootInvalid "Projector descriptor roots must be stable places or selector-computed places."))
+                        Some(makeDiagnostic SimpleDiagnosticKind.ProjectionRootInvalid "Projector descriptor roots must be stable places or selector-computed places."))
 
             match remainingPlaceBinders with
             | [] ->
-                [ makeDiagnostic DiagnosticCode.ProjectionDescriptorRootMissing "A projector descriptor application must still have at least one root." ]
+                [ makeDiagnostic SimpleDiagnosticKind.ProjectionDescriptorRootMissing "A projector descriptor application must still have at least one root." ]
             | [ binder ] ->
                 match rootsArgument with
                 | RecordLiteral fields when fields |> List.exists (fun field -> String.Equals(field.Name, binder.Name, StringComparison.Ordinal)) ->
@@ -19199,11 +19198,11 @@ module SurfaceElaboration =
                     let expectedNames = Set.singleton binder.Name
 
                     if fieldNames <> expectedNames then
-                        [ makeDiagnostic DiagnosticCode.ProjectionRootsPackMismatch "Projector descriptor roots pack fields must match the projector root binders exactly." ]
+                        [ makeDiagnostic SimpleDiagnosticKind.ProjectionRootsPackMismatch "Projector descriptor roots pack fields must match the projector root binders exactly." ]
                     else
                         fieldMap |> Map.find binder.Name |> List.singleton |> unstableRootDiagnostics
                 | RecordLiteral _ ->
-                    [ makeDiagnostic DiagnosticCode.ProjectionRootsPackMismatch "Projector descriptor roots pack fields must match the projector root binders exactly." ]
+                    [ makeDiagnostic SimpleDiagnosticKind.ProjectionRootsPackMismatch "Projector descriptor roots pack fields must match the projector root binders exactly." ]
                 | _ ->
                     unstableRootDiagnostics [ rootsArgument ]
             | binders ->
@@ -19214,13 +19213,13 @@ module SurfaceElaboration =
                     let expectedNames = binders |> List.map (fun binder -> binder.Name) |> Set.ofList
 
                     if fieldNames <> expectedNames then
-                        [ makeDiagnostic DiagnosticCode.ProjectionRootsPackMismatch "Projector descriptor roots pack fields must match the projector root binders exactly." ]
+                        [ makeDiagnostic SimpleDiagnosticKind.ProjectionRootsPackMismatch "Projector descriptor roots pack fields must match the projector root binders exactly." ]
                     else
                         binders
                         |> List.map (fun binder -> fieldMap |> Map.find binder.Name)
                         |> unstableRootDiagnostics
                 | _ ->
-                    [ makeDiagnostic DiagnosticCode.ProjectionDescriptorRootsLiteralRequired "Multi-root projector descriptors must be applied to a record literal roots pack." ]
+                    [ makeDiagnostic SimpleDiagnosticKind.ProjectionDescriptorRootsLiteralRequired "Multi-root projector descriptors must be applied to a record literal roots pack." ]
 
         let fullyAppliedProjectionReturningDescriptorDiagnostic body =
             let returnTypeIsProjector =
@@ -19236,7 +19235,7 @@ module SurfaceElaboration =
                 |> Map.tryFind projectionName
                 |> Option.filter (fun projectionInfo -> List.length projectionInfo.Binders = List.length arguments)
                 |> Option.map (fun _ ->
-                    [ makeDiagnostic DiagnosticCode.ProjectionDescriptorValueExpected "A fully applied projection produces the projected focus, not a projector descriptor value." ])
+                    [ makeDiagnostic SimpleDiagnosticKind.ProjectionDescriptorValueExpected "A fully applied projection produces the projected focus, not a projector descriptor value." ])
                 |> Option.defaultValue []
             | _ ->
                 []
@@ -19468,11 +19467,11 @@ module SurfaceElaboration =
                                     | None ->
                                         []
                                     | Some candidates when List.length candidates > 1 ->
-                                        [ makeDiagnostic DiagnosticCode.TypeEqualityMismatch "Implicit application argument is ambiguous in the nearest lexical implicit scope." ]
+                                        [ makeDiagnostic SimpleDiagnosticKind.TypeEqualityMismatch "Implicit application argument is ambiguous in the nearest lexical implicit scope." ]
                                     | Some [ _, QuantityZero ] ->
-                                        [ makeDiagnostic DiagnosticCode.TypeEqualityMismatch "A quantity-0 local implicit value cannot satisfy a runtime implicit parameter." ]
+                                        [ makeDiagnostic SimpleDiagnosticKind.TypeEqualityMismatch "A quantity-0 local implicit value cannot satisfy a runtime implicit parameter." ]
                                     | Some [ _, QuantityBorrow _ ] when inEscapingLambda ->
-                                        [ makeDiagnostic DiagnosticCode.QttBorrowEscape "A lambda cannot capture a borrowed implicit value that may escape its borrow scope." ]
+                                        [ makeDiagnostic SimpleDiagnosticKind.QttBorrowEscape "A lambda cannot capture a borrowed implicit value that may escape its borrow scope." ]
                                     | Some _ ->
                                         [])
                 | None ->
@@ -19669,7 +19668,7 @@ module SurfaceElaboration =
 
                 let binderDiagnostics =
                     if explicitParameterCount = 0 then
-                        [ makeDiagnostic DiagnosticCode.ActivePatternMissingScrutineeBinder "An active pattern declaration must have at least one explicit binder for the scrutinee." ]
+                        [ makeDiagnostic SimpleDiagnosticKind.ActivePatternMissingScrutineeBinder "An active pattern declaration must have at least one explicit binder for the scrutinee." ]
                     else
                         []
 
@@ -19677,7 +19676,7 @@ module SurfaceElaboration =
                     scheme
                     |> Option.map (fun parsedScheme ->
                         if isMonadicType parsedScheme.Body then
-                            [ makeDiagnostic DiagnosticCode.ActivePatternMonadicResult "An active pattern declaration result type must not be monadic." ]
+                            [ makeDiagnostic SimpleDiagnosticKind.ActivePatternMonadicResult "An active pattern declaration result type must not be monadic." ]
                         else
                             [])
                     |> Option.defaultValue []
@@ -19738,13 +19737,12 @@ module SurfaceElaboration =
                 |> Option.defaultValue $"<file:{frontendModule.FilePath}>"
 
             let makeDuplicateDiagnostic moduleName message =
-                { Severity = DiagnosticSeverity.Error
-                  Code = DiagnosticCode.DuplicateDeclaration
-                  Stage = Some "KFrontIR"
-                  Phase = Some(KFrontIRPhase.phaseName CORE_LOWERING)
-                  Message = $"{message} in module '{moduleName}'."
-                  Location = None
-                  RelatedLocations = [] }
+                Diagnostics.errorFact
+                    "KFrontIR"
+                    (Some(KFrontIRPhase.phaseName CORE_LOWERING))
+                    None
+                    []
+                    (DiagnosticFact.duplicateDeclaration message (Some moduleName))
 
             frontendModules
             |> List.groupBy moduleKey
@@ -19951,14 +19949,16 @@ module SurfaceElaboration =
                 localEffects @ importedEffectDeclarations surfaceIndex effectDeclarationsByModule moduleName
 
             withScopedEffectDeclarations topLevelEffects (fun () ->
-                let makeDiagnostic code message =
-                    { Severity = DiagnosticSeverity.Error
-                      Code = code
-                      Stage = Some "KFrontIR"
-                      Phase = Some(KFrontIRPhase.phaseName CORE_LOWERING)
-                      Message = message
-                      Location = None
-                      RelatedLocations = [] }
+                let makeDiagnostic kind message =
+                    Diagnostics.errorFact "KFrontIR" (Some(KFrontIRPhase.phaseName CORE_LOWERING)) None [] (DiagnosticFact.simple kind message)
+
+                let makeNameUnresolvedDiagnostic name =
+                    Diagnostics.errorFact
+                        "KFrontIR"
+                        (Some(KFrontIRPhase.phaseName CORE_LOWERING))
+                        None
+                        []
+                        (DiagnosticFact.nameUnresolved name)
 
                 let _, sourceBindingInfosByName =
                     buildSourceBindingInfosByName moduleName frontendModule.Declarations
@@ -20097,7 +20097,7 @@ module SurfaceElaboration =
 
                     let missingPlaceDiagnostics =
                         if List.isEmpty placeBinders then
-                            [ makeDiagnostic DiagnosticCode.ProjectionMissingPlaceBinder "A projection definition must declare at least one place binder." ]
+                            [ makeDiagnostic SimpleDiagnosticKind.ProjectionMissingPlaceBinder "A projection definition must declare at least one place binder." ]
                         else
                             []
 
@@ -20110,13 +20110,13 @@ module SurfaceElaboration =
                             | Some nestedProjection ->
                                 match nestedProjection.Body with
                                 | Some(ProjectionAccessors _) ->
-                                    [ makeDiagnostic DiagnosticCode.ProjectionYieldInvalid "A selector projection yield must denote a stable place, not an accessor bundle." ]
+                                    [ makeDiagnostic SimpleDiagnosticKind.ProjectionYieldInvalid "A selector projection yield must denote a stable place, not an accessor bundle." ]
                                 | _ ->
                                     []
                             | None ->
-                                [ makeDiagnostic DiagnosticCode.ProjectionYieldInvalid "A selector projection yield must denote a stable place." ]
+                                [ makeDiagnostic SimpleDiagnosticKind.ProjectionYieldInvalid "A selector projection yield must denote a stable place." ]
                         | ProjectionYield _ ->
-                            [ makeDiagnostic DiagnosticCode.ProjectionYieldInvalid "A selector projection yield must denote a stable place rooted in a place binder." ]
+                            [ makeDiagnostic SimpleDiagnosticKind.ProjectionYieldInvalid "A selector projection yield must denote a stable place rooted in a place binder." ]
                         | ProjectionIfThenElse(_, whenTrue, whenFalse) ->
                             selectorYieldDiagnostics whenTrue @ selectorYieldDiagnostics whenFalse
                         | ProjectionMatch(_, cases) ->
@@ -20134,7 +20134,7 @@ module SurfaceElaboration =
                                     if List.length placeBinders = 1 then
                                         []
                                     else
-                                        [ makeDiagnostic DiagnosticCode.ProjectionExpandedAccessorPlaceBinderMismatch "An expanded accessor projection must declare exactly one place binder." ]
+                                        [ makeDiagnostic SimpleDiagnosticKind.ProjectionExpandedAccessorPlaceBinderMismatch "An expanded accessor projection must declare exactly one place binder." ]
 
                                 let duplicateDiagnostics =
                                     clauses
@@ -20146,7 +20146,7 @@ module SurfaceElaboration =
                                     |> List.countBy id
                                     |> List.choose (fun (kind, count) ->
                                         if count > 1 then
-                                            Some(makeDiagnostic DiagnosticCode.ProjectionAccessorClauseDuplicate $"Projection accessor clause '{kind}' is declared more than once.")
+                                            Some(makeDiagnostic SimpleDiagnosticKind.ProjectionAccessorClauseDuplicate $"Projection accessor clause '{kind}' is declared more than once.")
                                         else
                                             None)
 
@@ -20173,7 +20173,7 @@ module SurfaceElaboration =
                         else
                             Some(
                                 makeDiagnostic
-                                    DiagnosticCode.ModuleAttributeUnknown
+                                    SimpleDiagnosticKind.ModuleAttributeUnknown
                                     $"Unknown module attribute '@{attributeName}'. Supported module attributes in this implementation are: {supportedAttributes}."
                             ))
 
@@ -20187,10 +20187,10 @@ module SurfaceElaboration =
                             match definition.TotalityAssertion with
                             | Some AssertTerminatesAssertion when not allowAssertTerminates ->
                                 let bindingName = definition.Name |> Option.defaultValue "<anonymous>"
-                                Some(makeDiagnostic DiagnosticCode.AssertTerminatesRequiresModuleAttribute $"Declaration '{bindingName}' uses assertTerminates/assertTotal without enabling module attribute 'allow_assert_terminates'.")
+                                Some(makeDiagnostic SimpleDiagnosticKind.AssertTerminatesRequiresModuleAttribute $"Declaration '{bindingName}' uses assertTerminates/assertTotal without enabling module attribute 'allow_assert_terminates'.")
                             | Some AssertReducibleAssertion when not allowAssertReducible ->
                                 let bindingName = definition.Name |> Option.defaultValue "<anonymous>"
-                                Some(makeDiagnostic DiagnosticCode.AssertReducibleRequiresModuleAttribute $"Declaration '{bindingName}' uses assertReducible without enabling module attribute 'allow_assert_reducible'.")
+                                Some(makeDiagnostic SimpleDiagnosticKind.AssertReducibleRequiresModuleAttribute $"Declaration '{bindingName}' uses assertReducible without enabling module attribute 'allow_assert_reducible'.")
                             | _ ->
                                 None
                         | _ ->
@@ -20285,7 +20285,7 @@ module SurfaceElaboration =
                     |> Seq.filter (fun aliasName -> reaches aliasName aliasName (Set.singleton aliasName))
                     |> Seq.distinct
                     |> Seq.map (fun aliasName ->
-                        makeDiagnostic DiagnosticCode.RecursiveTypeAlias $"Type alias '{aliasName}' recursively depends on itself.")
+                        makeDiagnostic SimpleDiagnosticKind.RecursiveTypeAlias $"Type alias '{aliasName}' recursively depends on itself.")
                     |> Seq.toList
 
                 let malformedConstructorDiagnostics =
@@ -20399,11 +20399,11 @@ module SurfaceElaboration =
                             declaration.Constructors
                             |> List.choose (fun constructor ->
                                 if Set.contains constructor.Name declarationKeywordNames then
-                                    Some(makeDiagnostic DiagnosticCode.MalformedConstructorDeclaration $"Constructor declaration in data type '{declaration.Name}' starts with declaration keyword '{constructor.Name}'.")
+                                    Some(makeDiagnostic SimpleDiagnosticKind.MalformedConstructorDeclaration $"Constructor declaration in data type '{declaration.Name}' starts with declaration keyword '{constructor.Name}'.")
                                 elif exposesRuntimeTypeField constructor then
-                                    Some(makeDiagnostic DiagnosticCode.MalformedConstructorDeclaration $"Constructor '{constructor.Name}' exposes runtime field metadata of type 'Type'.")
+                                    Some(makeDiagnostic SimpleDiagnosticKind.MalformedConstructorDeclaration $"Constructor '{constructor.Name}' exposes runtime field metadata of type 'Type'.")
                                 elif constructorHasMalformedShape constructor then
-                                    Some(makeDiagnostic DiagnosticCode.MalformedConstructorDeclaration $"Constructor declaration '{constructor.Name}' in data type '{declaration.Name}' is malformed.")
+                                    Some(makeDiagnostic SimpleDiagnosticKind.MalformedConstructorDeclaration $"Constructor declaration '{constructor.Name}' in data type '{declaration.Name}' is malformed.")
                                 else
                                     None)
                         | _ ->
@@ -20415,7 +20415,7 @@ module SurfaceElaboration =
                         |> List.countBy id
                         |> List.choose (fun (name, count) ->
                             if count > 1 then
-                                Some(makeDiagnostic DiagnosticCode.DuplicatePatternBinder $"Pattern binder '{name}' is bound more than once in the same pattern.")
+                                Some(Diagnostics.errorFact "KFrontIR" (Some(KFrontIRPhase.phaseName CORE_LOWERING)) None [] (DiagnosticFact.duplicatePatternBinder name))
                             else
                                 None)
 
@@ -20496,7 +20496,7 @@ module SurfaceElaboration =
                                                 else
                                                     Some(
                                                         makeDiagnostic
-                                                            DiagnosticCode.OrPatternBinderTypeMismatch
+                                                            SimpleDiagnosticKind.OrPatternBinderTypeMismatch
                                                             $"Binder '{name}' has type '{TypeSignatures.toText firstType}' in one or-pattern alternative but '{TypeSignatures.toText alternativeType}' in another."
                                                     ))
                                             |> Seq.toList)
@@ -20763,7 +20763,7 @@ module SurfaceElaboration =
                             let shadowed = parameterNames definition.Parameters
 
                             if expressionReferences name shadowed definition.Body.Value then
-                                Some(makeDiagnostic DiagnosticCode.RecursionRequiresSignature $"Top-level binding '{name}' is recursive but has no preceding signature declaration.")
+                                Some(makeDiagnostic SimpleDiagnosticKind.RecursionRequiresSignature $"Top-level binding '{name}' is recursive but has no preceding signature declaration.")
                             else
                                 None
                         | _ ->
@@ -20782,7 +20782,7 @@ module SurfaceElaboration =
                             | Name [ referencedName ] when String.Equals(referencedName, name, StringComparison.Ordinal) ->
                                 Some(
                                     makeDiagnostic
-                                        DiagnosticCode.RecursionRequiresSignature
+                                        SimpleDiagnosticKind.RecursionRequiresSignature
                                         $"Recursive cycle for binding '{name}' is not total and must be rejected."
                                 )
                             | _ ->
@@ -20935,9 +20935,12 @@ module SurfaceElaboration =
 
                 let expressionNameResolutionDiagnostics (definition: LetDefinition) expression =
                     let ordinaryNameAmbiguityDiagnostic name candidates =
-                        makeDiagnostic
-                            DiagnosticCode.NameAmbiguous
-                            (ordinaryNameAmbiguityMessage name candidates)
+                        Diagnostics.errorFact
+                            "KFrontIR"
+                            (Some(KFrontIRPhase.phaseName CORE_LOWERING))
+                            None
+                            []
+                            (DiagnosticFact.nameAmbiguous name (candidates |> List.map renderOrdinaryVisibleTermCandidate))
 
                     let simpleClauseBinderName (tokens: Token list) =
                         match significantTokens tokens with
@@ -21230,11 +21233,11 @@ module SurfaceElaboration =
                                 if Set.contains referencedName forbiddenNames then
                                     Some(
                                         makeDiagnostic
-                                            DiagnosticCode.NameUnresolved
+                                            SimpleDiagnosticKind.NameUnresolved
                                             $"Default expression for constructor parameter '{parameterName}' cannot reference '{referencedName}' before it is bound."
                                     )
                                 elif not (Set.contains referencedName visibleNames) then
-                                    Some(makeDiagnostic DiagnosticCode.NameUnresolved $"Name '{referencedName}' is not in scope.")
+                                    Some(makeNameUnresolvedDiagnostic referencedName)
                                 else
                                     None)
                             |> Seq.toList
@@ -21248,11 +21251,11 @@ module SurfaceElaboration =
                                         (normalizeTypeAliases environment.VisibleTypeAliases actualType)
                                 ) ->
                                 [ makeDiagnostic
-                                    DiagnosticCode.TypeEqualityMismatch
+                                    SimpleDiagnosticKind.TypeEqualityMismatch
                                     $"Default expression for constructor parameter '{parameterName}' has type '{TypeSignatures.toText actualType}', but '{TypeSignatures.toText expectedType}' was expected." ]
                             | Some _, None when List.isEmpty nameDiagnostics ->
                                 [ makeDiagnostic
-                                    DiagnosticCode.TypeEqualityMismatch
+                                    SimpleDiagnosticKind.TypeEqualityMismatch
                                     $"Default expression for constructor parameter '{parameterName}' could not be checked against its declared type." ]
                             | _ ->
                                 []
@@ -21329,7 +21332,7 @@ module SurfaceElaboration =
                                                     else
                                                         [
                                                             makeDiagnostic
-                                                                DiagnosticCode.TypeEqualityMismatch
+                                                                SimpleDiagnosticKind.TypeEqualityMismatch
                                                                 $"Instance member '{memberName}' for trait '{traitName}' must return '{TypeSignatures.toText expectedReturnType}', but declares '{TypeSignatures.toText declaredReturnType}'."
                                                         ])))
                         | _ ->
@@ -21378,7 +21381,7 @@ module SurfaceElaboration =
                                         else
                                             Some(
                                                 makeDiagnostic
-                                                    DiagnosticCode.TraitSupertraitUnsatisfied
+                                                    SimpleDiagnosticKind.TraitSupertraitUnsatisfied
                                                     $"Instance for trait '{traitName}' requires declared supertrait '{renderTraitConstraint environment requiredConstraint}', but that evidence is not satisfied by the instance premises or visible instances."
                                             ))))
                         | _ ->
@@ -21682,7 +21685,7 @@ module SurfaceElaboration =
                                         |> List.tryHead
                                         |> Option.map (fun (effectName, operationName) ->
                                             makeDiagnostic
-                                                DiagnosticCode.MultishotEffectUnsupportedBackend
+                                                SimpleDiagnosticKind.MultishotEffectUnsupportedBackend
                                                 (multishotInvocationMessage
                                                     $"from exported declaration '{bindingName}'"
                                                     effectName
@@ -21710,7 +21713,7 @@ module SurfaceElaboration =
                                     |> List.countBy (fun field -> field.Name)
                                     |> List.choose (fun (name, count) ->
                                         if count > 1 then
-                                            Some(makeDiagnostic DiagnosticCode.RecordDuplicateField $"Record field '{name}' is declared more than once.")
+                                            Some(makeDiagnostic SimpleDiagnosticKind.RecordDuplicateField $"Record field '{name}' is declared more than once.")
                                         else
                                             None)
 
@@ -21728,7 +21731,7 @@ module SurfaceElaboration =
                                         let typeExpr = TypeRecord(parsedFields |> List.choose id)
 
                                         if hasCyclicRecordDependencies typeExpr then
-                                            [ makeDiagnostic DiagnosticCode.RecordDependencyCycle "Record type field dependencies must be acyclic." ]
+                                            [ makeDiagnostic SimpleDiagnosticKind.RecordDependencyCycle "Record type field dependencies must be acyclic." ]
                                         else
                                             []
                                     else

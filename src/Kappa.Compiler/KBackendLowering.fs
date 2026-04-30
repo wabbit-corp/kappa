@@ -77,13 +77,19 @@ module internal KBackendLowering =
         | _ ->
             match typeText |> Option.bind tryTypeHead with
             | Some "Int" -> Some BackendRepInt64
+            | Some "Nat" -> Some BackendRepInt64
+            | Some "Integer" -> Some BackendRepInt64
             | Some "Float" -> Some BackendRepFloat64
+            | Some "Double" -> Some BackendRepFloat64
+            | Some "Real" -> Some BackendRepFloat64
             | Some "Bool" -> Some BackendRepBoolean
             | Some "String" -> Some BackendRepString
             | Some "Char"
             | Some "UnicodeScalar"
             | Some "Grapheme" -> Some BackendRepString
             | Some "Byte" -> Some BackendRepInt64
+            | Some "Bytes" -> Some BackendRepString
+            | Some "HashCode" -> Some BackendRepInt64
             | Some "Unit" -> Some BackendRepUnit
             | Some head when head.StartsWith("__kappa_dict_", StringComparison.Ordinal) ->
                 Some(BackendRepDictionary(head.Substring("__kappa_dict_".Length)))
@@ -277,13 +283,7 @@ module internal KBackendLowering =
           ConstructorInfos = constructorInfos }
 
     let private loweringDiagnostic (_runtimeModule: KRuntimeModule) (_binding: KRuntimeBinding option) message =
-        { Severity = Error
-          Code = DiagnosticCode.CheckpointVerification
-          Stage = Some "KBackendIR"
-          Phase = None
-          Message = message
-          Location = None
-          RelatedLocations = [] }
+        Diagnostics.errorFact "KBackendIR" None None [] (DiagnosticFact.simple SimpleDiagnosticKind.CheckpointVerification message)
 
     let lowerKBackendModules backendProfile allowUnsafeConsume (kRuntimeIR: KRuntimeModule list) =
         let context = buildBackendLoweringContext kRuntimeIR
@@ -778,8 +778,26 @@ module internal KBackendLowering =
                         BackendCall(constructedValue, remainingArguments, convention, resultRepresentation),
                         resultRepresentation
                     )
-                | BackendGlobalBindingName(moduleName, bindingName, _)
                 | BackendIntrinsicName(moduleName, bindingName, _) ->
+                    let intrinsicArity = IntrinsicCatalog.intrinsicRuntimeArity bindingName
+                    let resultRepresentation =
+                        IntrinsicCatalog.intrinsicResultRepresentation bindingName
+                        |> Option.defaultValue fallbackResultRepresentation
+
+                    if List.length loweredArguments = intrinsicArity then
+                        Result.Ok(
+                            BackendCall(
+                                BackendName resolvedName,
+                                loweredArguments,
+                                makeCallingConvention intrinsicArity argumentRepresentations (Some resultRepresentation),
+                                resultRepresentation
+                            ),
+                            resultRepresentation
+                        )
+                    else
+                        Result.Error
+                            $"Runtime intrinsic '{moduleName}.{bindingName}' expects {intrinsicArity} arguments but received {List.length loweredArguments}."
+                | BackendGlobalBindingName(moduleName, bindingName, _) ->
                     let conventionResult =
                         match tryLookupBindingInfo moduleName bindingName with
                         | Some bindingInfo ->
@@ -827,22 +845,6 @@ module internal KBackendLowering =
                             | _ ->
                                 Result.Error
                                     $"Runtime call target '{moduleName}.{bindingName}' expects {bindingInfo.Arity} arguments but received {List.length loweredArguments}."
-                        | None when availableRuntimeIntrinsics.Contains bindingName && moduleName = Stdlib.PreludeModuleText ->
-                            let intrinsicArity = IntrinsicCatalog.intrinsicRuntimeArity bindingName
-                            let resultRepresentation =
-                                IntrinsicCatalog.intrinsicResultRepresentation bindingName
-                                |> Option.defaultValue fallbackResultRepresentation
-
-                            if List.length loweredArguments = intrinsicArity then
-                                Result.Ok(
-                                    makeCallingConvention intrinsicArity argumentRepresentations (Some resultRepresentation),
-                                    resultRepresentation,
-                                    None,
-                                    loweredArguments
-                                )
-                            else
-                                Result.Error
-                                    $"Runtime intrinsic '{moduleName}.{bindingName}' expects {intrinsicArity} arguments but received {List.length loweredArguments}."
                         | None ->
                             Result.Error $"Could not lower runtime call target '{moduleName}.{bindingName}' to KBackendIR."
 
@@ -881,6 +883,17 @@ module internal KBackendLowering =
                     lowerResolvedCall loweredArguments argumentRepresentations fallbackResultRepresentation resolvedName
                 | Result.Error _ ->
                     Result.Error $"unresolved runtime name '{runtimeName}'"
+
+            let lowerIntrinsicRuntimeCall
+                (runtimeName: string)
+                (loweredArguments: KBackendExpression list)
+                (argumentRepresentations: KBackendRepresentationClass list)
+                (fallbackResultRepresentation: KBackendRepresentationClass)
+                : Result<KBackendExpression * KBackendRepresentationClass, string> =
+                let resolvedName =
+                    BackendIntrinsicName(Stdlib.PreludeModuleText, runtimeName, Some fallbackResultRepresentation)
+
+                lowerResolvedCall loweredArguments argumentRepresentations fallbackResultRepresentation resolvedName
 
             let executedIntrinsicRepresentation runtimeName argumentRepresentations =
                 match runtimeName, argumentRepresentations with
@@ -1387,8 +1400,7 @@ module internal KBackendLowering =
                             | "negate" -> operandRepresentation
                             | _ -> backendOpaqueRepresentation None
 
-                        lowerNamedRuntimeCall
-                            locals
+                        lowerIntrinsicRuntimeCall
                             operatorName
                             [ loweredOperand ]
                             [ operandRepresentation ]
@@ -1448,8 +1460,7 @@ module internal KBackendLowering =
                                     | _ ->
                                         backendOpaqueRepresentation None
 
-                                lowerNamedRuntimeCall
-                                    locals
+                                lowerIntrinsicRuntimeCall
                                     operatorName
                                     [ loweredLeft; loweredRight ]
                                     [ leftRepresentation; rightRepresentation ]
@@ -1629,6 +1640,15 @@ module internal KBackendLowering =
 
             backendFunctions
             |> Result.map (fun backendFunctions ->
+                let backendTraitInstances =
+                    runtimeModule.TraitInstances
+                    |> List.map (fun instanceInfo ->
+                        { ModuleName = runtimeModule.Name
+                          TraitName = instanceInfo.TraitName
+                          InstanceKey = instanceInfo.InstanceKey
+                          HeadTypeTexts = instanceInfo.HeadTypeTexts
+                          MemberBindings = instanceInfo.MemberBindings })
+
                 { Name = runtimeModule.Name
                   SourceFile = runtimeModule.SourceFile
                   Imports = runtimeModule.Imports
@@ -1640,6 +1660,7 @@ module internal KBackendLowering =
                   IntrinsicTerms = runtimeModule.IntrinsicTerms
                   DataLayouts = dataLayouts
                   EnvironmentLayouts = environmentLayouts |> Seq.toList
+                  TraitInstances = backendTraitInstances
                   Functions = backendFunctions })
 
         (([], []), kRuntimeIR)

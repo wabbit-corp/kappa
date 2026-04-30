@@ -1,0 +1,31 @@
+module main
+
+-- Source issue: Idris2#714
+-- Kappa analogue: duplicating a compile-time `Syntax` value inside a local quote helper must not be mistaken for
+-- duplicating a linear object-language binder.
+-- Spec: §5.1.4.1, §5.8.1, §5.8.2
+dupSyntax : Syntax Int -> Elab (Syntax Int)
+let dupSyntax s =
+    block
+        helper : Syntax Int
+        let helper = '{ ${s} + ${s} }
+        pure helper
+
+tenSyntax : Syntax Int
+let tenSyntax = '{ 10 }
+
+valueFromParam : Int
+let valueFromParam = $(dupSyntax '{ 21 })
+
+valueFromTopLevel : Int
+let valueFromTopLevel =
+    block
+        helper : Syntax Int
+        let helper = '{ ${tenSyntax} + ${tenSyntax} }
+        $(helper)
+
+--! assertNoErrors
+--! assertType dupSyntax Syntax Int -> Elab (Syntax Int)
+--! assertType tenSyntax Syntax Int
+--! assertEval valueFromParam 42
+--! assertEval valueFromTopLevel 20

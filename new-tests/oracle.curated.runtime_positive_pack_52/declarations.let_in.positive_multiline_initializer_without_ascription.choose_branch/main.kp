@@ -1,0 +1,27 @@
+module main
+
+-- Source: idris-lang/Idris2#20
+-- Spec: §3.4, §6.3.1
+
+add : Int -> Int -> Int
+let add x y = x + y
+
+baseResult : Int
+let baseResult =
+    block
+        let u =
+            add
+                20
+                22
+        u
+
+chooseResult : Bool -> Int -> Int -> Int
+let chooseResult flag left right =
+    if flag then left else right
+
+result : Int
+let result = chooseResult True baseResult 0
+
+--! assertNoErrors
+--! assertType result Int
+--! assertExecute result 42

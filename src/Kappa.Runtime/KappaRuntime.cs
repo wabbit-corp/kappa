@@ -139,6 +139,22 @@ public sealed class KappaConstructorCallable : IKappaCallable
     }
 }
 
+public sealed class KappaErasedDataValue
+{
+    public string ModuleName { get; }
+    public string TypeName { get; }
+    public string ConstructorName { get; }
+    public object?[] Fields { get; }
+
+    public KappaErasedDataValue(string moduleName, string typeName, string constructorName, object?[] fields)
+    {
+        ModuleName = moduleName;
+        TypeName = typeName;
+        ConstructorName = constructorName;
+        Fields = fields;
+    }
+}
+
 public sealed class KappaEffectOperationMetadata
 {
     public string OperationId { get; }
@@ -383,10 +399,7 @@ public static class KappaRuntime
             { ("std.prelude", "negate"), new KappaBuiltin("negate", 1, arguments => ApplyUnary("-", arguments[0])) },
             { ("std.prelude", "primitiveIntToString"), new KappaBuiltin("primitiveIntToString", 1, arguments => ExpectInt64(arguments[0]).ToString()) },
             { ("std.prelude", "print"), new KappaBuiltin("print", 1, arguments => Print(arguments[0], appendNewline: false)) },
-            { ("std.prelude", "printString"), new KappaBuiltin("printString", 1, arguments => Print(arguments[0], appendNewline: false)) },
             { ("std.prelude", "println"), new KappaBuiltin("println", 1, arguments => Print(arguments[0], appendNewline: true)) },
-            { ("std.prelude", "printlnString"), new KappaBuiltin("printlnString", 1, arguments => Print(arguments[0], appendNewline: true)) },
-            { ("std.prelude", "printInt"), new KappaBuiltin("printInt", 1, arguments => Print(ExpectInt64(arguments[0]), appendNewline: true)) },
             { ("std.prelude", "unsafeConsume"), new KappaBuiltin("unsafeConsume", 1, _ => Unit()) },
             { ("std.prelude", "newRef"), new KappaBuiltin("newRef", 1, arguments => new KappaRefCell(arguments[0])) },
             { ("std.prelude", "readRef"), new KappaBuiltin("readRef", 1, arguments => ExpectRefCell(arguments[0]).Value) },
@@ -641,7 +654,64 @@ public static class KappaRuntime
             (bool lhs, bool rhs) => lhs == rhs,
             (string lhs, string rhs) => String.Equals(lhs, rhs, StringComparison.Ordinal),
             (ValueTuple, ValueTuple) => true,
+            (KappaErasedDataValue lhs, KappaErasedDataValue rhs) =>
+                String.Equals(lhs.ModuleName, rhs.ModuleName, StringComparison.Ordinal)
+                && String.Equals(lhs.TypeName, rhs.TypeName, StringComparison.Ordinal)
+                && String.Equals(lhs.ConstructorName, rhs.ConstructorName, StringComparison.Ordinal)
+                && lhs.Fields.Length == rhs.Fields.Length
+                && lhs.Fields.Zip(rhs.Fields, ValuesEqual).All(equal => equal),
             _ => Equals(left, right),
+        };
+    }
+
+    private static int? TryGetOrderingRank(object? value)
+    {
+        if (value is null)
+        {
+            return null;
+        }
+
+        return value.GetType().Name switch
+        {
+            "LT" => -1,
+            "EQ" => 0,
+            "GT" => 1,
+            _ => null,
+        };
+    }
+
+    public static int CompareBuiltinSign(object? left, object? right)
+    {
+        return (left, right) switch
+        {
+            (long lhs, long rhs) => lhs.CompareTo(rhs),
+            (double lhs, double rhs) => lhs.CompareTo(rhs),
+            (bool lhs, bool rhs) => lhs.CompareTo(rhs),
+            (string lhs, string rhs) => StringComparer.Ordinal.Compare(lhs, rhs),
+            (char lhs, char rhs) => lhs.CompareTo(rhs),
+            _ when TryGetOrderingRank(left) is int lhsRank && TryGetOrderingRank(right) is int rhsRank => lhsRank.CompareTo(rhsRank),
+            _ => throw new KappaRuntimeException($"Intrinsic 'compare' is not supported for {FormatValue(left)} and {FormatValue(right)}."),
+        };
+    }
+
+    public static string ShowBuiltin(object? value)
+    {
+        return value switch
+        {
+            null => "()",
+            ValueTuple => "()",
+            bool boolValue => boolValue ? "True" : "False",
+            long integerValue => integerValue.ToString(System.Globalization.CultureInfo.InvariantCulture),
+            double floatValue => floatValue.ToString("G17", System.Globalization.CultureInfo.InvariantCulture),
+            string stringValue => stringValue,
+            char charValue => charValue.ToString(),
+            _ when TryGetOrderingRank(value) is int rank => rank switch
+            {
+                < 0 => "LT",
+                > 0 => "GT",
+                _ => "EQ",
+            },
+            _ => FormatValue(value),
         };
     }
 
@@ -755,6 +825,10 @@ public static class KappaRuntime
             KappaClosure => "<function>",
             KappaBuiltin builtin => $"<builtin {builtin.Name}>",
             KappaConstructorCallable constructor => $"<constructor {constructor.Name}/{constructor.Arity} [{constructor.AppliedArguments.Length}]>",
+            KappaErasedDataValue erased =>
+                erased.Fields.Length == 0
+                    ? erased.ConstructorName
+                    : $"({erased.ConstructorName} {String.Join(" ", erased.Fields.Select(FormatValue))})",
             KappaIoAction => "<io>",
             KappaRefCell => "<ref>",
             _ => value.ToString() ?? "()",

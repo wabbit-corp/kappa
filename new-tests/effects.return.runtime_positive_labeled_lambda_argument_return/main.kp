@@ -1,6 +1,6 @@
 module main
 
--- Source issue: KT-411
+-- Source issues: KT-411, KT-869
 -- Spec: §8.4, §8.4.1, §7.2
 invoke : (Unit -> IO Int) -> IO Int
 let invoke action = action ()

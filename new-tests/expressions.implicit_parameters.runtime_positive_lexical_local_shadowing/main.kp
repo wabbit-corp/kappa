@@ -1,6 +1,6 @@
 module main
 
--- Source issue: ghc#1
+-- Source issues: ghc#1, ghc#4226, ghc#17104
 -- Spec: §6.3, §7.3.3
 need : (@x : Int) -> Int
 let need (@x : Int) = x

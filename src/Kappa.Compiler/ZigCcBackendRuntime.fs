@@ -6,33 +6,19 @@ module internal ZigCcBackendRuntime =
 
     let internal emitTraitDispatchFunctions (context: GenerationContext) =
         let dispatchEntries =
-            context.Workspace.Documents
+            context.Workspace.KBackendIR
             |> List.collect (fun document ->
-                match document.ModuleName with
-                | None ->
-                    []
-                | Some moduleSegments ->
-                    let moduleName = SyntaxFacts.moduleNameToText moduleSegments
-
-                    document.Syntax.Declarations
-                    |> List.choose (function
-                        | InstanceDeclarationNode declaration ->
-                            Some(moduleName, declaration)
-                        | _ ->
-                            None)
-                    |> List.collect (fun (instanceModuleName, declaration) ->
-                        let instanceKey = TraitRuntime.instanceKeyFromTokens declaration.HeaderTokens
-
-                        declaration.Members
-                        |> List.choose (fun memberDeclaration ->
-                            memberDeclaration.Name
-                            |> Option.bind (fun memberName ->
-                                let hiddenBindingName =
-                                    TraitRuntime.instanceMemberBindingName declaration.TraitName instanceKey memberName
-
-                                lookupFunctionName context instanceModuleName hiddenBindingName
-                                |> Option.map (fun emittedFunctionName ->
-                                    declaration.TraitName, memberName, instanceModuleName, instanceKey, emittedFunctionName)))))
+                document.TraitInstances
+                |> List.collect (fun instanceInfo ->
+                    instanceInfo.MemberBindings
+                    |> List.choose (fun (memberName, bindingName) ->
+                        lookupFunctionName context instanceInfo.ModuleName bindingName
+                        |> Option.map (fun emittedFunctionName ->
+                            instanceInfo.TraitName,
+                            memberName,
+                            instanceInfo.ModuleName,
+                            instanceInfo.InstanceKey,
+                            emittedFunctionName))))
 
         dispatchEntries
         |> List.groupBy (fun (traitName, memberName, _, _, _) -> traitName, memberName)

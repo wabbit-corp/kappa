@@ -1,0 +1,23 @@
+module main
+
+-- Source issue: KT-458
+-- Spec: §3.1
+`class` : Int
+let `class` = 17
+
+`$$$$` : Int
+let `$$$$` = 25
+
+baseResult : Int
+let baseResult = `class` + `$$$$`
+
+chooseResult : Bool -> Int -> Int -> Int
+let chooseResult flag left right =
+    if flag then left else right
+
+result : Int
+let result = chooseResult True baseResult 0
+
+--! assertNoErrors
+--! assertType result Int
+--! assertExecute result 42

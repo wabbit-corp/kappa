@@ -1,6 +1,6 @@
 module main
 
--- Source issue: scala3#877
+-- Source issues: scala3#877, ghc#12507
 -- Spec: §6.3.1, §7.3.3
 trait Score a =
     score : a -> Int

@@ -1,0 +1,25 @@
+module main
+
+-- Source issue: Idris2#550
+-- Kappa analogue: nested list-head discrimination across two arguments should count as exhaustive once every real
+-- combination is covered; the coverage checker must not invent a residual `(_ :: _) :: _` case after that point.
+-- Spec: §7.5.1, §7.5.1A, §14.3A
+classify : List (List Int) -> List (List Int) -> Int
+let classify left right =
+    match right
+      case Nil -> 1
+      case _ ->
+          match left
+            case Nil -> 2
+            case Nil :: leftTail -> 3
+            case _ ->
+                match right
+                  case Nil :: rightTail -> 4
+                  case (_ :: _) :: rightTail -> 5
+
+result : Int
+let result = classify ((1 :: Nil) :: Nil) ((2 :: Nil) :: Nil)
+
+--! assertNoErrors
+--! assertType classify List (List Int) -> List (List Int) -> Int
+--! assertEval result 5

@@ -152,13 +152,7 @@ module internal CompilationCheckpoints =
             | Result.Ok _ ->
                 []
             | Result.Error message ->
-                [ { Severity = Error
-                    Code = DiagnosticCode.TargetCheckpoint
-                    Stage = Some "target-lowering"
-                    Phase = None
-                    Message = message
-                    Location = None
-                    RelatedLocations = [] } ]
+                [ Diagnostics.errorFact "target-lowering" None None [] (DiagnosticFact.simple SimpleDiagnosticKind.TargetCheckpoint message) ]
 
         { Diagnostics = diagnostics
           LoweringAttempted = loweringAttempted }

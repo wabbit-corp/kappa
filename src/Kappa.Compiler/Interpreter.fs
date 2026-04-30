@@ -319,18 +319,35 @@ module Interpreter =
             else
                 compare left.Length right.Length
 
+        let tryViewSemanticBool value =
+            match value with
+            | BooleanValue value ->
+                Some value
+            | ConstructedValue constructed
+                when List.isEmpty constructed.Fields
+                     && String.Equals(constructed.Constructor.TypeName, "Bool", StringComparison.Ordinal) ->
+                match constructed.Constructor.QualifiedName with
+                | qualifiedName when String.Equals(qualifiedName, $"{Stdlib.PreludeModuleText}.True", StringComparison.Ordinal) -> Some true
+                | qualifiedName when String.Equals(qualifiedName, $"{Stdlib.PreludeModuleText}.False", StringComparison.Ordinal) -> Some false
+                | _ -> None
+            | _ ->
+                None
+
         let tryCompareValues left right =
-            match left, right with
-            | IntegerValue left, IntegerValue right -> Some(compare left right)
-            | FloatValue left, FloatValue right -> Some(compare left right)
-            | BooleanValue left, BooleanValue right -> Some(compare left right)
-            | StringValue left, StringValue right -> Some(UnicodeText.compareScalarSequences left right)
-            | CharacterValue left, CharacterValue right -> Some(UnicodeText.compareScalarSequences left right)
-            | GraphemeValue left, GraphemeValue right -> Some(UnicodeText.compareScalarSequences left right)
-            | ByteValue left, ByteValue right -> Some(compare left right)
-            | BytesValue left, BytesValue right -> Some(compareByteArrays left right)
-            | HashCodeValue left, HashCodeValue right -> Some(compare left right)
-            | _ -> None
+            match tryViewSemanticBool left, tryViewSemanticBool right with
+            | Some left, Some right ->
+                Some(compare left right)
+            | _ ->
+                match left, right with
+                | IntegerValue left, IntegerValue right -> Some(compare left right)
+                | FloatValue left, FloatValue right -> Some(compare left right)
+                | StringValue left, StringValue right -> Some(UnicodeText.compareScalarSequences left right)
+                | CharacterValue left, CharacterValue right -> Some(UnicodeText.compareScalarSequences left right)
+                | GraphemeValue left, GraphemeValue right -> Some(UnicodeText.compareScalarSequences left right)
+                | ByteValue left, ByteValue right -> Some(compare left right)
+                | BytesValue left, BytesValue right -> Some(compareByteArrays left right)
+                | HashCodeValue left, HashCodeValue right -> Some(compare left right)
+                | _ -> None
 
         let tryCreateBuiltinFunction name =
             if IntrinsicCatalog.isBuiltinBinaryOperator name then
@@ -348,6 +365,10 @@ module Interpreter =
             match name with
             | "True" when isPreludeModule -> Some(BooleanValue true)
             | "False" when isPreludeModule -> Some(BooleanValue false)
+            | intrinsicName when isPreludeModule && intrinsicName = IntrinsicCatalog.BuiltinPreludeShowIntrinsicName ->
+                Some(BuiltinFunctionValue { Name = "show"; Arguments = [] })
+            | intrinsicName when isPreludeModule && intrinsicName = IntrinsicCatalog.BuiltinPreludeCompareIntrinsicName ->
+                Some(BuiltinFunctionValue { Name = "compare"; Arguments = [] })
             | "pure"
             | ">>="
             | ">>"
@@ -358,9 +379,6 @@ module Interpreter =
             | "negate"
             | "println"
             | "print"
-            | "printInt"
-            | "printString"
-            | "printlnString"
             | "compare"
             | "show"
             | "primitiveIntToString"
@@ -441,43 +459,45 @@ module Interpreter =
                 error $"Unary operator '{operatorName}' is not supported."
 
         let rec valuesEqual left right =
-            match left, right with
-            | IntegerValue left, IntegerValue right ->
+            match tryViewSemanticBool left, tryViewSemanticBool right with
+            | Some left, Some right ->
                 left = right
-            | FloatValue left, FloatValue right ->
-                left = right
-            | BooleanValue left, BooleanValue right ->
-                left = right
-            | StringValue left, StringValue right ->
-                left = right
-            | CharacterValue left, CharacterValue right ->
-                left = right
-            | GraphemeValue left, GraphemeValue right ->
-                left = right
-            | ByteValue left, ByteValue right ->
-                left = right
-            | BytesValue left, BytesValue right ->
-                compareByteArrays left right = 0
-            | UnicodeDecodeErrorValue left, UnicodeDecodeErrorValue right ->
-                left.Message = right.Message
-            | UnicodeVersionValue left, UnicodeVersionValue right ->
-                left = right
-            | NormalizationFormValue left, NormalizationFormValue right ->
-                left = right
-            | HashSeedValue left, HashSeedValue right ->
-                left = right
-            | HashStateValue left, HashStateValue right ->
-                left = right
-            | HashCodeValue left, HashCodeValue right ->
-                left = right
-            | UnitValue, UnitValue ->
-                true
-            | ConstructedValue left, ConstructedValue right ->
-                String.Equals(left.Constructor.QualifiedName, right.Constructor.QualifiedName, StringComparison.Ordinal)
-                && List.length left.Fields = List.length right.Fields
-                && List.forall2 valuesEqual left.Fields right.Fields
             | _ ->
-                false
+                match left, right with
+                | IntegerValue left, IntegerValue right ->
+                    left = right
+                | FloatValue left, FloatValue right ->
+                    left = right
+                | StringValue left, StringValue right ->
+                    left = right
+                | CharacterValue left, CharacterValue right ->
+                    left = right
+                | GraphemeValue left, GraphemeValue right ->
+                    left = right
+                | ByteValue left, ByteValue right ->
+                    left = right
+                | BytesValue left, BytesValue right ->
+                    compareByteArrays left right = 0
+                | UnicodeDecodeErrorValue left, UnicodeDecodeErrorValue right ->
+                    left.Message = right.Message
+                | UnicodeVersionValue left, UnicodeVersionValue right ->
+                    left = right
+                | NormalizationFormValue left, NormalizationFormValue right ->
+                    left = right
+                | HashSeedValue left, HashSeedValue right ->
+                    left = right
+                | HashStateValue left, HashStateValue right ->
+                    left = right
+                | HashCodeValue left, HashCodeValue right ->
+                    left = right
+                | UnitValue, UnitValue ->
+                    true
+                | ConstructedValue left, ConstructedValue right ->
+                    String.Equals(left.Constructor.QualifiedName, right.Constructor.QualifiedName, StringComparison.Ordinal)
+                    && List.length left.Fields = List.length right.Fields
+                    && List.forall2 valuesEqual left.Fields right.Fields
+                | _ ->
+                    false
 
         let applyBuiltinBinary operatorName left right =
             match operatorName, left, right with
@@ -639,10 +659,12 @@ module Interpreter =
             | KRuntimeIfThenElse (condition, whenTrue, whenFalse) ->
                 evaluateExpression scope condition
                 |> Result.bind (function
-                    | BooleanValue true -> evaluateExpression scope whenTrue
-                    | BooleanValue false -> evaluateExpression scope whenFalse
                     | value ->
-                        error $"Expected a Boolean in the if condition, but got {RuntimeValue.format value}.")
+                        match tryViewSemanticBool value with
+                        | Some true -> evaluateExpression scope whenTrue
+                        | Some false -> evaluateExpression scope whenFalse
+                        | None ->
+                            error $"Expected a Boolean in the if condition, but got {RuntimeValue.format value}.")
             | KRuntimeMatch (scrutinee, cases) ->
                 evaluateExpression scope scrutinee
                 |> Result.bind (fun value -> evaluateMatch scope value cases)
@@ -697,13 +719,15 @@ module Interpreter =
                 let rec loop () =
                     evaluateExpression scope conditionExpression
                     |> Result.bind (function
-                        | BooleanValue true ->
-                            evaluateExpression scope bodyExpression
-                            |> Result.bind (fun _ -> loop ())
-                        | BooleanValue false ->
-                            ok UnitValue
                         | value ->
-                            error $"Expected a Boolean in the while condition, but got {RuntimeValue.format value}.")
+                            match tryViewSemanticBool value with
+                            | Some true ->
+                                evaluateExpression scope bodyExpression
+                                |> Result.bind (fun _ -> loop ())
+                            | Some false ->
+                                ok UnitValue
+                            | None ->
+                                error $"Expected a Boolean in the while condition, but got {RuntimeValue.format value}.")
 
                 loop ()
             | KRuntimeApply (callee, arguments) ->
@@ -760,27 +784,35 @@ module Interpreter =
             | KRuntimeBinary (left, "&&", right) when not (hasExplicitUnqualifiedName scope "&&") ->
                 evaluateExpression scope left
                 |> Result.bind (function
-                    | BooleanValue false -> ok (BooleanValue false)
-                    | BooleanValue true ->
-                        evaluateExpression scope right
-                        |> Result.bind (function
-                            | BooleanValue value -> ok (BooleanValue value)
-                            | value ->
-                                error $"Operator '&&' expects Boolean operands, but got {RuntimeValue.format value}.")
                     | value ->
-                        error $"Operator '&&' expects Boolean operands, but got {RuntimeValue.format value}.")
+                        match tryViewSemanticBool value with
+                        | Some false -> ok (BooleanValue false)
+                        | Some true ->
+                            evaluateExpression scope right
+                            |> Result.bind (function
+                                | value ->
+                                    match tryViewSemanticBool value with
+                                    | Some value -> ok (BooleanValue value)
+                                    | None ->
+                                        error $"Operator '&&' expects Boolean operands, but got {RuntimeValue.format value}.")
+                        | None ->
+                            error $"Operator '&&' expects Boolean operands, but got {RuntimeValue.format value}.")
             | KRuntimeBinary (left, "||", right) when not (hasExplicitUnqualifiedName scope "||") ->
                 evaluateExpression scope left
                 |> Result.bind (function
-                    | BooleanValue true -> ok (BooleanValue true)
-                    | BooleanValue false ->
-                        evaluateExpression scope right
-                        |> Result.bind (function
-                            | BooleanValue value -> ok (BooleanValue value)
-                            | value ->
-                                error $"Operator '||' expects Boolean operands, but got {RuntimeValue.format value}.")
                     | value ->
-                        error $"Operator '||' expects Boolean operands, but got {RuntimeValue.format value}.")
+                        match tryViewSemanticBool value with
+                        | Some true -> ok (BooleanValue true)
+                        | Some false ->
+                            evaluateExpression scope right
+                            |> Result.bind (function
+                                | value ->
+                                    match tryViewSemanticBool value with
+                                    | Some value -> ok (BooleanValue value)
+                                    | None ->
+                                        error $"Operator '||' expects Boolean operands, but got {RuntimeValue.format value}.")
+                        | None ->
+                            error $"Operator '||' expects Boolean operands, but got {RuntimeValue.format value}.")
             | KRuntimeBinary (left, operatorName, right) ->
                 evaluateExpression scope left
                 |> Result.bind (fun leftValue ->
@@ -978,10 +1010,12 @@ module Interpreter =
                         | Some guard ->
                             evaluateExpression nextScope guard
                             |> Result.bind (function
-                                | BooleanValue true -> evaluateExpression nextScope caseClause.Body
-                                | BooleanValue false -> tryCases rest
                                 | value ->
-                                    error $"Match guards must evaluate to Bool, but got {RuntimeValue.format value}.")
+                                    match tryViewSemanticBool value with
+                                    | Some true -> evaluateExpression nextScope caseClause.Body
+                                    | Some false -> tryCases rest
+                                    | None ->
+                                        error $"Match guards must evaluate to Bool, but got {RuntimeValue.format value}.")
                         | None ->
                             evaluateExpression nextScope caseClause.Body
 
@@ -1301,12 +1335,14 @@ module Interpreter =
                     error $"Intrinsic '{builtin.Name}' is not supported for {RuntimeValue.format value} and HashState({state})."
 
             match builtin.Name, builtin.Arguments with
-            | "not", [ BooleanValue value ] ->
-                ok (Some(BooleanValue(not value)))
+            | "not", [ value ] ->
+                match tryViewSemanticBool value with
+                | Some value ->
+                    ok (Some(BooleanValue(not value)))
+                | None ->
+                    error $"Intrinsic 'not' expects a Bool, but got {RuntimeValue.format value}."
             | "not", arguments when List.length arguments < 1 ->
                 ok None
-            | "not", [ value ] ->
-                error $"Intrinsic 'not' expects a Bool, but got {RuntimeValue.format value}."
             | "not", _ ->
                 error "Intrinsic 'not' received too many arguments."
             | "negate", [ IntegerValue value ] ->
@@ -1319,20 +1355,24 @@ module Interpreter =
                 error $"Intrinsic 'negate' expects a numeric value, but got {RuntimeValue.format value}."
             | "negate", _ ->
                 error "Intrinsic 'negate' received too many arguments."
-            | "and", [ BooleanValue left; BooleanValue right ] ->
-                ok (Some(BooleanValue(left && right)))
+            | "and", [ left; right ] ->
+                match tryViewSemanticBool left, tryViewSemanticBool right with
+                | Some left, Some right ->
+                    ok (Some(BooleanValue(left && right)))
+                | _ ->
+                    error $"Intrinsic 'and' expects Bool arguments, but got {RuntimeValue.format left} and {RuntimeValue.format right}."
             | "and", arguments when List.length arguments < 2 ->
                 ok None
-            | "and", [ left; right ] ->
-                error $"Intrinsic 'and' expects Bool arguments, but got {RuntimeValue.format left} and {RuntimeValue.format right}."
             | "and", _ ->
                 error "Intrinsic 'and' received too many arguments."
-            | "or", [ BooleanValue left; BooleanValue right ] ->
-                ok (Some(BooleanValue(left || right)))
+            | "or", [ left; right ] ->
+                match tryViewSemanticBool left, tryViewSemanticBool right with
+                | Some left, Some right ->
+                    ok (Some(BooleanValue(left || right)))
+                | _ ->
+                    error $"Intrinsic 'or' expects Bool arguments, but got {RuntimeValue.format left} and {RuntimeValue.format right}."
             | "or", arguments when List.length arguments < 2 ->
                 ok None
-            | "or", [ left; right ] ->
-                error $"Intrinsic 'or' expects Bool arguments, but got {RuntimeValue.format left} and {RuntimeValue.format right}."
             | "or", _ ->
                 error "Intrinsic 'or' received too many arguments."
             | "pure", [ value ] ->
@@ -1389,30 +1429,6 @@ module Interpreter =
                 error $"Intrinsic 'println' expects a String, but got {RuntimeValue.format value}."
             | "println", _ ->
                 error "Intrinsic 'println' received too many arguments."
-            | "printInt", [ IntegerValue value ] ->
-                toUnitIoAction (fun () -> output.WriteLine(string value))
-            | "printInt", arguments when List.length arguments < 1 ->
-                ok None
-            | "printInt", [ value ] ->
-                error $"Intrinsic 'printInt' expects an Int, but got {RuntimeValue.format value}."
-            | "printInt", _ ->
-                error "Intrinsic 'printInt' received too many arguments."
-            | "printString", [ StringValue value ] ->
-                toUnitIoAction (fun () -> output.Write(value))
-            | "printString", arguments when List.length arguments < 1 ->
-                ok None
-            | "printString", [ value ] ->
-                error $"Intrinsic 'printString' expects a String, but got {RuntimeValue.format value}."
-            | "printString", _ ->
-                error "Intrinsic 'printString' received too many arguments."
-            | "printlnString", [ StringValue value ] ->
-                toUnitIoAction (fun () -> output.WriteLine(value))
-            | "printlnString", arguments when List.length arguments < 1 ->
-                ok None
-            | "printlnString", [ value ] ->
-                error $"Intrinsic 'printlnString' expects a String, but got {RuntimeValue.format value}."
-            | "printlnString", _ ->
-                error "Intrinsic 'printlnString' received too many arguments."
             | "compare", [ left; right ] ->
                 match tryCompareValues left right with
                 | Some comparison ->
@@ -1928,39 +1944,73 @@ module Interpreter =
             | AllExcept _ ->
                 false
 
+        and importSelectionPriority selection =
+            match selection with
+            | Items _ -> 0
+            | All
+            | AllExcept _ -> 1
+            | QualifiedOnly -> 2
+
         and findImportedModulesForName (scope: RuntimeScope) (name: string) =
             let currentModule = scope.Context.Modules[scope.CurrentModule]
 
-            currentModule.Imports
-            |> List.choose (fun spec ->
-                match spec.Source with
-                | Url _ ->
-                    None
-                | Dotted moduleSegments ->
-                    let importedModuleName = SyntaxFacts.moduleNameToText moduleSegments
-
-                    match Map.tryFind importedModuleName scope.Context.Modules with
-                    | None ->
+            let matches =
+                currentModule.Imports
+                |> List.choose (fun spec ->
+                    match spec.Source with
+                    | Url _ ->
                         None
-                    | Some importedModule ->
-                        let importsName =
-                            selectionImportsTermName importedModule spec.Selection name
-                            || selectionImportsConstructorName importedModule spec.Selection name
+                    | Dotted moduleSegments ->
+                        let importedModuleName = SyntaxFacts.moduleNameToText moduleSegments
 
-                        if importsName then
-                            Some(importedModuleName, importedModule)
-                        else
-                            None)
-            |> List.distinctBy fst
-            |> List.map snd
+                        match Map.tryFind importedModuleName scope.Context.Modules with
+                        | None ->
+                            None
+                        | Some importedModule ->
+                            let importsName =
+                                selectionImportsTermName importedModule spec.Selection name
+                                || selectionImportsConstructorName importedModule spec.Selection name
+
+                            if importsName then
+                                Some(importSelectionPriority spec.Selection, importedModuleName, importedModule)
+                            else
+                                None)
+
+            match matches with
+            | [] ->
+                []
+            | _ ->
+                let bestPriority =
+                    matches
+                    |> List.map (fun (priority, _, _) -> priority)
+                    |> List.min
+
+                matches
+                |> List.filter (fun (priority, _, _) -> priority = bestPriority)
+                |> List.distinctBy (fun (_, importedModuleName, _) -> importedModuleName)
+                |> List.map (fun (_, _, importedModule) -> importedModule)
+
+        and findNonPreludeImportedModulesForName (scope: RuntimeScope) (name: string) =
+            findImportedModulesForName scope name
+            |> List.filter (fun importedModule ->
+                not (String.Equals(importedModule.Name, Stdlib.PreludeModuleText, StringComparison.Ordinal)))
+
+        and tryFindImplicitPreludeModuleForName (scope: RuntimeScope) (name: string) =
+            scope.Context.Modules
+            |> Map.tryFind Stdlib.PreludeModuleText
+            |> Option.filter (fun preludeModule ->
+                preludeModule.Definitions.ContainsKey(name)
+                || preludeModule.IntrinsicTerms.Contains(name)
+                || preludeModule.Constructors.ContainsKey(name))
 
         and hasExplicitUnqualifiedName (scope: RuntimeScope) (name: string) =
             let currentModule = scope.Context.Modules[scope.CurrentModule]
 
             Map.containsKey name scope.Locals
             || currentModule.Definitions.ContainsKey(name)
+            || currentModule.IntrinsicTerms.Contains(name)
             || currentModule.Constructors.ContainsKey(name)
-            || not (List.isEmpty (findImportedModulesForName scope name))
+            || not (List.isEmpty (findNonPreludeImportedModulesForName scope name))
 
         and resolveUnqualifiedName (scope: RuntimeScope) (name: string) : Result<RuntimeValue, EvaluationError> =
             match Map.tryFind name scope.Locals with
@@ -1980,11 +2030,20 @@ module Interpreter =
 
                     match matches with
                     | [] ->
-                        match tryCreateBuiltinFunction name with
-                        | Some builtin ->
-                            ok builtin
+                        match tryFindImplicitPreludeModuleForName scope name with
+                        | Some preludeModule ->
+                            forceBinding preludeModule name
                         | None ->
-                            error $"Name '{name}' is not in scope."
+                            match tryCreateBuiltinFunction name with
+                            | Some builtin ->
+                                ok builtin
+                            | None ->
+                                match tryCreateIntrinsicTermValue Stdlib.PreludeModuleText name with
+                                | Some intrinsicValue
+                                    when IntrinsicCatalog.hiddenRuntimePreludeIntrinsicTermNames.Contains name ->
+                                    ok intrinsicValue
+                                | _ ->
+                                    error $"Name '{name}' is not in scope."
                     | [ importedModule ] ->
                         forceBinding importedModule name
                     | _ ->

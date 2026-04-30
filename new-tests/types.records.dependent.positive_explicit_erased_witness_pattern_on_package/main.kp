@@ -1,0 +1,34 @@
+module main
+
+-- Source issue: Idris2#499
+-- Kappa analogue: an erased proof field inside a transparent dependent package may be matched explicitly with an
+-- ordinary pattern, and any explicit binder introduced for that field should still participate in the local implicit
+-- context.
+-- Spec: §5.5.9, §7.3.3, §7.6.1
+data NonEmpty (@0 a : Type) : List a -> Type =
+    IsNonEmpty : NonEmpty a (x :: xs)
+
+type NonEmptyBoolList : Type =
+    (xs : List Bool, @pf : NonEmpty Bool this.xs)
+
+headByWitness : (xs : List Bool) -> (@0 pf : NonEmpty Bool xs) -> Bool
+let headByWitness xs (@0 pf : NonEmpty Bool xs) =
+    match xs
+      case head :: tail -> head
+      case Nil -> False
+
+project : NonEmptyBoolList -> Bool
+let project pkg =
+    match pkg
+      case (xs = xs, @pf = proof@IsNonEmpty) -> headByWitness xs
+
+packed : NonEmptyBoolList
+let packed =
+    (xs = True :: False :: Nil,
+     @pf = IsNonEmpty)
+
+result : Bool
+let result = project packed
+
+--! assertNoErrors
+--! assertEval result True

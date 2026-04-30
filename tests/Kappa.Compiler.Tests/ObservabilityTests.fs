@@ -82,6 +82,73 @@ let rec private containsCoreSyntheticRecordApply expression =
     | KCoreDictionaryValue _ ->
         false
 
+let rec private containsBareCoreOperatorApply operatorName expression =
+    match expression with
+    | KCoreAppSpine(KCoreName [ name ], arguments)
+        when String.Equals(name, operatorName, StringComparison.Ordinal) && List.length arguments = 2 ->
+        true
+    | KCoreAppSpine(callee, arguments) ->
+        containsBareCoreOperatorApply operatorName callee
+        || (arguments |> List.exists (fun argument -> containsBareCoreOperatorApply operatorName argument.Expression))
+    | KCoreLet(_, value, body) ->
+        containsBareCoreOperatorApply operatorName value || containsBareCoreOperatorApply operatorName body
+    | KCoreDoScope(_, body)
+    | KCoreExecute body ->
+        containsBareCoreOperatorApply operatorName body
+    | KCoreScheduleExit(_, KCoreDeferred deferred, body) ->
+        containsBareCoreOperatorApply operatorName deferred || containsBareCoreOperatorApply operatorName body
+    | KCoreScheduleExit(_, KCoreRelease(_, release, resource), body) ->
+        containsBareCoreOperatorApply operatorName release
+        || containsBareCoreOperatorApply operatorName resource
+        || containsBareCoreOperatorApply operatorName body
+    | KCoreEffectLabel _ ->
+        false
+    | KCoreEffectOperation(label, _, _) ->
+        containsBareCoreOperatorApply operatorName label
+    | KCoreSequence(first, second)
+    | KCoreBinary(first, _, second) ->
+        containsBareCoreOperatorApply operatorName first || containsBareCoreOperatorApply operatorName second
+    | KCoreSyntaxQuote inner
+    | KCoreSyntaxSplice inner
+    | KCoreTopLevelSyntaxSplice inner
+    | KCoreCodeQuote inner
+    | KCoreCodeSplice inner ->
+        containsBareCoreOperatorApply operatorName inner
+    | KCoreIfThenElse(condition, whenTrue, whenFalse) ->
+        containsBareCoreOperatorApply operatorName condition
+        || containsBareCoreOperatorApply operatorName whenTrue
+        || containsBareCoreOperatorApply operatorName whenFalse
+    | KCoreHandle(_, label, body, returnClause, operationClauses) ->
+        containsBareCoreOperatorApply operatorName label
+        || containsBareCoreOperatorApply operatorName body
+        || containsBareCoreOperatorApply operatorName returnClause.Body
+        || (operationClauses |> List.exists (fun clause -> containsBareCoreOperatorApply operatorName clause.Body))
+    | KCoreMatch(scrutinee, cases) ->
+        containsBareCoreOperatorApply operatorName scrutinee
+        || (cases
+            |> List.exists (fun caseClause ->
+                caseClause.Guard |> Option.exists (containsBareCoreOperatorApply operatorName)
+                || containsBareCoreOperatorApply operatorName caseClause.Body))
+    | KCoreWhile(condition, body) ->
+        containsBareCoreOperatorApply operatorName condition || containsBareCoreOperatorApply operatorName body
+    | KCoreUnary(_, operand) ->
+        containsBareCoreOperatorApply operatorName operand
+    | KCoreTraitCall(_, _, dictionary, arguments) ->
+        containsBareCoreOperatorApply operatorName dictionary
+        || (arguments |> List.exists (containsBareCoreOperatorApply operatorName))
+    | KCoreLambda(_, body) ->
+        containsBareCoreOperatorApply operatorName body
+    | KCorePrefixedString(_, parts) ->
+        parts
+        |> List.exists (function
+            | KCoreStringText _ -> false
+            | KCoreStringInterpolation inner -> containsBareCoreOperatorApply operatorName inner)
+    | KCoreLiteral _
+    | KCoreName _
+    | KCoreStaticObject _
+    | KCoreDictionaryValue _ ->
+        false
+
 let rec private containsRuntimeSyntheticRecordApply expression =
     match expression with
     | KRuntimeApply(KRuntimeName [ constructorName ], arguments)
@@ -1542,6 +1609,109 @@ let ``KCore dump preserves M3 ownership facts before erasure`` () =
         fun item ->
             item.GetProperty("id").GetString() = fileBinding.GetProperty("borrowRegionId").GetString()
             && item.GetProperty("ownerScope").GetString().EndsWith(".let", StringComparison.Ordinal)
+    )
+
+[<Fact>]
+let ``KCore query order by lowering does not leave bare Ord operator applications`` () =
+    let workspace =
+        compileInMemoryWorkspace
+            "memory-query-orderby-implicit-ord-root"
+            [
+                "main.kp",
+                [
+                    "module main"
+                    "type Row = (key : Int, value : Int)"
+                    "rows : List Row"
+                    "let rows ="
+                    "    ["
+                    "        (key = 2, value = 9),"
+                    "        (key = 1, value = 3),"
+                    "        (key = 1, value = 4)"
+                    "    ]"
+                    "ordered : List Int"
+                    "let ordered ="
+                    "    ["
+                    "        for row in rows"
+                    "        order by row.key"
+                    "        yield row.value"
+                    "    ]"
+                ]
+                |> String.concat "\n"
+            ]
+
+    let mainModule: KCoreModule =
+        workspace.KCore
+        |> List.find (fun moduleDump -> moduleDump.Name = "main")
+
+    let orderedBinding: KCoreBinding =
+        mainModule.Declarations
+        |> List.choose (fun declaration -> declaration.Binding)
+        |> List.find (fun binding -> binding.Name = Some "ordered")
+
+    let body = orderedBinding.Body |> Option.defaultWith (fun () -> failwith "Expected ordered binding body.")
+
+    Assert.False(
+        containsBareCoreOperatorApply "<" body,
+        $"Expected query order-by lowering to resolve '<' with implicit Ord evidence, got %A{body}"
+    )
+
+    Assert.False(
+        containsBareCoreOperatorApply "==" body,
+        $"Expected query order-by lowering to resolve '==' with implicit Eq evidence, got %A{body}"
+    )
+
+[<Fact>]
+let ``KCore query filter lowering does not leave bare Ord operator applications`` () =
+    let workspace =
+        compileInMemoryWorkspace
+            "memory-query-filter-implicit-ord-root"
+            [
+                "main.kp",
+                [
+                    "module main"
+                    "sumList : List Int -> Int"
+                    "let sumList xs ="
+                    "    match xs"
+                    "      case Nil -> 0"
+                    "      case head :: tail -> head + sumList tail"
+                    "result : Int"
+                    "let result ="
+                    "    sumList ["
+                    "        for root in [0, 1, 2]"
+                    "        let hits ="
+                    "            ["
+                    "                for child in [0, 1, 2]"
+                    "                for grandChild in [1, 2, 3]"
+                    "                if child == root"
+                    "                if grandChild == child + 1"
+                    "                yield grandChild"
+                    "            ]"
+                    "        if sumList hits > 0"
+                    "        yield sumList hits"
+                    "    ]"
+                ]
+                |> String.concat "\n"
+            ]
+
+    let mainModule: KCoreModule =
+        workspace.KCore
+        |> List.find (fun moduleDump -> moduleDump.Name = "main")
+
+    let resultBinding: KCoreBinding =
+        mainModule.Declarations
+        |> List.choose (fun declaration -> declaration.Binding)
+        |> List.find (fun binding -> binding.Name = Some "result")
+
+    let body = resultBinding.Body |> Option.defaultWith (fun () -> failwith "Expected result binding body.")
+
+    Assert.False(
+        containsBareCoreOperatorApply ">" body,
+        $"Expected query filter lowering to resolve '>' with implicit Ord evidence, got %A{body}"
+    )
+
+    Assert.False(
+        containsBareCoreOperatorApply "==" body,
+        $"Expected nested query filter lowering to resolve '==' with implicit Eq evidence, got %A{body}"
     )
 
 [<Fact>]
@@ -4018,7 +4188,6 @@ let ``prelude ordinary helpers stay as bindings while primitive helpers remain i
     Assert.Contains(">>", preludeRuntimeModule.IntrinsicTerms)
     Assert.Contains("|>", preludeRuntimeModule.IntrinsicTerms)
     Assert.Contains("<|", preludeRuntimeModule.IntrinsicTerms)
-    Assert.Contains("orElse", preludeRuntimeModule.IntrinsicTerms)
     Assert.Contains("print", preludeRuntimeModule.IntrinsicTerms)
     Assert.Contains("println", preludeRuntimeModule.IntrinsicTerms)
 
@@ -4470,6 +4639,47 @@ let ``backend lowering resolves user defined operators through ordinary bindings
                 |> String.concat "\n"
             ]
 
+    let coreModule =
+        workspace.KCore
+        |> List.find (fun moduleDump -> moduleDump.Name = "main")
+
+    let coreBinding =
+        coreModule.Declarations
+        |> List.pick (fun declaration ->
+            match declaration.Binding with
+            | Some binding when binding.Name = Some "result" -> Some binding
+            | _ -> None)
+
+    match coreBinding.Body with
+    | Some(
+        KCoreAppSpine(
+            KCoreName [ "++" ],
+            [ { Expression = KCoreLiteral(LiteralValue.Integer 20L) }
+              { Expression = KCoreLiteral(LiteralValue.Integer 22L) } ]
+        )
+      ) -> ()
+    | other ->
+        failwithf "Unexpected KCore operator lowering: %A" other
+
+    let runtimeModule =
+        workspace.KRuntimeIR
+        |> List.find (fun moduleDump -> moduleDump.Name = "main")
+
+    let runtimeBinding =
+        runtimeModule.Bindings
+        |> List.find (fun binding -> binding.Name = "result")
+
+    match runtimeBinding.Body with
+    | Some(
+        KRuntimeApply(
+            KRuntimeName [ "++" ],
+            [ KRuntimeLiteral(LiteralValue.Integer 20L)
+              KRuntimeLiteral(LiteralValue.Integer 22L) ]
+        )
+      ) -> ()
+    | other ->
+        failwithf "Unexpected KRuntimeIR operator lowering: %A" other
+
     Assert.Empty(Compilation.verifyCheckpoint workspace "KBackendIR")
 
     let backendModule =
@@ -4493,6 +4703,62 @@ let ``backend lowering resolves user defined operators through ordinary bindings
         Assert.Equal("main", moduleName)
     | other ->
         failwithf "Unexpected backend operator lowering: %A" other
+
+[<Fact>]
+let ``KRuntimeIR erases leading quantity zero type binders from generic receiver methods`` () =
+    let workspace =
+        compileInMemoryWorkspace
+            "memory-runtime-erased-receiver-binder-root"
+            [
+                "main.kp",
+                [
+                    "module main"
+                    "data Box (a : Type) : Type = Box (value : a)"
+                    "replace : forall (a : Type). (this b : Box a) -> (newValue : a) -> Box a"
+                    "let replace (@0 a : Type) (this b : Box a) newValue = Box newValue"
+                    "read : forall (a : Type). Box a -> a"
+                    "let read @a box ="
+                    "    match box"
+                    "    case Box value -> value"
+                    "let result = read (replace (Box 0) 7)"
+                ]
+                |> String.concat "\n"
+            ]
+
+    Assert.False(workspace.HasErrors, diagnosticsText workspace.Diagnostics)
+
+    let runtimeModule =
+        workspace.KRuntimeIR
+        |> List.find (fun moduleDump -> moduleDump.Name = "main")
+
+    let replaceBinding =
+        runtimeModule.Bindings
+        |> List.find (fun binding -> binding.Name = "replace")
+
+    let readBinding =
+        runtimeModule.Bindings
+        |> List.find (fun binding -> binding.Name = "read")
+
+    Assert.Equal<string list>([ "b"; "newValue" ], replaceBinding.Parameters |> List.map (fun parameter -> parameter.Name))
+    Assert.Equal<string list>([ "box" ], readBinding.Parameters |> List.map (fun parameter -> parameter.Name))
+
+    let resultBinding =
+        runtimeModule.Bindings
+        |> List.find (fun binding -> binding.Name = "result")
+
+    match resultBinding.Body with
+    | Some(
+        KRuntimeApply(
+            KRuntimeName [ "read" ],
+            [ KRuntimeApply(
+                KRuntimeName [ "replace" ],
+                [ KRuntimeApply(KRuntimeName [ "Box" ], [ KRuntimeLiteral(LiteralValue.Integer 0L) ])
+                  KRuntimeLiteral(LiteralValue.Integer 7L) ]
+              ) ]
+        )
+      ) -> ()
+    | other ->
+        failwithf "Unexpected KRuntimeIR generic receiver application lowering: %A" other
 
 [<Fact>]
 let ``backend lowering normalizes builtin short circuit and into a conditional`` () =
@@ -4522,9 +4788,9 @@ let ``backend lowering normalizes builtin short circuit and into a conditional``
     match resultBinding.Body with
     | Some(
         BackendIfThenElse(
-            BackendName(BackendIntrinsicName(_, "False", _)),
+            BackendName(BackendConstructorName("std.prelude", "Bool", "False", 1, 0, _)),
             BackendCall(_, _, _, _),
-            BackendName(BackendIntrinsicName(_, "False", _)),
+            BackendName(BackendConstructorName("std.prelude", "Bool", "False", 1, 0, _)),
             BackendRepBoolean
         )
       ) -> ()

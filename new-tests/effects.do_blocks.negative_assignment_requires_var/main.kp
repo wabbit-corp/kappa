@@ -1,6 +1,6 @@
 module main
 
--- Source issue: KT-437
+-- Source issues: KT-437, hylo#1596
 -- Spec: §8.2
 bad : IO Unit
 let bad = do

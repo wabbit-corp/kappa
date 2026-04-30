@@ -1,0 +1,39 @@
+module main
+
+-- Source issue: Idris2#661
+-- Kappa analogue: a transparent dependent package may match an erased singleton witness constructor explicitly when a
+-- non-erased field of the same package already forces that constructor shape.
+-- Spec: §5.5.9, §7.5.1B, §14.3A
+data SBool (b : Bool) : Type =
+    SFalse : SBool False
+    STrue : SBool True
+
+type PackedBool : Type =
+    (flag : Bool, @proof : SBool this.flag)
+
+flipPacked : PackedBool -> Bool
+let flipPacked pkg =
+    match pkg
+      case (flag = False, @proof = pf@SFalse) -> True
+      case (flag = True, @proof = pf@STrue) -> False
+
+packedFalse : PackedBool
+let packedFalse =
+    (flag = False,
+     @proof = SFalse)
+
+packedTrue : PackedBool
+let packedTrue =
+    (flag = True,
+     @proof = STrue)
+
+resultFalse : Bool
+let resultFalse = flipPacked packedFalse
+
+resultTrue : Bool
+let resultTrue = flipPacked packedTrue
+
+--! assertNoErrors
+--! assertType flipPacked PackedBool -> Bool
+--! assertEval resultFalse True
+--! assertEval resultTrue False

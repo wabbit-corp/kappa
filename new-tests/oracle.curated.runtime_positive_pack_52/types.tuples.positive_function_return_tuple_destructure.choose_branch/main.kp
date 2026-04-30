@@ -1,0 +1,26 @@
+module main
+
+-- Source issue: KT-730
+-- Spec: §4.5, §6.3.1
+
+neighbors : Int -> (Int, Int)
+let neighbors x = (x - 1, x + 1)
+
+sumNeighbors : Int -> Int
+let sumNeighbors x =
+    let (left, right) = neighbors x
+    left + right
+
+baseResult : Int
+let baseResult = sumNeighbors 21
+
+chooseResult : Bool -> Int -> Int -> Int
+let chooseResult flag left right =
+    if flag then left else right
+
+result : Int
+let result = chooseResult True baseResult 0
+
+--! assertNoErrors
+--! assertType result Int
+--! assertExecute result 42

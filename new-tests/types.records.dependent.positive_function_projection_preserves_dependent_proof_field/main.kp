@@ -1,0 +1,45 @@
+module main
+
+-- Source issue: Idris2#589
+-- Kappa analogue: projecting a function field from a transparent dependent package and reusing it in a local alias must
+-- preserve the dependent proof field type without requiring a manual ascription.
+-- Spec: §5.5.9, §6.3.1, §14.3
+data Witness (x : Nat) (flag : Bool) : Type =
+    MkWitness : Witness x flag
+
+type Step (x : Nat) : Type =
+    (flag : Bool, @proof : Witness x this.flag)
+
+type Packed : Type =
+    (f : Nat -> Bool, @proof : (x : Nat) -> Witness x (this.f x))
+
+pack : ((x : Nat) -> Step x) -> Packed
+let pack g =
+    block
+        let f = \x -> (g x).flag
+        (f = f,
+         @proof = \x ->
+             block
+                 let pf = (g x).proof
+                 pf)
+
+sampleStep : (x : Nat) -> Step x
+let sampleStep x =
+    if x == 0 then
+        (flag = True, @proof = MkWitness)
+    else
+        (flag = False, @proof = MkWitness)
+
+packed : Packed
+let packed = pack sampleStep
+
+result0 : Bool
+let result0 = packed.f 0
+
+result1 : Bool
+let result1 = packed.f 1
+
+--! assertNoErrors
+--! assertType pack ((x : Nat) -> Step x) -> Packed
+--! assertEval result0 True
+--! assertEval result1 False

@@ -1,0 +1,24 @@
+module main
+
+-- Source issue: Idris2#496
+-- Kappa analogue: a local instance may participate in implicit resolution only within its lexical block scope and must
+-- not leak into the enclosing global instance environment.
+-- Spec: §6.3.1, §7.3.3, §12.3, §14.1.1
+trait Score a =
+    score : a -> Int
+
+inside : Int
+let inside =
+    block
+        type Local = Int
+
+        instance Score Local =
+            let score x = x
+
+        score 42
+
+outside : Int
+let outside = score 42
+
+--! assertErrorCount 1
+--! assertDiagnosticMatch implicit|instance|Score Int|unsolved

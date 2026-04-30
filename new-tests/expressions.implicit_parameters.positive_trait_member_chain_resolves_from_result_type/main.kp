@@ -1,0 +1,22 @@
+module main
+
+trait Basic a =
+    int : Int -> a
+    inc : a
+    app : a -> a -> a
+
+instance Basic Int =
+    let int x = x
+    let inc = 1
+    let app f x = f + x
+
+ttinc : Basic a => a
+let ttinc = app inc (int 2)
+
+-- Source issue: Idris2#364
+-- Kappa analogue: one ordinary trait dictionary should resolve consistently across a member chain even when the only
+-- demanded information is the enclosing result type.
+-- Spec: §7.3.3, §12.3.1
+--! assertNoErrors
+--! assertType ttinc Int
+--! assertEval ttinc 3

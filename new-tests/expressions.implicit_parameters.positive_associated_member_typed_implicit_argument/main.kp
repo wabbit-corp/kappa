@@ -1,0 +1,27 @@
+module main
+
+-- Source issue: ghc#5120
+-- Kappa analogue: an explicit signature may require an implicit value whose type is an associated member of another implicit dictionary.
+-- Spec: §7.3.3, §12.2.1, §12.3.1
+trait Decode t =
+    Token : Type
+    decode : Token -> t
+
+instance Decode Int =
+    let Token = String
+    let decode s = primitiveStringLength s
+
+fromImplicit : (@decoder : Decode Int) -> (@token : decoder.Token) -> Int
+let fromImplicit (@decoder : Decode Int) =
+    decode token
+
+result : Int
+let result =
+    block
+        let (@token : String) = "kappa"
+        fromImplicit
+
+--! assertNoErrors
+--! assertType fromImplicit (@decoder : Decode Int) -> (@token : decoder.Token) -> Int
+--! assertType result Int
+--! assertEval result 5

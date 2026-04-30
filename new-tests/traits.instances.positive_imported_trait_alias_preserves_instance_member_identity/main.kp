@@ -1,0 +1,31 @@
+module main
+
+-- Source issues: ghc#2435, ghc#5852, ghc#25853
+-- Kappa analogue: a kind-qualified imported trait alias keeps one semantic identity across the instance head and its members.
+-- Spec: §2.3, §12.2.1
+import lib.classes as Classes
+import lib.classes.(trait Build as Make)
+
+instance Make Int =
+    let Output = String
+    let build x = primitiveIntToString x
+
+viaAlias : String
+let viaAlias =
+    let
+        dict = summon (Make Int)
+    in
+        dict.build 5
+
+viaQualified : String
+let viaQualified =
+    let
+        dict : Dict (Classes.Build Int) = summon (Make Int)
+    in
+        dict.build 6
+
+--! assertNoErrors
+--! assertType viaAlias String
+--! assertType viaQualified String
+--! assertEval viaAlias "5"
+--! assertEval viaQualified "6"

@@ -1,0 +1,23 @@
+module main
+
+sumList : List Int -> Int
+let sumList xs =
+    match xs
+    case Nil -> 0
+    case head :: tail -> head + sumList tail
+
+baseResult : Int
+let baseResult = sumList (10 :: 20 :: 42 :: Nil)
+
+step : Int -> Int
+let step value = value + 1
+
+back : Int -> Int
+let back value = value - 1
+
+result : Int
+let result = back (step baseResult)
+
+--! assertNoErrors
+--! assertType result Int
+--! assertExecute result 72

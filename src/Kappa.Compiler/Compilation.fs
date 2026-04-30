@@ -122,14 +122,15 @@ module Compilation =
                     binding.Body
                     |> Option.bind tryFindEffectRuntimeUse
                     |> Option.map (fun effectUse ->
-                        { Severity = DiagnosticSeverity.Error
-                          Code = DiagnosticCode.EffectRuntimeUnsupportedBackend
-                          Stage = Some "KRuntimeIR"
-                          Phase = None
-                          Message =
-                            $"Backend profile '{normalizedBackendProfile}' does not implement {describeUse effectUse} in declaration '{describeDeclaration binding}'. This backend must reject unsupported effect runtime constructs before target lowering."
-                          Location = provenanceLocation documents binding.Provenance
-                          RelatedLocations = [] })))
+                        Diagnostics.create
+                            DiagnosticSeverity.Error
+                            (DiagnosticFact.simple
+                                SimpleDiagnosticKind.EffectRuntimeUnsupportedBackend
+                                $"Backend profile '{normalizedBackendProfile}' does not implement {describeUse effectUse} in declaration '{describeDeclaration binding}'. This backend must reject unsupported effect runtime constructs before target lowering.")
+                            (provenanceLocation documents binding.Provenance)
+                            []
+                            (Some "KRuntimeIR")
+                            None)))
 
     let private defaultDeploymentModeForBackendProfile backendProfile =
         match backendProfile with
@@ -319,10 +320,13 @@ module Compilation =
         let kCore =
             loweredKCore |> List.sortBy (fun moduleDump -> moduleDump.SourceFile)
 
+        let sharedRuntimeParameterMasks =
+            KRuntimeLowering.buildSharedRuntimeParameterMasks kCore
+
         let loweredKRuntimeIR =
             kCore
             |> List.map (fun coreModule ->
-                let runtimeModule = KRuntimeLowering.lowerKRuntimeModule coreModule
+                let runtimeModule = KRuntimeLowering.lowerKRuntimeModule sharedRuntimeParameterMasks coreModule
                 traceRecorder.RecordLowerKRuntimeIR runtimeModule.Name
                 runtimeModule)
 

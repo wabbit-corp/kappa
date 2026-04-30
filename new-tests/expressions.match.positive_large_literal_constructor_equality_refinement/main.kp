@@ -1,0 +1,22 @@
+module main
+
+-- Source issue: Idris2#574
+-- Kappa analogue: matching on equality evidence that fixes a constructor payload to a larger Nat literal must still
+-- accept the sole `refl` branch; literal normalization must feed branch refinement and coverage.
+-- Spec: §5.6.1, §7.5.1, §14.3.1
+data BoxedNat : Type =
+    MkBoxedNat Nat
+
+extract : (h : BoxedNat) -> (@0 proof : h = MkBoxedNat 256) -> Nat
+let extract h (@0 proof : h = MkBoxedNat 256) =
+    match h
+      case MkBoxedNat x ->
+          match proof
+            case refl -> x
+
+value : Nat
+let value = extract (MkBoxedNat 256) refl
+
+--! assertNoErrors
+--! assertType extract (h : BoxedNat) -> (@0 proof : h = MkBoxedNat 256) -> Nat
+--! assertEval value 256

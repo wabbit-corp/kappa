@@ -1,0 +1,23 @@
+module main
+
+-- Source issue: Idris2#164
+-- Kappa analogue: a local signed helper should use the same `case impossible` coverage reasoning as a top-level helper.
+-- Spec: §6.3.1, §7.5.2A, §17.3.6
+
+data Tag (a : Type) : Type =
+    IsBool : Tag Bool
+    IsInt : Tag Int
+
+result : Bool
+let result =
+    block
+        chooseLocal : Tag Bool -> Bool
+        let chooseLocal x =
+            match x
+              case IsBool -> True
+              case impossible
+        chooseLocal IsBool
+
+--! assertNoErrors
+--! assertType result Bool
+--! assertEval result True

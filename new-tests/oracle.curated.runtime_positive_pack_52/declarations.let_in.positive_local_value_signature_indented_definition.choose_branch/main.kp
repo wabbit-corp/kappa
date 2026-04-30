@@ -1,0 +1,23 @@
+module main
+
+-- Source issue: Idris2#31
+-- Kappa analogue: a local signature plus indented local definition forms one block-scoped declaration sequence.
+-- Spec: §3.4, §6.3.1
+baseResult : Int
+let baseResult =
+    block
+        value : Int
+        let value =
+            42
+        value
+
+chooseResult : Bool -> Int -> Int -> Int
+let chooseResult flag left right =
+    if flag then left else right
+
+result : Int
+let result = chooseResult True baseResult 0
+
+--! assertNoErrors
+--! assertType result Int
+--! assertExecute result 42

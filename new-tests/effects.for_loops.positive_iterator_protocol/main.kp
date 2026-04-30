@@ -2,7 +2,7 @@ module main
 
 import std.prelude.(type Option, ctor Some, ctor None)
 
--- Source issues: KT-341, KT-566
+-- Source issues: KT-341, KT-566, KT-867, hylo#1534
 -- Spec: §8.7.5, §12.2.1
 data CountDown : Type =
     CountDown (remaining : Int)

@@ -1008,12 +1008,55 @@ module TypeSignatures =
                     |> withCaptures
                     |> Some
 
+        member private _.IsInfixTypeOperatorToken(token: Token) =
+            match token.Kind with
+            | Operator ->
+                not (
+                    String.Equals(token.Text, "=>", StringComparison.Ordinal)
+                    || String.Equals(token.Text, "|", StringComparison.Ordinal)
+                    || String.Equals(token.Text, "?", StringComparison.Ordinal)
+                )
+            | _ ->
+                false
+
+        member private this.ParseInfixTypeApplication() =
+            match this.ParseApplication() with
+            | None -> None
+            | Some head ->
+                let mutable parsed = head
+                let mutable keepParsing = true
+                let mutable valid = true
+
+                while keepParsing && valid do
+                    match this.Current with
+                    | Some token when this.IsInfixTypeOperatorToken(token) ->
+                        let operatorName = token.Text
+                        this.Advance() |> ignore
+
+                        match this.ParseApplication() with
+                        | Some right ->
+                            parsed <- TypeApply(TypeName([ operatorName ], []), [ parsed; right ])
+                        | None ->
+                            valid <- false
+                    | _ ->
+                        keepParsing <- false
+
+                if valid then Some parsed else None
+
+        member private this.ParseEquality() =
+            match this.ParseInfixTypeApplication() with
+            | Some left when this.MatchKind Equals ->
+                this.ParseEquality()
+                |> Option.map (fun right -> TypeEquality(left, right))
+            | some ->
+                some
+
         member private this.ParseArrow() =
             match this.TryParseBinderArrow() with
             | Some arrow ->
                 Some arrow
             | None ->
-                match this.ParseApplication() with
+                match this.ParseEquality() with
                 | None -> None
                 | Some left when this.MatchKind Arrow ->
                     this.ParseType()
@@ -1083,12 +1126,7 @@ module TypeSignatures =
             | Some parsed ->
                 Some parsed
             | None ->
-                match this.ParseArrow() with
-                | Some left when this.MatchKind Equals ->
-                    this.ParseType()
-                    |> Option.map (fun right -> TypeEquality(left, right))
-                | some ->
-                    some
+                this.ParseArrow()
 
         member this.ParseScheme() =
             let parseForallBinder binderTokens =
@@ -1751,6 +1789,16 @@ module TypeSignatures =
                 | TypeApply(leftCallee, leftArguments), TypeApply(rightCallee, rightArguments)
                     when List.length leftArguments = List.length rightArguments ->
                     unify substitution ((leftCallee, rightCallee) :: List.zip leftArguments rightArguments @ rest)
+                | TypeApply(leftCallee, leftArguments), TypeName(rightName, rightArguments)
+                    when List.length leftArguments = List.length rightArguments ->
+                    unify
+                        substitution
+                        ((leftCallee, TypeName(rightName, [])) :: List.zip leftArguments rightArguments @ rest)
+                | TypeName(leftName, leftArguments), TypeApply(rightCallee, rightArguments)
+                    when List.length leftArguments = List.length rightArguments ->
+                    unify
+                        substitution
+                        ((TypeName(leftName, []), rightCallee) :: List.zip leftArguments rightArguments @ rest)
                 | TypeLambda(leftName, leftSort, leftBody), TypeLambda(rightName, rightSort, rightBody) ->
                     let alignedRightBody =
                         applySubstitution (Map.ofList [ rightName, TypeVariable leftName ]) rightBody

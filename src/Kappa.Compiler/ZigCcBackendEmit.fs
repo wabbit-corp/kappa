@@ -4,6 +4,17 @@ namespace Kappa.Compiler
 module internal ZigCcBackendEmit =
     open ZigCcBackendSupport
 
+    let private tryEmitPreludeBoolConstructor moduleName typeName tag fields =
+        if System.String.Equals(moduleName, Stdlib.PreludeModuleText, System.StringComparison.Ordinal)
+           && System.String.Equals(typeName, "Bool", System.StringComparison.Ordinal)
+           && List.isEmpty fields then
+            match tag with
+            | 0 -> Some "kappa_box_bool(1)"
+            | 1 -> Some "kappa_box_bool(0)"
+            | _ -> None
+        else
+            None
+
     let rec private tryDecomposeRecursiveClosureValue expression =
         match expression with
         | BackendClosure(parameters, captures, environmentLayout, body, convention, _) ->
@@ -237,13 +248,19 @@ module internal ZigCcBackendEmit =
                 Result.Error
                     $"zig does not yet support using constructor '{moduleName}.{typeName}' with arity {arity} as a first-class value."
             else
-                result {
-                    let! typeId = lookupTypeId context moduleName typeName
-
-                    return
+                match tryEmitPreludeBoolConstructor moduleName typeName tag [] with
+                | Some valueExpression ->
+                    Result.Ok
                         { Statements = []
-                          ValueExpression = $"kappa_make_data({typeId}, {tag}, 0, NULL)" }
-                }
+                          ValueExpression = valueExpression }
+                | None ->
+                    result {
+                        let! typeId = lookupTypeId context moduleName typeName
+
+                        return
+                            { Statements = []
+                              ValueExpression = $"kappa_make_data({typeId}, {tag}, 0, NULL)" }
+                    }
 
     and internal emitEffectLabelExpression
         (context: GenerationContext)
@@ -1076,7 +1093,6 @@ module internal ZigCcBackendEmit =
     and internal emitConstructDataExpression (context: GenerationContext) (scope: EmitScope) moduleName typeName tag fields =
         result {
             let! emittedFields = emitExpressions context scope fields
-            let! typeId = lookupTypeId context moduleName typeName
 
             let fieldStatements =
                 emittedFields |> List.collect (fun emitted -> emitted.Statements)
@@ -1089,11 +1105,20 @@ module internal ZigCcBackendEmit =
 
             let resultValue = freshTemp context "ctor"
 
-            let constructorCall =
-                if List.isEmpty fieldValues then
-                    $"kappa_make_data({typeId}, {tag}, 0, NULL)"
-                else
-                    $"kappa_make_data({typeId}, {tag}, {fieldValues.Length}, {argumentArray})"
+            let! constructorCall =
+                match tryEmitPreludeBoolConstructor moduleName typeName tag fieldValues with
+                | Some valueExpression ->
+                    Result.Ok valueExpression
+                | None ->
+                    result {
+                        let! typeId = lookupTypeId context moduleName typeName
+
+                        return
+                            if List.isEmpty fieldValues then
+                                $"kappa_make_data({typeId}, {tag}, 0, NULL)"
+                            else
+                                $"kappa_make_data({typeId}, {tag}, {fieldValues.Length}, {argumentArray})"
+                    }
 
             return
                 { Statements =
@@ -1282,39 +1307,6 @@ module internal ZigCcBackendEmit =
                           ValueExpression = resultValue }
                 | _ ->
                     return! Result.Error "zig intrinsic '>>=' expected exactly 2 arguments."
-            | "printInt" ->
-                match argumentValues with
-                | [ value ] ->
-                    let statements, resultValue =
-                        wrapCallResult context "print_int" $"kappa_builtin_print_int({value})"
-
-                    return
-                        { Statements = argumentStatements @ statements
-                          ValueExpression = resultValue }
-                | _ ->
-                    return! Result.Error "zig intrinsic 'printInt' expected exactly 1 argument."
-            | "printString" ->
-                match argumentValues with
-                | [ value ] ->
-                    let statements, resultValue =
-                        wrapCallResult context "print_string" $"kappa_builtin_print_string({value})"
-
-                    return
-                        { Statements = argumentStatements @ statements
-                          ValueExpression = resultValue }
-                | _ ->
-                    return! Result.Error "zig intrinsic 'printString' expected exactly 1 argument."
-            | "printlnString" ->
-                match argumentValues with
-                | [ value ] ->
-                    let statements, resultValue =
-                        wrapCallResult context "println_string" $"kappa_builtin_print({value}, 1)"
-
-                    return
-                        { Statements = argumentStatements @ statements
-                          ValueExpression = resultValue }
-                | _ ->
-                    return! Result.Error "zig intrinsic 'printlnString' expected exactly 1 argument."
             | "print" ->
                 match argumentValues with
                 | [ value ] ->
@@ -1427,6 +1419,28 @@ module internal ZigCcBackendEmit =
                           ValueExpression = resultValue }
                 | _ ->
                     return! Result.Error "zig intrinsic 'writeRef' expected exactly 2 arguments."
+            | intrinsicName when intrinsicName = IntrinsicCatalog.BuiltinPreludeCompareIntrinsicName ->
+                match argumentValues with
+                | [ leftValue; rightValue ] ->
+                    let statements, resultValue =
+                        wrapCallResult context "builtin_compare" $"kappa_builtin_compare({leftValue}, {rightValue})"
+
+                    return
+                        { Statements = argumentStatements @ statements
+                          ValueExpression = resultValue }
+                | _ ->
+                    return! Result.Error $"zig intrinsic '{intrinsicName}' expected exactly 2 arguments."
+            | intrinsicName when intrinsicName = IntrinsicCatalog.BuiltinPreludeShowIntrinsicName ->
+                match argumentValues with
+                | [ value ] ->
+                    let statements, resultValue =
+                        wrapCallResult context "builtin_show" $"kappa_builtin_show({value})"
+
+                    return
+                        { Statements = argumentStatements @ statements
+                          ValueExpression = resultValue }
+                | _ ->
+                    return! Result.Error $"zig intrinsic '{intrinsicName}' expected exactly 1 argument."
             | other ->
                 return! Result.Error $"zig does not yet support intrinsic '{other}'."
         }
