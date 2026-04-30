@@ -11354,8 +11354,8 @@ Grammar:
   `let <-` bindings, and `using`):
 
   ```text
-  bindPat             ::= [quantity] pattern
-  implicitLocalBinder ::= '(' '@' [quantity] ident ':' type ')'
+  bindPat             ::= binderPrefix? pattern
+  implicitLocalBinder ::= '(' '@' binderPrefix? ident ':' type ')'
   localBind           ::= 'let' bindPat [':' type] '=' expr
                         | 'let' implicitLocalBinder '=' expr
   monadBind           ::= 'let' bindPat '<-' expr
@@ -11402,11 +11402,14 @@ Typing:
   implicit context of §7.3.3 from the binding site onward.
 * Quantity checking for `x` uses the ordinary rules for an implicit binder annotated with quantity `q`.
 
-* In `bindPat`, a quantity annotation applies uniformly to every variable bound by the underlying pattern.
-* `let & pat = expr` is legal and binds every variable introduced by `pat` at borrowed quantity `&`. It introduces
-  borrowed views of the underlying value, is used by the normative desugaring of `using` (§8.7.4), and is subject to the
-  borrow-escape rules of §5.1.6. If `expr` is not already a borrowable place expression (§5.1.7.2), elaboration first
-  introduces a fresh hidden temporary root scoped to the body:
+* In `bindPat`, a binder prefix applies uniformly to every variable bound by the underlying pattern.
+* If the binder prefix contains only a quantity, that quantity applies to each bound variable with ordinary access.
+* If the binder prefix contains borrowed access, each bound variable is introduced as a borrowed binding.
+* `let & pat = expr` is legal and is sugar for `let ω & pat = expr`.
+* `let q & pat = expr` binds every variable introduced by `pat` as borrowed, with interval usage quantity `q`.
+  It introduces borrowed views of the underlying value, is used by the normative desugaring of `using` (§8.7.4), and is
+  subject to the borrow-escape rules of §5.1.6. If `expr` is not already a borrowable place expression (§5.1.7.2),
+  elaboration first introduces a fresh hidden temporary root scoped to the body:
 
   ```kappa
   let 1 __tmp = expr
@@ -11463,11 +11466,11 @@ conservatively reject the plain form.
 
 Elaboration (schematic):
 
-* If `bindPat` carries quantity `&`, the binding is elaborated as a borrowed binding of the underlying pattern `pat0`
+* If `bindPat` carries borrowed access, the binding is elaborated as a borrowed binding of the underlying pattern `pat0`
   against a borrowable place expression (§5.1.7.2), with each variable introduced by `pat0` bound at borrowed quantity
   `&`. If `e` is not already a borrowable place expression (§5.1.7.2), elaboration first introduces the fresh hidden
   root described above and then performs that borrowed binding against the hidden root.
-* If `bindPat` does not carry quantity `&`, then `let bindPat = e in body` elaborates as `match e; case pat0 -> body`,
+* If `bindPat` does not carry borrowed access, then `let bindPat = e in body` elaborates as `match e; case pat0 -> body`,
   where `pat0` is the underlying pattern of `bindPat`. This is only permitted because that underlying pattern is
   required to be irrefutable.
 
@@ -16128,8 +16131,8 @@ Valid do-items inside `do`:
   Rules:
     * The underlying pattern of `bindPat` must be irrefutable (§6.1.2). Refutable patterns are not permitted in do-local
       bindings.
-    * Any quantity annotation on `bindPat` applies uniformly to every variable introduced by that pattern (§6.3).
-    * If `bindPat` carries quantity `&` and `expr` is not already a borrowable place expression (§5.1.7.2), elaboration
+    * Any binder prefix on `bindPat` applies uniformly to every variable introduced by that pattern (§6.3).
+    * If `bindPat` carries borrowed access and `expr` is not already a borrowable place expression (§5.1.7.2), elaboration
       introduces a fresh hidden temporary root scoped to the remaining do-items, exactly as specified in §6.3 and
       §5.1.6.
     * Names bound by `bindPat` are in scope in subsequent do-items in the `do` block.
@@ -17257,7 +17260,7 @@ The cases below define `⟦...⟧` for arbitrary `A`.
 
 * Pure local binding `let bindPat = expr`:
 
-  If `bindPat` carries quantity `&`, elaboration performs a borrowed binding of the underlying pattern `pat0` against a
+  If `bindPat` carries borrowed access, elaboration performs a borrowed binding of the underlying pattern `pat0` against a
   borrowable place expression (§5.1.7.2) and continues with `rest`. If `expr` is not already a borrowable place
   expression (§5.1.7.2), elaboration first introduces a fresh hidden temporary root:
 
@@ -17269,7 +17272,7 @@ The cases below define `⟦...⟧` for arbitrary `A`.
 
   where `pat0` is the underlying pattern of `bindPat` and `__tmp` is fresh and inaccessible to user code.
 
-  If `bindPat` does not carry quantity `&`, it elaborates as a pure binding of the underlying pattern of `bindPat`,
+  If `bindPat` does not carry borrowed access, it elaborates as a pure binding of the underlying pattern of `bindPat`,
   introducing each bound variable at the quantity carried by `bindPat`, and continues with `rest`.
 
 <!-- effects.elaboration_model.defer_using -->
