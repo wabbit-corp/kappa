@@ -6948,14 +6948,27 @@ Ambient runtime demand:
 
 Expression checking is parameterized by an ambient runtime demand `δ`.
 
+Ambient demand `δ` is either `0` or `1`.
+
 * Ordinary runtime expression checking uses `δ = 1`.
 * Type positions, compile-time-only positions, erased-index positions, erased proof positions, and positions whose
   expected type is known to satisfy `RuntimeErased` use `δ = 0`.
-* Runtime usage contributed by a subexpression is multiplied by the ambient demand.
+* Runtime usage contributed by a subexpression is scaled by the ambient demand.
+* Demand scaling is defined on usage obligations, not merely on interval quantities:
+
+  ```text
+  0 · q = 0
+  1 · q = q
+  ```
+
+  for every ordinary quantity or borrow obligation `q`.
 * For an application `f a1 ... an`, if the whole application is checked at ambient demand `δ`, and the selected binder
-  for argument `ai` has declared quantity `qi`, then the runtime demand imposed on `ai` is `δ · qi`.
+  for argument `ai` has declared quantity or borrow obligation `qi`, then the runtime demand imposed on `ai` is
+  `δ · qi`.
 * Consequently, when `δ = 0`, all subexpressions of the application contribute zero runtime demand, even when the
-  function's parameters are declared at quantity `ω`, `1`, or another runtime-relevant quantity.
+  function's parameters are declared at quantity `ω`, `1`, `&`, or another runtime-relevant quantity.
+* When `0 · & = 0`, no runtime borrow obligation is created, because the whole expression is erased before runtime.
+* When `1 · & = &`, the ordinary borrow-checking rules apply.
 
 This rule does not make such values available at runtime. It means the whole application is erased before runtime.
 Thus proof-producing functions may be written and composed like ordinary source functions while still erasing when their
