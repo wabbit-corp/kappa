@@ -13167,9 +13167,10 @@ Resolution proceeds in this order:
    * if exactly one candidate is present, use it;
    * if more than one candidate is present and `IsTrait G` is not available, the implicit goal is ambiguous and
      compilation fails;
-   * if more than one candidate is present and `IsTrait G` is available, the candidates are accepted. Their coherence
-     is justified by the compiler-issued proof irrelevance for trait evidence of type `G`. The implementation selects a
-     deterministic representative.
+   * if more than one candidate is present and `IsTrait G` is available, the candidates are accepted for local
+     implicit-resolution purposes. Any two well-typed local evidence values `d1 : G` and `d2 : G` are coherent at this
+     level because compiler-issued trait proof irrelevance provides `IsSubsingleton.allEqual d1 d2 : d1 = d2`. The
+     implementation selects a deterministic representative.
 
    Search does not continue to outer lexical levels once such a level is found.
 
@@ -22602,6 +22603,38 @@ This rule guarantees that:
   available; and
 * in script mode under `semantic-if-available`, if the Hard Hash is unavailable, structurally different artifacts are
   conservatively rejected with a warning.
+
+Trait-evidence coherence has two levels.
+
+1. Local evidence-value coherence.
+
+   If `G` is a trait evidence type and `IsTrait G` is available, then any two well-typed local evidence values
+
+   ```text
+   d1 : G
+   d2 : G
+   ```
+
+   are coherent for local implicit-resolution purposes. This follows from the compiler-issued proof irrelevance of
+   trait evidence:
+
+   ```kappa
+   IsSubsingleton.allEqual d1 d2 : d1 = d2
+   ```
+
+   The implementation may select any deterministic representative among such candidates. The selected representative may
+   affect diagnostics, reflection display, and generated names, but it MUST NOT affect source-language semantics,
+   definitional equality, accepted/rejected status, or runtime behavior.
+
+2. Instance-artifact coherence.
+
+   Global ordinary instance declarations, local instance declarations, intrinsic solver artifacts, and trusted
+   boundary-published instance artifacts must be coherent before their evidence may justify the proof-irrelevance
+   invariant for the corresponding trait evidence type.
+
+   The implementation MUST NOT use generated trait proof irrelevance to accept otherwise incoherent instance artifacts.
+   Instance artifacts are checked by the coherence rules of §15.2.1, including normalized heads, Easy Hash comparison,
+   Hard Hash comparison, and the relevant artifact provenance rules.
 
 The proof irrelevance of trait evidence in §12.4 is justified by this coherence invariant plus the abstract evidence
 construction rules of §5.1.3. If an implementation accepts a program without enforcing this coherence invariant, it MUST
