@@ -7045,6 +7045,85 @@ q_cap ⊑ q_dem |  0   1   <=1  >=1   ω
 ω             | yes yes yes  yes   yes
 ```
 
+<!-- types.universes.quantities.reified_quantity_satisfaction -->
+##### Reified quantity-satisfaction obligations
+
+The quantity-satisfaction relation `⊑` is reified as the intrinsic solver trait:
+
+```kappa
+intrinsic trait QuantitySatisfies
+    (capability : Quantity)
+    (demand : Quantity)
+```
+
+`QuantitySatisfies qcap qdem` is solvable iff:
+
+```text
+qcap ⊑ qdem
+```
+
+That is, `qcap` is a capability sufficient to meet demand `qdem`.
+
+For interval quantities:
+
+```text
+qcap = [l, u]
+qdem = [l', u']
+```
+
+the obligation is solvable iff:
+
+```text
+l <= l'
+u' <= u
+```
+
+Equivalently:
+
+```text
+qdem ⊆ qcap
+```
+
+For the five surface interval quantities of v1, the complete closed table is:
+
+```text
+QuantitySatisfies cap dem
+
+cap \ dem |  0   1   <=1  >=1   ω
+----------+-----------------------
+0         | yes no  no   no    no
+1         | no  yes no   no    no
+<=1       | yes yes yes  no    no
+>=1       | no  yes no   yes   no
+ω         | yes yes yes  yes   yes
+```
+
+Consequences:
+
+* `QuantitySatisfies ω q` is solvable for every interval quantity `q`.
+* `QuantitySatisfies q q` is solvable for every interval quantity `q`.
+* `QuantitySatisfies q 0` is not solvable for arbitrary symbolic `q`, because `q` may have a positive lower bound.
+* `QuantitySatisfies q 1` is not solvable for arbitrary symbolic `q`, because `q` may be `0`.
+* `QuantitySatisfies q ω` is not solvable for arbitrary symbolic `q`, because only capabilities that permit arbitrary
+  demand satisfy `ω`.
+
+The quantity solver MUST solve:
+
+* all obligations where both arguments normalize to closed v1 surface quantities;
+* all obligations where both arguments normalize to closed internal interval quantities;
+* reflexivity obligations of the form `QuantitySatisfies q q`;
+* obligations derivable by definitional equality of quantity expressions;
+* obligations derivable from in-scope `QuantitySatisfies` evidence by reflexive-transitive closure; and
+* obligations involving closed internal interval expressions produced by quantity addition, multiplication, and
+  control-flow join.
+
+The quantity solver MAY solve additional obligations when it can do so soundly and deterministically.
+
+The quantity solver MUST NOT use user-authored instances to solve `QuantitySatisfies`.
+
+`QuantitySatisfies qcap qdem` evidence does not imply that `qcap` and `qdem` are definitionally equal.
+It only proves that a value available at capability `qcap` may be used in a context demanding `qdem`.
+
 Borrowed access is not part of this relation.
 
 A borrowed binder has an ordinary interval quantity and a borrowed access mode. Its quantity is checked by the same
