@@ -1671,7 +1671,7 @@ trait IsSet (a : Type) =
 
 intrinsic trait RuntimeErased (t : Type)
 
-intrinsic trait IsProp t => IsTrait (t : Type)
+intrinsic trait IsSubsingleton t => IsTrait (t : Type)
 
 intrinsic trait ContainsRec (r : RecRow) (l : Label) (a : Type)
 intrinsic trait LacksRec    (r : RecRow) (l : Label)
@@ -5166,7 +5166,7 @@ Trait declarations:
   IsTrait (Tr args)
   ```
 
-  and therefore, through the `IsTrait` supertrait, `IsProp (Tr args)`.
+  and therefore, through the `IsTrait` supertrait, `IsSubsingleton (Tr args)`.
 
 Effect-label declarations:
 
@@ -6512,10 +6512,10 @@ For every well-formed fully applied trait evidence type `Tr args`, the compiler 
 IsTrait (Tr args)
 ```
 
-and, through the `IsTrait` supertrait, proposition/proof-irrelevance evidence:
+and, through the `IsTrait` supertrait, subsingleton evidence:
 
 ```kappa
-IsProp (Tr args)
+IsSubsingleton (Tr args)
 ```
 
 Trait evidence values are ordinary values at their evidence type. They may appear in explicit parameters, implicit
@@ -6571,15 +6571,26 @@ trait IsSet (a : Type) =
 
 intrinsic trait RuntimeErased (t : Type)
 
-intrinsic trait IsProp t => IsTrait (t : Type)
+intrinsic trait IsSubsingleton t => IsTrait (t : Type)
 ```
 
 `IsSubsingleton` by itself asserts uniqueness, not existence. `IsProp` classifies proof propositions and does not provide a value of its parameter.
 
 `IsTrait` is compiler-issued evidence that `t` is a trait evidence type. User source MUST NOT declare instances of
 `IsTrait`. The compiler synthesizes `IsTrait (Tr args)` for every well-formed full application of a trait constructor.
-The generated `IsProp (Tr args)` evidence is justified by the trait-evidence construction invariant and the instance
+The generated `IsSubsingleton (Tr args)` evidence is justified by the trait-evidence construction invariant and the instance
 coherence rules of §15.2.1.
+
+`IsTrait T` does not imply `IsProp T` and does not imply `RuntimeErased T`.
+
+A trait evidence type may additionally satisfy `IsProp` or `RuntimeErased`
+when its representation analysis, intrinsic declaration, or trusted solver
+rule proves that no runtime projection is required.
+
+Marker traits, law-only traits, and intrinsic row-solver traits commonly
+satisfy `RuntimeErased`. Method-bearing traits do not satisfy
+`RuntimeErased` merely because their evidence is coherent or
+subsingleton.
 
 Trait evidence is not compile-time-only merely because `IsTrait T` holds. A trait evidence value may have runtime
 representation when one of its runtime-relevant projections is used. A trait evidence value whose projections are all
@@ -20150,7 +20161,7 @@ IsTrait (Tr args)
 and therefore:
 
 ```kappa
-IsProp (Tr args)
+IsSubsingleton (Tr args)
 ```
 
 by the `IsTrait` supertrait.
@@ -20840,7 +20851,7 @@ its subexpressions impose no runtime demand even when their binders are not expl
 The prelude also provides the intrinsic trait:
 
 ```kappa
-intrinsic trait IsProp t => IsTrait (t : Type)
+intrinsic trait IsSubsingleton t => IsTrait (t : Type)
 ```
 
 `IsTrait t` is compiler-issued evidence that `t` is a trait evidence type. User source MUST NOT define `IsTrait`
@@ -20855,13 +20866,24 @@ IsTrait (Tr args)
 and hence:
 
 ```kappa
-IsProp (Tr args)
+IsSubsingleton (Tr args)
 ```
 
-The generated `IsProp (Tr args)` evidence is a trusted consequence of the trait-evidence construction invariant: all
+The generated `IsSubsingleton (Tr args)` evidence is a trusted consequence of the trait-evidence construction invariant: all
 closed inhabitants of a trait evidence type originate from accepted instance artifacts, intrinsic solver artifacts, or
 assumptions whose provenance is checked at their use boundary, and all artifacts for the same normalized trait head are
 coherent under §15.2.1.
+
+`IsTrait T` does not imply `IsProp T` and does not imply `RuntimeErased T`.
+
+A trait evidence type may additionally satisfy `IsProp` or `RuntimeErased`
+when its representation analysis, intrinsic declaration, or trusted solver
+rule proves that no runtime projection is required.
+
+Marker traits, law-only traits, and intrinsic row-solver traits commonly
+satisfy `RuntimeErased`. Method-bearing traits do not satisfy
+`RuntimeErased` merely because their evidence is coherent or
+subsingleton.
 
 This proof irrelevance is propositional, not representational:
 
