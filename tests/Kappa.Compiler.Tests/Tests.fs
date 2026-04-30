@@ -212,6 +212,46 @@ let ``import diagnostics expose long form explanations`` () =
         Assert.True(explanation.IsSome, $"Expected {DiagnosticCode.toIdentifier code} to have a long-form explanation.")
 
 [<Fact>]
+let ``structured diagnostic facts normalize through the shared formatter`` () =
+    let source = createSource "fact.kp" "missing"
+    let location = source.GetLocation(TextSpan.FromBounds(0, 7))
+
+    let diagnostic =
+        Diagnostics.errorFact
+            "KFrontIR"
+            (Some(KFrontIRPhase.phaseName CHECKERS))
+            (Some location)
+            []
+            (DiagnosticFact.nameUnresolved "missing")
+
+    Assert.Equal(DiagnosticCode.NameUnresolved, diagnostic.Code)
+    Assert.Equal("Name 'missing' is not in scope.", diagnostic.Message)
+    Assert.Equal(Some "kappa.name.unresolved", diagnostic.Family)
+    Assert.Equal("name-unresolved", diagnostic.Payload.Kind)
+    Assert.Contains(
+        diagnostic.Payload.Fields,
+        fun field ->
+            field.Name = "spelling"
+            && field.Value = DiagnosticPayloadText "missing"
+    )
+
+[<Fact>]
+let ``code-detail diagnostic facts normalize through the shared formatter`` () =
+    let bag = DiagnosticBag()
+    bag.AddError(DiagnosticFact.codeDetail DiagnosticCode.ExpectedSyntaxToken "Expected an expression.")
+
+    let diagnostic = Assert.Single(bag.Items)
+    Assert.Equal(DiagnosticCode.ExpectedSyntaxToken, diagnostic.Code)
+    Assert.Equal("Expected an expression.", diagnostic.Message)
+    Assert.Equal("expected-syntax-token", diagnostic.Payload.Kind)
+    Assert.Contains(
+        diagnostic.Payload.Fields,
+        fun field ->
+            field.Name = "detail"
+            && field.Value = DiagnosticPayloadText "Expected an expression."
+    )
+
+[<Fact>]
 let ``frontend assigns effect identities before elaboration and checking`` () =
     let workspace =
         compileInMemoryWorkspace
@@ -1161,6 +1201,88 @@ let ``parser preserves trait supertraits operator members and typed defaults`` (
         failwithf "Expected two trait members, got %A" other
 
 [<Fact>]
+let ``parser accepts multiline local let in trait default member body`` () =
+    let sourceText =
+        [
+            "module main"
+            ""
+            "trait Eq a => Ord a ="
+            "    compare : a -> a -> Ordering"
+            "    let (<=) x y ="
+            "        let ordering = compare x y"
+            "        in (ordering == LT) || (ordering == EQ)"
+            "    let (>) x y = compare x y == GT"
+        ]
+        |> String.concat "\n"
+
+    let _, lexed, parsed =
+        lexAndParse
+            "memory.kp"
+            sourceText
+
+    Assert.Empty(lexed.Diagnostics)
+    Assert.Empty(parsed.Diagnostics)
+
+    let declaration =
+        parsed.Syntax.Declarations
+        |> List.pick (function
+            | TraitDeclarationNode declaration -> Some declaration
+            | _ -> None)
+
+    Assert.Equal("Ord", declaration.Name)
+
+    match declaration.Members with
+    | _ :: defaultLeq :: defaultGt :: [] ->
+        Assert.Equal(Some "<=", defaultLeq.Name)
+        Assert.True(defaultLeq.DefaultDefinition.IsSome)
+        Assert.Equal(Some ">", defaultGt.Name)
+        Assert.True(defaultGt.DefaultDefinition.IsSome)
+    | other ->
+        failwithf "Expected three trait members, got %A" other
+
+[<Fact>]
+let ``parser accepts multiline instance member bodies before sibling members`` () =
+    let sourceText =
+        [
+            "module main"
+            ""
+            "trait Eq a ="
+            "    (==) : a -> a -> Bool"
+            ""
+            "instance Eq Int ="
+            "    let (==) x y ="
+            "        match primitiveIntCompare x y"
+            "        case LT -> False"
+            "        case EQ -> True"
+            "        case GT -> False"
+            "    let same x y = x == y"
+        ]
+        |> String.concat "\n"
+
+    let _, lexed, parsed =
+        lexAndParse
+            "memory.kp"
+            sourceText
+
+    Assert.Empty(lexed.Diagnostics)
+    Assert.Empty(parsed.Diagnostics)
+
+    let declaration =
+        parsed.Syntax.Declarations
+        |> List.pick (function
+            | InstanceDeclarationNode declaration -> Some declaration
+            | _ -> None)
+
+    match declaration.Members with
+    | equality :: same :: [] ->
+        Assert.Equal(Some "==", equality.Name)
+        Assert.Equal(Some "same", same.Name)
+        Assert.True(equality.BodyTokens.Length > 0)
+        Assert.True(same.BodyTokens.Length > 0)
+    | other ->
+        failwithf "Expected two instance members, got %A" other
+
+[<Fact>]
 let ``parser rejects unterminated data constructors before the next declaration`` () =
     let sourceText =
         [
@@ -1842,6 +1964,27 @@ let ``compilation resolves suffixed numeric literals through ordinary bindings``
     let workspace =
         compileInMemoryWorkspace
             "memory-suffixed-numerics"
+            [ "main.kp", sourceText ]
+
+    Assert.False(workspace.HasErrors, sprintf "Expected no diagnostics, got %A" workspace.Diagnostics)
+
+[<Fact>]
+let ``compilation accepts ordinary bindings with leading erased type binders`` () =
+    let sourceText =
+        [
+            "module main"
+            ""
+            "id : forall (a : Type). a -> a"
+            "let id (@0 a : Type) x = x"
+            ""
+            "value : Int"
+            "let value = id 1"
+        ]
+        |> String.concat "\n"
+
+    let workspace =
+        compileInMemoryWorkspace
+            "memory-leading-erased-type-binder"
             [ "main.kp", sourceText ]
 
     Assert.False(workspace.HasErrors, sprintf "Expected no diagnostics, got %A" workspace.Diagnostics)
@@ -3123,6 +3266,78 @@ let ``type signature schemes accept both grouped and chained constraint prefixes
     Assert.Equal(expectedBody, chained.Body)
 
 [<Fact>]
+let ``type signature schemes accept infix proposition forms used by Equiv and Eq members`` () =
+    let equivRefl =
+        parseSchemeText "(& x : a) -> ((x ~= x) = True)"
+
+    let eqSound =
+        parseSchemeText "(& x : a) -> (& y : a) -> ((x == y) = True -> x = y)"
+
+    let eqComplete =
+        parseSchemeText "(& x : a) -> (& y : a) -> (x = y -> (x == y) = True)"
+
+    Assert.Equal(
+        TypeSignatures.TypeArrow(
+            QuantityBorrow None,
+            TypeSignatures.TypeVariable "a",
+            TypeSignatures.TypeEquality(
+                TypeSignatures.TypeApply(
+                    TypeSignatures.TypeName([ "~=" ], []),
+                    [ TypeSignatures.TypeVariable "x"; TypeSignatures.TypeVariable "x" ]
+                ),
+                TypeSignatures.TypeName([ "True" ], [])
+            )
+        ),
+        equivRefl.Body
+    )
+
+    Assert.Equal(
+        TypeSignatures.TypeArrow(
+            QuantityBorrow None,
+            TypeSignatures.TypeVariable "a",
+            TypeSignatures.TypeArrow(
+                QuantityBorrow None,
+                TypeSignatures.TypeVariable "a",
+                TypeSignatures.TypeArrow(
+                    QuantityOmega,
+                    TypeSignatures.TypeEquality(
+                        TypeSignatures.TypeApply(
+                            TypeSignatures.TypeName([ "==" ], []),
+                            [ TypeSignatures.TypeVariable "x"; TypeSignatures.TypeVariable "y" ]
+                        ),
+                        TypeSignatures.TypeName([ "True" ], [])
+                    ),
+                    TypeSignatures.TypeEquality(TypeSignatures.TypeVariable "x", TypeSignatures.TypeVariable "y")
+                )
+            )
+        ),
+        eqSound.Body
+    )
+
+    Assert.Equal(
+        TypeSignatures.TypeArrow(
+            QuantityBorrow None,
+            TypeSignatures.TypeVariable "a",
+            TypeSignatures.TypeArrow(
+                QuantityBorrow None,
+                TypeSignatures.TypeVariable "a",
+                TypeSignatures.TypeArrow(
+                    QuantityOmega,
+                    TypeSignatures.TypeEquality(TypeSignatures.TypeVariable "x", TypeSignatures.TypeVariable "y"),
+                    TypeSignatures.TypeEquality(
+                        TypeSignatures.TypeApply(
+                            TypeSignatures.TypeName([ "==" ], []),
+                            [ TypeSignatures.TypeVariable "x"; TypeSignatures.TypeVariable "y" ]
+                        ),
+                        TypeSignatures.TypeName([ "True" ], [])
+                    )
+                )
+            )
+        ),
+        eqComplete.Body
+    )
+
+[<Fact>]
 let ``type signature schemes preserve dependent forall telescope structure under instantiation and alpha equality`` () =
     let left =
         parseSchemeText "forall (u : Universe) (a : Type u). a -> a"
@@ -3246,6 +3461,21 @@ let ``raw type signature normalization does not treat Float as a builtin alias o
     Assert.False(TypeSignatures.definitionallyEqual qualifiedFloatType qualifiedDoubleType)
     Assert.Equal("Float", TypeSignatures.toText floatType)
     Assert.Equal("Float", TypeSignatures.toText qualifiedFloatType)
+
+[<Fact>]
+let ``type unification matches higher kinded applications against applied named types`` () =
+    let functionApplication =
+        TypeSignatures.TypeApply(TypeSignatures.TypeVariable "f", [ TypeSignatures.TypeVariable "a" ])
+
+    let concreteApplication =
+        TypeSignatures.TypeName([ "Option" ], [ TypeSignatures.TypeName([ "Int" ], []) ])
+
+    match TypeSignatures.tryUnifyMany [ functionApplication, concreteApplication ] with
+    | Some substitution ->
+        Assert.Equal(TypeSignatures.TypeName([ "Option" ], []), substitution["f"])
+        Assert.Equal(TypeSignatures.TypeName([ "Int" ], []), substitution["a"])
+    | None ->
+        failwith "Expected higher-kinded application unification to succeed."
 
 [<Fact>]
 let ``compilation still resolves Float through the visible prelude alias`` () =
@@ -3743,7 +3973,7 @@ let ``prefixed strings elaborate through Elab-backed prelude handlers`` () =
     Assert.False(workspace.HasErrors, $"Expected Elab-backed prefixed string elaboration to succeed, got {workspace.Diagnostics}.")
 
 [<Fact>]
-let ``prefixed strings reject runtime dictionary parameters as handlers`` () =
+let ``prefixed strings reject runtime trait evidence parameters as handlers`` () =
     let workspace =
         compileInMemoryWorkspace
             "memory-prefixed-string-runtime-handler-root"
@@ -3751,13 +3981,13 @@ let ``prefixed strings reject runtime dictionary parameters as handlers`` () =
                 "main.kp",
                 [
                     "module main"
-                    "value : Dict (InterpolatedMacro String) -> String"
+                    "value : InterpolatedMacro String -> String"
                     "let value prefix = prefix\"123\""
                 ]
                 |> String.concat "\n"
             ]
 
-    Assert.True(workspace.HasErrors, "Expected runtime dictionary parameters to be rejected as prefixed-string handlers.")
+    Assert.True(workspace.HasErrors, "Expected runtime trait evidence parameters to be rejected as prefixed-string handlers.")
     Assert.Contains(workspace.Diagnostics, fun diagnostic -> diagnostic.Code = DiagnosticCode.TypeEqualityMismatch && diagnostic.Message.Contains("Elab", StringComparison.Ordinal))
 
 [<Fact>]
@@ -4468,7 +4698,6 @@ let ``bundled bootstrap prelude exposes the current bootstrap surface and IO sha
               "Res"
               "Match"
               "Dec"
-              "Dict"
               "WellFounded"
               "Acc"
               "IO"
@@ -4500,7 +4729,11 @@ let ``bundled bootstrap prelude exposes the current bootstrap surface and IO sha
 
     let requiredTraits =
         Set.ofList
-            [ "Equiv"
+            [ "IsSubsingleton"
+              "IsProp"
+              "IsSet"
+              "IsTrait"
+              "Equiv"
               "Eq"
               "Ord"
               "Show"
@@ -4535,14 +4768,14 @@ let ``bundled bootstrap prelude exposes the current bootstrap surface and IO sha
         Set.ofList
             [ "witness"
               "summon"
+              "pure"
+              ">>="
+              ">>"
               "/="
               "<"
               "<="
               ">"
               ">="
-              "pure"
-              ">>="
-              ">>"
               "|>"
               "<|"
               "not"
@@ -4551,9 +4784,6 @@ let ``bundled bootstrap prelude exposes the current bootstrap surface and IO sha
               ".."
               "..<"
               "force"
-              "empty"
-              "<|>"
-              "orElse"
               "++"
               "for_"
               "sequence"
@@ -4754,12 +4984,35 @@ let ``bundled bootstrap prelude exposes the current bootstrap surface and IO sha
     Assert.Equal("( e : Type ) ( a : Type )", ioHeaderText)
     Assert.Equal("( a : Type )", uioAliasHeaderText)
     Assert.Equal("IO Void a", uioAliasBodyText)
+    Assert.Equal("allEqual : ( x : t ) -> ( y : t ) -> x = y", traitMemberTypes["IsSubsingleton"]["allEqual"])
+    Assert.Empty(traitMemberTypes["IsProp"])
+    Assert.Equal(
+        "pathIsProp : forall ( x : a ) ( y : a ) . IsProp ( x = y )",
+        traitMemberTypes["IsSet"]["pathIsProp"]
+    )
     Assert.Equal("buildInterpolated : List SyntaxFragment -> Elab ( Syntax t )", traitMemberTypes["InterpolatedMacro"]["buildInterpolated"])
-    Assert.Equal("Elab ( Dict ( InterpolatedMacro String ) )", expectTermTypes["f"])
-    Assert.Equal("Elab ( Dict ( InterpolatedMacro String ) )", expectTermTypes["re"])
-    Assert.Equal("Elab ( Dict ( InterpolatedMacro String ) )", expectTermTypes["b"])
-    Assert.Equal("Elab ( Dict ( InterpolatedMacro Type ) )", expectTermTypes["type"])
+    Assert.Equal("Elab ( InterpolatedMacro String )", expectTermTypes["f"])
+    Assert.Equal("Elab ( InterpolatedMacro String )", expectTermTypes["re"])
+    Assert.Equal("Elab ( InterpolatedMacro String )", expectTermTypes["b"])
+    Assert.Equal("Elab ( InterpolatedMacro Type )", expectTermTypes["type"])
     Assert.Equal("( ~= ) : ( & x : a ) -> ( & y : a ) -> Bool", traitMemberTypes["Equiv"]["~="])
+    Assert.Equal("equivRefl : ( & x : a ) -> ( ( x ~= x ) = True )", traitMemberTypes["Equiv"]["equivRefl"])
+    Assert.Equal(
+        "equivSym : ( & x : a ) -> ( & y : a ) -> ( ( x ~= y ) = True -> ( y ~= x ) = True )",
+        traitMemberTypes["Equiv"]["equivSym"]
+    )
+    Assert.Equal(
+        "equivTrans : ( & x : a ) -> ( & y : a ) -> ( & z : a ) -> ( ( x ~= y ) = True -> ( y ~= z ) = True -> ( x ~= z ) = True )",
+        traitMemberTypes["Equiv"]["equivTrans"]
+    )
+    Assert.Equal("( == ) : ( & x : a ) -> ( & y : a ) -> Bool", traitMemberTypes["Eq"]["=="])
+    Assert.Equal("eqSound : ( & x : a ) -> ( & y : a ) -> ( ( x == y ) = True -> x = y )", traitMemberTypes["Eq"]["eqSound"])
+    Assert.Equal(
+        "eqComplete : ( & x : a ) -> ( & y : a ) -> ( x = y -> ( x == y ) = True )",
+        traitMemberTypes["Eq"]["eqComplete"]
+    )
+    Assert.Equal("eqIsSet : IsSet a", traitMemberTypes["Eq"]["eqIsSet"])
+    Assert.Equal("compare : ( & x : a ) -> ( & y : a ) -> Ordering", traitMemberTypes["Ord"]["compare"])
     Assert.Equal(
         "map : forall ( a : Type ) ( b : Type ) . ( a -> b ) -> f a -> f b",
         traitMemberTypes["Functor"]["map"]
@@ -4783,6 +5036,7 @@ let ``bundled bootstrap prelude exposes the current bootstrap surface and IO sha
     )
     Assert.Equal("empty : f a", traitMemberTypes["Alternative"]["empty"])
     Assert.Equal("( <|> ) : f a -> f a -> f a", traitMemberTypes["Alternative"]["<|>"])
+    Assert.Equal("let orElse x y = x <|> y", traitMemberTypes["Alternative"]["orElse"])
     Assert.Equal("foldr : forall ( a : Type ) ( b : Type ) . ( a -> b -> b ) -> b -> f a -> b", traitMemberTypes["Foldable"]["foldr"])
     Assert.Equal("foldl : forall ( a : Type ) ( b : Type ) . ( b -> a -> b ) -> b -> f a -> b", traitMemberTypes["Foldable"]["foldl"])
     Assert.Equal(
@@ -4845,16 +5099,11 @@ let ``bundled bootstrap prelude exposes the current bootstrap surface and IO sha
     Assert.Equal("forall ( @ 0 t : Type ) . Code t -> Option ( ClosedCode t )", expectTermTypes["closeCode"])
     Assert.Equal("forall ( @ 0 t : Type ) . Code t -> Code t", expectTermTypes["genlet"])
     Assert.Equal("ClosedCode t -> UIO t", expectTermTypes["runCode"])
-    Assert.Equal("( c : Constraint ) -> ( @ v : c ) -> Dict c", signatureTypes["summon"])
-    Assert.Equal("forall ( a : Type ) . ( @ eq : Eq a ) -> ( & x : a ) -> ( & y : a ) -> Bool", signatureTypes["/="])
-    Assert.Equal("forall ( a : Type ) . ( @ ord : Ord a ) -> ( & x : a ) -> ( & y : a ) -> Bool", signatureTypes["<"])
-    Assert.Equal("forall ( a : Type ) . ( @ ord : Ord a ) -> ( & x : a ) -> ( & y : a ) -> Bool", signatureTypes["<="])
-    Assert.Equal("forall ( a : Type ) . ( @ ord : Ord a ) -> ( & x : a ) -> ( & y : a ) -> Bool", signatureTypes[">"])
-    Assert.Equal("forall ( a : Type ) . ( @ ord : Ord a ) -> ( & x : a ) -> ( & y : a ) -> Bool", signatureTypes[">="])
+    Assert.Equal("( 0 t : Type ) -> ( @ _ : IsTrait t ) -> ( @ evidence : t ) -> t", signatureTypes["summon"])
     Assert.Equal("( 1 value : a ) -> UIO a", expectTermTypes["pure"])
     Assert.Equal("UIO a -> ( a -> UIO b ) -> UIO b", expectTermTypes[">>="])
-    Assert.Equal("forall ( v : Type ) . ( @ rangeable : Rangeable v ) -> v -> v -> Rangeable . Range v", signatureTypes[".."])
-    Assert.Equal("forall ( v : Type ) . ( @ rangeable : Rangeable v ) -> v -> v -> Rangeable . Range v", signatureTypes["..<"])
+    Assert.Equal("forall ( v : Type ) . ( @ rangeable : Rangeable v ) -> v -> v -> rangeable . Range", signatureTypes[".."])
+    Assert.Equal("forall ( v : Type ) . ( @ rangeable : Rangeable v ) -> v -> v -> rangeable . Range", signatureTypes["..<"])
     Assert.Equal("String -> UIO Unit", expectTermTypes["println"])
     Assert.Equal("String -> UIO Unit", expectTermTypes["print"])
     Assert.Equal("a -> UIO ( Ref a )", expectTermTypes["newRef"])
@@ -4863,24 +5112,49 @@ let ``bundled bootstrap prelude exposes the current bootstrap surface and IO sha
     Assert.Equal("String -> UIO Unit", signatureTypes["printlnString"])
     Assert.Equal("Int -> UIO Unit", signatureTypes["printInt"])
     Assert.Equal("String -> UIO Unit", signatureTypes["printString"])
+    Assert.Equal("forall ( a : Type ) . ( @ eq : Eq a ) -> ( & x : a ) -> ( & y : a ) -> Bool", signatureTypes["/="])
+    Assert.Equal("forall ( a : Type ) . ( @ ord : Ord a ) -> ( & x : a ) -> ( & y : a ) -> Bool", signatureTypes["<"])
+    Assert.Equal("forall ( a : Type ) . ( @ ord : Ord a ) -> ( & x : a ) -> ( & y : a ) -> Bool", signatureTypes["<="])
+    Assert.Equal("forall ( a : Type ) . ( @ ord : Ord a ) -> ( & x : a ) -> ( & y : a ) -> Bool", signatureTypes[">"])
+    Assert.Equal("forall ( a : Type ) . ( @ ord : Ord a ) -> ( & x : a ) -> ( & y : a ) -> Bool", signatureTypes[">="])
+    Assert.Equal("forall ( a : Type ) . ( @ monoid : Monoid a ) -> a -> a -> a", signatureTypes["++"])
+    Assert.Equal(
+        "forall ( t : Type -> Type ) ( m : Type -> Type ) ( a : Type ) . ( @ foldable : Foldable t ) -> ( @ applicative : Applicative m ) -> t a -> ( a -> m Unit ) -> m Unit",
+        signatureTypes["for_"]
+    )
+    Assert.Equal(
+        "forall ( t : Type -> Type ) ( m : Type -> Type ) ( a : Type ) . ( @ traversable : Traversable t ) -> ( @ applicative : Applicative m ) -> t ( m a ) -> m ( t a )",
+        signatureTypes["sequence"]
+    )
+    Assert.Equal(
+        "forall ( t : Type -> Type ) ( m : Type -> Type ) ( a : Type ) . ( @ foldable : Foldable t ) -> ( @ applicative : Applicative m ) -> t ( m a ) -> m Unit",
+        signatureTypes["sequence_"]
+    )
     Assert.Contains("printlnString", letNames)
     Assert.Contains("printInt", letNames)
     Assert.Contains("printString", letNames)
+    Assert.Equal("UIO a -> UIO b -> UIO b", expectTermTypes[">>"])
+    Assert.Equal("Void -> a", expectTermTypes["absurd"])
+    Assert.Equal("( ( = ) a x y ) -> b -> b", expectTermTypes["subst"])
+    Assert.Equal("a -> ( a -> b ) -> b", expectTermTypes["|>"])
+    Assert.Equal("( a -> b ) -> a -> b", expectTermTypes["<|"])
+    Assert.Equal("( ( = ) a x y ) -> ( ( = ) a y x )", expectTermTypes["sym"])
+    Assert.Equal(
+        "( ( = ) a x y ) -> ( ( = ) a y z ) -> ( ( = ) a x z )",
+        expectTermTypes["trans"]
+    )
+    Assert.Equal("( ( = ) a x y ) -> ( ( = ) b u v )", expectTermTypes["cong"])
+    Assert.Contains("..", letNames)
+    Assert.Contains("..<", letNames)
     Assert.Contains("/=", letNames)
     Assert.Contains("<", letNames)
     Assert.Contains("<=", letNames)
     Assert.Contains(">", letNames)
     Assert.Contains(">=", letNames)
-    Assert.Contains("..", letNames)
-    Assert.Contains("..<", letNames)
     Assert.Contains("++", letNames)
     Assert.Contains("for_", letNames)
     Assert.Contains("sequence", letNames)
     Assert.Contains("sequence_", letNames)
-    Assert.Equal("UIO a -> UIO b -> UIO b", expectTermTypes[">>"])
-    Assert.Equal("Option a -> Option a -> Option a", expectTermTypes["orElse"])
-    Assert.Equal("a -> ( a -> b ) -> b", expectTermTypes["|>"])
-    Assert.Equal("( a -> b ) -> a -> b", expectTermTypes["<|"])
 
 [<Fact>]
 let ``bundled std hash module exposes real Hashable members and ordinary helpers`` () =

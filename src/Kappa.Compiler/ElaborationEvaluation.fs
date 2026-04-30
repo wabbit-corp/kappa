@@ -312,20 +312,20 @@ module internal ElaborationEvaluation =
 
     let private defaultLocation (source: SourceText) = source.GetLocation(TextSpan.FromBounds(0, 0))
 
-    let private makeDiagnostic severity code stage phase message source =
-        { Severity = severity
-          Code = code
-          Stage = Some stage
-          Phase = Some phase
-          Message = message
-          Location = Some(defaultLocation source)
-          RelatedLocations = [] }
+    let private makeDiagnostic severity fact stage phase source =
+        Diagnostics.create severity fact (Some(defaultLocation source)) [] (Some stage) (Some phase)
 
-    let private makeMacroError code message source =
-        makeDiagnostic Error code "macro-expansion" (KFrontIRPhase.phaseName BODY_RESOLVE) message source
+    let private makeMacroError kind message source =
+        makeDiagnostic Error (DiagnosticFact.simple kind message) "macro-expansion" (KFrontIRPhase.phaseName BODY_RESOLVE) source
 
-    let private makeMacroWarning code message source =
-        makeDiagnostic Warning code "macro-expansion" (KFrontIRPhase.phaseName BODY_RESOLVE) message source
+    let private makeMacroWarning kind message source =
+        makeDiagnostic Warning (DiagnosticFact.simple kind message) "macro-expansion" (KFrontIRPhase.phaseName BODY_RESOLVE) source
+
+    let private makeMacroCodeError code message source =
+        makeDiagnostic Error (DiagnosticFact.codeDetail code message) "macro-expansion" (KFrontIRPhase.phaseName BODY_RESOLVE) source
+
+    let private makeMacroCodeWarning code message source =
+        makeDiagnostic Warning (DiagnosticFact.codeDetail code message) "macro-expansion" (KFrontIRPhase.phaseName BODY_RESOLVE) source
 
     let private importedItemLocalName (item: ImportItem) = item.Alias |> Option.defaultValue item.Name
 
@@ -881,7 +881,7 @@ module internal ElaborationEvaluation =
         | RawTypeTokens _ -> Result.Error DiagnosticCode.DerivingShapeNotData
         | _ -> Result.Error DiagnosticCode.DerivingShapeNotData
 
-    let private makeShapeDiagnostic code message source = makeMacroError code message source
+    let private makeShapeDiagnostic code message source = makeMacroCodeError code message source
 
     let private constructorFieldName index (parameter: DataConstructorParameter) =
         parameter.ParameterName |> Option.defaultValue $"_{index + 1}"
@@ -1554,7 +1554,7 @@ module internal ElaborationEvaluation =
         let diagnosticCodeFromText codeText =
             DiagnosticCode.tryParseIdentifier codeText |> Option.defaultValue DiagnosticCode.ElaborationFailed
 
-        let failWith codeText message = EvalFailed [ makeMacroError (diagnosticCodeFromText codeText) message context.Source ]
+        let failWith codeText message = EvalFailed [ makeMacroCodeError (diagnosticCodeFromText codeText) message context.Source ]
 
         let rec applyCallback callback arguments =
             let applyOne functionValue argumentValue callbackDiagnostics =
@@ -1609,11 +1609,11 @@ module internal ElaborationEvaluation =
 
         match builtinSuffix, appliedArguments with
         | "pure", [ value ] -> EvalSucceeded(value, diagnostics)
-        | "failElab", [ MetaString message ] -> EvalFailed [ makeMacroError DiagnosticCode.ElaborationFailed message context.Source ]
-        | "warnElab", [ MetaString message ] -> EvalSucceeded(MetaUnit, mergeDiagnostics diagnostics [ makeMacroWarning DiagnosticCode.SourceWarning message context.Source ])
+        | "failElab", [ MetaString message ] -> EvalFailed [ makeMacroError SimpleDiagnosticKind.ElaborationFailed message context.Source ]
+        | "warnElab", [ MetaString message ] -> EvalSucceeded(MetaUnit, mergeDiagnostics diagnostics [ makeMacroWarning SimpleDiagnosticKind.SourceWarning message context.Source ])
         | "failElabWith", [ MetaString code; MetaString message; _ ] -> failWith code message
         | "warnElabWith", [ MetaString code; MetaString message; _ ] ->
-            EvalSucceeded(MetaUnit, mergeDiagnostics diagnostics [ makeMacroWarning (diagnosticCodeFromText code) message context.Source ])
+            EvalSucceeded(MetaUnit, mergeDiagnostics diagnostics [ makeMacroCodeWarning (diagnosticCodeFromText code) message context.Source ])
         | "syntaxOrigin", [ MetaSyntax _ ] ->
             EvalSucceeded(MetaData("SyntaxOrigin", []), diagnostics)
         | "renderSyntax", [ MetaSyntax syntaxValue ] ->
@@ -1936,7 +1936,7 @@ module internal ElaborationEvaluation =
                       Diagnostics = diagnostics }
                 | EvalSucceeded(MetaSyntax _, diagnostics) ->
                     { Expression = Literal LiteralValue.Unit
-                      Diagnostics = diagnostics @ [ makeMacroError DiagnosticCode.TypeEqualityMismatch "Syntax value escapes the scope where one or more captured local binders are available." currentContext.Source ] }
+                      Diagnostics = diagnostics @ [ makeMacroError SimpleDiagnosticKind.TypeEqualityMismatch "Syntax value escapes the scope where one or more captured local binders are available." currentContext.Source ] }
                 | EvalFailed diagnostics -> { Expression = Literal LiteralValue.Unit; Diagnostics = diagnostics }
                 | _ -> { Expression = TopLevelSyntaxSplice inner; Diagnostics = [] }
             | LocalLet(binding, value, body) ->

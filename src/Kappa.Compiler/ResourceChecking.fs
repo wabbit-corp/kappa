@@ -2593,7 +2593,7 @@ module ResourceChecking =
 
     let private addProjectionCapabilityDiagnostic (document: ParsedDocument) capability expression state =
         addDiagnostic
-            DiagnosticCode.ProjectionCapabilityRequired
+            (DiagnosticFact.codeDetail DiagnosticCode.ProjectionCapabilityRequired)
             $"Projection/accessor use requires the '{capability}' capability at this site."
             (argumentLocation document expression)
             []
@@ -2602,7 +2602,7 @@ module ResourceChecking =
 
     let private addProjectionPlaceDiagnostic (document: ParsedDocument) expression state =
         addDiagnostic
-            DiagnosticCode.ProjectionRootInvalid
+            (DiagnosticFact.codeDetail DiagnosticCode.ProjectionRootInvalid)
             "Projection place arguments must be stable places or computed selector places with stable roots."
             (argumentLocation document expression)
             []
@@ -3297,7 +3297,7 @@ module ResourceChecking =
                 current
             else
                 addDiagnostic
-                    linearDropCode
+                    linearDropDiagnostic
                     $"Shadowing binding '{shadowedBinding.Name}' must consume the previous linear value exactly once in the right-hand side."
                     (findBinderLocation document shadowedBinding.Name |> Option.orElse shadowedBinding.Origin)
                     [
@@ -3629,7 +3629,7 @@ module ResourceChecking =
                 current
             else
                 addDiagnostic
-                    inoutThreadedFieldMissingCode
+                    inoutThreadedFieldMissingDiagnostic
                     $"An 'inout' parameter '{parameter.Name}' requires the result type to contain a quantity-1 field named '{parameter.Name}' after peeling any enclosing monad."
                     (findBinderLocation document parameter.Name)
                     []
@@ -3663,7 +3663,7 @@ module ResourceChecking =
                         ]
 
                     addDiagnostic
-                        borrowConsumeCode
+                        borrowConsumeDiagnostic
                         $"Borrowed resource '{place.Root}' cannot be consumed."
                         consumeOrigin
                         relatedLocations
@@ -3681,7 +3681,7 @@ module ResourceChecking =
                         ]
 
                     addDiagnostic
-                        borrowOverlapCode
+                        borrowOverlapDiagnostic
                         $"Place '{placeText}' overlaps an active borrowed footprint."
                         consumeOrigin
                         relatedLocations
@@ -3691,7 +3691,7 @@ module ResourceChecking =
                     state
                     |> addCopyForbiddenEventAtPlace consumeOrigin place.Root place.Path binding
                     |> addDiagnostic
-                        linearOveruseCode
+                        linearOveruseDiagnostic
                         $"Linear resource '{place.Root}' cannot be consumed as a whole after one of its field paths has already been consumed."
                         consumeOrigin
                         []
@@ -3700,7 +3700,7 @@ module ResourceChecking =
                     state
                     |> addCopyForbiddenEventAtPlace consumeOrigin place.Root place.Path binding
                     |> addDiagnostic
-                        linearOveruseCode
+                        linearOveruseDiagnostic
                         $"Field path '{placeText}' cannot be consumed after its root resource has already been consumed."
                         consumeOrigin
                         []
@@ -3710,7 +3710,7 @@ module ResourceChecking =
                     state
                     |> addCopyForbiddenEventAtPlace consumeOrigin place.Root place.Path binding
                     |> addDiagnostic
-                        linearOveruseCode
+                        linearOveruseDiagnostic
                         $"Field path '{placeText}' has already been consumed."
                         consumeOrigin
                         []
@@ -3734,7 +3734,7 @@ module ResourceChecking =
                     state
                     |> addCopyForbiddenEventAtPlace consumeOrigin place.Root place.Path binding
                     |> addDiagnostic
-                        linearOveruseCode
+                        linearOveruseDiagnostic
                         $"Linear resource '{place.Root}' is consumed more than once."
                         consumeOrigin
                         relatedLocations
@@ -3805,7 +3805,7 @@ module ResourceChecking =
                 state
             | Some binding when binding.DeclaredQuantity = Some ResourceQuantity.zero ->
                 addDiagnostic
-                    erasedRuntimeUseCode
+                    erasedRuntimeUseDiagnostic
                     $"Quantity-0 binding '{binding.Name}' cannot be used at runtime."
                     (findUseLocation document root 1)
                     []
@@ -3824,7 +3824,7 @@ module ResourceChecking =
                 state
             | Some binding when binding.DeclaredQuantity = Some ResourceQuantity.zero ->
                 addDiagnostic
-                    erasedRuntimeUseCode
+                    erasedRuntimeUseDiagnostic
                     $"Quantity-0 binding '{binding.Name}' cannot be used at runtime."
                     (findUseLocation document name 1)
                     []
@@ -4049,7 +4049,7 @@ module ResourceChecking =
                 state
             else
                 addDiagnostic
-                    borrowOverlapCode
+                    borrowOverlapDiagnostic
                     message
                     (borrowLock.Origin |> Option.orElseWith (fun () -> Some(diagnosticLocation document)))
                     [
@@ -4063,7 +4063,7 @@ module ResourceChecking =
                     state
         | Some binding when List.isEmpty place.Path && not (List.isEmpty binding.ConsumedPaths) ->
             addDiagnostic
-                linearOveruseCode
+                linearOveruseDiagnostic
                 $"Linear resource '{place.Root}' cannot be used as a whole after one of its field paths has already been consumed."
                 (findBindingUseLocation document binding 1)
                 []
@@ -4073,7 +4073,7 @@ module ResourceChecking =
                             && (binding.ConsumedPaths |> List.exists (fun consumedPath -> pathsOverlap consumedPath place.Path)) ->
             let placeText = String.concat "." (place.Root :: place.Path)
             addDiagnostic
-                linearOveruseCode
+                linearOveruseDiagnostic
                 $"Field path '{placeText}' has already been consumed."
                 (findBindingUseLocation document binding 1)
                 []
@@ -4552,7 +4552,7 @@ module ResourceChecking =
                 | _ -> state
 
             addDiagnostic
-                borrowEscapeCode
+                borrowEscapeDiagnostic
                 "A value that captures a borrowed region cannot escape its protected scope."
                 escapeOrigin
                 relatedLocations
@@ -4855,7 +4855,7 @@ module ResourceChecking =
                 |> List.filter (fun binding -> binding.DeclaredQuantity = Some ResourceQuantity.zero)
                 |> List.fold (fun current binding ->
                     addDiagnostic
-                        erasedRuntimeUseCode
+                        erasedRuntimeUseDiagnostic
                         $"A runtime closure cannot capture erased quantity-0 binding '{binding.Name}'."
                         (findUseLocation document binding.Name 1)
                         []
@@ -4888,7 +4888,7 @@ module ResourceChecking =
                     |> List.distinctBy (fun related -> related.Location.FilePath, related.Location.Span.Start, related.Message)
 
                 addDiagnostic
-                    borrowEscapeCode
+                    borrowEscapeDiagnostic
                     "A lambda that captures a borrowed region cannot escape its protected scope."
                     escapeOrigin
                     relatedLocations
@@ -5007,7 +5007,7 @@ module ResourceChecking =
                && not (hasPriorNonDropResourceError current)
                && not (hasPriorLinearDropAt binding.Origin current) then
                 addDiagnostic
-                    linearDropCode
+                    linearDropDiagnostic
                     $"Linear resource '{binding.Name}' is not consumed on every path."
                     binding.Origin
                     []
@@ -5031,7 +5031,7 @@ module ResourceChecking =
                && not (hasPriorNonDropResourceError current)
                && not (hasPriorLinearDropAt binding.Origin current) then
                 addDiagnostic
-                    linearDropCode
+                    linearDropDiagnostic
                     $"Linear resource '{binding.Name}' is not consumed on every path."
                     binding.Origin
                     []
@@ -5373,15 +5373,15 @@ module ResourceChecking =
             { current with
                 Bindings = restoredBindings }
 
-        let addClauseDiagnostic code message clauseExpression current =
-            addDiagnostic code message (argumentLocation document clauseExpression) [] document current
+        let addClauseDiagnostic makeFact message clauseExpression current =
+            addDiagnostic makeFact message (argumentLocation document clauseExpression) [] document current
 
-        let addExactOneRowClauseDiagnostic code message clauseExpression current =
+        let addExactOneRowClauseDiagnostic makeFact message clauseExpression current =
             match currentExactOneRowBindings current with
             | [] ->
                 current
             | (_, binding) :: _ ->
-                addClauseDiagnostic code (message binding.Name) clauseExpression current
+                addClauseDiagnostic makeFact (message binding.Name) clauseExpression current
 
         let checkNonConsumingRowExpression clauseLabel clauseExpression currentLocals current =
             let rowSnapshots =
@@ -5410,7 +5410,7 @@ module ResourceChecking =
                 restored
             | bindingName :: _ ->
                 addClauseDiagnostic
-                    linearOveruseCode
+                    linearOveruseDiagnostic
                     $"`{clauseLabel}` must not consume row binding '{bindingName}'."
                     clauseExpression
                     restored
@@ -5422,11 +5422,11 @@ module ResourceChecking =
             | (_, binding) :: _ ->
                 let mayDrop = QuerySemantics.mayDiscardRows card
                 let mayDuplicate = QuerySemantics.mayDuplicateRows card
-                let code =
+                let makeFact =
                     if mayDuplicate then
-                        linearOveruseCode
+                        linearOveruseDiagnostic
                     else
-                        linearDropCode
+                        linearDropDiagnostic
 
                 let effectText =
                     match mayDrop, mayDuplicate with
@@ -5436,14 +5436,14 @@ module ResourceChecking =
                     | false, false -> "reorder"
 
                 addClauseDiagnostic
-                    code
+                    makeFact
                     $"`{clauseLabel}` may {effectText} linear row binding '{binding.Name}' because the clause cardinality is {queryCardText card}."
                     clauseExpression
                     current
 
         let addDropDiagnostic clauseLabel clauseExpression current =
             addExactOneRowClauseDiagnostic
-                linearDropCode
+                linearDropDiagnostic
                 (fun bindingName -> $"`{clauseLabel}` may discard linear row binding '{bindingName}'.")
                 clauseExpression
                 current
@@ -5462,7 +5462,7 @@ module ResourceChecking =
             match referencedLinearName with
             | Some bindingName ->
                 addClauseDiagnostic
-                    linearOveruseCode
+                    linearOveruseDiagnostic
                     $"`left join ... into` would capture linear outer row binding '{bindingName}' for delayed query use."
                     condition
                     current
@@ -6310,7 +6310,7 @@ module ResourceChecking =
                             match tryFindBinding scrutineeName state with
                             | Some binding when binding.DeclaredQuantity = Some ResourceQuantity.zero ->
                                 addDiagnostic
-                                    erasedRuntimeUseCode
+                                    erasedRuntimeUseDiagnostic
                                     "A match scrutinee cannot use an erased quantity-0 value at runtime."
                                     (argumentLocation document scrutinee)
                                     []
@@ -6372,7 +6372,7 @@ module ResourceChecking =
                                         && ResourceQuantity.requiresUse quantity)
                                     |> List.fold (fun current (fieldName, _) ->
                                         addDiagnostic
-                                            linearDropCode
+                                            linearDropDiagnostic
                                             $"Record pattern omits linear field '{fieldName}'."
                                             (argumentLocation document scrutinee)
                                             []
@@ -6450,7 +6450,7 @@ module ResourceChecking =
                                     |> fun path -> String.concat "." (receiverPlace.Root :: path)
 
                                 addDiagnostic
-                                    linearOveruseCode
+                                    linearOveruseDiagnostic
                                     $"Record update on '{receiverPlace.Root}' must explicitly repair previously consumed path '{firstUnrepairedPath}'."
                                     (argumentLocation document receiver)
                                     []
@@ -6475,7 +6475,7 @@ module ResourceChecking =
                                 match missingRepairField with
                                 | Some fieldName ->
                                     addDiagnostic
-                                        DiagnosticCode.TypeEqualityMismatch
+                                        (DiagnosticFact.codeDetail DiagnosticCode.TypeEqualityMismatch)
                                         $"Record update on '{receiverPlace.Root}' changes dependent field inputs but does not repair field '{fieldName}'."
                                         (argumentLocation document receiver)
                                         []
@@ -6636,7 +6636,7 @@ module ResourceChecking =
                     state
                 else
                     addDiagnostic
-                        borrowEscapeCode
+                        borrowEscapeDiagnostic
                         "A forked child computation cannot capture a borrowed region from the parent fiber."
                         (argumentLocation document body)
                         []
@@ -6713,7 +6713,7 @@ module ResourceChecking =
                 match tryFindMultiShotScopedOperation expression with
                 | Some(effectName, operation) when not (backendSupportsMultishotEffects (currentBackendProfile ())) ->
                     addDiagnostic
-                        DiagnosticCode.MultishotEffectUnsupportedBackend
+                        (DiagnosticFact.codeDetail DiagnosticCode.MultishotEffectUnsupportedBackend)
                         $"Backend profile '{BackendProfile.toPortableName (currentBackendProfile ())}' does not provide capability 'rt-multishot-effects' required by multi-shot operation '{effectName}.{operation.Name}' at this invocation site."
                         (argumentLocation document expression)
                         []
@@ -6776,6 +6776,33 @@ module ResourceChecking =
                 | _ ->
                     state
 
+            let tryInlineDefinitionSignature fallbackName =
+                document.Syntax.Declarations
+                |> List.tryPick (function
+                    | LetDeclaration definition when definition.Name = Some fallbackName ->
+                        let runtimeParameters =
+                            definition.Parameters
+                            |> List.filter (fun parameter ->
+                                parameter.TypeTokens
+                                |> Option.bind TypeSignatures.parseType
+                                |> Option.exists typeIsElaborationOnlyCarrierType
+                                |> not)
+
+                        Some(
+                            runtimeParameters |> List.map (fun parameter -> Some parameter.Name),
+                            runtimeParameters |> List.map (fun parameter -> parameter.IsImplicit),
+                            runtimeParameters
+                            |> List.map (fun parameter ->
+                                if parameter.IsInout then
+                                    Some ResourceQuantity.one
+                                else
+                                    parameter.Quantity |> Option.map ResourceQuantity.ofSurface),
+                            runtimeParameters |> List.map (fun parameter -> parameter.TypeTokens |> Option.bind TypeSignatures.parseType),
+                            runtimeParameters |> List.map (fun parameter -> parameter.IsInout)
+                        )
+                    | _ ->
+                        None)
+
             let parameterNames, parameterImplicit, parameterQuantities, parameterTypes, parameterInout =
                 match localLambda with
                 | Some lambdaValue ->
@@ -6792,15 +6819,15 @@ module ResourceChecking =
                             let quantities, parameterTypes = functionParameterInfoFromType localType
                             [], List.replicate parameterTypes.Length false, quantities, parameterTypes, List.replicate parameterTypes.Length false
                         | None ->
-                            calleeName
-                            |> Option.bind (fun resolvedName -> Map.tryFind resolvedName signatures)
-                            |> Option.map (fun signature ->
+                            match calleeName |> Option.bind (fun resolvedName -> Map.tryFind resolvedName signatures) with
+                            | Some signature ->
                                 signature.ParameterNames,
                                 signature.ParameterImplicit,
                                 signature.ParameterQuantities,
                                 (signature.ParameterTypeTokens |> List.map (Option.bind TypeSignatures.parseType)),
-                                signature.ParameterInout)
-                            |> Option.defaultValue ([], [], [], [], [])
+                                signature.ParameterInout
+                            | None ->
+                                tryInlineDefinitionSignature name |> Option.defaultValue ([], [], [], [], [])
                     | _ ->
                         calleeName
                         |> Option.bind (fun name -> Map.tryFind name signatures)
@@ -6993,7 +7020,7 @@ module ResourceChecking =
 
                     if overlaps then
                         addDiagnostic
-                            borrowOverlapCode
+                            borrowOverlapDiagnostic
                             "Inout arguments must have disjoint place footprints."
                             (argumentLocation document rightArgument)
                             []
@@ -7064,7 +7091,7 @@ module ResourceChecking =
 
                             if overlaps then
                                 addDiagnostic
-                                    borrowOverlapCode
+                                    borrowOverlapDiagnostic
                                     "A temporary borrow introduced earlier in this application spine overlaps a later consuming argument."
                                     (argumentLocation document consumeArgument)
                                     [
@@ -7109,7 +7136,7 @@ module ResourceChecking =
                     let current =
                         if expectsInout && not hasInoutMarker then
                             addDiagnostic
-                                inoutMarkerRequiredCode
+                                inoutMarkerRequiredDiagnostic
                                 "An argument supplied to an 'inout' parameter must be marked with '~'."
                                 (argumentLocation document argument)
                                 []
@@ -7117,7 +7144,7 @@ module ResourceChecking =
                                 current
                         elif hasInoutMarker && not expectsInout then
                             addDiagnostic
-                                inoutMarkerUnexpectedCode
+                                inoutMarkerUnexpectedDiagnostic
                                 "The '~' marker can only be used for an 'inout' parameter."
                                 (argumentLocation document argument)
                                 []
@@ -7145,7 +7172,7 @@ module ResourceChecking =
                                     current
                                 else
                                     addDiagnostic
-                                        linearOveruseCode
+                                        linearOveruseDiagnostic
                                         $"An argument available at quantity '{ResourceQuantity.toSurfaceText capability}' cannot satisfy parameter demand '{ResourceQuantity.toSurfaceText demandQuantity}'."
                                         (argumentLocation document argument)
                                         []
@@ -7164,7 +7191,7 @@ module ResourceChecking =
                             let current = transferImmediateClosureArgumentCaptures document argument current
 
                             addDiagnostic
-                                linearOveruseCode
+                                linearOveruseDiagnostic
                                 $"An argument usable at quantity '{ResourceQuantity.toSurfaceText capability}' cannot satisfy parameter demand '{ResourceQuantity.toSurfaceText demandQuantity}'."
                                 (argumentLocation document argument)
                                 []
@@ -7180,7 +7207,7 @@ module ResourceChecking =
                             when shouldCheckApplicationTypeCompatibility argument demandedType actualType
                                  && not (applicationBoundaryTypesCompatible demandedType actualType) ->
                             addDiagnostic
-                                DiagnosticCode.TypeEqualityMismatch
+                                (DiagnosticFact.codeDetail DiagnosticCode.TypeEqualityMismatch)
                                 $"Argument type '{TypeSignatures.toText actualType}' does not match demanded parameter type '{TypeSignatures.toText demandedType}'."
                                 (argumentLocation document argument)
                                 []
@@ -7594,7 +7621,7 @@ module ResourceChecking =
                         current
                     | None when letQuestionPlainFailureDropsPositiveResidue document binding.Pattern ->
                         addDiagnostic
-                            linearDropCode
+                            linearDropDiagnostic
                             "Plain let? would discard a refutation residue carrying a positive lower-bound obligation; use an explicit else arm."
                             (bindPatternIntroductionOrigin document binding |> Option.orElseWith (fun () -> argumentLocation document expression))
                             []
@@ -7730,7 +7757,7 @@ module ResourceChecking =
                             pendingMultishotOperations
                             |> List.fold (fun state pendingOperation ->
                                 addDiagnostic
-                                    DiagnosticCode.QttContinuationCapture
+                                    (DiagnosticFact.codeDetail DiagnosticCode.QttContinuationCapture)
                                     $"Multi-shot operation '{pendingOperation.EffectVisibleName}.{pendingOperation.OperationName}' cannot capture {capturedSummary} in its continuation."
                                     (argumentLocation document pendingOperation.InvocationExpression)
                                     []
@@ -7960,7 +7987,7 @@ module ResourceChecking =
                 let current =
                     if containsEscapingAbruptControl expression then
                         addDiagnostic
-                            DiagnosticCode.ControlFlowInvalidEscape
+                            (DiagnosticFact.codeDetail DiagnosticCode.ControlFlowInvalidEscape)
                             "A deferred action must not contain return, break, or continue targeting an outer scope."
                             (argumentLocation document expression)
                             []
@@ -8257,7 +8284,7 @@ module ResourceChecking =
 
                 if captureTypeMismatch then
                     addDiagnostic
-                        DiagnosticCode.TypeEqualityMismatch
+                        (DiagnosticFact.codeDetail DiagnosticCode.TypeEqualityMismatch)
                         "The definition body does not match the declared result type."
                         (argumentLocation document body)
                         []

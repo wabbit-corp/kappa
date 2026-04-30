@@ -548,45 +548,566 @@ type DiagnosticRelatedLocation =
     { Message: string
       Location: SourceLocation }
 
+type DiagnosticPayloadValue =
+    | DiagnosticPayloadText of string
+    | DiagnosticPayloadTextList of string list
+
+type DiagnosticPayloadField =
+    { Name: string
+      Value: DiagnosticPayloadValue }
+
+type DiagnosticPayload =
+    { Kind: string
+      Fields: DiagnosticPayloadField list }
+
+type DiagnosticDescriptor =
+    { Code: DiagnosticCode
+      Family: string option
+      Message: string
+      Payload: DiagnosticPayload
+      Explanation: string option }
+
+type SimpleDiagnosticKind =
+    | SourceInfo
+    | SourceWarning
+    | TabCharacterNotPermitted
+    | UnrecognizedCharacter
+    | MalformedNumericLiteral
+    | UnterminatedStringInterpolation
+    | ExpectedSyntaxToken
+    | ExpectedClosingDelimiter
+    | ExpectedIndentedBlock
+    | InvalidTypeSyntax
+    | UnsupportedSyntax
+    | UnexpectedTrailingSyntax
+    | ModifierNotApplicable
+    | ElaborationFailed
+    | ImportUnhideRequiresBuildSetting
+    | ImportClarifyRequiresBuildSetting
+    | ImportItemModifierReexportForbidden
+    | AssertTerminatesRequiresModuleAttribute
+    | AssertReducibleRequiresModuleAttribute
+    | CheckpointVerification
+    | TargetCheckpoint
+    | ExpectAmbiguous
+    | ExpectUnsatisfied
+    | ImportAmbiguous
+    | ImportItemNotFound
+    | UrlImportUnpinnedInPackageMode
+    | UrlImportRefPinRequiresLock
+    | UrlImportUnsupported
+    | HostModuleReservedRoot
+    | HostModuleUnsupportedBackend
+    | EffectRuntimeUnsupportedBackend
+    | MultishotEffectUnsupportedBackend
+    | ModuleAttributeUnknown
+    | ModuleHeaderMisplaced
+    | ModuleHeaderExpectedAfterAttributes
+    | ModulePathMismatch
+    | StaticObjectUnresolved
+    | PatternHeadNotConstructorOrActivePattern
+    | ActivePatternLinearityViolation
+    | ActivePatternMatchResultNotAllowedInPlainLetQuestion
+    | ActivePatternMissingScrutineeBinder
+    | ActivePatternMonadicResult
+    | ProjectionCapabilityRequired
+    | ProjectionUpdateTargetUnsupported
+    | ProjectionRootInvalid
+    | ProjectionDescriptorRootMissing
+    | ProjectionRootsPackMismatch
+    | ProjectionDescriptorRootsLiteralRequired
+    | ProjectionDescriptorValueExpected
+    | ProjectionMissingPlaceBinder
+    | ProjectionYieldInvalid
+    | ProjectionExpandedAccessorPlaceBinderMismatch
+    | ProjectionAccessorClauseDuplicate
+    | TraitInstanceAmbiguous
+    | TraitSupertraitUnsatisfied
+    | HandlerEffectRowMismatch
+    | HandlerClauseMissing
+    | HandlerClauseDuplicate
+    | HandlerClauseArityMismatch
+    | HandlerClauseUnexpected
+    | EffectResumptionQuantityBorrowed
+    | DerivingShapeNotData
+    | DerivingShapeNotClosedRecord
+    | DerivingShapeOpaqueRepresentation
+    | DerivingShapeUnsupportedType
+    | DerivingShapeBadConstructorArguments
+    | DerivingShapeBadRecordArguments
+    | DerivingShapeMissingRuntimeFieldInstance
+    | DerivingShapeDeclarationEffect
+    | NameUnresolved
+    | ModuleNameUnresolved
+    | RecursiveTypeAlias
+    | MalformedConstructorDeclaration
+    | RecursionRequiresSignature
+    | SignatureUnsatisfied
+    | OrPatternBinderMismatch
+    | OrPatternBinderTypeMismatch
+    | SafeNavigationAmbiguous
+    | SafeNavigationReceiverNotOption
+    | ElvisReceiverNotOption
+    | RecordDuplicateField
+    | RecordDependencyCycle
+    | RecordDependencyInvalid
+    | RecordProjectionMissingField
+    | RecordPatchInvalidItem
+    | RecordPatchDuplicatePath
+    | RecordPatchPrefixConflict
+    | RecordPatchUnknownPath
+    | RowExtensionDuplicateLabel
+    | RowExtensionExistingField
+    | RowExtensionMissingLacksConstraint
+    | ApplicationNonCallable
+    | SealDirectLiteralForSignature
+    | SealOpenRecordAscription
+    | SealOpaqueUnfolding
+    | TypeEqualityMismatch
+    | NumericLiteralOutOfRange
+    | UnicodeInvalidScalarLiteral
+    | UnicodeInvalidGraphemeLiteral
+    | UnicodeInvalidByteLiteral
+    | UnicodeInvalidUtf8
+    | UnicodeBidiControl
+    | UnicodeConfusableIdentifier
+    | UnicodeNonNormalizedSourceText
+    | UnexpectedIndentation
+    | UnterminatedBacktickIdentifier
+    | UnterminatedStringLiteral
+    | UnterminatedCharacterLiteral
+    | UnterminatedBlockComment
+    | QttLinearDrop
+    | QttLinearOveruse
+    | QttBorrowConsume
+    | QttBorrowOverlap
+    | QttBorrowEscape
+    | QttContinuationCapture
+    | QttErasedRuntimeUse
+    | QttUsingExplicitQuantity
+    | QttInoutMarkerRequired
+    | QttInoutMarkerUnexpected
+    | QttInoutThreadedFieldMissing
+    | ControlFlowInvalidEscape
+
+type SimpleDiagnosticEvidence =
+    { Kind: SimpleDiagnosticKind
+      Detail: string }
+
+type CodeDetailEvidence =
+    { Code: DiagnosticCode
+      Detail: string }
+
+type NameUnresolvedEvidence =
+    { Spelling: string
+      AdmissibleKinds: string list
+      SearchedScopes: string list
+      GeneratedSyntax: bool }
+
+type NameAmbiguousEvidence =
+    { Spelling: string
+      CandidateDescriptions: string list }
+
+type DuplicatePatternBinderEvidence =
+    { BinderName: string }
+
+type DuplicateDeclarationEvidence =
+    { Detail: string
+      ModuleName: string option }
+
+type ImportCycleEvidence =
+    { ModulePath: string list }
+
+type ModuleCaseFoldCollisionEvidence =
+    { CollidingPaths: string list }
+
+type InvalidUtf8SourceEvidence =
+    { Detail: string }
+
+type ModuleNameUnresolvedEvidence =
+    { FilePath: string }
+
+type DiagnosticFact =
+    | SimpleDiagnostic of SimpleDiagnosticEvidence
+    | CodeDetailDiagnostic of CodeDetailEvidence
+    | NameUnresolvedDiagnostic of NameUnresolvedEvidence
+    | NameAmbiguousDiagnostic of NameAmbiguousEvidence
+    | DuplicatePatternBinderDiagnostic of DuplicatePatternBinderEvidence
+    | DuplicateDeclarationDiagnostic of DuplicateDeclarationEvidence
+    | ImportCycleDiagnostic of ImportCycleEvidence
+    | ModuleCaseFoldCollisionDiagnostic of ModuleCaseFoldCollisionEvidence
+    | InvalidUtf8SourceDiagnostic of InvalidUtf8SourceEvidence
+    | ModuleNameUnresolvedDiagnostic of ModuleNameUnresolvedEvidence
+
+module DiagnosticFact =
+    let private field name value =
+        { Name = name
+          Value = value }
+
+    let private payload kind fields =
+        { Kind = kind
+          Fields = fields }
+
+    let private defaultFamily code =
+        match code with
+        | DiagnosticCode.NameUnresolved
+        | DiagnosticCode.ModuleNameUnresolved -> Some "kappa.name.unresolved"
+        | DiagnosticCode.NameAmbiguous -> Some "kappa.name.ambiguous"
+        | DiagnosticCode.ImportAmbiguous -> Some "kappa.import.ambiguous-dotted"
+        | _ -> None
+
+    let private descriptor code family message payload =
+        { Code = code
+          Family = family |> Option.orElseWith (fun () -> defaultFamily code)
+          Message = message
+          Payload = payload
+          Explanation = DiagnosticCode.tryGetExplanation code }
+
+    let private simpleCode kind =
+        match kind with
+        | SimpleDiagnosticKind.SourceInfo -> DiagnosticCode.SourceInfo
+        | SimpleDiagnosticKind.SourceWarning -> DiagnosticCode.SourceWarning
+        | SimpleDiagnosticKind.TabCharacterNotPermitted -> DiagnosticCode.TabCharacterNotPermitted
+        | SimpleDiagnosticKind.UnrecognizedCharacter -> DiagnosticCode.UnrecognizedCharacter
+        | SimpleDiagnosticKind.MalformedNumericLiteral -> DiagnosticCode.MalformedNumericLiteral
+        | SimpleDiagnosticKind.UnterminatedStringInterpolation -> DiagnosticCode.UnterminatedStringInterpolation
+        | SimpleDiagnosticKind.ExpectedSyntaxToken -> DiagnosticCode.ExpectedSyntaxToken
+        | SimpleDiagnosticKind.ExpectedClosingDelimiter -> DiagnosticCode.ExpectedClosingDelimiter
+        | SimpleDiagnosticKind.ExpectedIndentedBlock -> DiagnosticCode.ExpectedIndentedBlock
+        | SimpleDiagnosticKind.InvalidTypeSyntax -> DiagnosticCode.InvalidTypeSyntax
+        | SimpleDiagnosticKind.UnsupportedSyntax -> DiagnosticCode.UnsupportedSyntax
+        | SimpleDiagnosticKind.UnexpectedTrailingSyntax -> DiagnosticCode.UnexpectedTrailingSyntax
+        | SimpleDiagnosticKind.ModifierNotApplicable -> DiagnosticCode.ModifierNotApplicable
+        | SimpleDiagnosticKind.ElaborationFailed -> DiagnosticCode.ElaborationFailed
+        | SimpleDiagnosticKind.ImportUnhideRequiresBuildSetting -> DiagnosticCode.ImportUnhideRequiresBuildSetting
+        | SimpleDiagnosticKind.ImportClarifyRequiresBuildSetting -> DiagnosticCode.ImportClarifyRequiresBuildSetting
+        | SimpleDiagnosticKind.ImportItemModifierReexportForbidden -> DiagnosticCode.ImportItemModifierReexportForbidden
+        | SimpleDiagnosticKind.AssertTerminatesRequiresModuleAttribute -> DiagnosticCode.AssertTerminatesRequiresModuleAttribute
+        | SimpleDiagnosticKind.AssertReducibleRequiresModuleAttribute -> DiagnosticCode.AssertReducibleRequiresModuleAttribute
+        | SimpleDiagnosticKind.CheckpointVerification -> DiagnosticCode.CheckpointVerification
+        | SimpleDiagnosticKind.TargetCheckpoint -> DiagnosticCode.TargetCheckpoint
+        | SimpleDiagnosticKind.ExpectAmbiguous -> DiagnosticCode.ExpectAmbiguous
+        | SimpleDiagnosticKind.ExpectUnsatisfied -> DiagnosticCode.ExpectUnsatisfied
+        | SimpleDiagnosticKind.ImportAmbiguous -> DiagnosticCode.ImportAmbiguous
+        | SimpleDiagnosticKind.ImportItemNotFound -> DiagnosticCode.ImportItemNotFound
+        | SimpleDiagnosticKind.UrlImportUnpinnedInPackageMode -> DiagnosticCode.UrlImportUnpinnedInPackageMode
+        | SimpleDiagnosticKind.UrlImportRefPinRequiresLock -> DiagnosticCode.UrlImportRefPinRequiresLock
+        | SimpleDiagnosticKind.UrlImportUnsupported -> DiagnosticCode.UrlImportUnsupported
+        | SimpleDiagnosticKind.HostModuleReservedRoot -> DiagnosticCode.HostModuleReservedRoot
+        | SimpleDiagnosticKind.HostModuleUnsupportedBackend -> DiagnosticCode.HostModuleUnsupportedBackend
+        | SimpleDiagnosticKind.EffectRuntimeUnsupportedBackend -> DiagnosticCode.EffectRuntimeUnsupportedBackend
+        | SimpleDiagnosticKind.MultishotEffectUnsupportedBackend -> DiagnosticCode.MultishotEffectUnsupportedBackend
+        | SimpleDiagnosticKind.ModuleAttributeUnknown -> DiagnosticCode.ModuleAttributeUnknown
+        | SimpleDiagnosticKind.ModuleHeaderMisplaced -> DiagnosticCode.ModuleHeaderMisplaced
+        | SimpleDiagnosticKind.ModuleHeaderExpectedAfterAttributes -> DiagnosticCode.ModuleHeaderExpectedAfterAttributes
+        | SimpleDiagnosticKind.ModulePathMismatch -> DiagnosticCode.ModulePathMismatch
+        | SimpleDiagnosticKind.StaticObjectUnresolved -> DiagnosticCode.StaticObjectUnresolved
+        | SimpleDiagnosticKind.PatternHeadNotConstructorOrActivePattern -> DiagnosticCode.PatternHeadNotConstructorOrActivePattern
+        | SimpleDiagnosticKind.ActivePatternLinearityViolation -> DiagnosticCode.ActivePatternLinearityViolation
+        | SimpleDiagnosticKind.ActivePatternMatchResultNotAllowedInPlainLetQuestion -> DiagnosticCode.ActivePatternMatchResultNotAllowedInPlainLetQuestion
+        | SimpleDiagnosticKind.ActivePatternMissingScrutineeBinder -> DiagnosticCode.ActivePatternMissingScrutineeBinder
+        | SimpleDiagnosticKind.ActivePatternMonadicResult -> DiagnosticCode.ActivePatternMonadicResult
+        | SimpleDiagnosticKind.ProjectionCapabilityRequired -> DiagnosticCode.ProjectionCapabilityRequired
+        | SimpleDiagnosticKind.ProjectionUpdateTargetUnsupported -> DiagnosticCode.ProjectionUpdateTargetUnsupported
+        | SimpleDiagnosticKind.ProjectionRootInvalid -> DiagnosticCode.ProjectionRootInvalid
+        | SimpleDiagnosticKind.ProjectionDescriptorRootMissing -> DiagnosticCode.ProjectionDescriptorRootMissing
+        | SimpleDiagnosticKind.ProjectionRootsPackMismatch -> DiagnosticCode.ProjectionRootsPackMismatch
+        | SimpleDiagnosticKind.ProjectionDescriptorRootsLiteralRequired -> DiagnosticCode.ProjectionDescriptorRootsLiteralRequired
+        | SimpleDiagnosticKind.ProjectionDescriptorValueExpected -> DiagnosticCode.ProjectionDescriptorValueExpected
+        | SimpleDiagnosticKind.ProjectionMissingPlaceBinder -> DiagnosticCode.ProjectionMissingPlaceBinder
+        | SimpleDiagnosticKind.ProjectionYieldInvalid -> DiagnosticCode.ProjectionYieldInvalid
+        | SimpleDiagnosticKind.ProjectionExpandedAccessorPlaceBinderMismatch -> DiagnosticCode.ProjectionExpandedAccessorPlaceBinderMismatch
+        | SimpleDiagnosticKind.ProjectionAccessorClauseDuplicate -> DiagnosticCode.ProjectionAccessorClauseDuplicate
+        | SimpleDiagnosticKind.TraitInstanceAmbiguous -> DiagnosticCode.TraitInstanceAmbiguous
+        | SimpleDiagnosticKind.TraitSupertraitUnsatisfied -> DiagnosticCode.TraitSupertraitUnsatisfied
+        | SimpleDiagnosticKind.HandlerEffectRowMismatch -> DiagnosticCode.HandlerEffectRowMismatch
+        | SimpleDiagnosticKind.HandlerClauseMissing -> DiagnosticCode.HandlerClauseMissing
+        | SimpleDiagnosticKind.HandlerClauseDuplicate -> DiagnosticCode.HandlerClauseDuplicate
+        | SimpleDiagnosticKind.HandlerClauseArityMismatch -> DiagnosticCode.HandlerClauseArityMismatch
+        | SimpleDiagnosticKind.HandlerClauseUnexpected -> DiagnosticCode.HandlerClauseUnexpected
+        | SimpleDiagnosticKind.EffectResumptionQuantityBorrowed -> DiagnosticCode.EffectResumptionQuantityBorrowed
+        | SimpleDiagnosticKind.DerivingShapeNotData -> DiagnosticCode.DerivingShapeNotData
+        | SimpleDiagnosticKind.DerivingShapeNotClosedRecord -> DiagnosticCode.DerivingShapeNotClosedRecord
+        | SimpleDiagnosticKind.DerivingShapeOpaqueRepresentation -> DiagnosticCode.DerivingShapeOpaqueRepresentation
+        | SimpleDiagnosticKind.DerivingShapeUnsupportedType -> DiagnosticCode.DerivingShapeUnsupportedType
+        | SimpleDiagnosticKind.DerivingShapeBadConstructorArguments -> DiagnosticCode.DerivingShapeBadConstructorArguments
+        | SimpleDiagnosticKind.DerivingShapeBadRecordArguments -> DiagnosticCode.DerivingShapeBadRecordArguments
+        | SimpleDiagnosticKind.DerivingShapeMissingRuntimeFieldInstance -> DiagnosticCode.DerivingShapeMissingRuntimeFieldInstance
+        | SimpleDiagnosticKind.DerivingShapeDeclarationEffect -> DiagnosticCode.DerivingShapeDeclarationEffect
+        | SimpleDiagnosticKind.NameUnresolved -> DiagnosticCode.NameUnresolved
+        | SimpleDiagnosticKind.ModuleNameUnresolved -> DiagnosticCode.ModuleNameUnresolved
+        | SimpleDiagnosticKind.RecursiveTypeAlias -> DiagnosticCode.RecursiveTypeAlias
+        | SimpleDiagnosticKind.MalformedConstructorDeclaration -> DiagnosticCode.MalformedConstructorDeclaration
+        | SimpleDiagnosticKind.RecursionRequiresSignature -> DiagnosticCode.RecursionRequiresSignature
+        | SimpleDiagnosticKind.SignatureUnsatisfied -> DiagnosticCode.SignatureUnsatisfied
+        | SimpleDiagnosticKind.OrPatternBinderMismatch -> DiagnosticCode.OrPatternBinderMismatch
+        | SimpleDiagnosticKind.OrPatternBinderTypeMismatch -> DiagnosticCode.OrPatternBinderTypeMismatch
+        | SimpleDiagnosticKind.SafeNavigationAmbiguous -> DiagnosticCode.SafeNavigationAmbiguous
+        | SimpleDiagnosticKind.SafeNavigationReceiverNotOption -> DiagnosticCode.SafeNavigationReceiverNotOption
+        | SimpleDiagnosticKind.ElvisReceiverNotOption -> DiagnosticCode.ElvisReceiverNotOption
+        | SimpleDiagnosticKind.RecordDuplicateField -> DiagnosticCode.RecordDuplicateField
+        | SimpleDiagnosticKind.RecordDependencyCycle -> DiagnosticCode.RecordDependencyCycle
+        | SimpleDiagnosticKind.RecordDependencyInvalid -> DiagnosticCode.RecordDependencyInvalid
+        | SimpleDiagnosticKind.RecordProjectionMissingField -> DiagnosticCode.RecordProjectionMissingField
+        | SimpleDiagnosticKind.RecordPatchInvalidItem -> DiagnosticCode.RecordPatchInvalidItem
+        | SimpleDiagnosticKind.RecordPatchDuplicatePath -> DiagnosticCode.RecordPatchDuplicatePath
+        | SimpleDiagnosticKind.RecordPatchPrefixConflict -> DiagnosticCode.RecordPatchPrefixConflict
+        | SimpleDiagnosticKind.RecordPatchUnknownPath -> DiagnosticCode.RecordPatchUnknownPath
+        | SimpleDiagnosticKind.RowExtensionDuplicateLabel -> DiagnosticCode.RowExtensionDuplicateLabel
+        | SimpleDiagnosticKind.RowExtensionExistingField -> DiagnosticCode.RowExtensionExistingField
+        | SimpleDiagnosticKind.RowExtensionMissingLacksConstraint -> DiagnosticCode.RowExtensionMissingLacksConstraint
+        | SimpleDiagnosticKind.ApplicationNonCallable -> DiagnosticCode.ApplicationNonCallable
+        | SimpleDiagnosticKind.SealDirectLiteralForSignature -> DiagnosticCode.SealDirectLiteralForSignature
+        | SimpleDiagnosticKind.SealOpenRecordAscription -> DiagnosticCode.SealOpenRecordAscription
+        | SimpleDiagnosticKind.SealOpaqueUnfolding -> DiagnosticCode.SealOpaqueUnfolding
+        | SimpleDiagnosticKind.TypeEqualityMismatch -> DiagnosticCode.TypeEqualityMismatch
+        | SimpleDiagnosticKind.NumericLiteralOutOfRange -> DiagnosticCode.NumericLiteralOutOfRange
+        | SimpleDiagnosticKind.UnicodeInvalidScalarLiteral -> DiagnosticCode.UnicodeInvalidScalarLiteral
+        | SimpleDiagnosticKind.UnicodeInvalidGraphemeLiteral -> DiagnosticCode.UnicodeInvalidGraphemeLiteral
+        | SimpleDiagnosticKind.UnicodeInvalidByteLiteral -> DiagnosticCode.UnicodeInvalidByteLiteral
+        | SimpleDiagnosticKind.UnicodeInvalidUtf8 -> DiagnosticCode.UnicodeInvalidUtf8
+        | SimpleDiagnosticKind.UnicodeBidiControl -> DiagnosticCode.UnicodeBidiControl
+        | SimpleDiagnosticKind.UnicodeConfusableIdentifier -> DiagnosticCode.UnicodeConfusableIdentifier
+        | SimpleDiagnosticKind.UnicodeNonNormalizedSourceText -> DiagnosticCode.UnicodeNonNormalizedSourceText
+        | SimpleDiagnosticKind.UnexpectedIndentation -> DiagnosticCode.UnexpectedIndentation
+        | SimpleDiagnosticKind.UnterminatedBacktickIdentifier -> DiagnosticCode.UnterminatedBacktickIdentifier
+        | SimpleDiagnosticKind.UnterminatedStringLiteral -> DiagnosticCode.UnterminatedStringLiteral
+        | SimpleDiagnosticKind.UnterminatedCharacterLiteral -> DiagnosticCode.UnterminatedCharacterLiteral
+        | SimpleDiagnosticKind.UnterminatedBlockComment -> DiagnosticCode.UnterminatedBlockComment
+        | SimpleDiagnosticKind.QttLinearDrop -> DiagnosticCode.QttLinearDrop
+        | SimpleDiagnosticKind.QttLinearOveruse -> DiagnosticCode.QttLinearOveruse
+        | SimpleDiagnosticKind.QttBorrowConsume -> DiagnosticCode.QttBorrowConsume
+        | SimpleDiagnosticKind.QttBorrowOverlap -> DiagnosticCode.QttBorrowOverlap
+        | SimpleDiagnosticKind.QttBorrowEscape -> DiagnosticCode.QttBorrowEscape
+        | SimpleDiagnosticKind.QttContinuationCapture -> DiagnosticCode.QttContinuationCapture
+        | SimpleDiagnosticKind.QttErasedRuntimeUse -> DiagnosticCode.QttErasedRuntimeUse
+        | SimpleDiagnosticKind.QttUsingExplicitQuantity -> DiagnosticCode.QttUsingExplicitQuantity
+        | SimpleDiagnosticKind.QttInoutMarkerRequired -> DiagnosticCode.QttInoutMarkerRequired
+        | SimpleDiagnosticKind.QttInoutMarkerUnexpected -> DiagnosticCode.QttInoutMarkerUnexpected
+        | SimpleDiagnosticKind.QttInoutThreadedFieldMissing -> DiagnosticCode.QttInoutThreadedFieldMissing
+        | SimpleDiagnosticKind.ControlFlowInvalidEscape -> DiagnosticCode.ControlFlowInvalidEscape
+
+    let private simplePayloadKind kind =
+        simpleCode kind
+        |> DiagnosticCode.toIdentifier
+        |> fun identifier ->
+            let trimmed =
+                if identifier.Length > 2 && identifier[1] = '_' then
+                    identifier.Substring(2)
+                else
+                    identifier
+
+            trimmed.ToLowerInvariant().Replace('_', '-')
+
+    let simple kind detail =
+        SimpleDiagnostic
+            { Kind = kind
+              Detail = detail }
+
+    let codeDetail code detail =
+        CodeDetailDiagnostic
+            { Code = code
+              Detail = detail }
+
+    let nameUnresolved spelling =
+        NameUnresolvedDiagnostic
+            { Spelling = spelling
+              AdmissibleKinds = []
+              SearchedScopes = []
+              GeneratedSyntax = false }
+
+    let nameAmbiguous spelling candidateDescriptions =
+        NameAmbiguousDiagnostic
+            { Spelling = spelling
+              CandidateDescriptions = candidateDescriptions }
+
+    let duplicatePatternBinder binderName =
+        DuplicatePatternBinderDiagnostic { BinderName = binderName }
+
+    let duplicateDeclaration detail moduleName =
+        DuplicateDeclarationDiagnostic
+            { Detail = detail
+              ModuleName = moduleName }
+
+    let importCycle modulePath =
+        ImportCycleDiagnostic { ModulePath = modulePath }
+
+    let moduleCaseFoldCollision collidingPaths =
+        ModuleCaseFoldCollisionDiagnostic { CollidingPaths = collidingPaths }
+
+    let invalidUtf8Source detail =
+        InvalidUtf8SourceDiagnostic { Detail = detail }
+
+    let moduleNameUnresolved filePath =
+        ModuleNameUnresolvedDiagnostic { FilePath = filePath }
+
+    let describe fact =
+        match fact with
+        | SimpleDiagnostic evidence ->
+            let code = simpleCode evidence.Kind
+
+            descriptor
+                code
+                None
+                evidence.Detail
+                (payload
+                    (simplePayloadKind evidence.Kind)
+                    [ field "detail" (DiagnosticPayloadText evidence.Detail) ])
+        | CodeDetailDiagnostic evidence ->
+            descriptor
+                evidence.Code
+                None
+                evidence.Detail
+                (payload
+                    (let identifier = DiagnosticCode.toIdentifier evidence.Code
+                     let trimmed =
+                         if identifier.Length > 2 && identifier[1] = '_' then
+                             identifier.Substring(2)
+                         else
+                             identifier
+
+                     trimmed.ToLowerInvariant().Replace('_', '-'))
+                    [ field "detail" (DiagnosticPayloadText evidence.Detail) ])
+        | NameUnresolvedDiagnostic evidence ->
+            descriptor
+                DiagnosticCode.NameUnresolved
+                (Some "kappa.name.unresolved")
+                $"Name '{evidence.Spelling}' is not in scope."
+                (payload
+                    "name-unresolved"
+                    [ field "spelling" (DiagnosticPayloadText evidence.Spelling)
+                      field "admissible-kinds" (DiagnosticPayloadTextList evidence.AdmissibleKinds)
+                      field "searched-scopes" (DiagnosticPayloadTextList evidence.SearchedScopes)
+                      field "generated-syntax" (DiagnosticPayloadText(string evidence.GeneratedSyntax)) ])
+        | NameAmbiguousDiagnostic evidence ->
+            let message =
+                match evidence.CandidateDescriptions with
+                | [] ->
+                    $"Name '{evidence.Spelling}' is ambiguous."
+                | candidates ->
+                    let candidateText = String.concat ", " candidates
+                    $"Name '{evidence.Spelling}' is ambiguous between {candidateText}. Use an explicit import item, module alias, or qualification."
+
+            descriptor
+                DiagnosticCode.NameAmbiguous
+                (Some "kappa.name.ambiguous")
+                message
+                (payload
+                    "name-ambiguous"
+                    [ field "spelling" (DiagnosticPayloadText evidence.Spelling)
+                      field "candidates" (DiagnosticPayloadTextList evidence.CandidateDescriptions) ])
+        | DuplicatePatternBinderDiagnostic evidence ->
+            descriptor
+                DiagnosticCode.DuplicatePatternBinder
+                None
+                $"Pattern binder '{evidence.BinderName}' is bound more than once in the same pattern."
+                (payload "duplicate-pattern-binder" [ field "binder" (DiagnosticPayloadText evidence.BinderName) ])
+        | DuplicateDeclarationDiagnostic evidence ->
+            let message =
+                match evidence.ModuleName with
+                | Some moduleName -> $"{evidence.Detail} in module '{moduleName}'."
+                | None -> evidence.Detail
+
+            descriptor
+                DiagnosticCode.DuplicateDeclaration
+                None
+                message
+                (payload
+                    "duplicate-declaration"
+                    [ field "detail" (DiagnosticPayloadText evidence.Detail)
+                      field "module" (DiagnosticPayloadText(evidence.ModuleName |> Option.defaultValue "")) ])
+        | ImportCycleDiagnostic evidence ->
+            let cycleText = String.concat " -> " evidence.ModulePath
+
+            descriptor
+                DiagnosticCode.ImportCycle
+                None
+                $"Import cycle detected: {cycleText}."
+                (payload "import-cycle" [ field "modules" (DiagnosticPayloadTextList evidence.ModulePath) ])
+        | ModuleCaseFoldCollisionDiagnostic evidence ->
+            let collidingPathsText = String.concat ", " evidence.CollidingPaths
+
+            descriptor
+                DiagnosticCode.ModuleCaseFoldCollision
+                None
+                $"Module names that differ only by case after ASCII case-folding are not permitted in one compilation unit: {collidingPathsText}."
+                (payload
+                    "module-case-fold-collision"
+                    [ field "paths" (DiagnosticPayloadTextList evidence.CollidingPaths) ])
+        | InvalidUtf8SourceDiagnostic evidence ->
+            descriptor
+                DiagnosticCode.UnicodeInvalidUtf8
+                None
+                $"Source file is not valid UTF-8: {evidence.Detail}"
+                (payload "invalid-utf8-source" [ field "detail" (DiagnosticPayloadText evidence.Detail) ])
+        | ModuleNameUnresolvedDiagnostic evidence ->
+            descriptor
+                DiagnosticCode.ModuleNameUnresolved
+                (Some "kappa.name.unresolved")
+                $"Could not derive a Kappa module name from '{evidence.FilePath}'. Source files must live under the source root, end in the exact '.kp' suffix, and every directory, basename, and fragment segment must match [A-Za-z_][A-Za-z0-9_]*."
+                (payload "module-name-unresolved" [ field "file-path" (DiagnosticPayloadText evidence.FilePath) ])
+
 type Diagnostic =
     { Severity: DiagnosticSeverity
+      Fact: DiagnosticFact
       Code: DiagnosticCode
       Stage: string option
       Phase: string option
       Message: string
       Location: SourceLocation option
-      RelatedLocations: DiagnosticRelatedLocation list }
+      RelatedLocations: DiagnosticRelatedLocation list
+      Family: string option
+      Payload: DiagnosticPayload
+      Explanation: string option }
+
+module Diagnostics =
+    let create severity fact location relatedLocations stage phase =
+        let descriptor = DiagnosticFact.describe fact
+
+        { Severity = severity
+          Fact = fact
+          Code = descriptor.Code
+          Stage = stage
+          Phase = phase
+          Message = descriptor.Message
+          Location = location
+          RelatedLocations = relatedLocations
+          Family = descriptor.Family
+          Payload = descriptor.Payload
+          Explanation = descriptor.Explanation }
+
+    let errorFact stage phase location relatedLocations fact =
+        create Error fact location relatedLocations (Some stage) phase
 
 type DiagnosticBag() =
     let items = ResizeArray<Diagnostic>()
 
     member _.Add(
         severity: DiagnosticSeverity,
-        code: DiagnosticCode,
-        message: string,
+        fact: DiagnosticFact,
         ?location: SourceLocation,
         ?relatedLocations: DiagnosticRelatedLocation seq,
         ?stage: string,
         ?phase: string
     ) =
         items.Add(
-            { Severity = severity
-              Code = code
-              Stage = stage
-              Phase = phase
-              Message = message
-              Location = location
-              RelatedLocations = relatedLocations |> Option.map Seq.toList |> Option.defaultValue [] }
+            Diagnostics.create
+                severity
+                fact
+                location
+                (relatedLocations |> Option.map Seq.toList |> Option.defaultValue [])
+                stage
+                phase
         )
 
-    member this.AddInfo(code: DiagnosticCode, message: string, ?location: SourceLocation, ?stage: string, ?phase: string) =
-        this.Add(Info, code, message, ?location = location, ?stage = stage, ?phase = phase)
+    member this.AddInfo(fact: DiagnosticFact, ?location: SourceLocation, ?stage: string, ?phase: string) =
+        this.Add(Info, fact, ?location = location, ?stage = stage, ?phase = phase)
 
-    member this.AddWarning(code: DiagnosticCode, message: string, ?location: SourceLocation, ?stage: string, ?phase: string) =
-        this.Add(Warning, code, message, ?location = location, ?stage = stage, ?phase = phase)
+    member this.AddWarning(fact: DiagnosticFact, ?location: SourceLocation, ?stage: string, ?phase: string) =
+        this.Add(Warning, fact, ?location = location, ?stage = stage, ?phase = phase)
 
-    member this.AddError(code: DiagnosticCode, message: string, ?location: SourceLocation, ?stage: string, ?phase: string) =
-        this.Add(Error, code, message, ?location = location, ?stage = stage, ?phase = phase)
+    member this.AddError(fact: DiagnosticFact, ?location: SourceLocation, ?stage: string, ?phase: string) =
+        this.Add(Error, fact, ?location = location, ?stage = stage, ?phase = phase)
 
     member _.AddRange(diagnostics: Diagnostic seq) =
         diagnostics |> Seq.iter items.Add
