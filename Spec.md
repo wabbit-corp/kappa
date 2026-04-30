@@ -24885,6 +24885,44 @@ successful compilation result.
 A deferred-diagnostic mode MUST NOT turn any failure in this list into a runtime hole, bottom member, missing method, or
 fabricated value.
 
+<!-- compiler.kfrontir.ordinary_errors_not_internal_failures -->
+##### 17.2.4.9B Ordinary errors are not internal failures
+
+An ordinary user mistake MUST be reported as an ordinary structured diagnostic.
+
+A conforming implementation MUST NOT turn any of the following into an internal compiler panic, host exception, missing
+skolem artifact, assertion failure, infinite loop, or invalid memory access:
+
+* malformed constructor application arity after constructor identity is known;
+* malformed constructor pattern arity after constructor identity is known;
+* record-pattern field count or field-name mismatch after record identity is known;
+* indexed or GADT-style pattern arity mismatch;
+* assignment or update whose target type is known but whose supplied value has an incompatible type;
+* malformed quoted syntax or parser-adjacent quotation edge cases;
+* generated syntax that fails ordinary parsing or elaboration;
+* unsupported interactive evaluation requests;
+* unsupported harness directives or test execution actions;
+* unsupported backend lowering for a reachable source construct.
+
+If the implementation cannot continue ordinary compilation after such a condition, it MUST still emit the most specific
+structured diagnostic available before aborting that compilation request.
+
+Deterministic unsupported result:
+
+* When a feature, query, backend, harness directive, interactive command, or execution mode is not implemented or not
+  supported by the selected profile, the implementation MUST report `unsupported` or emit `E_UNSUPPORTED_DETERMINISTIC`.
+* It MUST NOT hang indefinitely, wait for input on a protocol channel that cannot supply it, or silently discard
+  already emitted structured diagnostics.
+* If buffered trace or diagnostic output was produced before the unsupported condition was detected, that output MUST be
+  flushed through the ordinary diagnostic, trace, or protocol channel before the final unsupported result is reported.
+
+Internal compiler diagnostics:
+
+* A true implementation defect MAY use family `kappa.internal.compiler`.
+* Such a diagnostic MUST still preserve a source or synthetic origin when one is available.
+* The implementation SHOULD distinguish "program rejected by the language" from "compiler invariant violated" in both
+  human-readable and machine-readable output.
+
 <!-- compiler.kfrontir.incomplete_files_tooling_diagnostics -->
 ##### 17.2.4.10 Incomplete files and tooling diagnostics
 
