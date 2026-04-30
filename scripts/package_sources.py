@@ -18,9 +18,6 @@ EXCLUDED_DIR_NAMES = {
     "obj",
     "scripts",
 }
-EXCLUDED_RELATIVE_DIRS = {
-    "tests/python",
-}
 DEFAULT_OUTPUT_NAME = "kappa-sources.zip"
 ZIP_TIMESTAMP = (1980, 1, 1, 0, 0, 0)
 
@@ -33,16 +30,22 @@ def sort_key(path: Path, root: Path) -> str:
     return path.relative_to(root).as_posix()
 
 
-def iter_files_under(root: Path) -> list[Path]:
+def is_excluded_dir(path: Path, package_root: Path) -> bool:
+    if path.name in EXCLUDED_DIR_NAMES:
+        return True
+
+    relative_parts = path.relative_to(package_root).parts
+    return bool(relative_parts) and relative_parts[0] == "tests" and "Fixtures" in relative_parts
+
+
+def iter_files_under(root: Path, package_root: Path) -> list[Path]:
     results: list[Path] = []
     for dirpath, dirnames, filenames in os.walk(root):
         current = Path(dirpath)
         dirnames[:] = sorted(
             dirname
             for dirname in dirnames
-            if dirname not in EXCLUDED_DIR_NAMES
-            and (current / dirname).relative_to(root.parent).as_posix()
-            not in EXCLUDED_RELATIVE_DIRS
+            if not is_excluded_dir(current / dirname, package_root)
         )
         for filename in sorted(filenames):
             results.append(Path(dirpath) / filename)
@@ -61,7 +64,7 @@ def collect_source_files(root: Path) -> list[Path]:
     for dirname in SOURCE_ROOT_NAMES:
         directory = root / dirname
         if directory.is_dir():
-            results.extend(iter_files_under(directory))
+            results.extend(iter_files_under(directory, root))
 
     return sorted(set(results), key=lambda path: sort_key(path, root))
 
@@ -86,13 +89,12 @@ Top-level files:
 
 Directories:
 - src/: compiler, CLI, runtime, and bundled standard-library sources.
-- tests/: compiler test projects and test data.
-- tests/Kappa.Compiler.Tests/Fixtures/: Kappa fixture cases used by the
-  compiler harness.
+- tests/: compiler test projects and test sources, excluding fixture data
+  directories under tests/.../Fixtures/.
 
 Excluded:
 - scripts/: local maintenance and automation scripts.
-- tests/python/: Python tests for local scripts.
+- tests/.../Fixtures/: Kappa fixture cases used by the compiler harness.
 - bin/, obj/, __pycache__/, and .pytest_cache/ build or cache directories.
 """
 
@@ -133,7 +135,8 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description=(
             "Package Kappa source files from src/, tests/, Spec.md, and the "
-            "solution file into one deterministic zip archive."
+            "solution file into one deterministic zip archive, excluding "
+            "tests/.../Fixtures/."
         )
     )
     parser.add_argument(
