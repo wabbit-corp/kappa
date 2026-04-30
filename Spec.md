@@ -1088,14 +1088,15 @@ Implementations MUST provide the intrinsic trait declarations referenced by §§
 
 ```text
 IsSubsingleton, IsProp, IsSet, RuntimeErased, IsTrait,
+QuantitySatisfies,
 ContainsRec, LacksRec,
 ContainsVar, LacksVar,
 ContainsEff, LacksEff, SplitEff
 ```
 
-`IsSubsingleton`, `IsProp`, and `IsSet` are ordinary proof traits. `RuntimeErased`, `IsTrait`, and the row-membership
-traits above are intrinsic solver traits: their source-level names are ordinary prelude exports, but their evidence
-introduction rules are owned by the compiler.
+`IsSubsingleton`, `IsProp`, and `IsSet` are ordinary proof traits.
+`RuntimeErased`, `IsTrait`, `QuantitySatisfies`, and the row-membership traits above are intrinsic solver traits:
+their source-level names are ordinary prelude exports, but their evidence introduction rules are owned by the compiler.
 
 Implementations MUST provide the projector and accessor declarations referenced by §§5.1.7.3, 7.1.3A, 7.1.3B, 8.8, and
 17.3.1.3:
@@ -1382,7 +1383,7 @@ and `+0.0` equals `-0.0`). It is not the default `(==)` for `Float`.
 Traits (trait declaration kind):
 ```
 -- proof, erased evidence, and trait evidence
-IsSubsingleton, IsProp, IsSet, RuntimeErased, IsTrait,
+IsSubsingleton, IsProp, IsSet, RuntimeErased, IsTrait, QuantitySatisfies,
 
 -- equality, ordering, display, sharing
 Equiv, Eq, Ord, Show, Shareable,
