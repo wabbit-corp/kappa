@@ -835,7 +835,7 @@ internal static class KappaRunner
 
                 if (value is BooleanValue booleanValue
                     && expectedConstructor.Arity == 0
-                    && string.Equals(expectedConstructor.TypeName, "Bool", StringComparison.Ordinal)
+                    && string.Equals(expectedConstructor.TypeName, CompilerKnownSymbols.KnownTypeNames.Bool, StringComparison.Ordinal)
                     && pattern.Arguments.Length == 0)
                 {
                     var expectedValue = string.Equals(expectedConstructor.Name, "True", StringComparison.Ordinal);
@@ -1554,7 +1554,7 @@ internal static class KappaRunner
 
     private static KValue CreateIntrinsicTermValue(string moduleName, string name)
     {
-        if (!string.Equals(moduleName, "std.prelude", StringComparison.Ordinal))
+        if (!string.Equals(moduleName, Stdlib.PreludeModuleText, StringComparison.Ordinal))
         {
             throw new RuntimeError($"Intrinsic term '{name}' is not implemented for module '{moduleName}'.");
         }

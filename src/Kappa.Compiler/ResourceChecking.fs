@@ -310,14 +310,26 @@ module ResourceChecking =
         | _ ->
             left |> Option.orElse right
 
+    let private bareType name arguments =
+        TypeSignatures.TypeName(CompilerKnownSymbols.KnownTypePaths.bare name, arguments)
+
+    let private isBareTypeName expectedName nameSegments =
+        CompilerKnownSymbols.KnownTypePaths.isBare expectedName nameSegments
+
+    let private isBareOrPreludeTypeName expectedName nameSegments =
+        CompilerKnownSymbols.KnownTypePaths.isBareOrPrelude expectedName nameSegments
+
+    let private hasTypeLastSegment expectedName nameSegments =
+        CompilerKnownSymbols.KnownTypePaths.hasLastSegment expectedName nameSegments
+
     let private refType argumentType =
-        TypeSignatures.TypeName([ "Ref" ], [ argumentType ])
+        bareType CompilerKnownSymbols.KnownTypeNames.Ref [ argumentType ]
 
     let private unwrapIoType typeExpr =
         match typeExpr with
-        | TypeSignatures.TypeName([ "IO" ], [ inner ]) -> inner
-        | TypeSignatures.TypeName([ "IO" ], [ _; inner ]) -> inner
-        | TypeSignatures.TypeName([ "UIO" ], [ inner ]) -> inner
+        | TypeSignatures.TypeName(nameSegments, [ inner ]) when isBareTypeName CompilerKnownSymbols.KnownTypeNames.IO nameSegments -> inner
+        | TypeSignatures.TypeName(nameSegments, [ _; inner ]) when isBareTypeName CompilerKnownSymbols.KnownTypeNames.IO nameSegments -> inner
+        | TypeSignatures.TypeName(nameSegments, [ inner ]) when isBareTypeName CompilerKnownSymbols.KnownTypeNames.UIO nameSegments -> inner
         | other -> other
 
     let private unwrapBindPayloadType typeExpr =
@@ -1253,9 +1265,6 @@ module ResourceChecking =
             None
 
     let rec private typeIsElaborationOnlyCarrierType typeExpr =
-        let matchesName simple qualified currentName =
-            currentName = simple || currentName = qualified
-
         match typeExpr with
         | TypeSignatures.TypeUniverse _
         | TypeSignatures.TypeIntrinsic TypeSignatures.UniverseClassifier
@@ -1266,42 +1275,43 @@ module ResourceChecking =
         | TypeSignatures.TypeIntrinsic TypeSignatures.VarRowClassifier
         | TypeSignatures.TypeIntrinsic TypeSignatures.EffRowClassifier
         | TypeSignatures.TypeIntrinsic TypeSignatures.LabelClassifier
-        | TypeSignatures.TypeIntrinsic TypeSignatures.EffLabelClassifier
-        | TypeSignatures.TypeName([ "Type" ], [])
-        | TypeSignatures.TypeName([ "Constraint" ], [])
-        | TypeSignatures.TypeName([ "Quantity" ], [])
-        | TypeSignatures.TypeName([ "Region" ], [])
-        | TypeSignatures.TypeName([ "RecRow" ], [])
-        | TypeSignatures.TypeName([ "VarRow" ], [])
-        | TypeSignatures.TypeName([ "EffRow" ], [])
-        | TypeSignatures.TypeName([ "Label" ], [])
-        | TypeSignatures.TypeName([ "EffLabel" ], []) ->
+        | TypeSignatures.TypeIntrinsic TypeSignatures.EffLabelClassifier ->
+            true
+        | TypeSignatures.TypeName([ "Type" ], []) ->
+            true
+        | TypeSignatures.TypeName(nameSegments, []) when
+            isBareTypeName CompilerKnownSymbols.KnownTypeNames.Constraint nameSegments
+            || isBareTypeName CompilerKnownSymbols.KnownTypeNames.Quantity nameSegments
+            || isBareTypeName CompilerKnownSymbols.KnownTypeNames.Region nameSegments
+            || isBareTypeName CompilerKnownSymbols.KnownTypeNames.RecRow nameSegments
+            || isBareTypeName CompilerKnownSymbols.KnownTypeNames.VarRow nameSegments
+            || isBareTypeName CompilerKnownSymbols.KnownTypeNames.EffRow nameSegments
+            || isBareTypeName CompilerKnownSymbols.KnownTypeNames.Label nameSegments
+            || isBareTypeName CompilerKnownSymbols.KnownTypeNames.EffLabel nameSegments ->
             true
         | TypeSignatures.TypeName(nameSegments, arguments) ->
-            let currentName = SyntaxFacts.moduleNameToText nameSegments
-
-            matchesName "Syntax" "std.prelude.Syntax" currentName
-            || matchesName "SyntaxOrigin" "std.prelude.SyntaxOrigin" currentName
-            || matchesName "SyntaxFragment" "std.prelude.SyntaxFragment" currentName
-            || matchesName "Elab" "std.prelude.Elab" currentName
-            || matchesName "ElabGoal" "std.prelude.ElabGoal" currentName
-            || matchesName "CoreCtx" "std.prelude.CoreCtx" currentName
-            || matchesName "Symbol" "std.prelude.Symbol" currentName
-            || matchesName "Core" "std.prelude.Core" currentName
-            || matchesName "CoreEq" "std.prelude.CoreEq" currentName
-            || matchesName "ShapeAdtKind" "std.deriving.shape.ShapeAdtKind" currentName
-            || matchesName "ShapeVisibility" "std.deriving.shape.ShapeVisibility" currentName
-            || matchesName "ShapeErrorKind" "std.deriving.shape.ShapeErrorKind" currentName
-            || matchesName "ShapeError" "std.deriving.shape.ShapeError" currentName
-            || matchesName "ShapeParameter" "std.deriving.shape.ShapeParameter" currentName
-            || matchesName "ShapeField" "std.deriving.shape.ShapeField" currentName
-            || matchesName "ShapeConstructor" "std.deriving.shape.ShapeConstructor" currentName
-            || matchesName "AdtShape" "std.deriving.shape.AdtShape" currentName
-            || matchesName "RecordShape" "std.deriving.shape.RecordShape" currentName
-            || matchesName "BoundField" "std.deriving.shape.BoundField" currentName
-            || matchesName "BoundFieldPair" "std.deriving.shape.BoundFieldPair" currentName
-            || matchesName "FieldArgument" "std.deriving.shape.FieldArgument" currentName
-            || matchesName "FieldConstraint" "std.deriving.shape.FieldConstraint" currentName
+            isBareOrPreludeTypeName CompilerKnownSymbols.KnownTypeNames.Syntax nameSegments
+            || isBareOrPreludeTypeName CompilerKnownSymbols.KnownTypeNames.SyntaxOrigin nameSegments
+            || isBareOrPreludeTypeName CompilerKnownSymbols.KnownTypeNames.SyntaxFragment nameSegments
+            || isBareOrPreludeTypeName CompilerKnownSymbols.KnownTypeNames.Elab nameSegments
+            || isBareOrPreludeTypeName CompilerKnownSymbols.KnownTypeNames.ElabGoal nameSegments
+            || hasTypeLastSegment "CoreCtx" nameSegments
+            || hasTypeLastSegment "Symbol" nameSegments
+            || hasTypeLastSegment "Core" nameSegments
+            || hasTypeLastSegment "CoreEq" nameSegments
+            || hasTypeLastSegment CompilerKnownSymbols.KnownTypeNames.ShapeAdtKind nameSegments
+            || hasTypeLastSegment CompilerKnownSymbols.KnownTypeNames.ShapeVisibility nameSegments
+            || hasTypeLastSegment CompilerKnownSymbols.KnownTypeNames.ShapeErrorKind nameSegments
+            || hasTypeLastSegment CompilerKnownSymbols.KnownTypeNames.ShapeError nameSegments
+            || hasTypeLastSegment CompilerKnownSymbols.KnownTypeNames.ShapeParameter nameSegments
+            || hasTypeLastSegment CompilerKnownSymbols.KnownTypeNames.ShapeField nameSegments
+            || hasTypeLastSegment CompilerKnownSymbols.KnownTypeNames.ShapeConstructor nameSegments
+            || hasTypeLastSegment CompilerKnownSymbols.KnownTypeNames.AdtShape nameSegments
+            || hasTypeLastSegment CompilerKnownSymbols.KnownTypeNames.RecordShape nameSegments
+            || hasTypeLastSegment CompilerKnownSymbols.KnownTypeNames.BoundField nameSegments
+            || hasTypeLastSegment CompilerKnownSymbols.KnownTypeNames.BoundFieldPair nameSegments
+            || hasTypeLastSegment CompilerKnownSymbols.KnownTypeNames.FieldArgument nameSegments
+            || hasTypeLastSegment CompilerKnownSymbols.KnownTypeNames.FieldConstraint nameSegments
             || (arguments |> List.exists typeIsElaborationOnlyCarrierType)
         | TypeSignatures.TypeArrow(_, parameterType, resultType)
         | TypeSignatures.TypeEquality(parameterType, resultType) ->
@@ -1525,19 +1535,19 @@ module ResourceChecking =
 
         let tryOptionPayloadType typeExpr =
             match typeExpr with
-            | TypeSignatures.TypeName([ "Option" ], [ payloadType ])
-            | TypeSignatures.TypeName([ "std"; "prelude"; "Option" ], [ payloadType ]) ->
+            | TypeSignatures.TypeName(nameSegments, [ payloadType ]) when
+                isBareOrPreludeTypeName CompilerKnownSymbols.KnownTypeNames.Option nameSegments ->
                 Some payloadType
             | _ ->
                 None
 
-        let stringType = TypeSignatures.TypeName([ "String" ], [])
-        let unicodeScalarType = TypeSignatures.TypeName([ "UnicodeScalar" ], [])
-        let graphemeType = TypeSignatures.TypeName([ "Grapheme" ], [])
-        let byteType = TypeSignatures.TypeName([ "Byte" ], [])
-        let unitType = TypeSignatures.TypeName([ "Unit" ], [])
-        let intType = TypeSignatures.TypeName([ "Int" ], [])
-        let doubleType = TypeSignatures.TypeName([ "Double" ], [])
+        let stringType = bareType CompilerKnownSymbols.KnownTypeNames.String []
+        let unicodeScalarType = bareType CompilerKnownSymbols.KnownTypeNames.UnicodeScalar []
+        let graphemeType = bareType CompilerKnownSymbols.KnownTypeNames.Grapheme []
+        let byteType = bareType CompilerKnownSymbols.KnownTypeNames.Byte []
+        let unitType = bareType CompilerKnownSymbols.KnownTypeNames.Unit []
+        let intType = bareType CompilerKnownSymbols.KnownTypeNames.Int []
+        let doubleType = bareType CompilerKnownSymbols.KnownTypeNames.Double []
 
         let rec tryProjectRecordType currentType path =
             match path, currentType with
@@ -1640,7 +1650,7 @@ module ResourceChecking =
                         |> Option.map (fun memberType ->
                             match tryOptionPayloadType memberType with
                             | Some _ -> memberType
-                            | None -> TypeSignatures.TypeName([ "Option" ], [ memberType ]))))
+                            | None -> bareType CompilerKnownSymbols.KnownTypeNames.Option [ memberType ])))
             | Elvis(left, right) ->
                 match loop locals left, loop locals right with
                 | Some leftType, Some defaultType ->
@@ -1902,7 +1912,8 @@ module ResourceChecking =
                 | TypeSignatures.TypeEquality(left, right) ->
                     yield! loop visited left
                     yield! loop visited right
-                | TypeSignatures.TypeName(([ "BorrowView" ] | [ "std"; "prelude"; "BorrowView" ]), TypeSignatures.TypeVariable regionName :: arguments) ->
+                | TypeSignatures.TypeName(nameSegments, TypeSignatures.TypeVariable regionName :: arguments)
+                    when isBareOrPreludeTypeName CompilerKnownSymbols.KnownTypeNames.BorrowView nameSegments ->
                     yield regionName
 
                     for argument in arguments do
@@ -1972,8 +1983,9 @@ module ResourceChecking =
         | TypeSignatures.TypeIntrinsic _
         | TypeSignatures.TypeUniverse _ ->
             false
-        | TypeSignatures.TypeName([ "IO" ], _)
-        | TypeSignatures.TypeName([ "UIO" ], _) ->
+        | TypeSignatures.TypeName(nameSegments, _) when
+            isBareTypeName CompilerKnownSymbols.KnownTypeNames.IO nameSegments
+            || isBareTypeName CompilerKnownSymbols.KnownTypeNames.UIO nameSegments ->
             false
         | TypeSignatures.TypeName(_, arguments) ->
             arguments |> List.forall typeIsReliableForApplicationBoundary
@@ -2014,14 +2026,8 @@ module ResourceChecking =
         | _ -> false
 
     let private isSuspensionWrapperName (nameSegments: string list) =
-        match nameSegments with
-        | [ "Need" ]
-        | [ "Thunk" ]
-        | [ "std"; "prelude"; "Need" ]
-        | [ "std"; "prelude"; "Thunk" ] ->
-            true
-        | _ ->
-            false
+        isBareOrPreludeTypeName CompilerKnownSymbols.KnownTypeNames.Need nameSegments
+        || isBareOrPreludeTypeName CompilerKnownSymbols.KnownTypeNames.Thunk nameSegments
 
     let rec private hasConservativeBoundarySpecialCase typeExpr =
         match typeExpr with
@@ -2868,7 +2874,7 @@ module ResourceChecking =
             | [ aliasToken ] when Token.isName aliasToken ->
                 let aliasName = SyntaxFacts.trimIdentifierQuotes aliasToken.Text
                 quantityAliasMap |> Map.tryFind aliasName |> Option.defaultValue Map.empty
-            | head :: _ when Token.isName head && SyntaxFacts.trimIdentifierQuotes head.Text = "Zipper" ->
+            | head :: _ when Token.isName head && SyntaxFacts.trimIdentifierQuotes head.Text = CompilerKnownSymbols.KnownTypeNames.Zipper ->
                 Map.ofList [ "fill", ResourceQuantity.one ]
             | _ ->
                 Map.empty
@@ -5330,25 +5336,24 @@ module ResourceChecking =
                 let cardExpr =
                     TypeSignatures.TypeName([ queryCardText mode.Card ], [])
 
-                TypeSignatures.TypeName([ "QueryMode" ], [ useExpr; cardExpr ])
+                bareType CompilerKnownSymbols.KnownTypeNames.QueryMode [ useExpr; cardExpr ]
 
             let baseType =
                 match queryInfo.Mode.Use, queryInfo.Mode.Card, queryInfo.ItemQuantity with
                 | QuerySemantics.Reusable, QuerySemantics.QZeroOrMore, ResourceQuantity.Interval(0, None) ->
-                    TypeSignatures.TypeName([ "Query" ], [ queryInfo.ItemType ])
+                    bareType CompilerKnownSymbols.KnownTypeNames.Query [ queryInfo.ItemType ]
                 | QuerySemantics.OneShot, QuerySemantics.QZeroOrMore, ResourceQuantity.Interval(0, None) ->
-                    TypeSignatures.TypeName([ "OnceQuery" ], [ queryInfo.ItemType ])
+                    bareType CompilerKnownSymbols.KnownTypeNames.OnceQuery [ queryInfo.ItemType ]
                 | QuerySemantics.Reusable, QuerySemantics.QZeroOrOne, ResourceQuantity.Interval(0, None) ->
-                    TypeSignatures.TypeName([ "OptionalQuery" ], [ queryInfo.ItemType ])
+                    bareType CompilerKnownSymbols.KnownTypeNames.OptionalQuery [ queryInfo.ItemType ]
                 | QuerySemantics.Reusable, QuerySemantics.QOneOrMore, ResourceQuantity.Interval(0, None) ->
-                    TypeSignatures.TypeName([ "NonEmptyQuery" ], [ queryInfo.ItemType ])
+                    bareType CompilerKnownSymbols.KnownTypeNames.NonEmptyQuery [ queryInfo.ItemType ]
                 | QuerySemantics.Reusable, QuerySemantics.QOne, ResourceQuantity.Interval(0, None) ->
-                    TypeSignatures.TypeName([ "SingletonQuery" ], [ queryInfo.ItemType ])
+                    bareType CompilerKnownSymbols.KnownTypeNames.SingletonQuery [ queryInfo.ItemType ]
                 | _ ->
-                    TypeSignatures.TypeName(
-                        [ "QueryCore" ],
+                    bareType
+                        CompilerKnownSymbols.KnownTypeNames.QueryCore
                         [ buildModeExpr queryInfo.Mode; queryQuantityExpr queryInfo.ItemQuantity; queryInfo.ItemType ]
-                    )
 
             if Set.isEmpty queryInfo.CaptureSet then
                 baseType

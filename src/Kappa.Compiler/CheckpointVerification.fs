@@ -299,11 +299,11 @@ module CheckpointVerification =
 
                 arguments |> List.exists loop
                 || String.Equals(head, "Type", StringComparison.Ordinal)
-                || String.Equals(head, "Constraint", StringComparison.Ordinal)
-                || String.Equals(head, "Quantity", StringComparison.Ordinal)
-                || String.Equals(head, "Region", StringComparison.Ordinal)
-                || String.Equals(head, "RecRow", StringComparison.Ordinal)
-                || String.Equals(head, "Label", StringComparison.Ordinal)
+                || String.Equals(head, CompilerKnownSymbols.KnownTypeNames.Constraint, StringComparison.Ordinal)
+                || String.Equals(head, CompilerKnownSymbols.KnownTypeNames.Quantity, StringComparison.Ordinal)
+                || String.Equals(head, CompilerKnownSymbols.KnownTypeNames.Region, StringComparison.Ordinal)
+                || String.Equals(head, CompilerKnownSymbols.KnownTypeNames.RecRow, StringComparison.Ordinal)
+                || String.Equals(head, CompilerKnownSymbols.KnownTypeNames.Label, StringComparison.Ordinal)
             | TypeSignatures.TypeArrow(quantity, parameterType, resultType) ->
                 quantity <> QuantityOmega || loop parameterType || loop resultType
             | TypeSignatures.TypeEquality _ ->
@@ -323,9 +323,9 @@ module CheckpointVerification =
             loop parsed
         | None ->
             typeText.Contains("captures (", StringComparison.Ordinal)
-            || typeText.Contains("Region", StringComparison.Ordinal)
-            || typeText.Contains("Constraint", StringComparison.Ordinal)
-            || typeText.Contains("Quantity", StringComparison.Ordinal)
+            || typeText.Contains(CompilerKnownSymbols.KnownTypeNames.Region, StringComparison.Ordinal)
+            || typeText.Contains(CompilerKnownSymbols.KnownTypeNames.Constraint, StringComparison.Ordinal)
+            || typeText.Contains(CompilerKnownSymbols.KnownTypeNames.Quantity, StringComparison.Ordinal)
             || typeText.Contains("&[", StringComparison.Ordinal)
             || typeText.Contains("(&", StringComparison.Ordinal)
 

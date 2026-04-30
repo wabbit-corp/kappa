@@ -146,32 +146,32 @@ module Stdlib =
     let standardModuleTermNames moduleName =
         BundledStandardModules.tryTermNames moduleName
         |> Option.orElseWith (fun () ->
-            StandardModules.byName
-            |> Map.tryFind moduleName
+            StandardModules.byIdentity
+            |> Map.tryFind (ModuleIdentity.ofSegments moduleName)
             |> Option.map (fun description -> description.Terms |> List.map (fun term -> term.Name) |> Set.ofList))
         |> Option.defaultValue Set.empty
 
     let standardModuleTypeNames moduleName =
         BundledStandardModules.tryTypeNames moduleName
         |> Option.orElseWith (fun () ->
-            StandardModules.byName
-            |> Map.tryFind moduleName
+            StandardModules.byIdentity
+            |> Map.tryFind (ModuleIdentity.ofSegments moduleName)
             |> Option.map (fun description -> description.Types |> Set.ofList))
         |> Option.defaultValue Set.empty
 
     let standardModuleTraitNames moduleName =
         BundledStandardModules.tryTraitNames moduleName
         |> Option.orElseWith (fun () ->
-            StandardModules.byName
-            |> Map.tryFind moduleName
+            StandardModules.byIdentity
+            |> Map.tryFind (ModuleIdentity.ofSegments moduleName)
             |> Option.map (fun description -> description.Traits |> List.map (fun traitInfo -> traitInfo.Name) |> Set.ofList))
         |> Option.defaultValue Set.empty
 
     let tryStandardModuleTermTypeText moduleName termName =
         BundledStandardModules.tryTermTypeText moduleName termName
         |> Option.orElseWith (fun () ->
-            StandardModules.byName
-            |> Map.tryFind moduleName
+            StandardModules.byIdentity
+            |> Map.tryFind (ModuleIdentity.ofSegments moduleName)
             |> Option.bind (fun description ->
                 description.Terms
                 |> List.tryFind (fun term -> String.Equals(term.Name, termName, StringComparison.Ordinal))
@@ -258,10 +258,8 @@ module Stdlib =
         else
             BundledStandardModules.tryIntrinsicTermNames moduleName
             |> Option.orElseWith (fun () ->
-                let moduleNameText = SyntaxFacts.moduleNameToText moduleName
-
-                StandardModules.byName
-                |> Map.tryFind moduleNameText
+                StandardModules.byIdentity
+                |> Map.tryFind (ModuleIdentity.ofSegments moduleName)
                 |> Option.map (fun description -> description.Terms |> List.map (fun term -> term.Name) |> Set.ofList))
             |> Option.defaultValue Set.empty
 
@@ -276,10 +274,8 @@ module Stdlib =
         else
             BundledStandardModules.tryIntrinsicTermNames moduleName
             |> Option.orElseWith (fun () ->
-                let moduleNameText = SyntaxFacts.moduleNameToText moduleName
-
-                StandardModules.byName
-                |> Map.tryFind moduleNameText
+                StandardModules.byIdentity
+                |> Map.tryFind (ModuleIdentity.ofSegments moduleName)
                 |> Option.map (fun description -> description.Terms |> List.map (fun term -> term.Name) |> Set.ofList))
             |> Option.defaultValue Set.empty
 
@@ -313,10 +309,10 @@ module Stdlib =
             intrinsicSet.PreludeTermNames
         else
             moduleName
-            |> SyntaxFacts.moduleNameToText
-            |> fun moduleNameText ->
-                StandardModules.byName
-                |> Map.tryFind moduleNameText
+            |> ModuleIdentity.ofSegments
+            |> fun moduleIdentity ->
+                StandardModules.byIdentity
+                |> Map.tryFind moduleIdentity
                 |> Option.map (fun description -> description.Terms |> List.map (fun term -> term.Name) |> Set.ofList)
                 |> Option.defaultValue intrinsicSet.ModuleLocalTermNames
 
@@ -336,7 +332,7 @@ module Stdlib =
         else
             BundledStandardModules.tryIntrinsicTermNamesText moduleName
             |> Option.orElseWith (fun () ->
-                StandardModules.byName
+                StandardModules.byText
                 |> Map.tryFind moduleName
                 |> Option.map (fun description -> description.Terms |> List.map (fun term -> term.Name) |> Set.ofList))
             |> Option.defaultValue intrinsicSet.ModuleLocalTermNames
@@ -350,10 +346,10 @@ module Stdlib =
             BundledStandardModules.tryIntrinsicTermNames moduleName
             |> Option.orElseWith (fun () ->
                 moduleName
-                |> SyntaxFacts.moduleNameToText
-                |> fun moduleNameText ->
-                    StandardModules.byName
-                    |> Map.tryFind moduleNameText
+                |> ModuleIdentity.ofSegments
+                |> fun moduleIdentity ->
+                    StandardModules.byIdentity
+                    |> Map.tryFind moduleIdentity
                     |> Option.map (fun description -> description.Terms |> List.map (fun term -> term.Name) |> Set.ofList))
             |> Option.defaultValue intrinsicSet.ModuleLocalTermNames
 
@@ -373,7 +369,7 @@ module Stdlib =
         else
             BundledStandardModules.tryIntrinsicTermNamesText moduleName
             |> Option.orElseWith (fun () ->
-                StandardModules.byName
+                StandardModules.byText
                 |> Map.tryFind moduleName
                 |> Option.map (fun description -> description.Terms |> List.map (fun term -> term.Name) |> Set.ofList))
             |> Option.defaultValue intrinsicSet.ModuleLocalTermNames
@@ -386,7 +382,7 @@ module Stdlib =
         else
             BundledStandardModules.tryIntrinsicTermNamesText moduleName
             |> Option.orElseWith (fun () ->
-                StandardModules.byName
+                StandardModules.byText
                 |> Map.tryFind moduleName
                 |> Option.map (fun description -> description.Terms |> List.map (fun term -> term.Name) |> Set.ofList))
             |> Option.defaultValue intrinsicSet.ModuleLocalTermNames
@@ -397,10 +393,10 @@ module Stdlib =
         match declaration with
         | ExpectTypeDeclaration declaration ->
             (isPreludeExpectation moduleName && intrinsicSet.TypeNames.Contains(declaration.Name))
-            || (standardModuleTypeNames (SyntaxFacts.moduleNameToText moduleName) |> Set.contains declaration.Name)
+            || (standardModuleTypeNames moduleName |> Set.contains declaration.Name)
         | ExpectTraitDeclaration declaration ->
             (isPreludeExpectation moduleName && intrinsicSet.TraitNames.Contains(declaration.Name))
-            || (standardModuleTraitNames (SyntaxFacts.moduleNameToText moduleName) |> Set.contains declaration.Name)
+            || (standardModuleTraitNames moduleName |> Set.contains declaration.Name)
         | ExpectTermDeclaration declaration ->
             intrinsicTermNamesAvailableInModuleForBackend backendProfile moduleName
             |> Set.contains declaration.Name
@@ -416,10 +412,10 @@ module Stdlib =
         match declaration with
         | ExpectTypeDeclaration declaration ->
             (isPreludeExpectation moduleName && intrinsicSet.TypeNames.Contains(declaration.Name))
-            || (standardModuleTypeNames (SyntaxFacts.moduleNameToText moduleName) |> Set.contains declaration.Name)
+            || (standardModuleTypeNames moduleName |> Set.contains declaration.Name)
         | ExpectTraitDeclaration declaration ->
             (isPreludeExpectation moduleName && intrinsicSet.TraitNames.Contains(declaration.Name))
-            || (standardModuleTraitNames (SyntaxFacts.moduleNameToText moduleName) |> Set.contains declaration.Name)
+            || (standardModuleTraitNames moduleName |> Set.contains declaration.Name)
         | ExpectTermDeclaration declaration ->
             intrinsicTermNamesAvailableInModuleForCompilationProfile backendProfile allowUnsafeConsume moduleName
             |> Set.contains declaration.Name

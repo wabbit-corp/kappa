@@ -18,13 +18,13 @@ module internal StandardModules =
           Members: StandardTraitMemberDescription list }
 
     type StandardModuleDescription =
-        { ModuleName: string
+        { ModuleIdentity: ModuleIdentity
           Types: string list
           Terms: StandardTermDescription list
           Traits: StandardTraitDescription list }
 
     let private unicodeModule =
-        { ModuleName = "std.unicode"
+        { ModuleIdentity = ModuleIdentity.ofSegments CompilerKnownSymbols.KnownModules.Unicode
           Types =
             [ "UnicodeVersion"
               "NormalizationForm"
@@ -57,13 +57,13 @@ module internal StandardModules =
           Traits = [] }
 
     let private bytesModule =
-        { ModuleName = "std.bytes"
+        { ModuleIdentity = ModuleIdentity.ofSegments CompilerKnownSymbols.KnownModules.Bytes
           Types = [ "BytesBuilder" ]
           Terms = []
           Traits = [] }
 
     let private testingModule =
-        { ModuleName = "std.testing"
+        { ModuleIdentity = ModuleIdentity.ofSegments [ "std"; "testing" ]
           Types = []
           Terms = [ { Name = "failNow"; TypeText = "forall (a : Type). String -> a" } ]
           Traits = [] }
@@ -71,19 +71,26 @@ module internal StandardModules =
     let all =
         [ unicodeModule; bytesModule; testingModule ]
 
-    let byName =
-        all |> List.map (fun description -> description.ModuleName, description) |> Map.ofList
+    let byIdentity =
+        all |> List.map (fun description -> description.ModuleIdentity, description) |> Map.ofList
+
+    let byText =
+        all
+        |> List.map (fun description -> ModuleIdentity.text description.ModuleIdentity, description)
+        |> Map.ofList
 
     let inventories =
-        byName
+        byIdentity
         |> Map.map (fun _ description ->
             Set.ofList (description.Terms |> List.map (fun term -> term.Name)),
             Set.ofList description.Types,
             Set.ofList (description.Traits |> List.map (fun traitInfo -> traitInfo.Name)))
 
     let toRuntimeModule (description: StandardModuleDescription) =
-        { Name = description.ModuleName
-          SourceFile = $"<std:{description.ModuleName}>"
+        let moduleNameText = ModuleIdentity.text description.ModuleIdentity
+
+        { Name = moduleNameText
+          SourceFile = $"<std:{moduleNameText}>"
           Imports = []
           Exports = description.Terms |> List.map (fun term -> term.Name)
           IntrinsicTerms = description.Terms |> List.map (fun term -> term.Name)

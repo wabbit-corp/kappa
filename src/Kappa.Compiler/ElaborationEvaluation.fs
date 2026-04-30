@@ -682,7 +682,7 @@ module internal ElaborationEvaluation =
 
     let private shapeFieldData fieldName typeExpr =
         MetaData(
-            "ShapeField",
+            CompilerKnownSymbols.KnownTypeNames.ShapeField,
             [ valueField "sourceName" MetaUnit
               valueField "renderName" (metaString fieldName)
               valueField "origin" MetaUnit
@@ -704,11 +704,11 @@ module internal ElaborationEvaluation =
                 let fieldType =
                     parameter.ParameterTypeTokens
                     |> TypeSignatures.parseType
-                    |> Option.defaultValue (TypeSignatures.TypeName([ "Unit" ], []))
+                    |> Option.defaultValue (TypeSignatures.TypeName(CompilerKnownSymbols.KnownTypePaths.bare CompilerKnownSymbols.KnownTypeNames.Unit, []))
                 shapeFieldData fieldName fieldType)
 
         MetaData(
-            "ShapeConstructor",
+            CompilerKnownSymbols.KnownTypeNames.ShapeConstructor,
             [ valueField "symbol" (metaString $"{typeName}.{constructor.Name}")
               valueField "sourceName" (metaString constructor.Name)
               valueField "renderName" (metaString constructor.Name)
@@ -720,7 +720,7 @@ module internal ElaborationEvaluation =
     let private shapeAdtData visibility kind (typeName: string) (declaration: DataDeclaration) =
         let constructors = declaration.Constructors |> List.mapi (fun index constructor -> shapeConstructorData typeName index constructor)
         MetaData(
-            "AdtShape",
+            CompilerKnownSymbols.KnownTypeNames.AdtShape,
             [ valueField "symbol" (metaString typeName)
               valueField "sourceName" (metaString typeName)
               valueField "renderName" (metaString typeName)
@@ -733,7 +733,7 @@ module internal ElaborationEvaluation =
 
     let private shapeRecordData (fields: TypeSignatures.RecordField list) =
         MetaData(
-            "RecordShape",
+            CompilerKnownSymbols.KnownTypeNames.RecordShape,
             [ valueField "origin" MetaUnit
               valueField "fields" (MetaList(fields |> List.map (fun field -> shapeFieldData field.Name field.Type))) ]
         )
@@ -1634,7 +1634,7 @@ module internal ElaborationEvaluation =
         | "warnElabWith", [ MetaString code; MetaString message; _ ] ->
             EvalSucceeded(MetaUnit, mergeDiagnostics diagnostics [ makeMacroCodeWarning (diagnosticCodeFromText code) message context.Source ])
         | "syntaxOrigin", [ MetaSyntax _ ] ->
-            EvalSucceeded(MetaData("SyntaxOrigin", []), diagnostics)
+            EvalSucceeded(MetaData(CompilerKnownSymbols.KnownTypeNames.SyntaxOrigin, []), diagnostics)
         | "renderSyntax", [ MetaSyntax syntaxValue ] ->
             EvalSucceeded(MetaString(renderSurfaceExpression syntaxValue.Expression), diagnostics)
         | "normalizeSyntax", [ MetaSyntax syntaxValue ] ->
@@ -1667,7 +1667,8 @@ module internal ElaborationEvaluation =
             | Some(Result.Ok fields) -> EvalSucceeded(shapeRecordData fields, diagnostics)
             | Some(Result.Error code) -> EvalFailed [ makeShapeDiagnostic code "Record shape inspection failed." context.Source ]
             | None -> EvalFailed [ makeShapeDiagnostic DiagnosticCode.DerivingShapeNotClosedRecord "Record shape inspection failed." context.Source ]
-        | "requireRuntimeFieldInstances", [ MetaTraitRef(_, traitName); MetaData("AdtShape", shapeFields) ] ->
+        | "requireRuntimeFieldInstances", [ MetaTraitRef(_, traitName); MetaData(shapeTag, shapeFields) ]
+            when String.Equals(shapeTag, CompilerKnownSymbols.KnownTypeNames.AdtShape, StringComparison.Ordinal) ->
             match tryGetField "constructors" shapeFields with
             | Some(MetaList constructors) ->
                 let visibleInstances = visibleInstancesForModule context.Models context.Inventories context.CurrentModule
@@ -1702,12 +1703,14 @@ module internal ElaborationEvaluation =
                 | Some _ -> EvalFailed [ makeShapeDiagnostic DiagnosticCode.DerivingShapeMissingRuntimeFieldInstance "Missing runtime field instance." context.Source ]
                 | None -> EvalSucceeded(MetaUnit, diagnostics)
             | _ -> EvalBlocked
-        | "matchAdt", [ MetaData("AdtShape", shapeFields); MetaSyntax scrutineeSyntax; callback ] ->
+        | "matchAdt", [ MetaData(shapeTag, shapeFields); MetaSyntax scrutineeSyntax; callback ]
+            when String.Equals(shapeTag, CompilerKnownSymbols.KnownTypeNames.AdtShape, StringComparison.Ordinal) ->
             match tryGetField "constructors" shapeFields with
             | Some(MetaList constructors) ->
                 let buildCase index constructorValue : SurfaceMatchCase option =
                     match constructorValue with
-                    | MetaData("ShapeConstructor", constructorFields) ->
+                    | MetaData(constructorTag, constructorFields)
+                        when String.Equals(constructorTag, CompilerKnownSymbols.KnownTypeNames.ShapeConstructor, StringComparison.Ordinal) ->
                         let constructorName = tryGetField "renderName" constructorFields |> Option.bind tryAsString |> Option.defaultValue $"Ctor{index}"
                         let fieldValues = tryGetField "fields" constructorFields |> Option.bind tryAsMetaList |> Option.defaultValue []
                         let binderNames = fieldValues |> List.mapi (fun fieldIndex _ -> $"__kappa_macro_{constructorName}_{fieldIndex}")
@@ -1716,7 +1719,7 @@ module internal ElaborationEvaluation =
                             ||> List.zip
                             |> List.map (fun (fieldValue, binderName) ->
                                 MetaData(
-                                    "BoundField",
+                                    CompilerKnownSymbols.KnownTypeNames.BoundField,
                                     [ valueField "field" fieldValue
                                       valueField "fieldType" MetaUnit
                                       valueField "term" (MetaSyntax(syntaxValueWithScope scrutineeSyntax.ScopeModule (Name [ binderName ]))) ]))
@@ -1741,12 +1744,15 @@ module internal ElaborationEvaluation =
                 else
                     EvalBlocked
             | _ -> EvalBlocked
-        | "matchAdt2", [ MetaData("AdtShape", shapeFields); MetaSyntax leftSyntax; MetaSyntax rightSyntax; onSame; onDifferent ] ->
+        | "matchAdt2", [ MetaData(shapeTag, shapeFields); MetaSyntax leftSyntax; MetaSyntax rightSyntax; onSame; onDifferent ]
+            when String.Equals(shapeTag, CompilerKnownSymbols.KnownTypeNames.AdtShape, StringComparison.Ordinal) ->
             match tryGetField "constructors" shapeFields with
             | Some(MetaList constructors) ->
                 let buildCase leftCtor rightCtor : SurfaceMatchCase option =
                     match leftCtor, rightCtor with
-                    | MetaData("ShapeConstructor", leftFields), MetaData("ShapeConstructor", rightFields) ->
+                    | MetaData(leftTag, leftFields), MetaData(rightTag, rightFields)
+                        when String.Equals(leftTag, CompilerKnownSymbols.KnownTypeNames.ShapeConstructor, StringComparison.Ordinal)
+                             && String.Equals(rightTag, CompilerKnownSymbols.KnownTypeNames.ShapeConstructor, StringComparison.Ordinal) ->
                         let leftName = tryGetField "renderName" leftFields |> Option.bind tryAsString |> Option.defaultValue "Left"
                         let rightName = tryGetField "renderName" rightFields |> Option.bind tryAsString |> Option.defaultValue "Right"
                         let bodyResult =
@@ -1758,7 +1764,7 @@ module internal ElaborationEvaluation =
                                         let leftBinder = $"__kappa_macro_left_{leftName}_{index}"
                                         let rightBinder = $"__kappa_macro_right_{rightName}_{index}"
                                         MetaData(
-                                            "BoundFieldPair",
+                                            CompilerKnownSymbols.KnownTypeNames.BoundFieldPair,
                                             [ valueField "field" field
                                               valueField "fieldType" MetaUnit
                                               valueField "left" (MetaSyntax(syntaxValueWithScope leftSyntax.ScopeModule (Name [ leftBinder ])))

@@ -44,49 +44,37 @@ Current M4 status note: started, not complete. The compiler now has a real effec
 
 ## 7. Symbolic names, spelling, and semantic identity
 
-- [ ] Separate lexical spelling checks from post-resolution semantic identity in the implementation model, following `Spec.md` sections 2.1, 2.8, 17.3.4, and 17.3.4.2.
-- [ ] Introduce explicit identity types instead of reusing plain `string` everywhere:
-  `ModuleIdentity` as segmented canonical module identity;
-  declaration-level symbolic keys for binding-group lookup by spelling;
-  semantic-object identifiers for resolved declarations, constructors, traits, effect labels, projections, and reified static objects.
-- [ ] Keep source spelling as metadata only.
-- [ ] Replace frontend module indexing keyed by `SyntaxFacts.moduleNameToText` with canonical structured module identities in [CompilationFrontend.fs](/D:/ws/kappa/src/Kappa.Compiler/CompilationFrontend.fs) and [SurfaceElaboration.fs](/D:/ws/kappa/src/Kappa.Compiler/SurfaceElaboration.fs). The [ElaborationEvaluation.fs](/D:/ws/kappa/src/Kappa.Compiler/ElaborationEvaluation.fs) slice now uses `ModuleIdentity` for module inventories, module models, imported lookup, and current elaboration scope.
-- [ ] Remove the `ModuleName: string` semantic-owner fields from `SurfaceElaboration` payload records such as `TypeFacetInfo`, `TypeAliasInfo`, `BindingSchemeInfo`, `ProjectionInfo`, `TraitInfo`, and `InstanceInfo`. These still force reparsing text back into `ModuleIdentity` during semantic lookup.
-- [ ] Remove other `SurfaceElaboration` stringly semantic carriers that still smuggle module identity as display text, including ambiguity candidates and helper DTOs that should carry resolved `ModuleIdentity` plus separately rendered spelling.
-- [ ] Remove stringly module ownership from origin/provenance helpers such as `declarationOrigin`, `syntheticOrigin`, and downstream `KCoreOrigin` payloads where semantic ownership is still recorded only as rendered text.
-- [ ] Finish the `KCoreOrigin` / `KCoreModule` provenance conversion all the way through runtime lowering, dumps, and verification so later stages do not stringify semantic module identity just to carry provenance.
+- [ ] Introduce declaration-level and semantic-object identities beyond `ModuleIdentity`, so resolved declarations, constructors, traits, effect labels, projections, and reified static objects stop falling back to plain `string`.
 - [ ] Replace visible-name environments that collapse declaration kinds into plain `Map<string, ...>` lookup with an explicit binding-group model matching section 2.8.
 - [ ] Rework same-spelling data-family handling so it is represented as one binding group with typed facets instead of separate text-keyed maps plus special cases.
-- [ ] Replace text-based post-resolution module/member lookup in lowering and backend preparation with resolved symbolic references.
+- [ ] Finish the provenance/ownership conversion so `KCoreOrigin`, `KCoreModule`, runtime lowering, dumps, and verification carry structured semantic identity end-to-end rather than rendered text.
+- [ ] Replace text-based post-resolution lookup in lowering and backend preparation with resolved symbolic references.
   Current hot spots:
   [KBackendLowering.fs](/D:/ws/kappa/src/Kappa.Compiler/KBackendLowering.fs),
   [IlDotNetBackendInput.fs](/D:/ws/kappa/src/Kappa.Compiler/IlDotNetBackendInput.fs),
   [CheckpointVerification.fs](/D:/ws/kappa/src/Kappa.Compiler/CheckpointVerification.fs),
   [Backend.fs](/D:/ws/kappa/src/Kappa.Compiler/Backend.fs),
   [ZigCcBackendSupport.fs](/D:/ws/kappa/src/Kappa.Compiler/ZigCcBackendSupport.fs).
-- [ ] Continue the CLR backend migration past `IlNamed`. `IlDotNetBackendModel.IlType` now has a structured `TypeIdentity`, and primitive lowering in `IlDotNetBackendInput.fs` no longer matches bare names like `"Int"` or `"Bool"`. Remaining CLR metadata carriers such as `RawDataTypeInfo`, `ConstructorInfo`, `DataTypeInfo`, `ModuleSurface`, and `TraitInstanceInfo` still record semantic ownership as raw text.
-- [ ] Remove the remaining backend stringly stdlib/prelude comparisons surfaced by `scripts/validate_symbolic_names.py`, especially in `IlDotNetBackendEmit.fs`, `IlDotNetEffectBackend.fs`, `ZigCcBackendEmit.fs`, and `ZigCcBackendRuntime.fs`.
-- [ ] Replace the verifier/runtime stringly type carriers that force semantic checks over rendered text, especially `KRuntimeIR` type-text fields and the substring fallback in `CheckpointVerification.runtimeTypeLeaksErasureMetadata`.
-- [ ] Replace meta-surface and query symbolic-name literals that are still hardcoded in semantic code paths:
-  `KRuntimeLowering.fs`,
-  `ResourceChecking.fs`,
-  `TypeSignatures.fs`,
-  `QuerySemantics.fs`,
-  `CoreParsing.fs`,
-  and the shape/query helpers inside `SurfaceElaboration.fs` and `ElaborationEvaluation.fs`.
+- [ ] Replace backend/runtime DTO fields that still encode semantic ownership as raw strings:
+  `ModuleName`, `TypeName`, and `TraitName` fields in
+  [KBackendIR.fs](/D:/ws/kappa/src/Kappa.Compiler/KBackendIR.fs),
+  [KBackendLowering.fs](/D:/ws/kappa/src/Kappa.Compiler/KBackendLowering.fs),
+  [ClrAssemblyIR.fs](/D:/ws/kappa/src/Kappa.Compiler/ClrAssemblyIR.fs),
+  [IlDotNetBackendModel.fs](/D:/ws/kappa/src/Kappa.Compiler/IlDotNetBackendModel.fs),
+  and remaining hosted/runtime boundary models.
+- [ ] Continue the CLR backend migration past `IlNamed`. `IlDotNetBackendModel.IlType` now has a structured `TypeIdentity`, but metadata carriers such as `RawDataTypeInfo`, `ConstructorInfo`, `DataTypeInfo`, `ModuleSurface`, and `TraitInstanceInfo` still record semantic ownership as raw text.
+- [ ] Replace verifier/runtime stringly type carriers that force semantic checks over rendered text, especially `KRuntimeIR` type-text fields and the substring fallback in `CheckpointVerification.runtimeTypeLeaksErasureMetadata`.
+- [ ] Replace stringly trait/dictionary conventions that still depend on synthesized textual names or prefixes, including `TraitRuntime.dictionaryTypeName ...`, `__kappa_dict_*` prefix checks, and literal trait-name comparisons such as `InterpolatedMacro`, `LacksRec`, `IsProp`, and `IsTrait`.
 - [ ] Replace text-based trait, constructor, and type matching in compile-time evaluation and backend typing with symbolic references.
   Current hot spots:
   [ElaborationEvaluation.fs](/D:/ws/kappa/src/Kappa.Compiler/ElaborationEvaluation.fs),
-  [SurfaceElaboration.fs](/D:/ws/kappa/src/Kappa.Compiler/SurfaceElaboration.fs),
-  [IlDotNetBackendInput.fs](/D:/ws/kappa/src/Kappa.Compiler/IlDotNetBackendInput.fs),
   [IlDotNetBackendTyping.fs](/D:/ws/kappa/src/Kappa.Compiler/IlDotNetBackendTyping.fs),
   [ZigCcBackendArtifact.fs](/D:/ws/kappa/src/Kappa.Compiler/ZigCcBackendArtifact.fs).
 - [ ] Remove fabricated semantic identities such as the `ModuleIdentity.ofSegments [ "__unknown__" ]` fallback that still exists in `SurfaceElaboration.validateFrontendModule`.
 - [ ] Preserve canonical module identity casing through all artifact names and backend metadata per section 17.3.4.2.
 - [ ] Keep bridge/host spelling distinct from Kappa semantic identity.
-- [ ] Add regression tests before each refactor slice.
+- [ ] Add regression tests before each refactor slice and keep the symbolic-name validator clean outside the boundary allowlist.
 - [ ] Add observability for symbolic identity.
-- [ ] Continue the `ModuleIdentity` conversion in [SurfaceElaboration.fs](/D:/ws/kappa/src/Kappa.Compiler/SurfaceElaboration.fs) and the backend input/lowering layers before treating module-name text as fully non-authoritative.
 
 ## 8. Recommended execution order
 

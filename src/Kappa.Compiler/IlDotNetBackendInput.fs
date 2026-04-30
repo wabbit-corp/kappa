@@ -148,7 +148,7 @@ module internal IlDotNetBackendInput =
                 Set.empty
 
         let bundledStandardTypes =
-            BundledStandardModules.tryTypeNames moduleName |> Option.defaultValue Set.empty
+            BundledStandardModules.tryTypeNamesText moduleName |> Option.defaultValue Set.empty
 
         Set.union bundledPreludeExpectTypes bundledStandardTypes
 

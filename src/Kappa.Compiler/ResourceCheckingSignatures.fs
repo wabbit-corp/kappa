@@ -466,16 +466,19 @@ module internal ResourceCheckingSignatures =
     let rec private isCompileTimeDefinitionParameterType typeExpr =
         match typeExpr with
         | TypeSignatures.TypeUniverse _
-        | TypeSignatures.TypeIntrinsic _
-        | TypeSignatures.TypeName([ "Type" ], [])
-        | TypeSignatures.TypeName([ "Constraint" ], [])
-        | TypeSignatures.TypeName([ "Quantity" ], [])
-        | TypeSignatures.TypeName([ "Region" ], [])
-        | TypeSignatures.TypeName([ "RecRow" ], [])
-        | TypeSignatures.TypeName([ "VarRow" ], [])
-        | TypeSignatures.TypeName([ "EffRow" ], [])
-        | TypeSignatures.TypeName([ "Label" ], [])
-        | TypeSignatures.TypeName([ "EffLabel" ], []) ->
+        | TypeSignatures.TypeIntrinsic _ ->
+            true
+        | TypeSignatures.TypeName([ "Type" ], []) ->
+            true
+        | TypeSignatures.TypeName(nameSegments, []) when
+            CompilerKnownSymbols.KnownTypePaths.isBare CompilerKnownSymbols.KnownTypeNames.Constraint nameSegments
+            || CompilerKnownSymbols.KnownTypePaths.isBare CompilerKnownSymbols.KnownTypeNames.Quantity nameSegments
+            || CompilerKnownSymbols.KnownTypePaths.isBare CompilerKnownSymbols.KnownTypeNames.Region nameSegments
+            || CompilerKnownSymbols.KnownTypePaths.isBare CompilerKnownSymbols.KnownTypeNames.RecRow nameSegments
+            || CompilerKnownSymbols.KnownTypePaths.isBare CompilerKnownSymbols.KnownTypeNames.VarRow nameSegments
+            || CompilerKnownSymbols.KnownTypePaths.isBare CompilerKnownSymbols.KnownTypeNames.EffRow nameSegments
+            || CompilerKnownSymbols.KnownTypePaths.isBare CompilerKnownSymbols.KnownTypeNames.Label nameSegments
+            || CompilerKnownSymbols.KnownTypePaths.isBare CompilerKnownSymbols.KnownTypeNames.EffLabel nameSegments ->
             true
         | TypeSignatures.TypeArrow(_, parameterType, resultType) ->
             isCompileTimeDefinitionParameterType parameterType

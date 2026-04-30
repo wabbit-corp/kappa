@@ -2406,7 +2406,10 @@ module TypeSignatures =
     let rec toText typeExpr =
         let renderTypeName name =
             match name with
-            | [ "std"; "prelude"; shortName ] when CompilerKnownSymbols.KnownTypePaths.isPrelude shortName name -> shortName
+            | _ when
+                List.length name = List.length CompilerKnownSymbols.KnownModules.Prelude + 1
+                && CompilerKnownSymbols.KnownTypePaths.isPrelude (List.last name) name ->
+                List.last name
             | _ -> SyntaxFacts.moduleNameToText name
 
         let rec renderAtom current =

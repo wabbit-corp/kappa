@@ -1003,27 +1003,27 @@ module internal CompilationFrontend =
                   [ "SupervisorStrategy", [ "OneForOne"; "OneForAll"; "RestForOne" ]
                     "RestartPolicy", [ "Permanent"; "Transient"; "Temporary" ]
                     "RestartIntensity", [ "RestartIntensity" ]
-                    "ChildSpec", [ "ChildSpec" ] ]
+                    "ChildSpec", [ "ChildSpec" ] ];
               "std.hash",
               inventory
-                  (Stdlib.standardModuleTermNames "std.hash" |> Set.toList)
-                  (Stdlib.standardModuleTypeNames "std.hash" |> Set.toList)
-                  (Stdlib.standardModuleTraitNames "std.hash" |> Set.toList)
+                  (Stdlib.standardModuleTermNames CompilerKnownSymbols.KnownModules.Hash |> Set.toList)
+                  (Stdlib.standardModuleTypeNames CompilerKnownSymbols.KnownModules.Hash |> Set.toList)
+                  (Stdlib.standardModuleTraitNames CompilerKnownSymbols.KnownModules.Hash |> Set.toList)
                   []
                   [] ]
              @ (StandardModules.all
                 |> List.filter (fun description ->
                     not (
-                        String.Equals(description.ModuleName, "std.hash", StringComparison.Ordinal)
-                        || String.Equals(description.ModuleName, "std.gradual", StringComparison.Ordinal)
-                        || String.Equals(description.ModuleName, "std.ffi", StringComparison.Ordinal)
-                        || String.Equals(description.ModuleName, "std.ffi.c", StringComparison.Ordinal)
-                        || String.Equals(description.ModuleName, "std.bridge", StringComparison.Ordinal)
-                        || String.Equals(description.ModuleName, "std.atomic", StringComparison.Ordinal)
-                        || String.Equals(description.ModuleName, "std.supervisor", StringComparison.Ordinal)
+                        description.ModuleIdentity = ModuleIdentity.ofSegments CompilerKnownSymbols.KnownModules.Hash
+                        || description.ModuleIdentity = ModuleIdentity.ofSegments CompilerKnownSymbols.KnownModules.Gradual
+                        || description.ModuleIdentity = ModuleIdentity.ofSegments CompilerKnownSymbols.KnownModules.Ffi
+                        || description.ModuleIdentity = ModuleIdentity.ofSegments CompilerKnownSymbols.KnownModules.FfiC
+                        || description.ModuleIdentity = ModuleIdentity.ofSegments CompilerKnownSymbols.KnownModules.Bridge
+                        || description.ModuleIdentity = ModuleIdentity.ofSegments CompilerKnownSymbols.KnownModules.Atomic
+                        || description.ModuleIdentity = ModuleIdentity.ofSegments CompilerKnownSymbols.KnownModules.Supervisor
                     ))
                 |> List.map (fun description ->
-                    description.ModuleName,
+                    ModuleIdentity.text description.ModuleIdentity,
                     inventory
                         (description.Terms |> List.map (fun term -> term.Name))
                         description.Types
@@ -1248,9 +1248,6 @@ module internal CompilationFrontend =
                     []
                     []
                     [])
-            |> Map.toList
-            |> List.map (fun (moduleNameText, inventory) -> moduleIdentityOfDottedTextUnchecked moduleNameText, inventory)
-            |> Map.ofList
 
         let withSyntheticModuleInventories inventories =
             let standardInventories =

@@ -62,7 +62,7 @@ module internal ZigCcBackendRuntime =
             ])
 
     let internal emitRuntimePrelude (context: GenerationContext) =
-        let preludeBoolTypeId = typeIdName Stdlib.PreludeModuleText "Bool"
+        let preludeBoolTypeId = typeIdName Stdlib.PreludeModuleText CompilerKnownSymbols.KnownTypeNames.Bool
 
         let typeIdLines =
             if Map.isEmpty context.DataTypeIds then

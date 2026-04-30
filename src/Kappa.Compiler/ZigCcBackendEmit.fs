@@ -6,7 +6,7 @@ module internal ZigCcBackendEmit =
 
     let private tryEmitPreludeBoolConstructor moduleName typeName tag fields =
         if System.String.Equals(moduleName, Stdlib.PreludeModuleText, System.StringComparison.Ordinal)
-           && System.String.Equals(typeName, "Bool", System.StringComparison.Ordinal)
+           && System.String.Equals(typeName, CompilerKnownSymbols.KnownTypeNames.Bool, System.StringComparison.Ordinal)
            && List.isEmpty fields then
             match tag with
             | 0 -> Some "kappa_box_bool(1)"
@@ -1260,7 +1260,7 @@ module internal ZigCcBackendEmit =
             | "::" ->
                 match argumentValues with
                 | [ head; tail ] ->
-                    let! listTypeId = lookupTypeId context Stdlib.PreludeModuleText "List"
+                    let! listTypeId = lookupTypeId context Stdlib.PreludeModuleText CompilerKnownSymbols.KnownTypeNames.List
                     let argumentArrayStatements, argumentArray =
                         buildArgumentArray context [ head; tail ]
 

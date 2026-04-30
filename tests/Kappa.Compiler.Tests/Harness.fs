@@ -169,15 +169,20 @@ let private buildFixtureTypeInventories (workspace: WorkspaceCompilation) =
         |> Map.ofList
 
     let exportedInventories =
-        ([ "std.unicode"; "std.bytes"; "std.hash"; "std.testing" ]
+        ([ CompilerKnownSymbols.KnownModules.Unicode
+           CompilerKnownSymbols.KnownModules.Bytes
+           CompilerKnownSymbols.KnownModules.Hash
+           [ "std"; "testing" ] ]
          |> List.fold (fun state moduleName ->
             let inventory =
                 { Terms = Stdlib.standardModuleTermNames moduleName
                   Types = Stdlib.standardModuleTypeNames moduleName
                   Traits = Stdlib.standardModuleTraitNames moduleName }
 
+            let moduleNameText = SyntaxFacts.moduleNameToText moduleName
+
             state
-            |> Map.change moduleName (function
+            |> Map.change moduleNameText (function
                 | Some existing ->
                     Some
                         { Terms = Set.union existing.Terms inventory.Terms
@@ -870,7 +875,7 @@ let private tryFindImportedDeclaredTypeInDocument (workspace: WorkspaceCompilati
     |> Option.bind (fun moduleName ->
         let moduleNameText = SyntaxFacts.moduleNameToText moduleName
 
-        tryFindStandardModuleDeclaredType bindingName moduleNameText document
+        tryFindStandardModuleDeclaredType bindingName moduleName document
         |> Option.orElseWith (fun () ->
             workspace.Documents
             |> List.tryPick (fun candidate ->

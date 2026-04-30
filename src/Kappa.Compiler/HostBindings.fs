@@ -33,7 +33,7 @@ module HostBindings =
           ExternalRuntimeTypeName: string }
 
     type HostModuleDescription =
-        { ModuleName: string
+        { ModuleIdentity: ModuleIdentity
           ScopeKind: HostModuleScopeKind
           Types: HostTypeExport list
           Terms: HostBindingMember list }
@@ -371,12 +371,12 @@ module HostBindings =
                         |> List.mapi (fun index (_, binding, callable) ->
                             { binding with Name = $"{sourceName}_arity{arity}_{index + 1}" }, callable)))
 
-    let private dotNetModuleCache = Dictionary<string, HostModuleDescription option>(StringComparer.Ordinal)
-    let private dotNetCallableCache = Dictionary<string, Map<string, DotNetHostCallable>>(StringComparer.Ordinal)
+    let private dotNetModuleCache = Dictionary<ModuleIdentity, HostModuleDescription option>(HashIdentity.Structural)
+    let private dotNetCallableCache = Dictionary<ModuleIdentity, Map<string, DotNetHostCallable>>(HashIdentity.Structural)
     let private cacheGate = obj ()
 
     let private buildDotNetTypeModule segments =
-        let moduleName = SyntaxFacts.moduleNameToText segments
+        let moduleIdentity = ModuleIdentity.ofSegments segments
         let fullTypeName = dotNetTypeName segments
 
         tryFindClrType fullTypeName
@@ -398,9 +398,9 @@ module HostBindings =
             let namedEntries = applyDeterministicNames rawEntries
             let callableMap = namedEntries |> List.map (fun (binding, callable) -> binding.Name, callable) |> Map.ofList
 
-            lock cacheGate (fun () -> dotNetCallableCache[moduleName] <- callableMap)
+            lock cacheGate (fun () -> dotNetCallableCache[moduleIdentity] <- callableMap)
 
-            { ModuleName = moduleName
+            { ModuleIdentity = moduleIdentity
               ScopeKind = ManagedTypeScope
               Types =
                 [ { Name = ownTypeName
@@ -408,14 +408,14 @@ module HostBindings =
               Terms = namedEntries |> List.map fst })
 
     let private getOrBuildDotNetTypeModule segments =
-        let moduleName = SyntaxFacts.moduleNameToText segments
+        let moduleIdentity = ModuleIdentity.ofSegments segments
 
         lock cacheGate (fun () ->
-            match dotNetModuleCache.TryGetValue(moduleName) with
+            match dotNetModuleCache.TryGetValue(moduleIdentity) with
             | true, cached -> cached
             | _ ->
                 let built = buildDotNetTypeModule segments
-                dotNetModuleCache[moduleName] <- built
+                dotNetModuleCache[moduleIdentity] <- built
                 built)
 
     let tryResolveImport backendProfile moduleSpecifier =
@@ -444,13 +444,13 @@ module HostBindings =
                 | _ -> []))
         |> List.choose (fun spec ->
             match tryResolveImport backendProfile spec.Source with
-            | Resolved description -> Some(description.ModuleName, description)
+            | Resolved description -> Some(description.ModuleIdentity, description)
             | _ -> None)
         |> Map.ofList
 
-    let tryResolveDotNetCallable moduleName bindingName =
+    let tryResolveDotNetCallable moduleIdentity bindingName =
         lock cacheGate (fun () ->
-            match dotNetCallableCache.TryGetValue(moduleName) with
+            match dotNetCallableCache.TryGetValue(moduleIdentity) with
             | true, bindingMap ->
                 bindingMap |> Map.tryFind bindingName
             | _ ->
@@ -525,6 +525,8 @@ module HostBindings =
                 |> Option.map HostPropertyGetter)
 
     let toRuntimeModule (description: HostModuleDescription) =
+        let moduleNameText = ModuleIdentity.text description.ModuleIdentity
+
         let dataTypes : KRuntimeDataType list =
             description.Types
             |> List.map (fun exportedType ->
@@ -547,13 +549,13 @@ module HostBindings =
                   Body = None
                   Intrinsic = false
                   Provenance =
-                    { FilePath = $"<host:{description.ModuleName}>"
-                      ModuleIdentity = Some(ModuleIdentity.ofDottedTextUnchecked description.ModuleName)
+                    { FilePath = $"<host:{moduleNameText}>"
+                      ModuleIdentity = Some description.ModuleIdentity
                       DeclarationName = Some binding.Name
                       IntroductionKind = "host-binding" } })
 
-        { Name = description.ModuleName
-          SourceFile = $"<host:{description.ModuleName}>"
+        { Name = moduleNameText
+          SourceFile = $"<host:{moduleNameText}>"
           Imports = []
           Exports = description.Terms |> List.map (fun binding -> binding.Name)
           IntrinsicTerms = []

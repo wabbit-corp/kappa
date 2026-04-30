@@ -130,15 +130,31 @@ module internal BundledStandardModules =
         tryFindText moduleName |> Option.map _.IntrinsicTermNames
 
     let tryTermNames moduleName =
+        tryFind moduleName |> Option.map (fun bundled -> bundled.Terms |> List.map (fun term -> term.Name) |> Set.ofList)
+
+    let tryTermNamesText moduleName =
         tryFindText moduleName |> Option.map (fun bundled -> bundled.Terms |> List.map (fun term -> term.Name) |> Set.ofList)
 
     let tryTypeNames moduleName =
+        tryFind moduleName |> Option.map (fun bundled -> bundled.Types |> Set.ofList)
+
+    let tryTypeNamesText moduleName =
         tryFindText moduleName |> Option.map (fun bundled -> bundled.Types |> Set.ofList)
 
     let tryTraitNames moduleName =
+        tryFind moduleName |> Option.map (fun bundled -> bundled.Traits |> List.map (fun traitInfo -> traitInfo.Name) |> Set.ofList)
+
+    let tryTraitNamesText moduleName =
         tryFindText moduleName |> Option.map (fun bundled -> bundled.Traits |> List.map (fun traitInfo -> traitInfo.Name) |> Set.ofList)
 
     let tryTermTypeText moduleName termName =
+        tryFind moduleName
+        |> Option.bind (fun bundled ->
+            bundled.Terms
+            |> List.tryFind (fun term -> String.Equals(term.Name, termName, StringComparison.Ordinal))
+            |> Option.map (fun term -> term.TypeText))
+
+    let tryTermTypeTextText moduleName termName =
         tryFindText moduleName
         |> Option.bind (fun bundled ->
             bundled.Terms

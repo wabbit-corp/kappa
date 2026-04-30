@@ -43,17 +43,17 @@ module internal QuerySemantics =
 
     let private classifyUseName nameSegments =
         match lastSegment nameSegments with
-        | Some "Reusable" -> Some Reusable
-        | Some "OneShot" -> Some OneShot
+        | Some CompilerKnownSymbols.KnownTypeNames.QueryModeReusable -> Some Reusable
+        | Some CompilerKnownSymbols.KnownTypeNames.QueryModeOneShot -> Some OneShot
         | _ -> None
 
     let private classifyCardName nameSegments =
         match lastSegment nameSegments with
-        | Some "QZero" -> Some QZero
-        | Some "QOne" -> Some QOne
-        | Some "QZeroOrOne" -> Some QZeroOrOne
-        | Some "QOneOrMore" -> Some QOneOrMore
-        | Some "QZeroOrMore" -> Some QZeroOrMore
+        | Some CompilerKnownSymbols.KnownTypeNames.QueryCardZero -> Some QZero
+        | Some CompilerKnownSymbols.KnownTypeNames.QueryCardOne -> Some QOne
+        | Some CompilerKnownSymbols.KnownTypeNames.QueryCardZeroOrOne -> Some QZeroOrOne
+        | Some CompilerKnownSymbols.KnownTypeNames.QueryCardOneOrMore -> Some QOneOrMore
+        | Some CompilerKnownSymbols.KnownTypeNames.QueryCardZeroOrMore -> Some QZeroOrMore
         | _ -> None
 
     let rec private stripCaptures typeExpr captureSet =
@@ -101,7 +101,7 @@ module internal QuerySemantics =
                 Some { Use = useMode; Card = card }
             | _ ->
                 match lastSegment nameSegments, classifyUseExpr useExpr, classifyCardExpr cardExpr with
-                | Some "QueryMode", Some useMode, Some card ->
+                | Some CompilerKnownSymbols.KnownTypeNames.QueryMode, Some useMode, Some card ->
                     Some { Use = useMode; Card = card }
                 | _ ->
                     None
@@ -124,23 +124,23 @@ module internal QuerySemantics =
         match normalizedType with
         | TypeName(nameSegments, [ itemType ]) ->
             match lastSegment nameSegments with
-            | Some "Query" ->
+            | Some CompilerKnownSymbols.KnownTypeNames.Query ->
                 build reusableZeroOrMoreMode ResourceQuantity.omega itemType
-            | Some "OnceQuery" ->
+            | Some CompilerKnownSymbols.KnownTypeNames.OnceQuery ->
                 build oneShotZeroOrMoreMode ResourceQuantity.omega itemType
-            | Some "OptionalQuery" ->
+            | Some CompilerKnownSymbols.KnownTypeNames.OptionalQuery ->
                 build
                     { Use = Reusable
                       Card = QZeroOrOne }
                     ResourceQuantity.omega
                     itemType
-            | Some "NonEmptyQuery" ->
+            | Some CompilerKnownSymbols.KnownTypeNames.NonEmptyQuery ->
                 build
                     { Use = Reusable
                       Card = QOneOrMore }
                     ResourceQuantity.omega
                     itemType
-            | Some "SingletonQuery" ->
+            | Some CompilerKnownSymbols.KnownTypeNames.SingletonQuery ->
                 build
                     { Use = Reusable
                       Card = QOne }
@@ -148,7 +148,7 @@ module internal QuerySemantics =
                     itemType
             | _ ->
                 None
-        | TypeName(nameSegments, [ modeExpr; itemQuantityExpr; itemType ]) when lastSegment nameSegments = Some "QueryCore" ->
+        | TypeName(nameSegments, [ modeExpr; itemQuantityExpr; itemType ]) when lastSegment nameSegments = Some CompilerKnownSymbols.KnownTypeNames.QueryCore ->
             match tryParseModeExpr modeExpr, tryParseQuantityExpr itemQuantityExpr with
             | Some mode, Some itemQuantity ->
                 build mode itemQuantity itemType
@@ -175,16 +175,16 @@ module internal QuerySemantics =
             match normalize typeExpr with
             | TypeName(nameSegments, [ itemType ]) ->
                 match lastSegment nameSegments with
-                | Some "List"
-                | Some "Array"
-                | Some "Set" ->
+                | Some CompilerKnownSymbols.KnownTypeNames.List
+                | Some CompilerKnownSymbols.KnownTypeNames.Array
+                | Some CompilerKnownSymbols.KnownTypeNames.Set ->
                     build
                         { Mode = reusableZeroOrMoreMode
                           ItemQuantity = ResourceQuantity.omega
                           ItemType = itemType
                           CaptureSet = Set.empty }
                         ResourceQuantity.omega
-                | Some "Option" ->
+                | Some CompilerKnownSymbols.KnownTypeNames.Option ->
                     build
                         { Mode =
                             { Use = Reusable

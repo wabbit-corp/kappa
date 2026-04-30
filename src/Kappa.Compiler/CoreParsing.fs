@@ -84,9 +84,9 @@ module private SurfaceBinderParsing =
     let private tryParseSuspensionMarker (tokens: Token list) =
         match tokens with
         | head :: rest when Token.isKeyword Keyword.Thunk head ->
-            Some({ head with Kind = Identifier; Text = "Thunk" }, rest)
+            Some({ head with Kind = Identifier; Text = CompilerKnownSymbols.KnownTypeNames.Thunk }, rest)
         | head :: rest when Token.isKeyword Keyword.Lazy head ->
-            Some({ head with Kind = Identifier; Text = "Need" }, rest)
+            Some({ head with Kind = Identifier; Text = CompilerKnownSymbols.KnownTypeNames.Need }, rest)
         | _ ->
             None
 
@@ -1481,8 +1481,8 @@ type private ExpressionParser
         let listNil = Name [ "Nil" ]
         let boolTrue = Name [ "True" ]
         let boolFalse = Name [ "False" ]
-        let preludeResConstructorName = [ "Res"; ":&" ]
-        let preludeResConstructorExpression = MemberAccess(Name [ "Res" ], [ ":&" ], [])
+        let preludeResConstructorName = [ CompilerKnownSymbols.KnownTypeNames.Res; ":&" ]
+        let preludeResConstructorExpression = MemberAccess(Name [ CompilerKnownSymbols.KnownTypeNames.Res ], [ ":&" ], [])
 
         let cons head tail =
             Apply(Name [ "::" ], [ head; tail ])
@@ -1494,14 +1494,14 @@ type private ExpressionParser
             List.foldBack cons items listNil
 
         let makeSetExpression (items: SurfaceExpression list) =
-            Apply(Name [ "Set" ], [ makeListExpression items ])
+            Apply(Name [ CompilerKnownSymbols.KnownTypeNames.Set ], [ makeListExpression items ])
 
         let makeMapExpression (entries: (SurfaceExpression * SurfaceExpression) list) =
             let entryExpressions =
                 entries
                 |> List.map (fun (key, value) -> applyPreludeResConstructor key value)
 
-            Apply(Name [ "Map" ], [ makeListExpression entryExpressions ])
+            Apply(Name [ CompilerKnownSymbols.KnownTypeNames.Map ], [ makeListExpression entryExpressions ])
 
         let rec patternIsDefinitelyIrrefutable pattern =
             match pattern with
@@ -2365,7 +2365,7 @@ type private ExpressionParser
 
         let unwrapEnumeratedSource expression =
             match expression with
-            | Apply(Name [ "Set" ], [ items ]) ->
+            | Apply(Name [ CompilerKnownSymbols.KnownTypeNames.Set ], [ items ]) ->
                 items, KnownUnordered
             | _ ->
                 expression, UnknownOrderedness
@@ -2967,8 +2967,8 @@ type private ExpressionParser
                 let lowered =
                     match kind with
                     | ListCollection -> yieldedRows
-                    | SetCollection -> Apply(Name [ "Set" ], [ yieldedRows ])
-                    | MapCollection -> Apply(Name [ "Map" ], [ yieldedRows ])
+                    | SetCollection -> Apply(Name [ CompilerKnownSymbols.KnownTypeNames.Set ], [ yieldedRows ])
+                    | MapCollection -> Apply(Name [ CompilerKnownSymbols.KnownTypeNames.Map ], [ yieldedRows ])
 
                 Comprehension
                     { CollectionKind = kind
@@ -2981,8 +2981,8 @@ type private ExpressionParser
 
                 match kind with
                 | ListCollection -> listNil
-                | SetCollection -> Apply(Name [ "Set" ], [ listNil ])
-                | MapCollection -> Apply(Name [ "Map" ], [ listNil ])
+                | SetCollection -> Apply(Name [ CompilerKnownSymbols.KnownTypeNames.Set ], [ listNil ])
+                | MapCollection -> Apply(Name [ CompilerKnownSymbols.KnownTypeNames.Map ], [ listNil ])
 
     member private this.DecodeStringTextSegment(token: Token) =
         match SyntaxFacts.tryUnescapeStringContent token.Text with

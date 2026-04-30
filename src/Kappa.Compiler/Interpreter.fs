@@ -325,7 +325,7 @@ module Interpreter =
                 Some value
             | ConstructedValue constructed
                 when List.isEmpty constructed.Fields
-                     && String.Equals(constructed.Constructor.TypeName, "Bool", StringComparison.Ordinal) ->
+                     && String.Equals(constructed.Constructor.TypeName, CompilerKnownSymbols.KnownTypeNames.Bool, StringComparison.Ordinal) ->
                 match constructed.Constructor.QualifiedName with
                 | qualifiedName when String.Equals(qualifiedName, $"{Stdlib.PreludeModuleText}.True", StringComparison.Ordinal) -> Some true
                 | qualifiedName when String.Equals(qualifiedName, $"{Stdlib.PreludeModuleText}.False", StringComparison.Ordinal) -> Some false
@@ -1054,7 +1054,7 @@ module Interpreter =
                     match value with
                     | BooleanValue booleanValue
                         when constructor.Arity = 0
-                             && String.Equals(constructor.TypeName, "Bool", StringComparison.Ordinal)
+                             && String.Equals(constructor.TypeName, CompilerKnownSymbols.KnownTypeNames.Bool, StringComparison.Ordinal)
                              && List.isEmpty argumentPatterns ->
                         let expectedValue = String.Equals(constructor.Name, "True", StringComparison.Ordinal)
 
