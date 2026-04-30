@@ -58,3 +58,20 @@ let ``TypeIdentity can represent scoped names without flattening them to text`` 
     Assert.Equal(moduleIdentity, TypeIdentity.moduleIdentity identity)
     Assert.Equal<string list>([ "Outer"; "Inner" ], TypeIdentity.scopePath identity)
     Assert.Equal("T", TypeIdentity.name identity)
+
+[<Fact>]
+let ``KnownTypes classify bare and prelude spellings to the same symbolic type`` () =
+    let bare = CompilerKnownSymbols.KnownTypes.tryClassifyName [ "Option" ]
+    let prelude = CompilerKnownSymbols.KnownTypes.tryClassifyName [ "std"; "prelude"; "Option" ]
+
+    Assert.Equal(Some CompilerKnownSymbols.OptionType, bare)
+    Assert.Equal(Some CompilerKnownSymbols.OptionType, prelude)
+
+[<Fact>]
+let ``TypeSignatures known type helpers construct and match symbolic heads`` () =
+    let payload = TypeSignatures.knownType CompilerKnownSymbols.StringType []
+    let optionType = TypeSignatures.knownType CompilerKnownSymbols.OptionType [ payload ]
+
+    let arguments = TypeSignatures.tryKnownTypeArguments CompilerKnownSymbols.OptionType optionType
+
+    Assert.Equal(Some [ payload ], arguments)

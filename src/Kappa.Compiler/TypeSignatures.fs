@@ -2231,15 +2231,23 @@ module TypeSignatures =
 
         let normalizeTypeName name arguments =
             let normalizedArguments = arguments |> List.map normalize
+            let normalizedName =
+                CompilerKnownSymbols.KnownTypes.tryClassifyName name
+                |> Option.bind (fun knownType ->
+                    if CompilerKnownSymbols.KnownTypes.acceptedPaths knownType |> List.exists ((=) name) then
+                        Some(CompilerKnownSymbols.KnownTypes.canonicalPath knownType)
+                    else
+                        None)
+                |> Option.defaultValue name
 
             let normalizeLegacyIntrinsicTypeName () =
-                match name, normalizedArguments with
+                match normalizedName, normalizedArguments with
                 | [ "Type" ], [] ->
                     Some(TypeUniverse None)
                 | [ "Type" ], [ universeExpr ] ->
                     Some(TypeUniverse(Some universeExpr))
                 | _ ->
-                    match name with
+                    match normalizedName with
                     | [ intrinsicName ] when List.isEmpty normalizedArguments ->
                         tryIntrinsicClassifier [ intrinsicName ] |> Option.map TypeIntrinsic
                     | _ ->
@@ -2249,7 +2257,7 @@ module TypeSignatures =
             | Some normalizedLegacy ->
                 normalizedLegacy
             | None ->
-                match context |> Map.tryFind (collapsedName name) with
+                match context |> Map.tryFind (collapsedName normalizedName) with
                 | Some definition when definition.Transparent && definition.ConversionReducible ->
                     if List.length normalizedArguments >= List.length definition.ParameterNames then
                         let appliedParameters, remainingArguments =
@@ -2267,9 +2275,9 @@ module TypeSignatures =
                         | extra ->
                             normalize (TypeApply(substitutedBody, extra))
                     else
-                        TypeName(name, normalizedArguments)
+                        TypeName(normalizedName, normalizedArguments)
                 | _ ->
-                    TypeName(name, normalizedArguments)
+                    TypeName(normalizedName, normalizedArguments)
 
         let canonicalizeRecord fields =
             let normalizedFields =
