@@ -10190,6 +10190,41 @@ let makeAddOne e =
     pure '{ ${e} + 1 }
 ```
 
+<!-- types.macros.quotation_grammar_and_failure -->
+##### 5.8.1A Quotation grammar and failure behavior
+
+A syntax quotation parses embedded Kappa expressions using the active source grammar and active language profile at the
+quotation site, unless a future quotation form explicitly declares a narrower subgrammar.
+
+Consequences:
+
+* syntax accepted in ordinary expression position under the active profile is accepted inside `'{ ... }` when the same
+  expression grammar is expected;
+* syntax rejected in ordinary source remains rejected in quotation unless quotation explicitly represents it as inert
+  syntax;
+* feature-gated syntax inside quotation is subject to the same owning-gate rule as ordinary source syntax;
+* parser recovery may recognize inactive or malformed syntax inside quotation only for diagnostics and tooling, not for
+  semantic acceptance.
+
+Malformed quoted syntax MUST fail with an ordinary structured diagnostic. It MUST NOT reach unreachable-code paths,
+implementation panics, malformed internal AST states, or unframed host exceptions.
+
+A malformed quotation diagnostic MUST use family `kappa.syntax.quotation` and portable alias
+`E_QUOTE_MALFORMED_SYNTAX`.
+
+The diagnostic MUST identify:
+
+* the quotation form;
+* the malformed source range;
+* the active grammar or subgrammar;
+* the active language profile;
+* any feature gate that would be required for semantic acceptance;
+* the most local source-preserving repair when one is known.
+
+If parser recovery constructs a partial `Syntax` value for tooling after a malformed quotation, that value MUST be
+marked as recovered or invalid. Such a recovered value MUST NOT be accepted by ordinary splicing as if it were valid
+user-written syntax.
+
 Note: `${...}` inside a quoted block is distinct from the string-interpolation `${...}` syntax of §4.3.4. The two forms
 occur in disjoint lexical contexts.
 
@@ -10396,6 +10431,36 @@ Normative meaning:
   navigation, and rendered output treat `o` as the nearest origin of the resulting syntax.
 * Surface syntax inspection MUST preserve hygiene and MUST NOT expose mutable parser internals, unstable node IDs, or
   implementation-defined memory identities as part of the portable contract.
+
+<!-- types.macros.generated_name_hygiene_module_boundaries -->
+##### 5.8.4.2 Generated names, holes, and module-boundary hygiene
+
+Generated names are hygienic semantic objects, not string tricks wearing a fake moustache.
+
+Rules:
+
+* A macro, quotation, elaboration helper, derive helper, or generated-source facility that introduces a binder MUST
+  introduce a fresh hygienic binder unless it deliberately refers to an existing source binder through preserved syntax
+  metadata.
+* Generated binders MUST NOT capture user-written binders.
+* User-written binders MUST NOT accidentally capture generated binders.
+* Generated names that escape into a module interface artifact MUST receive stable semantic object identities under
+  §17.3.4 and stable source or synthetic origins under §17.2.4.3.
+* Importing a generated declaration from another module MUST resolve that declaration by semantic identity, not by
+  regenerating the macro expansion under the importing module's lexical environment.
+* Macro-generated names exported from one module and imported into another MUST preserve their declaration kind, source
+  or synthetic origin, hygiene metadata, visibility, opacity, and semantic object identity.
+* A generated name collision that would be observable in source, interface browsing, documentation, diagnostics, or
+  backend output is a compile-time error with portable alias `E_GENERATED_NAME_COLLISION`.
+
+Holes and placeholders inside lowered helper forms:
+
+* Holes or placeholders written at distinct source sites MUST remain distinct after helper lowering.
+* If a source construct is lowered into an internal helper, branch function, matcher, continuation, or `with`-like
+  helper, holes inside the lowered scrutinee and holes inside the lowered continuation MUST be alpha-separated by source
+  site.
+* Lowering MUST NOT report duplicate-hole, duplicate-definition, or name-collision errors merely because two generated
+  helper scopes reused one internal placeholder spelling.
 
 <!-- types.macros.reflection_api -->
 #### 5.8.5 Reflection API
@@ -10745,8 +10810,40 @@ Normative meaning:
   implicit-insertion, quantity, borrow, region, visibility, opacity, `unhide`, and `clarify` rules as the underlying
   reflection operations at the call site.
 
+<!-- types.macros.reflection_reification_canonicality -->
+##### 5.8.5A Reflection coverage and canonical reification
+
+The public `Syntax` and semantic reflection APIs MUST remain aligned with every standardized source form.
+
+Whenever this specification standardizes a user-visible declaration form, binder form, expression form, pattern form,
+FFI form, effect form, query form, or module form, the public reflection surface MUST either:
+
+* represent that form directly; or
+* specify one stable desugared encoding for that form.
+
+The implementation MUST NOT silently accept source syntax that cannot be represented or inspected through the public
+reflection surface except for forms explicitly marked as non-reflectable by this specification.
+
+Equivalent reflected terms:
+
+If two elaboration-time reflection values elaborate to semantically equivalent `Core` terms under the same lexical
+context, visibility/opacity environment, active feature profile, and import environment, then `reifyCore`, `quote`, and
+adjacent reflection helpers MUST produce observationally equivalent syntax results.
+
+"Observationally equivalent" means:
+
+* re-splicing either result at the same site has the same accepted/rejected status;
+* if both are accepted, they elaborate to definitionally equal KCore;
+* diagnostics caused by either result preserve equivalent source or synthetic origin chains;
+* generated binder names may differ only by hygiene-preserving alpha-renaming.
+
+If a reflected construction path is unsupported, ill-scoped, or violates quantity, region, capture, visibility,
+opacity, or feature-gate rules, the reflection operation MUST fail with an ordinary structured diagnostic. It MUST NOT
+diverge or fall through to an internal error merely because the term was assembled through a different but equivalent
+reflection path.
+
 <!-- types.macros.derivation_shape_reflection -->
-#### 5.8.5A Derivation-shape reflection
+#### 5.8.5B Derivation-shape reflection
 
 The standard module `std.deriving.shape` of §2.7H is a high-level semantic-reflection layer built on top of the general reflection facilities of this section.
 
@@ -11037,6 +11134,32 @@ Rules:
   derived from ordinary `Syntax` or `Core`; and
 * canonical interface views, hovers, error messages, and proof states MAY consult these recovery hooks, but the
   recovered form MUST remain observationally equivalent to the underlying elaborated term.
+
+<!-- types.macros.syntax_rendering_generated_syntax -->
+##### 5.8.7.2 Source-like rendering of quoted and generated syntax
+
+Default rendering of `Syntax`, reified `Core`, macro-generated declarations, and generated expressions SHOULD be valid
+Kappa source when a faithful source-level rendering exists.
+
+Rules:
+
+* A rendered expression or declaration produced for diagnostics, hovers, macro traces, interface views, or
+  generated-code previews SHOULD parse back under the same language profile.
+* Nested block forms such as `match`, `case`, `do`, `handle`, `try`, and local declarations MUST be parenthesized and
+  indented so that paste-back parsing is well-defined.
+* If a term passed through a lowered helper encoding, the renderer SHOULD recover the corresponding source-like form
+  when that recovery is faithful.
+* If a lowered helper is partially applied or otherwise cannot be faithfully recovered as the source construct, the
+  renderer MUST fall back to an ordinary application or stable raw form rather than panicking.
+* Raw internal hygiene suffixes, bound-variable encodings, anonymous-binder sentinels, and compiler-only generated
+  identifiers MUST be hidden by default.
+* When capture, hygiene, or generated-binder identity matters to the explanation, the renderer MAY expose stable
+  explanatory names, but it MUST distinguish those names from user-written source names.
+* If formatter metadata is missing for an extension-defined, partial, or malformed syntax node, rendering MUST degrade
+  to a stable fallback representation. It MUST NOT fail merely because a pretty-printer table has no entry.
+
+This subsection governs rendering and tooling output only. It does not change typing, hygiene, definitional equality,
+semantic hashes, or backend lowering.
 
 <!-- types.staging -->
 ### 5.9 Staged code values
@@ -12888,6 +13011,7 @@ Typing:
   rules of §5.1.7. Thus nested safe-navigation such as `a?.b?.c` preserves the correct overlap/disjointness behavior of
   the original borrowed path.
 * If the residual body has type `U` where `U` is not of the form `Option _`, then the safe chain has type `Option U`.
+* If the residual body has type `Option U`, then the safe chain has type `Option U`.
 
 Diagnostics:
 
@@ -12922,7 +13046,6 @@ The warning payload MUST include:
 * whether replacing `?.` with `.` is machine-applicable.
 
 This warning MUST NOT fire when the receiver may be absent on any reachable path.
-* If the residual body has type `Option U`, then the safe chain has type `Option U`.
 
 Precedence:
 
