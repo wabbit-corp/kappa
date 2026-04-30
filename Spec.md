@@ -6653,10 +6653,44 @@ An intrinsic trait is a trait whose evidence introduction rules are owned by the
 declarations for an intrinsic trait are rejected unless that intrinsic trait explicitly defines a checked source-level
 introduction form.
 
-The standard row traits `ContainsRec`, `LacksRec`, `ContainsVar`, `LacksVar`, `ContainsEff`, `LacksEff`, and `SplitEff`
-are intrinsic solver traits. They are ordinary trait evidence types for purposes of `=>`, implicit binders, `summon`,
-projection-free explicit evidence passing, proof irrelevance, and coherence. They differ from ordinary user traits only
-in that their evidence is introduced by the row solver rather than by user-authored instances.
+The standard quantity-solver trait `QuantitySatisfies` and the standard row traits `ContainsRec`, `LacksRec`,
+`ContainsVar`, `LacksVar`, `ContainsEff`, `LacksEff`, and `SplitEff` are intrinsic solver traits.
+
+They are ordinary trait evidence types for purposes of:
+
+* `=>`;
+* implicit binders;
+* `summon`;
+* projection-free explicit evidence passing;
+* proof irrelevance; and
+* coherence.
+
+They differ from ordinary user traits in that their evidence is introduced by compiler-owned solvers rather than by
+user-authored instances.
+
+`QuantitySatisfies qcap qdem` evidence is introduced by the quantity solver.
+
+Row-trait evidence is introduced by the row solver.
+
+Source `instance` declarations for `QuantitySatisfies` are rejected.
+
+For every well-formed trait evidence type:
+
+```kappa
+QuantitySatisfies qcap qdem
+```
+
+the compiler provides intrinsic evidence:
+
+```kappa
+IsTrait (QuantitySatisfies qcap qdem)
+IsProp (QuantitySatisfies qcap qdem)
+RuntimeErased (QuantitySatisfies qcap qdem)
+```
+
+`QuantitySatisfies` evidence has no source-visible constructors and no source-visible projections.
+It is a compile-time proof obligation only.
+It never contributes runtime representation.
 
 <!-- types.universes.constraints.rejected_constraints_custom_errors -->
 #### 5.1.3A Rejected trait obligations and custom type-error computation
