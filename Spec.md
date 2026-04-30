@@ -10307,8 +10307,9 @@ metadata to support custom providers without re-running compiler-private ownersh
 * the inferred item quantity of the normalized item query;
 * the orderedness state before and after every normalized plan node;
 * the quantitative row context before and after every normalized plan node;
-* for every source-introduction node, the selected `IntoQuery` or `BorrowIntoQuery` evidence, source demand quantity,
-  source mode, source item quantity, and source item type;
+* for every source-introduction node, the selected `IntoQuery`, `BorrowSourceIntoQuery`, or
+  `BorrowItemsIntoQuery` evidence, source demand quantity when applicable, source mode, source item quantity, and
+  source item type;
 * for every node, the per-input row multiplicity classified as `QZero`, `QOne`, `QZeroOrOne`, `QOneOrMore`, or
   `QZeroOrMore`;
 * for every expression evaluated by a node, whether it was checked in a non-consuming, consuming, borrowed, or terminal
@@ -18307,15 +18308,18 @@ Examples:
 
 Borrowed generator:
 
-* `for & pat in collection` borrows `collection`, converts it through `BorrowIntoQuery`, and binds borrowed views of its
-  items.
+* `for x in &collection` borrows `collection`, converts it through `BorrowSourceIntoQuery`, and binds ordinary items.
+* `for & pat in collection` borrows `collection`, converts it through `BorrowItemsIntoQuery`, and binds borrowed views
+  of its items.
 
     * The source expression must be borrowable under the ordinary borrow-introduction rules of §§5.1.5-5.1.7. If it is
       not already a borrowable stable place, the implementation may introduce a hidden temporary exactly as for
       borrowed local bindings under §5.1.6.
-    * If `BorrowIntoQuery src` provides associated item type `A`, then the item matched by `pat` is treated as a
-      borrowed item of type `A` under the borrow region of the source.
-    * Variables introduced by `pat` are borrowed row entries under that same region.
+    * If `BorrowSourceIntoQuery src` provides associated item type `A`, then the item bound by `x` is treated as an
+      ordinary item of type `A` under the borrow region of the source.
+    * If `BorrowItemsIntoQuery src` provides associated item type `A`, then the item matched by `pat` is treated as a
+      borrowed item view of type `BorrowView ρ A` under the borrow region of the source.
+    * Variables introduced by `pat` in the borrowed-item form are borrowed row entries under that same region.
     * The borrowed bindings may not escape the borrow region. If a later `yield`, closure, first-class query,
       aggregate, or collection result would allow such a borrowed binding to escape, the ordinary `captures (...)` and
       skolem-escape rules reject the program unless the escaping type explicitly records a live region that is still in
@@ -19137,45 +19141,105 @@ borrow views, or any other item quantity expressible by `q`.
 <!-- collections.lowering.sources -->
 #### 10.10.2 Sources
 
-A generator source is any expression whose type `src` has an implicit instance `IntoQuery src`.
+Generator source conversion distinguishes ordinary source conversion, borrowed-source conversion, and borrowed-item
+conversion.
 
-If `IntoQuery src` provides:
-
-```kappa
-Mode : QueryMode
-ItemQuantity : Quantity
-Item : Type
-SourceDemand : Quantity
-```
-
-then:
+Ordinary generator:
 
 ```kappa
-toQuery :
-    (SourceDemand source : src) ->
-    QueryCore Mode ItemQuantity Item
+for pat in src
 ```
 
-is the semantic source of rows for ordinary `for ... in ...` clauses.
+uses `IntoQuery srcType`.
 
-A borrowed generator source is any expression whose type `src` has an implicit instance `BorrowIntoQuery src`.
-If `BorrowIntoQuery src` provides:
+Given selected evidence:
 
 ```kappa
-Card : QueryCard
-Item : Type
+D : IntoQuery srcType
 ```
 
-then:
+the source expression is checked against the demand:
 
 ```kappa
-toBorrowQuery :
-    forall (ρ : Region).
-    (&[ρ] source : src) ->
-    QueryCore (QueryMode Reusable Card) ω (BorrowView ρ Item) captures (ρ)
+(D.SourceDemand source : srcType)
 ```
 
-is the semantic source of rows for `for & ... in ...` and `for? & ... in ...` clauses.
+and the generated query has type:
+
+```kappa
+QueryCore D.Mode D.ItemQuantity D.Item
+```
+
+`D.SourceDemand` and `D.ItemQuantity` are interval quantities. They cannot be borrowed access markers.
+
+Borrowed-source generator:
+
+```kappa
+for pat in &src
+```
+
+uses `BorrowSourceIntoQuery srcType`.
+
+Given selected evidence:
+
+```kappa
+D : BorrowSourceIntoQuery srcType
+```
+
+the source expression must elaborate to a borrowable place expression of type `srcType`.
+The compiler introduces a fresh rigid region `ρ` for the borrowed source and invokes:
+
+```kappa
+D.toBorrowSourceQuery ρ source
+```
+
+The generated query has type:
+
+```kappa
+QueryCore D.Mode D.ItemQuantity D.Item captures (ρ)
+```
+
+The bound item pattern `pat` receives ordinary items of type `D.Item` at interval quantity `D.ItemQuantity`.
+
+Borrowed-item generator:
+
+```kappa
+for & pat in src
+```
+
+uses `BorrowItemsIntoQuery srcType`.
+
+Given selected evidence:
+
+```kappa
+D : BorrowItemsIntoQuery srcType
+```
+
+the source expression must elaborate to a borrowable place expression of type `srcType`.
+The compiler introduces a fresh rigid region `ρ` for the borrowed source and invokes:
+
+```kappa
+D.toBorrowItemsQuery ρ source
+```
+
+The generated query has type:
+
+```kappa
+QueryCore (QueryMode Reusable D.Card) ω (BorrowView ρ D.Item) captures (ρ)
+```
+
+The pattern `pat` is matched under borrowed-item elaboration. Occurrences bound by `pat` are borrowed views valid under
+`ρ`.
+
+The forms are intentionally distinct:
+
+```kappa
+for x in xs       -- ordinary source conversion
+for x in &xs      -- borrowed source, ordinary yielded items
+for &x in xs      -- borrowed source, borrowed yielded item views
+```
+
+A borrowed query value may not escape the region named in its `captures (ρ)` annotation.
 
 Built-in source obligations:
 
@@ -19202,8 +19266,9 @@ For `QueryCore mode q a` itself:
 `IntoQuery (Query a)` behaves as identity on reusable element streams.
 `IntoQuery (OnceQuery a)` consumes the one-shot query value and behaves as identity on the element stream.
 
-A conforming implementation MAY provide additional `IntoQuery` or `BorrowIntoQuery` instances for implementation-defined
-sources, but those additional instances MUST NOT change the semantics of the required built-in instances.
+A conforming implementation MAY provide additional `IntoQuery`, `BorrowSourceIntoQuery`, or
+`BorrowItemsIntoQuery` instances for implementation-defined sources, but those additional instances MUST NOT change the
+semantics of the required built-in instances.
 
 <!-- collections.lowering.quantitative_rows -->
 #### 10.10.2A Quantitative row environment
@@ -19370,7 +19435,8 @@ The compiler MUST lower the clause sequence to behavior observationally equivale
 algebra:
 
 * source introduction from `IntoQuery.toQuery`;
-* borrowed source introduction from `BorrowIntoQuery.toBorrowQuery`;
+* borrowed source introduction from `BorrowSourceIntoQuery.toBorrowSourceQuery`;
+* borrowed-item source introduction from `BorrowItemsIntoQuery.toBorrowItemsQuery`;
 * row extension;
 * row-local mapping;
 * flat-mapping;
@@ -19411,25 +19477,36 @@ Required clause behavior:
    * bind names introduced by `pat` at the source query's `ItemQuantity`, subject to any more specific quantities
      written in the pattern.
 
-3. `for & pat in src`
+3. `for pat in &src`
 
-   * borrow `src` and obtain `toBorrowQuery src`;
+   * borrow `src` and obtain `toBorrowSourceQuery src`;
+   * require `pat` to be irrefutable for the ordinary borrowed-source item type;
+   * preserve the source borrow region in the hidden region environment of the introduced bindings;
+   * extend the current row stream by binding `pat`;
+   * use the borrowed source cardinality as the per-input row multiplicity for row-carrying checks;
+   * bind names introduced by `pat` at the source query's `ItemQuantity`, subject to any more specific quantities
+     written in the pattern; and
+   * reject any later escape of the borrowed query value unless the escaping type records a still-live explicit region.
+
+4. `for & pat in src`
+
+   * borrow `src` and obtain `toBorrowItemsQuery src`;
    * require `pat` to be irrefutable for the borrowed item type;
    * preserve the source borrow region in the hidden region environment of the introduced bindings;
    * introduce names bound by `pat` as borrowed row entries under that region;
    * use the borrowed source cardinality as the per-input row multiplicity for row-carrying checks; and
    * reject any later escape of the borrowed entries unless the escaping value type records a still-live explicit region.
 
-4. `for? & pat in src`
+5. `for? & pat in src`
 
-   * borrow `src` and obtain `toBorrowQuery src`;
+   * borrow `src` and obtain `toBorrowItemsQuery src`;
    * match each borrowed item against `pat`;
    * keep only matching items;
    * use `filterCard(sourceCard)` as the per-input row multiplicity;
    * introduce names bound by `pat` as borrowed row entries under the source borrow region; and
    * reject any row-dropping or borrow-escape violation under §§10.10.2B and 5.1.6.
 
-5. `let pat = expr`
+6. `let pat = expr`
 
    * evaluate `expr` once per incoming row;
    * require `pat` to be irrefutable;
@@ -19437,7 +19514,7 @@ Required clause behavior:
    * extend the current row with the bound names; and
    * preserve existing row entries by transfer.
 
-6. `let? pat = expr`
+7. `let? pat = expr`
 
    * evaluate `expr` once per incoming row;
    * keep only rows for which `pat` matches;
@@ -19445,7 +19522,7 @@ Required clause behavior:
    * reject the clause when dropping the failure residue or incoming row residue would violate droppability; and
    * extend the current row with the bound names on the success path.
 
-7. `if cond`
+8. `if cond`
 
    * filter rows by `cond`;
    * evaluate `cond` at most once per incoming row;
@@ -19454,7 +19531,7 @@ Required clause behavior:
    * check `cond` in a non-consuming context with respect to row entries that remain available after the filter; and
    * typecheck subsequent clauses under the success assumption `cond = True`.
 
-8. `if expr is C`
+9. `if expr is C`
 
    * filter rows by the top-level constructor test;
    * evaluate `expr` at most once per incoming row;
@@ -19462,7 +19539,7 @@ Required clause behavior:
    * require the discarded row residue on the false path to be row-droppable; and
    * typecheck subsequent clauses under the same positive constructor refinement as §7.4.1.
 
-9. `join ...`
+10. `join ...`
 
    * lower to a normalized inner-join operator, or to an observationally equivalent combination of `toQuery`, refutable
      matching, and filtering;
