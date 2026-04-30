@@ -20572,7 +20572,7 @@ The instance artifact records at least:
 * all supertrait evidence;
 * all associated static members;
 * all runtime method fields;
-* all erased law fields;
+* all law and proof fields, whether runtime-erased or runtime-relevant;
 * the active intrinsic-trait and solver dependencies used while checking the instance; and
 * the canonical Easy Hash and, when available or required, Hard Hash used by §15.2.1 coherence.
 
@@ -22521,11 +22521,15 @@ The coherence input for an evidence artifact includes all source-observable proj
 * runtime method fields;
 * associated static members;
 * supertrait evidence;
-* erased law fields;
+* law and proof fields, whether runtime-erased or runtime-relevant;
 * compiler-generated evidence fields; and
 * intrinsic solver facts that affect any of the above.
 
-No implementation may hash only runtime methods when associated static members, supertraits, or erased law fields differ.
+Law and proof fields contribute to interface identity, semantic hashing, and coherence regardless of whether their
+runtime representation is erased. Their runtime representation is determined separately by `RuntimeErased` and
+ambient-demand analysis.
+
+No implementation may hash only runtime methods when associated static members, supertraits, or law/proof fields differ.
 If equality of two evidence values would imply equality of a projection, that projection contributes to the coherence
 artifact.
 
