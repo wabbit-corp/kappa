@@ -17,14 +17,14 @@ module SurfaceElaboration =
           DefaultDefinition: LetDefinition option }
 
     type private TraitInfo =
-        { ModuleName: string
+        { ModuleIdentity: ModuleIdentity
           Name: string
           TypeParameters: string list
           Supertraits: TraitConstraint list
           Members: Map<string, TraitMemberInfo> }
 
     type private InstanceInfo =
-        { ModuleName: string
+        { ModuleIdentity: ModuleIdentity
           TraitName: string
           InstanceKey: string
           Constraints: TraitConstraint list
@@ -32,7 +32,7 @@ module SurfaceElaboration =
           Members: Map<string, LetDefinition> }
 
     type private TypeAliasInfo =
-        { ModuleName: string
+        { ModuleIdentity: ModuleIdentity
           Name: string
           IsOpaque: bool
           Parameters: string list
@@ -47,7 +47,7 @@ module SurfaceElaboration =
         | AbstractFacet
 
     type private TypeFacetInfo =
-        { ModuleName: string
+        { ModuleIdentity: ModuleIdentity
           Name: string
           FacetKind: TypeFacetKind
           IsOpaque: bool
@@ -77,7 +77,7 @@ module SurfaceElaboration =
           RowTail: string option }
 
     type private BindingSchemeInfo =
-        { ModuleName: string
+        { ModuleIdentity: ModuleIdentity
           Name: string
           IsPattern: bool
           Scheme: TypeScheme
@@ -87,7 +87,7 @@ module SurfaceElaboration =
           DefaultArguments: Map<string, SurfaceExpression> }
 
     type private ProjectionInfo =
-        { ModuleName: string
+        { ModuleIdentity: ModuleIdentity
           Name: string
           Binders: ProjectionBinder list
           ReturnType: TypeExpr
@@ -95,9 +95,9 @@ module SurfaceElaboration =
 
     type private OrdinaryVisibleTermCandidate =
         | OrdinaryVisibleBindingCandidate of ImportedOrdinaryCandidatePriority * BindingSchemeInfo
-        | OrdinaryVisibleExportedBindingCandidate of ImportedOrdinaryCandidatePriority * string * string
+        | OrdinaryVisibleExportedBindingCandidate of ImportedOrdinaryCandidatePriority * ModuleIdentity * string
         | OrdinaryVisibleConstructorCandidate of ImportedOrdinaryCandidatePriority * BindingSchemeInfo
-        | OrdinaryVisibleModuleCandidate of ImportedOrdinaryCandidatePriority * string
+        | OrdinaryVisibleModuleCandidate of ImportedOrdinaryCandidatePriority * ModuleIdentity
 
     and private ImportedOrdinaryCandidatePriority =
         | ExplicitImportedItem
@@ -106,15 +106,15 @@ module SurfaceElaboration =
     let private renderOrdinaryVisibleTermCandidate candidate =
         match candidate with
         | OrdinaryVisibleBindingCandidate(_, info) when info.IsPattern ->
-            $"pattern term '{info.Name}' from module '{info.ModuleName}'"
+            $"pattern term '{info.Name}' from module '{ModuleIdentity.text info.ModuleIdentity}'"
         | OrdinaryVisibleBindingCandidate(_, info) ->
-            $"term '{info.Name}' from module '{info.ModuleName}'"
-        | OrdinaryVisibleExportedBindingCandidate(_, moduleName, name) ->
-            $"term '{name}' from module '{moduleName}'"
+            $"term '{info.Name}' from module '{ModuleIdentity.text info.ModuleIdentity}'"
+        | OrdinaryVisibleExportedBindingCandidate(_, moduleIdentity, name) ->
+            $"term '{name}' from module '{ModuleIdentity.text moduleIdentity}'"
         | OrdinaryVisibleConstructorCandidate(_, info) ->
-            $"constructor '{info.Name}' from module '{info.ModuleName}'"
-        | OrdinaryVisibleModuleCandidate(_, moduleName) ->
-            $"module '{moduleName}'"
+            $"constructor '{info.Name}' from module '{ModuleIdentity.text info.ModuleIdentity}'"
+        | OrdinaryVisibleModuleCandidate(_, moduleIdentity) ->
+            $"module '{ModuleIdentity.text moduleIdentity}'"
 
     let private ordinaryNameAmbiguityMessage name candidates =
         let candidateText =
@@ -161,10 +161,10 @@ module SurfaceElaboration =
           ExportedTraits: Set<string> }
 
     type private BindingLoweringEnvironment =
-        { CurrentModuleName: string
+        { CurrentModuleIdentity: ModuleIdentity
           CurrentModuleTopLevelDefinitions: Set<string>
           ImportedUnschemedOrdinaryTermNames: Set<string>
-          SurfaceIndex: Map<string, ModuleSurfaceInfo>
+          SurfaceIndex: Map<ModuleIdentity, ModuleSurfaceInfo>
           VisibleTypeAliases: Map<string, TypeAliasInfo>
           VisibleTypeFacets: Map<string, TypeFacetInfo>
           VisibleStaticObjects: Map<string, StaticObjectInfo>
@@ -252,6 +252,22 @@ module SurfaceElaboration =
         moduleName
         |> Option.map SyntaxFacts.moduleNameToText
         |> Option.defaultValue "<unknown>"
+
+    let private moduleIdentityText moduleIdentity =
+        moduleIdentity
+        |> Option.map ModuleIdentity.text
+        |> Option.defaultValue "<unknown>"
+
+    let private moduleIdentityOfSegments segments =
+        segments |> ModuleIdentity.ofSegments
+
+    let private moduleIdentityOfOptionalSegments segments =
+        segments |> ModuleIdentity.ofOptionalSegments
+
+    let private moduleIdentityOfModuleSpecifier specifier =
+        specifier |> ModuleIdentity.ofModuleSpecifier
+
+    let private preludeModuleIdentity = ModuleIdentity.ofSegments Stdlib.PreludeModuleName
 
     let private declarationName (declaration: TopLevelDeclaration) =
         match declaration with
@@ -955,12 +971,12 @@ module SurfaceElaboration =
         nameSegments
         =
         let matchesQualifier qualifierText (constructorInfo: BindingSchemeInfo) =
-            String.Equals(constructorInfo.ModuleName, qualifierText, StringComparison.Ordinal)
+            String.Equals(ModuleIdentity.text constructorInfo.ModuleIdentity, qualifierText, StringComparison.Ordinal)
             || constructorInfo.ConstructorTypeName
                |> Option.exists (fun constructorTypeName ->
                    String.Equals(constructorTypeName, qualifierText, StringComparison.Ordinal)
                    || String.Equals(
-                       $"{constructorInfo.ModuleName}.{constructorTypeName}",
+                       $"{ModuleIdentity.text constructorInfo.ModuleIdentity}.{constructorTypeName}",
                        qualifierText,
                        StringComparison.Ordinal
                    ))
@@ -1075,11 +1091,7 @@ module SurfaceElaboration =
                 | [] ->
                     true
                 | _ ->
-                    String.Equals(
-                        typeFacetInfo.ModuleName,
-                        SyntaxFacts.moduleNameToText (List.rev reversedModuleSegments),
-                        StringComparison.Ordinal
-                    ))
+                    typeFacetInfo.ModuleIdentity = moduleIdentityOfSegments (List.rev reversedModuleSegments))
 
     let private tryResolveStaticObject
         (environment: BindingLoweringEnvironment)
@@ -2301,28 +2313,27 @@ module SurfaceElaboration =
         && not (
             environment.VisibleBindings
             |> Map.tryFind name
-            |> Option.exists (fun bindingInfo ->
-                String.Equals(bindingInfo.ModuleName, environment.CurrentModuleName, StringComparison.Ordinal))
+            |> Option.exists (fun bindingInfo -> bindingInfo.ModuleIdentity = environment.CurrentModuleIdentity)
         )
 
     let private importedVisibleDefinitionShadowsPrelude
         (environment: BindingLoweringEnvironment)
         name
         =
-        match environment.SurfaceIndex |> Map.tryFind environment.CurrentModuleName with
+        match environment.SurfaceIndex |> Map.tryFind environment.CurrentModuleIdentity with
         | Some moduleInfo ->
             let importedBindingModules =
                 moduleInfo.Imports
                 |> List.choose (fun spec ->
-                    match spec.Source with
-                    | Dotted moduleSegments -> Some(SyntaxFacts.moduleNameToText moduleSegments)
-                    | Url _ -> None)
+                    match moduleIdentityOfModuleSpecifier spec.Source with
+                    | Some importedModuleIdentity -> Some importedModuleIdentity
+                    | None -> None)
                 |> Set.ofList
 
             environment.SurfaceIndex
             |> Map.toSeq
-            |> Seq.exists (fun (moduleName, moduleSurface) ->
-                importedBindingModules.Contains moduleName
+            |> Seq.exists (fun (moduleIdentity, moduleSurface) ->
+                importedBindingModules.Contains moduleIdentity
                 && moduleSurface.TopLevelDefinitionsByName.ContainsKey name
                 && not (moduleSurface.BindingSchemes.ContainsKey name))
         | None ->
@@ -2347,8 +2358,7 @@ module SurfaceElaboration =
         && not (
             environment.VisibleBindings
             |> Map.tryFind name
-            |> Option.exists (fun bindingInfo ->
-                String.Equals(bindingInfo.ModuleName, environment.CurrentModuleName, StringComparison.Ordinal))
+            |> Option.exists (fun bindingInfo -> bindingInfo.ModuleIdentity = environment.CurrentModuleIdentity)
         )
 
     let private tryParseTraitMemberSignatureNameAndScheme (memberDeclaration: TraitMember) =
@@ -2616,12 +2626,12 @@ module SurfaceElaboration =
             | _ ->
                 None)
 
-    let private tryParseTypeAliasInfo moduleName (declaration: TypeAlias) =
+    let private tryParseTypeAliasInfo moduleIdentity (declaration: TypeAlias) =
         declaration.BodyTokens
         |> Option.bind TypeSignatures.parseType
         |> Option.map (fun body ->
             declaration.Name,
-            { ModuleName = moduleName
+            { ModuleIdentity = moduleIdentity
               Name = declaration.Name
               IsOpaque = declaration.IsOpaque
               Parameters = TypeSignatures.collectLeadingTypeParameters declaration.HeaderTokens
@@ -2702,7 +2712,7 @@ module SurfaceElaboration =
 
         loop tokens []
 
-    let private buildTypeFacetInfo moduleName name kind isOpaque headerTokens =
+    let private buildTypeFacetInfo moduleIdentity name kind isOpaque headerTokens =
         let parameterTokens, kindTokens = splitHeaderKindTokens headerTokens
 
         let resultType =
@@ -2717,7 +2727,7 @@ module SurfaceElaboration =
             |> List.fold (fun current parameterType -> TypeArrow(QuantityOmega, parameterType, current)) resultType
 
         name,
-        { ModuleName = moduleName
+        { ModuleIdentity = moduleIdentity
           Name = name
           FacetKind = kind
           IsOpaque = isOpaque
@@ -2813,7 +2823,7 @@ module SurfaceElaboration =
     let private itemExportsConstructorName (item: ImportItem) =
         item.Namespace = Some ImportNamespace.Constructor
 
-    let private tryParseConstructorScheme (dataDeclaration: DataDeclaration) (constructor: DataConstructor) =
+    let private tryParseConstructorScheme moduleIdentity (dataDeclaration: DataDeclaration) (constructor: DataConstructor) =
         let significantConstructorTokens = significantTokens constructor.Tokens
 
         let signatureScheme =
@@ -2868,7 +2878,7 @@ module SurfaceElaboration =
 
         Some
             (constructor.Name,
-             { ModuleName = ""
+             { ModuleIdentity = moduleIdentity
                Name = constructor.Name
                IsPattern = false
                Scheme = scheme
@@ -2940,14 +2950,13 @@ module SurfaceElaboration =
             else
                 None
 
-    let private buildModuleSurfaceInfo (frontendModule: KFrontIRModule) =
-        let moduleName = moduleNameText frontendModule.ModuleIdentity
+    let private buildModuleSurfaceInfo moduleIdentity (frontendModule: KFrontIRModule) =
         let privateByDefault = isPrivateByDefault frontendModule
 
         let typeAliases =
             frontendModule.Declarations
             |> List.choose (function
-                | TypeAliasNode declaration -> tryParseTypeAliasInfo moduleName declaration
+                | TypeAliasNode declaration -> tryParseTypeAliasInfo moduleIdentity declaration
                 | _ -> None)
             |> Map.ofList
 
@@ -2955,13 +2964,13 @@ module SurfaceElaboration =
             frontendModule.Declarations
             |> List.choose (function
                 | DataDeclarationNode declaration ->
-                    buildTypeFacetInfo moduleName declaration.Name DataFacet declaration.IsOpaque declaration.HeaderTokens
+                    buildTypeFacetInfo moduleIdentity declaration.Name DataFacet declaration.IsOpaque declaration.HeaderTokens
                     |> Some
                 | EffectDeclarationNode declaration ->
-                    buildTypeFacetInfo moduleName declaration.Name EffectFacet false declaration.HeaderTokens
+                    buildTypeFacetInfo moduleIdentity declaration.Name EffectFacet false declaration.HeaderTokens
                     |> Some
                 | TypeAliasNode declaration ->
-                    buildTypeFacetInfo moduleName declaration.Name TypeAliasFacet declaration.IsOpaque declaration.HeaderTokens
+                    buildTypeFacetInfo moduleIdentity declaration.Name TypeAliasFacet declaration.IsOpaque declaration.HeaderTokens
                     |> Some
                 | _ ->
                     None)
@@ -3016,7 +3025,7 @@ module SurfaceElaboration =
                             |> stripLeadingConstraintAliasParameterLayouts scheme
 
                         declaration.Name,
-                        { ModuleName = moduleName
+                        { ModuleIdentity = moduleIdentity
                           Name = declaration.Name
                           IsPattern =
                             bindingDefinitions
@@ -3048,7 +3057,7 @@ module SurfaceElaboration =
                                     None)
 
                         declaration.Name,
-                        { ModuleName = moduleName
+                        { ModuleIdentity = moduleIdentity
                           Name = declaration.Name
                           IsPattern = false
                           Scheme = scheme
@@ -3067,7 +3076,7 @@ module SurfaceElaboration =
                             |> stripLeadingConstraintAliasParameterLayouts scheme
 
                         definition.Name.Value,
-                        { ModuleName = moduleName
+                        { ModuleIdentity = moduleIdentity
                           Name = definition.Name.Value
                           IsPattern = definition.IsPattern
                           Scheme = scheme
@@ -3094,11 +3103,8 @@ module SurfaceElaboration =
                 | DataDeclarationNode dataDeclaration ->
                     dataDeclaration.Constructors
                     |> List.choose (fun constructor ->
-                        tryParseConstructorScheme dataDeclaration constructor
-                        |> Option.map (fun (name, info) ->
-                            name,
-                            { info with
-                                ModuleName = moduleName }))
+                        tryParseConstructorScheme moduleIdentity dataDeclaration constructor
+                        |> Option.map (fun (name, info) -> name, info))
                     |> Some
                 | _ ->
                     None)
@@ -3112,7 +3118,7 @@ module SurfaceElaboration =
                     TypeSignatures.parseType declaration.ReturnTypeTokens
                     |> Option.map (fun returnType ->
                         declaration.Name,
-                        { ModuleName = moduleName
+                        { ModuleIdentity = moduleIdentity
                           Name = declaration.Name
                           Binders = declaration.Binders
                           ReturnType = returnType
@@ -3274,7 +3280,7 @@ module SurfaceElaboration =
 
                     Some(
                         declaration.Name,
-                        { ModuleName = moduleName
+                        { ModuleIdentity = moduleIdentity
                           Name = declaration.Name
                           TypeParameters = traitTypeParameters
                           Supertraits = supertraits
@@ -3290,7 +3296,7 @@ module SurfaceElaboration =
                 | InstanceDeclarationNode declaration ->
                     tryParseInstanceHeader declaration
                     |> Option.map (fun (traitName, constraints, headTypes) ->
-                        { ModuleName = moduleName
+                        { ModuleIdentity = moduleIdentity
                           TraitName = traitName
                           InstanceKey = TraitRuntime.instanceKeyFromTokens declaration.HeaderTokens
                           Constraints = constraints
@@ -3322,18 +3328,24 @@ module SurfaceElaboration =
 
     let private buildEffectDeclarationIndex (frontendModules: KFrontIRModule list) =
         frontendModules
-        |> List.groupBy (fun frontendModule -> moduleNameText frontendModule.ModuleIdentity)
-        |> List.map (fun (moduleName, fragments) ->
-            moduleName,
-            (fragments
+        |> List.choose (fun frontendModule ->
+            frontendModule.ModuleIdentity
+            |> moduleIdentityOfOptionalSegments
+            |> Option.map (fun moduleIdentity -> moduleIdentity, frontendModule))
+        |> List.groupBy fst
+        |> List.map (fun (moduleIdentity, entries) ->
+            moduleIdentity,
+            (entries
+             |> List.map snd
              |> List.collect (fun fragment ->
                  fragment.Declarations
                  |> List.choose (function
-                     | EffectDeclarationNode declaration -> Some(EffectSemantics.ensureTopLevel moduleName declaration)
+                     | EffectDeclarationNode declaration -> Some(EffectSemantics.ensureTopLevel moduleIdentity declaration)
                      | _ -> None))))
         |> Map.ofList
 
     let private buildHostModuleSurfaceInfo (description: HostBindings.HostModuleDescription) =
+        let moduleIdentity = ModuleIdentity.ofDottedTextUnchecked description.ModuleName
         let bindingSchemes =
             description.Terms
             |> List.choose (fun binding ->
@@ -3361,7 +3373,7 @@ module SurfaceElaboration =
 
                     Some(
                         binding.Name,
-                        { ModuleName = description.ModuleName
+                        { ModuleIdentity = moduleIdentity
                           Name = binding.Name
                           IsPattern = false
                           Scheme =
@@ -3381,7 +3393,7 @@ module SurfaceElaboration =
             description.Types
             |> List.map (fun exportedType ->
                 exportedType.Name,
-                { ModuleName = description.ModuleName
+                { ModuleIdentity = moduleIdentity
                   Name = exportedType.Name
                   FacetKind = AbstractFacet
                   IsOpaque = false
@@ -3408,13 +3420,14 @@ module SurfaceElaboration =
           ExportedTraits = Set.empty }
 
     let private buildStandardModuleSurfaceInfo (description: StandardModules.StandardModuleDescription) =
+        let moduleIdentity = ModuleIdentity.ofDottedTextUnchecked description.ModuleName
         let bindingSchemes =
             description.Terms
             |> List.choose (fun binding ->
                 tryParseSchemeText binding.TypeText
                 |> Option.map (fun scheme ->
                     binding.Name,
-                    { ModuleName = description.ModuleName
+                    { ModuleIdentity = moduleIdentity
                       Name = binding.Name
                       IsPattern = false
                       Scheme = scheme
@@ -3428,7 +3441,7 @@ module SurfaceElaboration =
             description.Types
             |> List.map (fun typeName ->
                 typeName,
-                { ModuleName = description.ModuleName
+                { ModuleIdentity = moduleIdentity
                   Name = typeName
                   FacetKind = AbstractFacet
                   IsOpaque = false
@@ -3453,7 +3466,7 @@ module SurfaceElaboration =
                     |> Map.ofList
 
                 traitInfo.Name,
-                { ModuleName = description.ModuleName
+                { ModuleIdentity = moduleIdentity
                   Name = traitInfo.Name
                   TypeParameters = [ for index in 1 .. traitInfo.TypeParameterCount -> $"t{index}" ]
                   Supertraits = []
@@ -3520,26 +3533,37 @@ module SurfaceElaboration =
         =
         let moduleGroups =
             frontendModules
-            |> List.groupBy (fun moduleDump -> moduleNameText moduleDump.ModuleIdentity)
+            |> List.choose (fun moduleDump ->
+                moduleDump.ModuleIdentity
+                |> moduleIdentityOfOptionalSegments
+                |> Option.map (fun moduleIdentity -> moduleIdentity, moduleDump))
+            |> List.groupBy fst
+            |> List.map (fun (moduleIdentity, entries) -> moduleIdentity, (entries |> List.map snd))
             |> Map.ofList
 
         let directUserSurfaceIndex =
             moduleGroups
-            |> Map.map (fun _ moduleDumps ->
+            |> Map.map (fun moduleIdentity moduleDumps ->
                 moduleDumps
-                |> List.map buildModuleSurfaceInfo
+                |> List.map (buildModuleSurfaceInfo moduleIdentity)
                 |> List.reduce mergeModuleSurfaceInfo)
 
         let hostSurfaceIndex =
-            hostModules |> Map.map (fun _ description -> buildHostModuleSurfaceInfo description)
+            hostModules
+            |> Map.toList
+            |> List.map (fun (moduleName, description) -> ModuleIdentity.ofDottedTextUnchecked moduleName, buildHostModuleSurfaceInfo description)
+            |> Map.ofList
 
         let standardSurfaceIndex =
-            StandardModules.byName |> Map.map (fun _ description -> buildStandardModuleSurfaceInfo description)
+            StandardModules.byName
+            |> Map.toList
+            |> List.map (fun (moduleName, description) -> ModuleIdentity.ofDottedTextUnchecked moduleName, buildStandardModuleSurfaceInfo description)
+            |> Map.ofList
 
         let directIndex =
             directUserSurfaceIndex
-            |> fun state -> standardSurfaceIndex |> Map.fold (fun current moduleName moduleInfo -> Map.add moduleName moduleInfo current) state
-            |> fun state -> hostSurfaceIndex |> Map.fold (fun current moduleName moduleInfo -> Map.add moduleName moduleInfo current) state
+            |> fun state -> standardSurfaceIndex |> Map.fold (fun current moduleIdentity moduleInfo -> Map.add moduleIdentity moduleInfo current) state
+            |> fun state -> hostSurfaceIndex |> Map.fold (fun current moduleIdentity moduleInfo -> Map.add moduleIdentity moduleInfo current) state
 
         let addReexportedItem (importedModule: ModuleSurfaceInfo) (moduleInfo: ModuleSurfaceInfo) (item: ImportItem) =
             let exportedName = item.Name
@@ -3651,14 +3675,12 @@ module SurfaceElaboration =
                 ExportedConstructors = Set.union moduleInfo.ExportedConstructors sameSpellingConstructors
                 ExportedConstructorsByType = reexportedConstructorsByType }
 
-        let applyReexportSpec (surfaceIndex: Map<string, ModuleSurfaceInfo>) (moduleInfo: ModuleSurfaceInfo) (spec: ImportSpec) =
-            match spec.Source with
-            | Url _ ->
+        let applyReexportSpec (surfaceIndex: Map<ModuleIdentity, ModuleSurfaceInfo>) (moduleInfo: ModuleSurfaceInfo) (spec: ImportSpec) =
+            match moduleIdentityOfModuleSpecifier spec.Source with
+            | None ->
                 moduleInfo
-            | Dotted moduleSegments ->
-                let importedModuleName = SyntaxFacts.moduleNameToText moduleSegments
-
-                match Map.tryFind importedModuleName surfaceIndex with
+            | Some importedModuleIdentity ->
+                match Map.tryFind importedModuleIdentity surfaceIndex with
                 | None ->
                     moduleInfo
                 | Some importedModule ->
@@ -3677,8 +3699,8 @@ module SurfaceElaboration =
         let rec saturate surfaceIndex =
             let updatedUserSurfaceIndex =
                 moduleGroups
-                |> Map.map (fun moduleName moduleDumps ->
-                    let directModuleInfo = Map.find moduleName directUserSurfaceIndex
+                |> Map.map (fun moduleIdentity moduleDumps ->
+                    let directModuleInfo = Map.find moduleIdentity directUserSurfaceIndex
 
                     moduleDumps
                     |> List.collect (fun moduleDump ->
@@ -3691,8 +3713,8 @@ module SurfaceElaboration =
 
             let nextSurfaceIndex =
                 updatedUserSurfaceIndex
-                |> fun state -> standardSurfaceIndex |> Map.fold (fun current moduleName moduleInfo -> Map.add moduleName moduleInfo current) state
-                |> fun state -> hostSurfaceIndex |> Map.fold (fun current moduleName moduleInfo -> Map.add moduleName moduleInfo current) state
+                |> fun state -> standardSurfaceIndex |> Map.fold (fun current moduleIdentity moduleInfo -> Map.add moduleIdentity moduleInfo current) state
+                |> fun state -> hostSurfaceIndex |> Map.fold (fun current moduleIdentity moduleInfo -> Map.add moduleIdentity moduleInfo current) state
 
             if nextSurfaceIndex = surfaceIndex then
                 surfaceIndex
@@ -3701,35 +3723,31 @@ module SurfaceElaboration =
 
         saturate directIndex
 
-    let private importedModuleInfos (surfaceIndex: Map<string, ModuleSurfaceInfo>) moduleName =
+    let private importedModuleInfos (surfaceIndex: Map<ModuleIdentity, ModuleSurfaceInfo>) moduleIdentity =
         surfaceIndex
-        |> Map.tryFind moduleName
+        |> Map.tryFind moduleIdentity
         |> Option.map (fun moduleInfo ->
             moduleInfo.Imports
             |> List.choose (fun spec ->
-                match spec.Source with
-                | Url _ ->
-                    None
-                | Dotted moduleSegments ->
-                    let importedModuleName = SyntaxFacts.moduleNameToText moduleSegments
+                match moduleIdentityOfModuleSpecifier spec.Source with
+                | Some importedModuleIdentity ->
                     surfaceIndex
-                    |> Map.tryFind importedModuleName
-                    |> Option.map (fun importedModule -> spec, importedModule)))
+                    |> Map.tryFind importedModuleIdentity
+                    |> Option.map (fun importedModule -> spec, importedModuleIdentity, importedModule)
+                | None ->
+                    None))
         |> Option.defaultValue []
 
     let private importedEffectDeclarations
-        (surfaceIndex: Map<string, ModuleSurfaceInfo>)
-        (effectDeclarationsByModule: Map<string, EffectDeclaration list>)
-        (moduleName: string)
+        (surfaceIndex: Map<ModuleIdentity, ModuleSurfaceInfo>)
+        (effectDeclarationsByModule: Map<ModuleIdentity, EffectDeclaration list>)
+        (moduleIdentity: ModuleIdentity)
         =
-        let importedEffectsForSpec (spec: ImportSpec, importedModule: ModuleSurfaceInfo) =
-            let importedModuleName =
-                match spec.Source with
-                | Dotted moduleSegments -> Some(SyntaxFacts.moduleNameToText moduleSegments)
-                | Url _ -> None
+        let importedEffectsForSpec (spec: ImportSpec, importedModuleIdentity: ModuleIdentity, importedModule: ModuleSurfaceInfo) =
+            let importedModuleName = ModuleIdentity.text importedModuleIdentity
 
-            importedModuleName
-            |> Option.bind effectDeclarationsByModule.TryFind
+            effectDeclarationsByModule
+            |> Map.tryFind importedModuleIdentity
             |> Option.defaultValue []
             |> List.choose (fun declaration ->
                 let canImportType =
@@ -3739,7 +3757,7 @@ module SurfaceElaboration =
                     match spec.Selection with
                     | QualifiedOnly ->
                         if canImportType then
-                            let qualifiedPrefix = spec.Alias |> Option.defaultValue importedModuleName.Value
+                            let qualifiedPrefix = spec.Alias |> Option.defaultValue importedModuleName
                             Some(qualifiedPrefix + "." + declaration.Name)
                         else
                             None
@@ -3756,7 +3774,7 @@ module SurfaceElaboration =
                 |> Option.map (fun localName ->
                     declaration |> EffectSemantics.importAs localName))
 
-        importedModuleInfos surfaceIndex moduleName
+        importedModuleInfos surfaceIndex moduleIdentity
         |> List.collect importedEffectsForSpec
 
     let private appendVisibleCandidate localName candidate state =
@@ -3775,14 +3793,11 @@ module SurfaceElaboration =
         | AllExcept _
         | QualifiedOnly -> WildcardImportedItem
 
-    let private collectImportedOrdinaryTermCandidates (surfaceIndex: Map<string, ModuleSurfaceInfo>) moduleName =
-        importedModuleInfos surfaceIndex moduleName
-        |> List.fold (fun state (spec, importedModule) ->
+    let private collectImportedOrdinaryTermCandidates (surfaceIndex: Map<ModuleIdentity, ModuleSurfaceInfo>) moduleIdentity =
+        importedModuleInfos surfaceIndex moduleIdentity
+        |> List.fold (fun state (spec, importedModuleIdentity, importedModule) ->
             let candidatePriority = importedOrdinaryCandidatePriority spec.Selection
-            let importedModuleName =
-                match spec.Source with
-                | Dotted moduleSegments -> SyntaxFacts.moduleNameToText moduleSegments
-                | Url _ -> importedModule.BindingSchemes |> Map.toSeq |> Seq.tryHead |> Option.map (fun (_, info) -> info.ModuleName) |> Option.defaultValue "<unknown>"
+            let importedModuleName = ModuleIdentity.text importedModuleIdentity
 
             let visibleBindingCandidateNames =
                 Set.union
@@ -3805,7 +3820,7 @@ module SurfaceElaboration =
                         let candidate =
                             match importedModule.BindingSchemes |> Map.tryFind name with
                             | Some info -> OrdinaryVisibleBindingCandidate(candidatePriority, info)
-                            | None -> OrdinaryVisibleExportedBindingCandidate(candidatePriority, importedModuleName, name)
+                            | None -> OrdinaryVisibleExportedBindingCandidate(candidatePriority, importedModuleIdentity, name)
 
                         appendVisibleCandidate localName candidate current
                     | None ->
@@ -3858,21 +3873,22 @@ module SurfaceElaboration =
 
             match spec.Source, spec.Alias, spec.Selection with
             | Dotted moduleSegments, Some alias, QualifiedOnly ->
-                let importedModuleName = SyntaxFacts.moduleNameToText moduleSegments
-                appendVisibleCandidate alias (OrdinaryVisibleModuleCandidate(candidatePriority, importedModuleName)) withConstructors
+                let importedModuleIdentity = moduleIdentityOfSegments moduleSegments
+                appendVisibleCandidate alias (OrdinaryVisibleModuleCandidate(candidatePriority, importedModuleIdentity)) withConstructors
             | Dotted moduleSegments, None, QualifiedOnly ->
-                let importedModuleName = SyntaxFacts.moduleNameToText moduleSegments
+                let importedModuleIdentity = moduleIdentityOfSegments moduleSegments
+                let importedModuleName = ModuleIdentity.text importedModuleIdentity
 
-                if surfaceIndex.ContainsKey importedModuleName then
-                    appendVisibleCandidate importedModuleName (OrdinaryVisibleModuleCandidate(candidatePriority, importedModuleName)) withConstructors
+                if surfaceIndex.ContainsKey importedModuleIdentity then
+                    appendVisibleCandidate importedModuleName (OrdinaryVisibleModuleCandidate(candidatePriority, importedModuleIdentity)) withConstructors
                 else
                     withConstructors
             | _ ->
                 withConstructors) Map.empty
 
-    let private collectImportedOrdinarySurfaceNames (surfaceIndex: Map<string, ModuleSurfaceInfo>) moduleName =
-        importedModuleInfos surfaceIndex moduleName
-        |> List.fold (fun state (spec, importedModule) ->
+    let private collectImportedOrdinarySurfaceNames (surfaceIndex: Map<ModuleIdentity, ModuleSurfaceInfo>) moduleIdentity =
+        importedModuleInfos surfaceIndex moduleIdentity
+        |> List.fold (fun state (spec, _importedModuleIdentity, importedModule) ->
             let visibleBindingCandidateNames =
                 Set.union
                     importedModule.ExportedTerms
@@ -4020,19 +4036,19 @@ module SurfaceElaboration =
                     | _ -> None)
         |> Set.ofSeq
 
-    let private mergeVisibleBindings (surfaceIndex: Map<string, ModuleSurfaceInfo>) moduleName =
-        let importedTermCandidates = collectImportedOrdinaryTermCandidates surfaceIndex moduleName
+    let private mergeVisibleBindings (surfaceIndex: Map<ModuleIdentity, ModuleSurfaceInfo>) moduleIdentity =
+        let importedTermCandidates = collectImportedOrdinaryTermCandidates surfaceIndex moduleIdentity
         let importedBindings, _, _, _ = partitionImportedOrdinaryTermCandidates importedTermCandidates
 
         let preludeBindings =
             surfaceIndex
-            |> Map.tryFind Stdlib.PreludeModuleText
+            |> Map.tryFind preludeModuleIdentity
             |> Option.map (fun moduleInfo -> moduleInfo.BindingSchemes)
             |> Option.defaultValue Map.empty
 
         let moduleBindings =
             surfaceIndex
-            |> Map.tryFind moduleName
+            |> Map.tryFind moduleIdentity
             |> Option.map (fun moduleInfo -> moduleInfo.BindingSchemes)
             |> Option.defaultValue Map.empty
 
@@ -4040,10 +4056,10 @@ module SurfaceElaboration =
         |> Map.fold (fun state name info -> Map.add name info state) preludeBindings
         |> fun state -> moduleBindings |> Map.fold (fun current name info -> Map.add name info current) state
 
-    let private mergeVisibleBindingDefinitions (surfaceIndex: Map<string, ModuleSurfaceInfo>) moduleName =
+    let private mergeVisibleBindingDefinitions (surfaceIndex: Map<ModuleIdentity, ModuleSurfaceInfo>) moduleIdentity =
         let importedDefinitions =
-            importedModuleInfos surfaceIndex moduleName
-            |> List.fold (fun state (spec, importedModule) ->
+            importedModuleInfos surfaceIndex moduleIdentity
+            |> List.fold (fun state (spec, _importedModuleIdentity, importedModule) ->
                 let visibleDefinitionCandidateNames =
                     Set.union
                         importedModule.ExportedTerms
@@ -4073,20 +4089,20 @@ module SurfaceElaboration =
 
         let moduleDefinitions =
             surfaceIndex
-            |> Map.tryFind moduleName
+            |> Map.tryFind moduleIdentity
             |> Option.map (fun moduleInfo -> moduleInfo.TopLevelDefinitionsByName)
             |> Option.defaultValue Map.empty
 
         importedDefinitions
         |> fun state -> moduleDefinitions |> Map.fold (fun current name definition -> Map.add name definition current) state
 
-    let private mergeVisibleConstructors (surfaceIndex: Map<string, ModuleSurfaceInfo>) moduleName =
-        let importedTermCandidates = collectImportedOrdinaryTermCandidates surfaceIndex moduleName
+    let private mergeVisibleConstructors (surfaceIndex: Map<ModuleIdentity, ModuleSurfaceInfo>) moduleIdentity =
+        let importedTermCandidates = collectImportedOrdinaryTermCandidates surfaceIndex moduleIdentity
         let _, importedConstructors, _, _ = partitionImportedOrdinaryTermCandidates importedTermCandidates
 
         let preludeConstructors =
             surfaceIndex
-            |> Map.tryFind Stdlib.PreludeModuleText
+            |> Map.tryFind preludeModuleIdentity
             |> Option.map (fun moduleInfo ->
                 moduleInfo.Constructors
                 |> Map.filter (fun name _ -> List.contains name Stdlib.FixedPreludeConstructors))
@@ -4094,7 +4110,7 @@ module SurfaceElaboration =
 
         let moduleConstructors =
             surfaceIndex
-            |> Map.tryFind moduleName
+            |> Map.tryFind moduleIdentity
             |> Option.map (fun moduleInfo -> moduleInfo.Constructors)
             |> Option.defaultValue Map.empty
 
@@ -4102,10 +4118,10 @@ module SurfaceElaboration =
         |> Map.fold (fun state name info -> Map.add name info state) preludeConstructors
         |> fun state -> moduleConstructors |> Map.fold (fun current name info -> Map.add name info current) state
 
-    let private mergeVisibleProjections (surfaceIndex: Map<string, ModuleSurfaceInfo>) moduleName =
+    let private mergeVisibleProjections (surfaceIndex: Map<ModuleIdentity, ModuleSurfaceInfo>) moduleIdentity =
         let importedProjections =
-            importedModuleInfos surfaceIndex moduleName
-            |> List.fold (fun state (spec, importedModule) ->
+            importedModuleInfos surfaceIndex moduleIdentity
+            |> List.fold (fun state (spec, _importedModuleIdentity, importedModule) ->
                 importedModule.Projections
                 |> Map.fold (fun current name info ->
                     match
@@ -4122,17 +4138,17 @@ module SurfaceElaboration =
 
         let moduleProjections =
             surfaceIndex
-            |> Map.tryFind moduleName
+            |> Map.tryFind moduleIdentity
             |> Option.map (fun moduleInfo -> moduleInfo.Projections)
             |> Option.defaultValue Map.empty
 
         moduleProjections
         |> Map.fold (fun state name info -> Map.add name info state) importedProjections
 
-    let private mergeVisibleTypeAliases (surfaceIndex: Map<string, ModuleSurfaceInfo>) moduleName =
+    let private mergeVisibleTypeAliases (surfaceIndex: Map<ModuleIdentity, ModuleSurfaceInfo>) moduleIdentity =
         let importedAliases =
-            importedModuleInfos surfaceIndex moduleName
-            |> List.fold (fun state (spec, importedModule) ->
+            importedModuleInfos surfaceIndex moduleIdentity
+            |> List.fold (fun state (spec, _importedModuleIdentity, importedModule) ->
                 importedModule.TypeAliases
                 |> Map.fold (fun current name info ->
                     match
@@ -4151,13 +4167,13 @@ module SurfaceElaboration =
 
         let preludeAliases =
             surfaceIndex
-            |> Map.tryFind Stdlib.PreludeModuleText
+            |> Map.tryFind preludeModuleIdentity
             |> Option.map (fun moduleInfo -> moduleInfo.TypeAliases)
             |> Option.defaultValue Map.empty
 
         let moduleAliases =
             surfaceIndex
-            |> Map.tryFind moduleName
+            |> Map.tryFind moduleIdentity
             |> Option.map (fun moduleInfo -> moduleInfo.TypeAliases)
             |> Option.defaultValue Map.empty
 
@@ -4165,10 +4181,10 @@ module SurfaceElaboration =
         |> Map.fold (fun state name info -> Map.add name info state) importedAliases
         |> fun state -> moduleAliases |> Map.fold (fun current name info -> Map.add name info current) state
 
-    let private mergeVisibleTypeFacets (surfaceIndex: Map<string, ModuleSurfaceInfo>) moduleName =
+    let private mergeVisibleTypeFacets (surfaceIndex: Map<ModuleIdentity, ModuleSurfaceInfo>) moduleIdentity =
         let importedFacets =
-            importedModuleInfos surfaceIndex moduleName
-            |> List.fold (fun state (spec, importedModule) ->
+            importedModuleInfos surfaceIndex moduleIdentity
+            |> List.fold (fun state (spec, _importedModuleIdentity, importedModule) ->
                 importedModule.TypeFacets
                 |> Map.fold (fun current name info ->
                     match
@@ -4185,13 +4201,13 @@ module SurfaceElaboration =
 
         let preludeFacets =
             surfaceIndex
-            |> Map.tryFind Stdlib.PreludeModuleText
+            |> Map.tryFind preludeModuleIdentity
             |> Option.map (fun moduleInfo -> moduleInfo.TypeFacets)
             |> Option.defaultValue Map.empty
 
         let moduleFacets =
             surfaceIndex
-            |> Map.tryFind moduleName
+            |> Map.tryFind moduleIdentity
             |> Option.map (fun moduleInfo -> moduleInfo.TypeFacets)
             |> Option.defaultValue Map.empty
 
@@ -4199,26 +4215,26 @@ module SurfaceElaboration =
         |> Map.fold (fun state name info -> Map.add name info state) importedFacets
         |> fun state -> moduleFacets |> Map.fold (fun current name info -> Map.add name info current) state
 
-    let private mergeVisibleModules (surfaceIndex: Map<string, ModuleSurfaceInfo>) moduleName =
-        let importedTermCandidates = collectImportedOrdinaryTermCandidates surfaceIndex moduleName
+    let private mergeVisibleModules (surfaceIndex: Map<ModuleIdentity, ModuleSurfaceInfo>) moduleIdentity =
+        let importedTermCandidates = collectImportedOrdinaryTermCandidates surfaceIndex moduleIdentity
         let _, _, importedModules, _ = partitionImportedOrdinaryTermCandidates importedTermCandidates
 
-        Set.add moduleName importedModules
+        Set.add (ModuleIdentity.text moduleIdentity) importedModules
 
-    let private mergeAmbiguousVisibleOrdinaryTerms (surfaceIndex: Map<string, ModuleSurfaceInfo>) moduleName =
-        let importedTermCandidates = collectImportedOrdinaryTermCandidates surfaceIndex moduleName
+    let private mergeAmbiguousVisibleOrdinaryTerms (surfaceIndex: Map<ModuleIdentity, ModuleSurfaceInfo>) moduleIdentity =
+        let importedTermCandidates = collectImportedOrdinaryTermCandidates surfaceIndex moduleIdentity
         let importedBindings, importedConstructors, importedModules, importedAmbiguities =
             partitionImportedOrdinaryTermCandidates importedTermCandidates
 
         let preludeBindings =
             surfaceIndex
-            |> Map.tryFind Stdlib.PreludeModuleText
+            |> Map.tryFind preludeModuleIdentity
             |> Option.map (fun moduleInfo -> moduleInfo.BindingSchemes)
             |> Option.defaultValue Map.empty
 
         let moduleBindings =
             surfaceIndex
-            |> Map.tryFind moduleName
+            |> Map.tryFind moduleIdentity
             |> Option.map (fun moduleInfo -> moduleInfo.BindingSchemes)
             |> Option.defaultValue Map.empty
 
@@ -4229,7 +4245,7 @@ module SurfaceElaboration =
 
         let preludeConstructors =
             surfaceIndex
-            |> Map.tryFind Stdlib.PreludeModuleText
+            |> Map.tryFind preludeModuleIdentity
             |> Option.map (fun moduleInfo ->
                 moduleInfo.Constructors
                 |> Map.filter (fun name _ -> List.contains name Stdlib.FixedPreludeConstructors))
@@ -4237,7 +4253,7 @@ module SurfaceElaboration =
 
         let moduleConstructors =
             surfaceIndex
-            |> Map.tryFind moduleName
+            |> Map.tryFind moduleIdentity
             |> Option.map (fun moduleInfo -> moduleInfo.Constructors)
             |> Option.defaultValue Map.empty
 
@@ -4246,14 +4262,14 @@ module SurfaceElaboration =
             |> Map.fold (fun state name info -> Map.add name info state) importedConstructors
             |> fun state -> moduleConstructors |> Map.fold (fun current name info -> Map.add name info current) state
 
-        let visibleModules = Set.add moduleName importedModules
+        let visibleModules = Set.add (ModuleIdentity.text moduleIdentity) importedModules
 
         shadowAmbiguousVisibleTermCandidates visibleBindings visibleConstructors visibleModules importedAmbiguities
 
-    let private mergeVisibleRecordTypes (surfaceIndex: Map<string, ModuleSurfaceInfo>) moduleName =
+    let private mergeVisibleRecordTypes (surfaceIndex: Map<ModuleIdentity, ModuleSurfaceInfo>) moduleIdentity =
         let importedRecordTypes =
-            importedModuleInfos surfaceIndex moduleName
-            |> List.fold (fun state (spec, importedModule) ->
+            importedModuleInfos surfaceIndex moduleIdentity
+            |> List.fold (fun state (spec, _importedModuleIdentity, importedModule) ->
                 importedModule.RecordTypes
                 |> Map.fold (fun current name info ->
                     match
@@ -4278,17 +4294,17 @@ module SurfaceElaboration =
 
         let moduleRecordTypes =
             surfaceIndex
-            |> Map.tryFind moduleName
+            |> Map.tryFind moduleIdentity
             |> Option.map (fun moduleInfo -> moduleInfo.RecordTypes)
             |> Option.defaultValue Map.empty
 
         moduleRecordTypes
         |> Map.fold (fun state name info -> Map.add name info state) importedRecordTypes
 
-    let private mergeVisibleTraits (surfaceIndex: Map<string, ModuleSurfaceInfo>) moduleName =
+    let private mergeVisibleTraits (surfaceIndex: Map<ModuleIdentity, ModuleSurfaceInfo>) moduleIdentity =
         let importedTraits =
-            importedModuleInfos surfaceIndex moduleName
-            |> List.fold (fun state (spec, importedModule) ->
+            importedModuleInfos surfaceIndex moduleIdentity
+            |> List.fold (fun state (spec, _importedModuleIdentity, importedModule) ->
                 importedModule.Traits
                 |> Map.fold (fun current name info ->
                     match
@@ -4305,13 +4321,13 @@ module SurfaceElaboration =
 
         let preludeTraits =
             surfaceIndex
-            |> Map.tryFind Stdlib.PreludeModuleText
+            |> Map.tryFind preludeModuleIdentity
             |> Option.map (fun moduleInfo -> moduleInfo.Traits)
             |> Option.defaultValue Map.empty
 
         let moduleTraits =
             surfaceIndex
-            |> Map.tryFind moduleName
+            |> Map.tryFind moduleIdentity
             |> Option.map (fun moduleInfo -> moduleInfo.Traits)
             |> Option.defaultValue Map.empty
 
@@ -4319,44 +4335,37 @@ module SurfaceElaboration =
         |> Map.fold (fun state name info -> Map.add name info state) importedTraits
         |> fun state -> moduleTraits |> Map.fold (fun current name info -> Map.add name info current) state
 
-    let private moduleDependencyClosure (surfaceIndex: Map<string, ModuleSurfaceInfo>) moduleName =
-        let rec visit visited currentModuleName =
-            if Set.contains currentModuleName visited then
+    let private moduleDependencyClosure (surfaceIndex: Map<ModuleIdentity, ModuleSurfaceInfo>) moduleIdentity =
+        let rec visit visited currentModuleIdentity =
+            if Set.contains currentModuleIdentity visited then
                 visited
             else
-                let visited = Set.add currentModuleName visited
+                let visited = Set.add currentModuleIdentity visited
 
                 let dependencies =
                     surfaceIndex
-                    |> Map.tryFind currentModuleName
+                    |> Map.tryFind currentModuleIdentity
                     |> Option.map (fun moduleInfo ->
                         moduleInfo.Imports
                         |> List.choose (fun spec ->
-                            match spec.Source with
-                            | Url _ ->
-                                None
-                            | Dotted moduleSegments ->
-                                let importedModuleName = SyntaxFacts.moduleNameToText moduleSegments
-
-                                if surfaceIndex.ContainsKey importedModuleName then
-                                    Some importedModuleName
-                                else
-                                    None))
+                            match moduleIdentityOfModuleSpecifier spec.Source with
+                            | Some importedModuleIdentity when surfaceIndex.ContainsKey importedModuleIdentity -> Some importedModuleIdentity
+                            | _ -> None))
                     |> Option.defaultValue []
 
                 dependencies |> List.fold visit visited
 
-        visit Set.empty moduleName |> Set.toList |> List.sort
+        visit Set.empty moduleIdentity |> Set.toList |> List.sortBy ModuleIdentity.text
 
-    let private visibleInstances (surfaceIndex: Map<string, ModuleSurfaceInfo>) moduleName =
-        moduleDependencyClosure surfaceIndex moduleName
-        |> List.collect (fun visibleModuleName ->
+    let private visibleInstances (surfaceIndex: Map<ModuleIdentity, ModuleSurfaceInfo>) moduleIdentity =
+        moduleDependencyClosure surfaceIndex moduleIdentity
+        |> List.collect (fun visibleModuleIdentity ->
             surfaceIndex
-            |> Map.tryFind visibleModuleName
+            |> Map.tryFind visibleModuleIdentity
             |> Option.map (fun moduleInfo -> moduleInfo.Instances)
             |> Option.defaultValue [])
         |> List.sortBy (fun instanceInfo ->
-            instanceInfo.ModuleName,
+            ModuleIdentity.text instanceInfo.ModuleIdentity,
             instanceInfo.TraitName,
             instanceInfo.InstanceKey)
 
@@ -4669,7 +4678,7 @@ module SurfaceElaboration =
         typeTextTokens (forallPrefix + constraintsPrefix + TypeSignatures.toText scheme.Body)
 
     let private rewriteLocalTypeAliasesInSurfaceExpression
-        currentModuleName
+        currentModuleIdentity
         (visibleAliases: Map<string, TypeAliasInfo>)
         expression
         =
@@ -4837,7 +4846,7 @@ module SurfaceElaboration =
             | LocalTypeAlias(declaration, body) ->
                 let expandedDeclaration = expandTypeAlias localAliases declaration
 
-                match tryParseTypeAliasInfo currentModuleName expandedDeclaration with
+                match tryParseTypeAliasInfo currentModuleIdentity expandedDeclaration with
                 | Some(_, aliasInfo) ->
                     rewriteExpression (Map.add declaration.Name aliasInfo localAliases) body
                 | None ->
@@ -5002,7 +5011,7 @@ module SurfaceElaboration =
             TypeUnion(members |> List.map eraseSyntheticRecordTypeExpr)
 
     let private ensureSyntheticRecordLayout
-        (moduleName: string)
+        (moduleIdentity: ModuleIdentity)
         (filePath: string)
         (layouts: Map<string, SyntheticRecordLayout> ref)
         recordType
@@ -5022,7 +5031,7 @@ module SurfaceElaboration =
 
             let typeName = syntheticRecordTypeName recordKey
             let constructorName = syntheticRecordConstructorName recordKey
-            let provenance = syntheticOrigin filePath moduleName typeName "synthetic-record"
+            let provenance = syntheticOrigin filePath (ModuleIdentity.text moduleIdentity) typeName "synthetic-record"
             let typeParameters = TypeSignatures.collectFreeTypeVariables canonicalRecordType
 
             let layout =
@@ -5155,7 +5164,7 @@ module SurfaceElaboration =
                     | _ when environment.VisibleTypeFacets.ContainsKey(name) ->
                         let typeFacet = environment.VisibleTypeFacets[name]
                         let qualifiedName =
-                            (typeFacet.ModuleName.Split('.', StringSplitOptions.RemoveEmptyEntries) |> Array.toList) @ [ typeFacet.Name ]
+                            (ModuleIdentity.segments typeFacet.ModuleIdentity) @ [ typeFacet.Name ]
 
                         TypeName(qualifiedName, arguments |> List.map loop)
                     | _ ->
@@ -5670,7 +5679,7 @@ module SurfaceElaboration =
         |> List.fold (fun state (name, parameterType) -> Map.add name parameterType state) Map.empty
 
     let private buildSourceBindingInfosByName
-        (moduleName: string)
+        (moduleIdentity: ModuleIdentity)
         (declarations: TopLevelDeclaration list)
         =
         let moduleTopLevelDefinitionsByName =
@@ -5707,7 +5716,7 @@ module SurfaceElaboration =
                                 |> stripLeadingConstraintAliasParameterLayouts scheme
 
                             declaration.Name,
-                            { ModuleName = moduleName
+                            { ModuleIdentity = moduleIdentity
                               Name = declaration.Name
                               IsPattern =
                                 moduleTopLevelDefinitionsByName
@@ -5729,7 +5738,7 @@ module SurfaceElaboration =
                     | Some name, Some scheme when not (Map.containsKey name signatureBindingInfos) ->
                         Some(
                             name,
-                            { ModuleName = moduleName
+                            { ModuleIdentity = moduleIdentity
                               Name = name
                               IsPattern = definition.IsPattern
                               Scheme = scheme
@@ -7127,8 +7136,10 @@ module SurfaceElaboration =
             let instanceKey =
                 $"{instancePrefix}:{constraintInfo.TraitName}:{normalizedArgumentText}"
 
+            let moduleIdentity = ModuleIdentity.ofDottedTextUnchecked moduleName
+
             Some
-                { ModuleName = moduleName
+                { ModuleIdentity = moduleIdentity
                   TraitName = constraintInfo.TraitName
                   InstanceKey = instanceKey
                   Constraints = []
@@ -7167,7 +7178,7 @@ module SurfaceElaboration =
             tryResolveIntrinsicTraitInstance environment constraintInfo
             |> Option.map (fun instanceInfo ->
                 KCoreDictionaryValue(
-                    instanceInfo.ModuleName,
+                    ModuleIdentity.text instanceInfo.ModuleIdentity,
                     instanceInfo.TraitName,
                     instanceInfo.InstanceKey,
                     []
@@ -7228,7 +7239,7 @@ module SurfaceElaboration =
                                 else
                                     None))
                     |> List.sortBy (fun (instanceInfo, _) ->
-                        instanceInfo.ModuleName,
+                        ModuleIdentity.text instanceInfo.ModuleIdentity,
                         instanceInfo.TraitName,
                         instanceInfo.InstanceKey)
 
@@ -7344,7 +7355,7 @@ module SurfaceElaboration =
                         lowerPremises instanceInfo.Constraints
                         |> Option.map (fun loweredPremises ->
                             KCoreDictionaryValue(
-                                instanceInfo.ModuleName,
+                                ModuleIdentity.text instanceInfo.ModuleIdentity,
                                 instanceInfo.TraitName,
                                 instanceInfo.InstanceKey,
                                 loweredPremises
@@ -7366,7 +7377,7 @@ module SurfaceElaboration =
             tryLowerResolvedDictionaryValue environment owningConstraint
             |> Option.defaultValue (
                 KCoreDictionaryValue(
-                    fallbackInstanceInfo.ModuleName,
+                    ModuleIdentity.text fallbackInstanceInfo.ModuleIdentity,
                     fallbackInstanceInfo.TraitName,
                     fallbackInstanceInfo.InstanceKey,
                     []
@@ -7374,7 +7385,7 @@ module SurfaceElaboration =
             )
         | _ ->
             KCoreDictionaryValue(
-                fallbackInstanceInfo.ModuleName,
+                ModuleIdentity.text fallbackInstanceInfo.ModuleIdentity,
                 fallbackInstanceInfo.TraitName,
                 fallbackInstanceInfo.InstanceKey,
                 []
@@ -7684,7 +7695,7 @@ module SurfaceElaboration =
             else
                 $"{instanceInfo.TraitName} {headArguments}"
 
-        $"{instanceInfo.ModuleName}:{headText}"
+        $"{ModuleIdentity.text instanceInfo.ModuleIdentity}:{headText}"
 
     let private matchesBuiltinNumericTarget
         (aliases: Map<string, TypeAliasInfo>)
@@ -8924,7 +8935,7 @@ module SurfaceElaboration =
                                 :: memberInfo.Scheme.Constraints }
 
                     let bindingInfo =
-                        { ModuleName = traitInfo.ModuleName
+                        { ModuleIdentity = traitInfo.ModuleIdentity
                           Name = memberName
                           IsPattern = false
                           Scheme = overloadedScheme
@@ -8972,7 +8983,7 @@ module SurfaceElaboration =
                         memberInfo.Scheme
 
                 let bindingInfo =
-                    { ModuleName = traitInfo.ModuleName
+                    { ModuleIdentity = traitInfo.ModuleIdentity
                       Name = resolvedMemberName
                       IsPattern = false
                       Scheme = specializedScheme
@@ -9026,7 +9037,7 @@ module SurfaceElaboration =
             match typeObject.ObjectKind, typeObject.TypeFacet with
             | StaticTypeObject, Some typeFacetInfo ->
                 environment.SurfaceIndex
-                |> Map.tryFind typeFacetInfo.ModuleName
+                |> Map.tryFind typeFacetInfo.ModuleIdentity
                 |> Option.bind (fun moduleSurface ->
                     moduleSurface.Constructors
                     |> Map.tryFind memberName
@@ -9404,7 +9415,7 @@ module SurfaceElaboration =
                 freshCounter
                 localTypes
                 localImplicitTypes
-                (rewriteLocalTypeAliasesInSurfaceExpression environment.CurrentModuleName environment.VisibleTypeAliases expression)
+                (rewriteLocalTypeAliasesInSurfaceExpression environment.CurrentModuleIdentity environment.VisibleTypeAliases expression)
         | LocalLet(binding, value, body) ->
             let bindingNames = collectPatternNames binding.Pattern
 
@@ -12084,31 +12095,32 @@ module SurfaceElaboration =
                     String.Equals(visibleModule, qualifiedName, StringComparison.Ordinal)
                     || visibleModule.StartsWith(qualifiedName + ".", StringComparison.Ordinal))
 
-            let resolveQualifiedModuleAlias moduleName =
+            let resolveQualifiedModuleAliasIdentity moduleName =
                 environment.SurfaceIndex
-                |> Map.tryFind environment.CurrentModuleName
+                |> Map.tryFind environment.CurrentModuleIdentity
                 |> Option.bind (fun currentModule ->
                     currentModule.Imports
                     |> List.tryPick (fun spec ->
                         match spec.Source, spec.Selection, spec.Alias with
                         | Dotted moduleSegments, QualifiedOnly, Some alias
                             when String.Equals(alias, moduleName, StringComparison.Ordinal) ->
-                            Some(SyntaxFacts.moduleNameToText moduleSegments)
+                            Some(moduleIdentityOfSegments moduleSegments)
                         | _ ->
                             None))
-                |> Option.defaultValue moduleName
 
             let resolvesAsQualifiedDeclaration =
                 match List.rev nameSegments with
                 | [] -> false
                 | declaredName :: reversedModuleSegments ->
-                    let declaringModuleName =
-                        List.rev reversedModuleSegments
+                    let declaringModuleSegments = List.rev reversedModuleSegments
+                    let declaringModuleIdentity =
+                        declaringModuleSegments
                         |> SyntaxFacts.moduleNameToText
-                        |> resolveQualifiedModuleAlias
+                        |> resolveQualifiedModuleAliasIdentity
+                        |> Option.defaultValue (moduleIdentityOfSegments declaringModuleSegments)
 
                     environment.SurfaceIndex
-                    |> Map.tryFind declaringModuleName
+                    |> Map.tryFind declaringModuleIdentity
                     |> Option.exists (fun moduleInfo ->
                         Set.contains declaredName moduleInfo.ExportedTerms
                         || Set.contains declaredName moduleInfo.ExportedTypes
@@ -17224,7 +17236,7 @@ module SurfaceElaboration =
                     (Map.remove declaration.Name aliases)
                     staticAliases
                     constructorFacts
-                    (rewriteLocalTypeAliasesInSurfaceExpression environment.CurrentModuleName environment.VisibleTypeAliases expression)
+                    (rewriteLocalTypeAliasesInSurfaceExpression environment.CurrentModuleIdentity environment.VisibleTypeAliases expression)
             | LocalScopedEffect(declaration, body) ->
                 borrowedEffectResumptionQuantityDiagnostics makeDiagnostic declaration
                 @ withScopedEffectDeclaration declaration (fun () ->
@@ -19985,6 +19997,7 @@ module SurfaceElaboration =
 
         let validateFrontendModule (frontendModule: KFrontIRModule) =
             let moduleName = moduleNameText frontendModule.ModuleIdentity
+            let moduleIdentity = frontendModule.ModuleIdentity |> moduleIdentityOfOptionalSegments |> Option.defaultValue (ModuleIdentity.ofSegments [ "__unknown__" ])
 
             let topLevelNames =
                 frontendModule.Declarations
@@ -20007,10 +20020,10 @@ module SurfaceElaboration =
                 let localEffects =
                     frontendModule.Declarations
                     |> List.choose (function
-                        | EffectDeclarationNode declaration -> Some(EffectSemantics.ensureTopLevel moduleName declaration)
+                        | EffectDeclarationNode declaration -> Some(EffectSemantics.ensureTopLevel moduleIdentity declaration)
                         | _ -> None)
 
-                localEffects @ importedEffectDeclarations surfaceIndex effectDeclarationsByModule moduleName
+                localEffects @ importedEffectDeclarations surfaceIndex effectDeclarationsByModule moduleIdentity
 
             withScopedEffectDeclarations topLevelEffects (fun () ->
                 let makeDiagnostic kind message =
@@ -20025,32 +20038,32 @@ module SurfaceElaboration =
                         (DiagnosticFact.nameUnresolved name)
 
                 let _, sourceBindingInfosByName =
-                    buildSourceBindingInfosByName moduleName frontendModule.Declarations
+                    buildSourceBindingInfosByName moduleIdentity frontendModule.Declarations
 
                 let visibleBindings =
                     sourceBindingInfosByName
-                    |> Map.fold (fun state name bindingInfo -> Map.add name bindingInfo state) (mergeVisibleBindings surfaceIndex moduleName)
+                    |> Map.fold (fun state name bindingInfo -> Map.add name bindingInfo state) (mergeVisibleBindings surfaceIndex moduleIdentity)
 
                 let importedUnschemedOrdinaryTermNames =
-                    collectImportedOrdinaryTermCandidates surfaceIndex moduleName
+                    collectImportedOrdinaryTermCandidates surfaceIndex moduleIdentity
                     |> importedUnschemedOrdinaryTermNamesFromCandidates
 
                 let baseEnvironment =
-                    { CurrentModuleName = moduleName
+                    { CurrentModuleIdentity = moduleIdentity
                       CurrentModuleTopLevelDefinitions = topLevelDefinitionNames frontendModule.Declarations
                       ImportedUnschemedOrdinaryTermNames = importedUnschemedOrdinaryTermNames
                       SurfaceIndex = surfaceIndex
-                      VisibleTypeAliases = mergeVisibleTypeAliases surfaceIndex moduleName
-                      VisibleTypeFacets = mergeVisibleTypeFacets surfaceIndex moduleName
+                      VisibleTypeAliases = mergeVisibleTypeAliases surfaceIndex moduleIdentity
+                      VisibleTypeFacets = mergeVisibleTypeFacets surfaceIndex moduleIdentity
                       VisibleStaticObjects = Map.empty
-                      VisibleModules = mergeVisibleModules surfaceIndex moduleName
-                      VisibleRecordTypes = mergeVisibleRecordTypes surfaceIndex moduleName
+                      VisibleModules = mergeVisibleModules surfaceIndex moduleIdentity
+                      VisibleRecordTypes = mergeVisibleRecordTypes surfaceIndex moduleIdentity
                       VisibleBindings = visibleBindings
-                      VisibleConstructors = mergeVisibleConstructors surfaceIndex moduleName
-                      AmbiguousVisibleOrdinaryTerms = mergeAmbiguousVisibleOrdinaryTerms surfaceIndex moduleName
-                      VisibleProjections = mergeVisibleProjections surfaceIndex moduleName
-                      VisibleTraits = mergeVisibleTraits surfaceIndex moduleName
-                      VisibleInstances = visibleInstances surfaceIndex moduleName
+                      VisibleConstructors = mergeVisibleConstructors surfaceIndex moduleIdentity
+                      AmbiguousVisibleOrdinaryTerms = mergeAmbiguousVisibleOrdinaryTerms surfaceIndex moduleIdentity
+                      VisibleProjections = mergeVisibleProjections surfaceIndex moduleIdentity
+                      VisibleTraits = mergeVisibleTraits surfaceIndex moduleIdentity
+                      VisibleInstances = visibleInstances surfaceIndex moduleIdentity
                       ElaborationAvailableBindings =
                         visibleBindings
                         |> Map.keys
@@ -20069,7 +20082,7 @@ module SurfaceElaboration =
                         |> List.fold (fun current declaration ->
                             let semanticDeclaration =
                                 declaration
-                                |> EffectSemantics.ensureTopLevel moduleName
+                                |> EffectSemantics.ensureTopLevel moduleIdentity
                                 |> EffectSemantics.toSemantic
 
                             Map.add declaration.Name (scopedEffectLabelStaticObject semanticDeclaration) current) localAliases
@@ -20089,7 +20102,7 @@ module SurfaceElaboration =
                                 | _, Url _ ->
                                     true
                                 | _, Dotted moduleSegments ->
-                                    surfaceIndex.ContainsKey(SyntaxFacts.moduleNameToText moduleSegments) |> not)
+                                    surfaceIndex.ContainsKey(moduleIdentityOfSegments moduleSegments) |> not)
                         | _ ->
                             false)
 
@@ -20133,7 +20146,7 @@ module SurfaceElaboration =
                       compilerKnownSurfaceTerms
                       environment.VisibleBindings |> Map.keys |> Set.ofSeq
                       environment.VisibleConstructors |> Map.keys |> Set.ofSeq
-                      collectImportedOrdinarySurfaceNames surfaceIndex moduleName
+                      collectImportedOrdinarySurfaceNames surfaceIndex moduleIdentity
                       environment.VisibleModules
                       environment.VisibleStaticObjects |> Map.keys |> Set.ofSeq
                       environment.VisibleTypeFacets |> Map.keys |> Set.ofSeq
@@ -20322,7 +20335,7 @@ module SurfaceElaboration =
                     let localAliases =
                         frontendModule.Declarations
                         |> List.choose (function
-                            | TypeAliasNode declaration -> tryParseTypeAliasInfo moduleName declaration
+                            | TypeAliasNode declaration -> tryParseTypeAliasInfo moduleIdentity declaration
                             | _ -> None)
                         |> Map.ofList
 
@@ -22267,7 +22280,7 @@ module SurfaceElaboration =
             | LocalTypeAlias(declaration, body) ->
                 let expandedDeclaration = expandTypeAliasTokens localAliases declaration
 
-                match tryParseTypeAliasInfo environment.CurrentModuleName expandedDeclaration with
+                match tryParseTypeAliasInfo environment.CurrentModuleIdentity expandedDeclaration with
                 | Some(_, aliasInfo) ->
                     let nextLocalAliases = Map.add declaration.Name aliasInfo localAliases
                     normalizeLocalDeclarationsWithAliases nextLocalAliases body
@@ -23624,7 +23637,7 @@ module SurfaceElaboration =
                                         isMonadicSite
                                 | None ->
                                     let layout =
-                                        ensureSyntheticRecordLayout environment.CurrentModuleName "<binding>" recordLayouts resultRecordType
+                                        ensureSyntheticRecordLayout environment.CurrentModuleIdentity "<binding>" recordLayouts resultRecordType
 
                                     let mutable rewrittenArguments = ResizeArray<SurfaceExpression>()
                                     let mutable callLocalTypes = localTypes
@@ -23718,7 +23731,7 @@ module SurfaceElaboration =
                                                 | _ ->
                                                     let residualLayout =
                                                         ensureSyntheticRecordLayout
-                                                            environment.CurrentModuleName
+                                                            environment.CurrentModuleIdentity
                                                             "<binding>"
                                                             recordLayouts
                                                             residualResultType
@@ -24064,7 +24077,7 @@ module SurfaceElaboration =
                 match expectedType |> Option.bind (tryCanonicalRecordType environment.VisibleTypeAliases) with
                 | Some recordType ->
                     let layout =
-                        ensureSyntheticRecordLayout environment.CurrentModuleName "<binding>" recordLayouts recordType
+                        ensureSyntheticRecordLayout environment.CurrentModuleIdentity "<binding>" recordLayouts recordType
 
                     let fieldPatterns =
                         fields
@@ -24120,7 +24133,7 @@ module SurfaceElaboration =
             match tryCanonicalRecordType environment.VisibleTypeAliases receiverType, path with
             | Some(TypeRecord fields), fieldName :: rest ->
                 let layout =
-                    ensureSyntheticRecordLayout environment.CurrentModuleName "<binding>" recordLayouts (TypeRecord fields)
+                    ensureSyntheticRecordLayout environment.CurrentModuleIdentity "<binding>" recordLayouts (TypeRecord fields)
 
                 let boundFields =
                     layout.Fields
@@ -24821,7 +24834,7 @@ module SurfaceElaboration =
                                  "fromFloat"),
                             (tryLowerResolvedDictionaryValue environment literalConstraint
                              |> Option.defaultValue (
-                                 KCoreDictionaryValue(instanceInfo.ModuleName, instanceInfo.TraitName, instanceInfo.InstanceKey, [])
+                                 KCoreDictionaryValue(ModuleIdentity.text instanceInfo.ModuleIdentity, instanceInfo.TraitName, instanceInfo.InstanceKey, [])
                              )),
                             [ semanticArgument ]
                         )
@@ -25244,7 +25257,7 @@ module SurfaceElaboration =
                 if inferredFields |> List.forall Option.isSome then
                     let recordType = TypeRecord(inferredFields |> List.choose id)
                     let layout =
-                        ensureSyntheticRecordLayout environment.CurrentModuleName "<binding>" recordLayouts recordType
+                        ensureSyntheticRecordLayout environment.CurrentModuleIdentity "<binding>" recordLayouts recordType
 
                     let fieldValues =
                         fields
@@ -25270,7 +25283,7 @@ module SurfaceElaboration =
                 match inferExpressionType localTypes receiver |> Option.bind (tryCanonicalRecordType environment.VisibleTypeAliases) with
                 | Some recordType ->
                     let layout =
-                        ensureSyntheticRecordLayout environment.CurrentModuleName "<binding>" recordLayouts recordType
+                        ensureSyntheticRecordLayout environment.CurrentModuleIdentity "<binding>" recordLayouts recordType
 
                     let boundFields =
                         layout.Fields
@@ -25808,7 +25821,6 @@ module SurfaceElaboration =
         (recordLayouts: Map<string, SyntheticRecordLayout> ref)
         (moduleTopLevelDefinitionsByName: Map<string, LetDefinition>)
         (filePath: string)
-        (moduleName: string)
         (definition: LetDefinition)
         (sourceSignature: BindingSignature option)
         (bindingInfo: BindingSchemeInfo option)
@@ -26699,7 +26711,8 @@ module SurfaceElaboration =
         let parameters =
             hiddenParameters @ buildBindingParameters environment.VisibleTypeAliases scheme effectiveParameters
 
-        let provenance = declarationOrigin filePath moduleName (LetDeclaration definition)
+        let provenance =
+            declarationOrigin filePath (ModuleIdentity.text environment.CurrentModuleIdentity) (LetDeclaration definition)
 
         { Source = LetDeclaration definition
           Binding =
@@ -26717,7 +26730,6 @@ module SurfaceElaboration =
 
     let private synthesizeTraitDispatchBindings
         (filePath: string)
-        (moduleName: string)
         (traitInfo: TraitInfo)
         =
         traitInfo.Members
@@ -26753,7 +26765,7 @@ module SurfaceElaboration =
             let provenance =
                 syntheticOrigin
                     filePath
-                    moduleName
+                    (ModuleIdentity.text traitInfo.ModuleIdentity)
                     (TraitRuntime.dispatchBindingName traitInfo.Name memberName)
                     "trait-dispatch"
 
@@ -26772,16 +26784,16 @@ module SurfaceElaboration =
                 provenance)
 
     let private synthesizeInstanceBindings
-        (surfaceIndex: Map<string, ModuleSurfaceInfo>)
+        (surfaceIndex: Map<ModuleIdentity, ModuleSurfaceInfo>)
         (recordLayouts: Map<string, SyntheticRecordLayout> ref)
         (filePath: string)
-        (moduleName: string)
+        (moduleIdentity: ModuleIdentity)
         (instanceInfo: InstanceInfo)
         =
         let selfDictionaryName = "__kappa_self_dict"
 
         let traitInfo =
-            mergeVisibleTraits surfaceIndex moduleName
+            mergeVisibleTraits surfaceIndex moduleIdentity
             |> Map.tryFind instanceInfo.TraitName
 
         let substitution =
@@ -26791,33 +26803,33 @@ module SurfaceElaboration =
             | _ ->
                 Map.empty
 
-        let visibleBindings = mergeVisibleBindings surfaceIndex moduleName
-        let visibleTraits = mergeVisibleTraits surfaceIndex moduleName
-        let visibleTypeAliases = mergeVisibleTypeAliases surfaceIndex moduleName
-        let visibleTypeFacets = mergeVisibleTypeFacets surfaceIndex moduleName
-        let visibleProjections = mergeVisibleProjections surfaceIndex moduleName
+        let visibleBindings = mergeVisibleBindings surfaceIndex moduleIdentity
+        let visibleTraits = mergeVisibleTraits surfaceIndex moduleIdentity
+        let visibleTypeAliases = mergeVisibleTypeAliases surfaceIndex moduleIdentity
+        let visibleTypeFacets = mergeVisibleTypeFacets surfaceIndex moduleIdentity
+        let visibleProjections = mergeVisibleProjections surfaceIndex moduleIdentity
 
         let environment =
-            { CurrentModuleName = moduleName
+            { CurrentModuleIdentity = moduleIdentity
               CurrentModuleTopLevelDefinitions =
-                surfaceIndex[moduleName].BindingSchemes
+                surfaceIndex[moduleIdentity].BindingSchemes
                 |> Map.keys
                 |> Set.ofSeq
               ImportedUnschemedOrdinaryTermNames =
-                collectImportedOrdinaryTermCandidates surfaceIndex moduleName
+                collectImportedOrdinaryTermCandidates surfaceIndex moduleIdentity
                 |> importedUnschemedOrdinaryTermNamesFromCandidates
               SurfaceIndex = surfaceIndex
               VisibleTypeAliases = visibleTypeAliases
               VisibleTypeFacets = visibleTypeFacets
               VisibleStaticObjects = Map.empty
-              VisibleModules = mergeVisibleModules surfaceIndex moduleName
-              VisibleRecordTypes = mergeVisibleRecordTypes surfaceIndex moduleName
+              VisibleModules = mergeVisibleModules surfaceIndex moduleIdentity
+              VisibleRecordTypes = mergeVisibleRecordTypes surfaceIndex moduleIdentity
               VisibleBindings = visibleBindings
-              VisibleConstructors = mergeVisibleConstructors surfaceIndex moduleName
-              AmbiguousVisibleOrdinaryTerms = mergeAmbiguousVisibleOrdinaryTerms surfaceIndex moduleName
+              VisibleConstructors = mergeVisibleConstructors surfaceIndex moduleIdentity
+              AmbiguousVisibleOrdinaryTerms = mergeAmbiguousVisibleOrdinaryTerms surfaceIndex moduleIdentity
               VisibleProjections = visibleProjections
               VisibleTraits = visibleTraits
-              VisibleInstances = visibleInstances surfaceIndex moduleName
+              VisibleInstances = visibleInstances surfaceIndex moduleIdentity
               ElaborationAvailableBindings =
                 visibleBindings
                 |> Map.keys
@@ -26928,7 +26940,7 @@ module SurfaceElaboration =
                         let provenance =
                             syntheticOrigin
                                 filePath
-                                moduleName
+                                (ModuleIdentity.text moduleIdentity)
                                 (TraitRuntime.instanceMemberBindingName instanceInfo.TraitName instanceInfo.InstanceKey memberName)
                                 (if isDefaultDefinition then "instance-default-member" else "instance-member")
 
@@ -26957,7 +26969,7 @@ module SurfaceElaboration =
             let provenance =
                 syntheticOrigin
                     filePath
-                    moduleName
+                    (ModuleIdentity.text moduleIdentity)
                     (TraitRuntime.instanceDictionaryBindingName instanceInfo.TraitName instanceInfo.InstanceKey)
                     "instance-dictionary"
 
@@ -26966,7 +26978,7 @@ module SurfaceElaboration =
                 dictionaryParameters
                 (Some(dictionaryType instanceInfo.TraitName instanceInfo.HeadTypes))
                 (KCoreDictionaryValue(
-                    moduleName,
+                    ModuleIdentity.text moduleIdentity,
                     instanceInfo.TraitName,
                     instanceInfo.InstanceKey,
                     dictionaryCaptures
@@ -26987,166 +26999,177 @@ module SurfaceElaboration =
         frontendModules
         |> List.map (fun frontendModule ->
             let moduleName = moduleNameText frontendModule.ModuleIdentity
-            let topLevelEffects =
-                let localEffects =
-                    frontendModule.Declarations
-                    |> List.choose (function
-                        | EffectDeclarationNode declaration -> Some(EffectSemantics.ensureTopLevel moduleName declaration)
-                        | _ -> None)
-
-                localEffects @ importedEffectDeclarations surfaceIndex effectDeclarationsByModule moduleName
-
-            withScopedEffectDeclarations topLevelEffects (fun () ->
-                let moduleInfo = surfaceIndex[moduleName]
-                let recordLayouts = ref Map.empty
-
-                let baseEnvironment =
-                    { CurrentModuleName = moduleName
-                      CurrentModuleTopLevelDefinitions = topLevelDefinitionNames frontendModule.Declarations
-                      ImportedUnschemedOrdinaryTermNames =
-                        collectImportedOrdinaryTermCandidates surfaceIndex moduleName
-                        |> importedUnschemedOrdinaryTermNamesFromCandidates
-                      SurfaceIndex = surfaceIndex
-                      VisibleTypeAliases = mergeVisibleTypeAliases surfaceIndex moduleName
-                      VisibleTypeFacets = mergeVisibleTypeFacets surfaceIndex moduleName
-                      VisibleStaticObjects = Map.empty
-                      VisibleModules = mergeVisibleModules surfaceIndex moduleName
-                      VisibleRecordTypes = mergeVisibleRecordTypes surfaceIndex moduleName
-                      VisibleBindings = mergeVisibleBindings surfaceIndex moduleName
-                      VisibleConstructors = mergeVisibleConstructors surfaceIndex moduleName
-                      AmbiguousVisibleOrdinaryTerms = mergeAmbiguousVisibleOrdinaryTerms surfaceIndex moduleName
-                      VisibleProjections = mergeVisibleProjections surfaceIndex moduleName
-                      VisibleTraits = mergeVisibleTraits surfaceIndex moduleName
-                      VisibleInstances = visibleInstances surfaceIndex moduleName
-                      ElaborationAvailableBindings =
-                        mergeVisibleBindings surfaceIndex moduleName
-                        |> Map.keys
-                        |> Set.ofSeq
-                        |> Set.intersect (IntrinsicCatalog.elaborationAvailableIntrinsicTermNames ())
-                      ConstraintDictionaries = Map.empty
-                      ConstrainedMembers = Map.empty }
-
-                let environment =
-                    let staticObjectAliases =
-                        let localAliases =
-                            buildStaticObjectAliasesForModule baseEnvironment frontendModule.Declarations
-
-                        topLevelEffects
-                        |> List.filter (fun declaration -> declaration.Name.Contains("."))
-                        |> List.fold (fun current declaration ->
-                            let semanticDeclaration =
-                                declaration
-                                |> EffectSemantics.ensureTopLevel moduleName
-                                |> EffectSemantics.toSemantic
-
-                            Map.add declaration.Name (scopedEffectLabelStaticObject semanticDeclaration) current) localAliases
-
-                    { baseEnvironment with
-                        VisibleStaticObjects = staticObjectAliases }
-
-                let declarations =
-                    let moduleTopLevelDefinitionsByName, sourceBindingInfosByName =
-                        buildSourceBindingInfosByName moduleName frontendModule.Declarations
-
-                    let availableTopLevelDefinitionsByName =
-                        mergeVisibleBindingDefinitions surfaceIndex moduleName
-                        |> Map.fold (fun state name definition -> Map.add name definition state) moduleTopLevelDefinitionsByName
-
-                    let sourceSignatureDeclarationsByName =
-                        frontendModule.Declarations
-                        |> List.choose (function
-                            | SignatureDeclaration declaration -> Some(declaration.Name, declaration)
-                            | _ -> None)
-                        |> Map.ofList
-
-                    frontendModule.Declarations
-                    |> List.collect (fun declaration ->
-                        let provenance = declarationOrigin frontendModule.FilePath moduleName declaration
-
-                        let originalDeclaration =
-                            match declaration with
-                            | LetDeclaration definition when definition.Name.IsSome ->
-                                let sourceSignature =
-                                    sourceSignatureDeclarationsByName
-                                    |> Map.tryFind definition.Name.Value
-
-                                let bindingInfo =
-                                    sourceBindingInfosByName
-                                    |> Map.tryFind definition.Name.Value
-
-                                [ lowerUserBinding
-                                      environment
-                                      recordLayouts
-                                      availableTopLevelDefinitionsByName
-                                      frontendModule.FilePath
-                                      moduleName
-                                      definition
-                                      sourceSignature
-                                      bindingInfo ]
-                            | _ ->
-                                [ { Source = declaration
-                                    Binding = None
-                                    Provenance = provenance } ]
-
-                        match declaration with
-                        | TraitDeclarationNode declaration ->
-                            originalDeclaration
-                        | InstanceDeclarationNode declaration ->
-                            let instanceKey = TraitRuntime.instanceKeyFromTokens declaration.HeaderTokens
-                            match
-                                moduleInfo.Instances
-                                |> List.tryFind (fun info ->
-                                    String.Equals(info.TraitName, declaration.TraitName, StringComparison.Ordinal)
-                                    && String.Equals(info.InstanceKey, instanceKey, StringComparison.Ordinal))
-                            with
-                            | Some instanceInfo ->
-                                originalDeclaration
-                                @ synthesizeInstanceBindings surfaceIndex recordLayouts frontendModule.FilePath moduleName instanceInfo
-                            | None ->
-                                // Parse-invalid instance declarations may survive as surface nodes with diagnostics but
-                                // intentionally produce no semantic instance info. Lowering must not crash on them.
-                                originalDeclaration
-                        | _ ->
-                            originalDeclaration)
-
-                let intrinsicTerms =
-                    match frontendModule.ModuleIdentity with
-                    | Some moduleNameSegments ->
-                        frontendModule.Declarations
-                        |> List.choose (function
-                            | ExpectDeclarationNode declaration
-                                when Stdlib.intrinsicallySatisfiesExpectForCompilationProfile
-                                        backendProfile
-                                        allowUnsafeConsume
-                                        moduleNameSegments
-                                        declaration ->
-                                match declaration with
-                                | ExpectTermDeclaration termDeclaration -> Some termDeclaration.Name
-                                | _ -> None
-                            | _ ->
-                                None)
-                    | None ->
-                        []
-
+            match frontendModule.ModuleIdentity |> moduleIdentityOfOptionalSegments with
+            | None ->
                 { Name = moduleName
                   SourceFile = frontendModule.FilePath
                   ModuleAttributes = frontendModule.ModuleAttributes
                   Imports = frontendModule.Imports
-                  VisibleTraitTypeParameterCounts =
-                    environment.VisibleTraits
-                    |> Map.map (fun _ traitInfo -> traitInfo.TypeParameters.Length)
-                  IntrinsicTerms = intrinsicTerms |> List.distinct |> List.sort
-                  SyntheticDataTypes =
-                    recordLayouts.Value
-                    |> Map.toList
-                    |> List.map snd
-                    |> List.sortBy (fun layout -> layout.TypeName)
-                    |> List.map (fun layout ->
-                        { Name = layout.TypeName
-                          TypeParameters = layout.TypeParameters
-                          ConstructorName = layout.ConstructorName
-                          FieldNames = layout.Fields |> List.map (fun field -> field.Name)
-                          FieldTypeTexts = layout.Fields |> List.map (fun field -> TypeSignatures.toText field.Type)
-                          Provenance = layout.Provenance })
+                  VisibleTraitTypeParameterCounts = Map.empty
+                  IntrinsicTerms = []
+                  SyntheticDataTypes = []
                   Ownership = frontendModule.Ownership
-                  Declarations = declarations }))
+                  Declarations = [] }
+            | Some moduleIdentity ->
+                let topLevelEffects =
+                    let localEffects =
+                        frontendModule.Declarations
+                        |> List.choose (function
+                            | EffectDeclarationNode declaration -> Some(EffectSemantics.ensureTopLevel moduleIdentity declaration)
+                            | _ -> None)
+
+                    localEffects @ importedEffectDeclarations surfaceIndex effectDeclarationsByModule moduleIdentity
+
+                withScopedEffectDeclarations topLevelEffects (fun () ->
+                    let moduleInfo = surfaceIndex[moduleIdentity]
+                    let recordLayouts = ref Map.empty
+
+                    let baseEnvironment =
+                        { CurrentModuleIdentity = moduleIdentity
+                          CurrentModuleTopLevelDefinitions = topLevelDefinitionNames frontendModule.Declarations
+                          ImportedUnschemedOrdinaryTermNames =
+                            collectImportedOrdinaryTermCandidates surfaceIndex moduleIdentity
+                            |> importedUnschemedOrdinaryTermNamesFromCandidates
+                          SurfaceIndex = surfaceIndex
+                          VisibleTypeAliases = mergeVisibleTypeAliases surfaceIndex moduleIdentity
+                          VisibleTypeFacets = mergeVisibleTypeFacets surfaceIndex moduleIdentity
+                          VisibleStaticObjects = Map.empty
+                          VisibleModules = mergeVisibleModules surfaceIndex moduleIdentity
+                          VisibleRecordTypes = mergeVisibleRecordTypes surfaceIndex moduleIdentity
+                          VisibleBindings = mergeVisibleBindings surfaceIndex moduleIdentity
+                          VisibleConstructors = mergeVisibleConstructors surfaceIndex moduleIdentity
+                          AmbiguousVisibleOrdinaryTerms = mergeAmbiguousVisibleOrdinaryTerms surfaceIndex moduleIdentity
+                          VisibleProjections = mergeVisibleProjections surfaceIndex moduleIdentity
+                          VisibleTraits = mergeVisibleTraits surfaceIndex moduleIdentity
+                          VisibleInstances = visibleInstances surfaceIndex moduleIdentity
+                          ElaborationAvailableBindings =
+                            mergeVisibleBindings surfaceIndex moduleIdentity
+                            |> Map.keys
+                            |> Set.ofSeq
+                            |> Set.intersect (IntrinsicCatalog.elaborationAvailableIntrinsicTermNames ())
+                          ConstraintDictionaries = Map.empty
+                          ConstrainedMembers = Map.empty }
+
+                    let environment =
+                        let staticObjectAliases =
+                            let localAliases =
+                                buildStaticObjectAliasesForModule baseEnvironment frontendModule.Declarations
+
+                            topLevelEffects
+                            |> List.filter (fun declaration -> declaration.Name.Contains("."))
+                            |> List.fold (fun current declaration ->
+                                let semanticDeclaration =
+                                    declaration
+                                    |> EffectSemantics.ensureTopLevel moduleIdentity
+                                    |> EffectSemantics.toSemantic
+
+                                Map.add declaration.Name (scopedEffectLabelStaticObject semanticDeclaration) current) localAliases
+
+                        { baseEnvironment with
+                            VisibleStaticObjects = staticObjectAliases }
+
+                    let declarations =
+                        let moduleTopLevelDefinitionsByName, sourceBindingInfosByName =
+                            buildSourceBindingInfosByName moduleIdentity frontendModule.Declarations
+
+                        let availableTopLevelDefinitionsByName =
+                            mergeVisibleBindingDefinitions surfaceIndex moduleIdentity
+                            |> Map.fold (fun state name definition -> Map.add name definition state) moduleTopLevelDefinitionsByName
+
+                        let sourceSignatureDeclarationsByName =
+                            frontendModule.Declarations
+                            |> List.choose (function
+                                | SignatureDeclaration declaration -> Some(declaration.Name, declaration)
+                                | _ -> None)
+                            |> Map.ofList
+
+                        frontendModule.Declarations
+                        |> List.collect (fun declaration ->
+                            let provenance = declarationOrigin frontendModule.FilePath moduleName declaration
+
+                            let originalDeclaration =
+                                match declaration with
+                                | LetDeclaration definition when definition.Name.IsSome ->
+                                    let sourceSignature =
+                                        sourceSignatureDeclarationsByName
+                                        |> Map.tryFind definition.Name.Value
+
+                                    let bindingInfo =
+                                        sourceBindingInfosByName
+                                        |> Map.tryFind definition.Name.Value
+
+                                    [ lowerUserBinding
+                                          environment
+                                          recordLayouts
+                                          availableTopLevelDefinitionsByName
+                                          frontendModule.FilePath
+                                          definition
+                                          sourceSignature
+                                          bindingInfo ]
+                                | _ ->
+                                    [ { Source = declaration
+                                        Binding = None
+                                        Provenance = provenance } ]
+
+                            match declaration with
+                            | TraitDeclarationNode declaration ->
+                                originalDeclaration
+                            | InstanceDeclarationNode declaration ->
+                                let instanceKey = TraitRuntime.instanceKeyFromTokens declaration.HeaderTokens
+                                match
+                                    moduleInfo.Instances
+                                    |> List.tryFind (fun info ->
+                                        String.Equals(info.TraitName, declaration.TraitName, StringComparison.Ordinal)
+                                        && String.Equals(info.InstanceKey, instanceKey, StringComparison.Ordinal))
+                                with
+                                | Some instanceInfo ->
+                                    originalDeclaration
+                                    @ synthesizeInstanceBindings surfaceIndex recordLayouts frontendModule.FilePath moduleIdentity instanceInfo
+                                | None ->
+                                    // Parse-invalid instance declarations may survive as surface nodes with diagnostics but
+                                    // intentionally produce no semantic instance info. Lowering must not crash on them.
+                                    originalDeclaration
+                            | _ ->
+                                originalDeclaration)
+
+                    let intrinsicTerms =
+                        match frontendModule.ModuleIdentity with
+                        | Some moduleNameSegments ->
+                            frontendModule.Declarations
+                            |> List.choose (function
+                                | ExpectDeclarationNode declaration
+                                    when Stdlib.intrinsicallySatisfiesExpectForCompilationProfile
+                                            backendProfile
+                                            allowUnsafeConsume
+                                            moduleNameSegments
+                                            declaration ->
+                                    match declaration with
+                                    | ExpectTermDeclaration termDeclaration -> Some termDeclaration.Name
+                                    | _ -> None
+                                | _ ->
+                                    None)
+                        | None ->
+                            []
+
+                    { Name = moduleName
+                      SourceFile = frontendModule.FilePath
+                      ModuleAttributes = frontendModule.ModuleAttributes
+                      Imports = frontendModule.Imports
+                      VisibleTraitTypeParameterCounts =
+                        environment.VisibleTraits
+                        |> Map.map (fun _ traitInfo -> traitInfo.TypeParameters.Length)
+                      IntrinsicTerms = intrinsicTerms |> List.distinct |> List.sort
+                      SyntheticDataTypes =
+                        recordLayouts.Value
+                        |> Map.toList
+                        |> List.map snd
+                        |> List.sortBy (fun layout -> layout.TypeName)
+                        |> List.map (fun layout ->
+                            { Name = layout.TypeName
+                              TypeParameters = layout.TypeParameters
+                              ConstructorName = layout.ConstructorName
+                              FieldNames = layout.Fields |> List.map (fun field -> field.Name)
+                              FieldTypeTexts = layout.Fields |> List.map (fun field -> TypeSignatures.toText field.Type)
+                              Provenance = layout.Provenance })
+                      Ownership = frontendModule.Ownership
+                      Declarations = declarations }))

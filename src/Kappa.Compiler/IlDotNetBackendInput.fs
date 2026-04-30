@@ -115,23 +115,30 @@ module internal IlDotNetBackendInput =
 
         loop 0 []
 
-    let internal tryParsePrimitiveTypeName typeName =
-        match typeName with
-        | "Int" -> Some(IlPrimitive IlInt64)
-        | "Nat" -> Some(IlPrimitive IlInt64)
-        | "Integer" -> Some(IlPrimitive IlInt64)
-        | "Byte" -> Some(IlPrimitive IlInt64)
-        | "HashCode" -> Some(IlPrimitive IlInt64)
-        | "Float" -> Some(IlPrimitive IlFloat64)
-        | "Double" -> Some(IlPrimitive IlFloat64)
-        | "Real" -> Some(IlPrimitive IlFloat64)
-        | "Bool" -> Some(IlPrimitive IlBool)
-        | "String" -> Some(IlPrimitive IlString)
-        | "Char" -> Some(IlPrimitive IlChar)
-        | "UnicodeScalar" -> Some(IlPrimitive IlString)
-        | "Grapheme" -> Some(IlPrimitive IlString)
-        | "Bytes" -> Some(IlPrimitive IlString)
-        | _ -> None
+    let private hashModuleIdentity = ModuleIdentity.ofSegments [ "std"; "hash" ]
+    let internal tryParsePrimitiveTypeIdentity typeIdentity =
+        if TypeIdentity.hasTopLevelName preludeModuleIdentity "Int" typeIdentity
+           || TypeIdentity.hasTopLevelName preludeModuleIdentity "Nat" typeIdentity
+           || TypeIdentity.hasTopLevelName preludeModuleIdentity "Integer" typeIdentity
+           || TypeIdentity.hasTopLevelName preludeModuleIdentity "Byte" typeIdentity
+           || TypeIdentity.hasTopLevelName hashModuleIdentity "HashCode" typeIdentity then
+            Some(IlPrimitive IlInt64)
+        elif TypeIdentity.hasTopLevelName preludeModuleIdentity "Float" typeIdentity
+             || TypeIdentity.hasTopLevelName preludeModuleIdentity "Double" typeIdentity
+             || TypeIdentity.hasTopLevelName preludeModuleIdentity "Real" typeIdentity then
+            Some(IlPrimitive IlFloat64)
+        elif TypeIdentity.hasTopLevelName preludeModuleIdentity "Bool" typeIdentity then
+            Some(IlPrimitive IlBool)
+        elif TypeIdentity.hasTopLevelName preludeModuleIdentity "String" typeIdentity then
+            Some(IlPrimitive IlString)
+        elif TypeIdentity.hasTopLevelName preludeModuleIdentity "Char" typeIdentity then
+            Some(IlPrimitive IlChar)
+        elif TypeIdentity.hasTopLevelName preludeModuleIdentity "UnicodeScalar" typeIdentity
+             || TypeIdentity.hasTopLevelName preludeModuleIdentity "Grapheme" typeIdentity
+             || TypeIdentity.hasTopLevelName preludeModuleIdentity "Bytes" typeIdentity then
+            Some(IlPrimitive IlString)
+        else
+            None
 
     let private bundledTypeExports moduleName =
         let bundledPreludeExpectTypes =
@@ -145,13 +152,13 @@ module internal IlDotNetBackendInput =
 
         Set.union bundledPreludeExpectTypes bundledStandardTypes
 
-    let private tryResolveBundledBuiltinTypeName name =
+    let private tryResolveBundledBuiltinTypeIdentity name =
         let candidates =
             let preludeCandidates =
                 let preludeTypes = (IntrinsicCatalog.bundledPreludeExpectContract ()).TypeNames
 
                 if Set.contains name preludeTypes then
-                    [ Stdlib.PreludeModuleText, name ]
+                    [ TypeIdentity.topLevel preludeModuleIdentity name ]
                 else
                     []
 
@@ -159,7 +166,7 @@ module internal IlDotNetBackendInput =
                 BundledStandardModules.all
                 |> List.choose (fun bundled ->
                     if bundled.Types |> List.exists (fun typeName -> String.Equals(typeName, name, StringComparison.Ordinal)) then
-                        Some(SyntaxFacts.moduleNameToText bundled.ModuleName, name)
+                        Some(TypeIdentity.topLevel (ModuleIdentity.ofSegments bundled.ModuleName) name)
                     else
                         None)
 
@@ -298,7 +305,7 @@ module internal IlDotNetBackendInput =
             |> Map.tryFind moduleName
             |> Option.bind (fun moduleInfo ->
                 if moduleInfo.TypeExports.Contains(typeName) then
-                    Some(moduleName, typeName)
+                    Some(TypeIdentity.ofDottedTextUnchecked moduleName typeName)
                 else
                     None)
 
@@ -317,7 +324,7 @@ module internal IlDotNetBackendInput =
                 | Some importedModule
                     when selectionImportsTypeName spec.Selection name
                          && importedModule.TypeExports.Contains(name) ->
-                    Some(importedModuleName, name)
+                    Some(TypeIdentity.ofDottedTextUnchecked importedModuleName name)
                 | _ ->
                     None)
         |> List.distinct
@@ -330,41 +337,50 @@ module internal IlDotNetBackendInput =
         | [] ->
             Result.Error "Expected a type name."
         | [ name ] ->
-            match tryParsePrimitiveTypeName name with
-            | Some primitiveType ->
-                Result.Ok primitiveType
-            | None when String.Equals(name, "Unit", StringComparison.Ordinal) ->
-                Result.Ok unitIlType
-            | None when String.Equals(name, "Ref", StringComparison.Ordinal) ->
-                Result.Ok(IlNamed("std.prelude", "Ref", []))
-            | None when String.Equals(name, "IO", StringComparison.Ordinal) ->
-                Result.Ok(IlNamed("std.prelude", "IO", []))
-            | None when String.Equals(name, "Dict", StringComparison.Ordinal) ->
-                Result.Ok(IlNamed("std.prelude", "Dict", []))
-            | None when isDictionaryTypeName name ->
-                Result.Ok(IlNamed("std.prelude", name, []))
-            | None when Set.contains name typeParameters ->
+            if Set.contains name typeParameters then
                 Result.Ok(IlTypeParameter name)
-            | None when name.Length > 0 && Char.IsLower(name[0]) ->
+            elif name.Length > 0 && Char.IsLower(name[0]) then
                 Result.Ok(IlTypeParameter name)
-            | None ->
-                match tryResolveBundledBuiltinTypeName name with
-                | Some(moduleName, typeName) ->
-                    Result.Ok(IlNamed(moduleName, typeName, []))
-                | None ->
-                    let currentModuleInfo = rawModules[currentModule]
+            else
+                let resolvedIdentity =
+                    if String.Equals(name, "Unit", StringComparison.Ordinal) then
+                        Some(preludeTypeIdentity "Unit")
+                    elif String.Equals(name, "Ref", StringComparison.Ordinal) then
+                        Some(preludeTypeIdentity "Ref")
+                    elif String.Equals(name, "IO", StringComparison.Ordinal) then
+                        Some(preludeTypeIdentity "IO")
+                    elif String.Equals(name, "Dict", StringComparison.Ordinal) then
+                        Some(preludeTypeIdentity "Dict")
+                    elif isDictionaryTypeName name then
+                        Some(preludeTypeIdentity name)
+                    else
+                        match tryResolveBundledBuiltinTypeIdentity name with
+                        | Some identity ->
+                            Some identity
+                        | None ->
+                            let currentModuleInfo = rawModules[currentModule]
 
-                    match currentModuleInfo.TypeExports.Contains(name), tryResolveImportedTypeName rawModules currentModule name with
-                    | true, _ ->
-                        Result.Ok(IlNamed(currentModule, name, []))
-                    | false, Some(moduleName, typeName) ->
-                        Result.Ok(IlNamed(moduleName, typeName, []))
-                    | false, None ->
-                        Result.Error $"IL backend could not resolve type '{name}'."
+                            match currentModuleInfo.TypeExports.Contains(name), tryResolveImportedTypeName rawModules currentModule name with
+                            | true, _ ->
+                                Some(TypeIdentity.ofDottedTextUnchecked currentModule name)
+                            | false, Some identity ->
+                                Some identity
+                            | false, None ->
+                                None
+
+                match resolvedIdentity with
+                | Some identity ->
+                    match tryParsePrimitiveTypeIdentity identity with
+                    | Some primitiveType -> Result.Ok primitiveType
+                    | None -> Result.Ok(IlNamed(identity, []))
+                | None ->
+                    Result.Error $"IL backend could not resolve type '{name}'."
         | _ ->
             match tryResolveQualifiedTypeName rawModules segments with
-            | Some(moduleName, typeName) ->
-                Result.Ok(IlNamed(moduleName, typeName, []))
+            | Some identity ->
+                match tryParsePrimitiveTypeIdentity identity with
+                | Some primitiveType -> Result.Ok primitiveType
+                | None -> Result.Ok(IlNamed(identity, []))
             | None ->
                 let typeName = String.concat "." segments
                 Result.Error $"IL backend could not resolve type '{typeName}'."
@@ -415,8 +431,8 @@ module internal IlDotNetBackendInput =
                     | IlPrimitive _, _ -> return! Result.Error $"Type '{formatIlType headType}' cannot take arguments."
                     | IlTypeParameter _, [] -> return headType
                     | IlTypeParameter _, _ -> return! Result.Error $"Type '{formatIlType headType}' cannot take arguments."
-                    | IlNamed(moduleName, typeName, existingArguments), _ when List.isEmpty existingArguments ->
-                        return IlNamed(moduleName, typeName, loweredArguments)
+                    | IlNamed(identity, existingArguments), _ when List.isEmpty existingArguments ->
+                        return IlNamed(identity, loweredArguments)
                     | IlNamed _, _ ->
                         return! Result.Error $"Type '{formatIlType headType}' cannot take arguments."
                 | TypeSignatures.TypeVariable name ->
@@ -475,7 +491,7 @@ module internal IlDotNetBackendInput =
             |> Result.bind (function
                 | [] ->
                     Result.Error "Expected a type."
-                | IlNamed(moduleName, typeName, existingArguments) :: arguments when List.isEmpty existingArguments ->
+                | IlNamed(identity, existingArguments) :: arguments when List.isEmpty existingArguments ->
                     let fullTokens =
                         if List.isEmpty arguments then
                             tokens
@@ -486,7 +502,7 @@ module internal IlDotNetBackendInput =
                     | Some parsedExpr ->
                         lowerTypeExpr parsedExpr
                     | None ->
-                        Result.Ok(IlNamed(moduleName, typeName, arguments))
+                        Result.Ok(IlNamed(identity, arguments))
                 | head :: [] ->
                     Result.Ok head
                 | head :: _ ->
@@ -603,8 +619,8 @@ module internal IlDotNetBackendInput =
         match ilType with
         | IlPrimitive _ ->
             ilType
-        | IlNamed(moduleName, typeName, arguments) ->
-            IlNamed(moduleName, typeName, arguments |> List.map (substituteType substitution))
+        | IlNamed(identity, arguments) ->
+            IlNamed(identity, arguments |> List.map (substituteType substitution))
         | IlTypeParameter name ->
             substitution |> Map.tryFind name |> Option.defaultValue ilType
 
@@ -614,7 +630,7 @@ module internal IlDotNetBackendInput =
             false
         | IlTypeParameter _ ->
             true
-        | IlNamed(_, _, arguments) ->
+        | IlNamed(_, arguments) ->
             arguments |> List.exists containsTypeParameters
 
     let rec internal collectTypeParameters ilType =
@@ -623,7 +639,7 @@ module internal IlDotNetBackendInput =
             Set.empty
         | IlTypeParameter name ->
             Set.singleton name
-        | IlNamed(_, _, arguments) ->
+        | IlNamed(_, arguments) ->
             arguments
             |> List.fold (fun state argumentType -> Set.union state (collectTypeParameters argumentType)) Set.empty
 
@@ -648,10 +664,8 @@ module internal IlDotNetBackendInput =
                 Result.Error $"IL backend could not unify {formatIlType existing} with {formatIlType actual}."
             | None ->
                 Result.Ok(substitution |> Map.add name actual)
-        | IlNamed(leftModule, leftTypeName, leftArguments), IlNamed(rightModule, rightTypeName, rightArguments)
-            when String.Equals(leftModule, rightModule, StringComparison.Ordinal)
-                 && String.Equals(leftTypeName, rightTypeName, StringComparison.Ordinal)
-                 && List.length leftArguments = List.length rightArguments ->
+        | IlNamed(leftIdentity, leftArguments), IlNamed(rightIdentity, rightArguments)
+            when leftIdentity = rightIdentity && List.length leftArguments = List.length rightArguments ->
             List.zip leftArguments rightArguments
             |> List.fold
                 (fun stateResult (leftArgument, rightArgument) ->
@@ -662,8 +676,7 @@ module internal IlDotNetBackendInput =
 
     let internal constructorResultType (constructorInfo: ConstructorInfo) =
         IlNamed(
-            constructorInfo.ModuleName,
-            constructorInfo.TypeName,
+            TypeIdentity.ofDottedTextUnchecked constructorInfo.ModuleName constructorInfo.TypeName,
             constructorInfo.TypeParameters |> List.map IlTypeParameter
         )
 
@@ -788,9 +801,10 @@ module internal IlDotNetBackendInput =
             Some([ fileType ], unitIlType)
         | "newRef", [ valueType ] ->
             Some([ valueType ], refIlType valueType)
-        | "readRef", [ IlNamed("std.prelude", "Ref", [ valueType ]) ] ->
+        | "readRef", [ IlNamed(typeIdentity, [ valueType ]) ] when TypeIdentity.hasTopLevelName preludeModuleIdentity "Ref" typeIdentity ->
             Some([ refIlType valueType ], valueType)
-        | "writeRef", [ IlNamed("std.prelude", "Ref", [ valueType ]); actualValueType ] when valueType = actualValueType ->
+        | "writeRef", [ IlNamed(typeIdentity, [ valueType ]); actualValueType ]
+            when TypeIdentity.hasTopLevelName preludeModuleIdentity "Ref" typeIdentity && valueType = actualValueType ->
             Some([ refIlType valueType; valueType ], unitIlType)
         | "not", [ IlPrimitive IlBool ] ->
             Some([ IlPrimitive IlBool ], IlPrimitive IlBool)
@@ -804,7 +818,7 @@ module internal IlDotNetBackendInput =
         | intrinsicName, [ valueType ] when intrinsicName = IntrinsicCatalog.BuiltinPreludeShowIntrinsicName ->
             Some([ valueType ], IlPrimitive IlString)
         | intrinsicName, [ leftType; rightType ] when intrinsicName = IntrinsicCatalog.BuiltinPreludeCompareIntrinsicName && leftType = rightType ->
-            Some([ leftType; rightType ], IlNamed("std.prelude", "Ordering", []))
+            Some([ leftType; rightType ], IlNamed(preludeTypeIdentity "Ordering", []))
         | _ ->
             None
 
@@ -856,7 +870,7 @@ module internal IlDotNetBackendInput =
         |> Map.tryFind currentModule
         |> Option.bind (fun moduleInfo ->
             if moduleInfo.DataTypes.ContainsKey("File") then
-                Some(IlNamed(moduleInfo.Name, "File", []))
+                Some(namedIlType moduleInfo.Name "File" [])
             else
                 None)
 

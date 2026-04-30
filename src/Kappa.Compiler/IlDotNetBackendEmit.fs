@@ -91,15 +91,17 @@ module internal IlDotNetBackendEmit =
 
                 invalidOp
                     $"IL backend could not resolve type parameter '{name}'. Available type parameters: [{available}]."
-        | IlNamed("std.prelude", "Unit", []) ->
+        | IlNamed(typeIdentity, []) when TypeIdentity.hasTopLevelName preludeModuleIdentity "Unit" typeIdentity ->
             typeof<ValueTuple>
-        | IlNamed("std.prelude", "Ref", [ elementType ]) ->
+        | IlNamed(typeIdentity, [ elementType ]) when TypeIdentity.hasTopLevelName preludeModuleIdentity "Ref" typeIdentity ->
             typedefof<StrongBox<_>>.MakeGenericType([| resolveClrType state typeParameters elementType |])
-        | IlNamed("std.prelude", "IO", [ elementType ]) ->
+        | IlNamed(typeIdentity, [ elementType ]) when TypeIdentity.hasTopLevelName preludeModuleIdentity "IO" typeIdentity ->
             resolveClrType state typeParameters elementType
-        | IlNamed("std.prelude", typeName, _) when isDictionaryTypeName typeName ->
+        | IlNamed(typeIdentity, _) when TypeIdentity.moduleIdentity typeIdentity = preludeModuleIdentity && isDictionaryTypeName (TypeIdentity.name typeIdentity) ->
             typeof<Tuple<string, string, string>>
-        | IlNamed(moduleName, typeName, arguments) ->
+        | IlNamed(typeIdentity, arguments) ->
+            let moduleName = TypeIdentity.moduleIdentity typeIdentity |> ModuleIdentity.text
+            let typeName = TypeIdentity.name typeIdentity
             match state.Environment.DataTypes |> Map.tryFind (moduleName, typeName) with
             | Some dataTypeInfo when dataTypeInfo.ExternalRuntimeTypeName.IsSome ->
                 let baseType = resolveExternalRuntimeType dataTypeInfo.ExternalRuntimeTypeName.Value
@@ -303,7 +305,7 @@ module internal IlDotNetBackendEmit =
                         | LiteralValue.Character _
                         | LiteralValue.Grapheme _ -> IlPrimitive IlString
                         | LiteralValue.Byte _ -> IlPrimitive IlInt64
-                        | LiteralValue.Unit -> IlNamed("std.prelude", "Unit", [])
+                        | LiteralValue.Unit -> unitIlType
 
                     if literalType = expectedType then
                         Result.Ok(Map.empty<string, IlType>)
@@ -550,7 +552,9 @@ module internal IlDotNetBackendEmit =
                                             ensureExpected (IlPrimitive IlBool)
                                         | ("==" | "!="), IlPrimitive IlBool, IlPrimitive IlBool ->
                                             ensureExpected (IlPrimitive IlBool)
-                                        | ("==" | "!="), IlNamed (_, "Bool", []), IlNamed (_, "Bool", []) ->
+                                        | ("==" | "!="), IlNamed(leftIdentity, []), IlNamed(rightIdentity, [])
+                                            when TypeIdentity.hasTopLevelName preludeModuleIdentity "Bool" leftIdentity
+                                                 && TypeIdentity.hasTopLevelName preludeModuleIdentity "Bool" rightIdentity ->
                                             ensureExpected (IlPrimitive IlBool)
                                         | ("==" | "!="), IlPrimitive IlString, IlPrimitive IlString ->
                                             ensureExpected (IlPrimitive IlBool)
@@ -562,7 +566,9 @@ module internal IlDotNetBackendEmit =
                                             ensureExpected (IlPrimitive IlBool)
                                         | ("&&" | "||"), IlPrimitive IlBool, IlPrimitive IlBool ->
                                             ensureExpected (IlPrimitive IlBool)
-                                        | ("&&" | "||"), IlNamed (_, "Bool", []), IlNamed (_, "Bool", []) ->
+                                        | ("&&" | "||"), IlNamed(leftIdentity, []), IlNamed(rightIdentity, [])
+                                            when TypeIdentity.hasTopLevelName preludeModuleIdentity "Bool" leftIdentity
+                                                 && TypeIdentity.hasTopLevelName preludeModuleIdentity "Bool" rightIdentity ->
                                             ensureExpected (IlPrimitive IlBool)
                                         | _ ->
                                             Result.Error
@@ -830,11 +836,15 @@ module internal IlDotNetBackendEmit =
                         emitComparisonFromCeq il true
                     | "==", IlPrimitive IlBool, IlPrimitive IlBool ->
                         emitComparisonFromCeq il false
-                    | "==", IlNamed (_, "Bool", []), IlNamed (_, "Bool", []) ->
+                    | "==", IlNamed(leftIdentity, []), IlNamed(rightIdentity, [])
+                        when TypeIdentity.hasTopLevelName preludeModuleIdentity "Bool" leftIdentity
+                             && TypeIdentity.hasTopLevelName preludeModuleIdentity "Bool" rightIdentity ->
                         emitComparisonFromCeq il false
                     | "!=", IlPrimitive IlBool, IlPrimitive IlBool ->
                         emitComparisonFromCeq il true
-                    | "!=", IlNamed (_, "Bool", []), IlNamed (_, "Bool", []) ->
+                    | "!=", IlNamed(leftIdentity, []), IlNamed(rightIdentity, [])
+                        when TypeIdentity.hasTopLevelName preludeModuleIdentity "Bool" leftIdentity
+                             && TypeIdentity.hasTopLevelName preludeModuleIdentity "Bool" rightIdentity ->
                         emitComparisonFromCeq il true
                     | "==", IlPrimitive IlString, IlPrimitive IlString ->
                         emitStringEquality il false
@@ -875,9 +885,11 @@ module internal IlDotNetBackendEmit =
         let rec emitSyntheticFileHandle resultType =
             result {
                 match resultType with
-                | IlNamed("std.prelude", "IO", [ innerType ]) ->
+                | IlNamed(typeIdentity, [ innerType ]) when TypeIdentity.hasTopLevelName preludeModuleIdentity "IO" typeIdentity ->
                     return! emitSyntheticFileHandle innerType
-                | IlNamed(moduleName, typeName, typeArguments) ->
+                | IlNamed(typeIdentity, typeArguments) ->
+                    let moduleName = TypeIdentity.moduleIdentity typeIdentity |> ModuleIdentity.text
+                    let typeName = TypeIdentity.name typeIdentity
                     match state.Environment.DataTypes |> Map.tryFind (moduleName, typeName) with
                     | None ->
                         return!
@@ -1032,7 +1044,7 @@ module internal IlDotNetBackendEmit =
                     | intrinsicName, IlPrimitive IlString when intrinsicName = IntrinsicCatalog.BuiltinPreludeShowIntrinsicName ->
                         do! emitBoxedArgument arguments[0] argumentTypes[0]
                         il.Emit(OpCodes.Call, showBuiltinMethod)
-                    | intrinsicName, IlNamed("std.prelude", "Ordering", []) when intrinsicName = IntrinsicCatalog.BuiltinPreludeCompareIntrinsicName ->
+                    | intrinsicName, IlNamed(typeIdentity, []) when intrinsicName = IntrinsicCatalog.BuiltinPreludeCompareIntrinsicName && TypeIdentity.hasTopLevelName preludeModuleIdentity "Ordering" typeIdentity ->
                         let comparisonLocal = il.DeclareLocal(typeof<int>)
                         let lessLabel = il.DefineLabel()
                         let greaterLabel = il.DefineLabel()
@@ -1221,7 +1233,7 @@ module internal IlDotNetBackendEmit =
                                 | LiteralValue.Character _
                                 | LiteralValue.Grapheme _ -> IlPrimitive IlString
                                 | LiteralValue.Byte _ -> IlPrimitive IlInt64
-                                | LiteralValue.Unit -> IlNamed("std.prelude", "Unit", [])
+                                | LiteralValue.Unit -> unitIlType
 
                             if literalType = currentExpectedType then
                                 Result.Ok(Map.empty<string, IlType>)
@@ -1755,9 +1767,8 @@ module internal IlDotNetBackendEmit =
 
             let isUnitWrapperParameter (_, parameterType) =
                 match parameterType with
-                | IlNamed(moduleName, typeName, []) ->
-                    String.Equals(moduleName, Stdlib.PreludeModuleText, StringComparison.Ordinal)
-                    && String.Equals(typeName, "Unit", StringComparison.Ordinal)
+                | IlNamed(typeIdentity, []) ->
+                    TypeIdentity.hasTopLevelName preludeModuleIdentity "Unit" typeIdentity
                 | _ ->
                     false
 

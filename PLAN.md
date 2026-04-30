@@ -51,6 +51,9 @@ Current M4 status note: started, not complete. The compiler now has a real effec
   semantic-object identifiers for resolved declarations, constructors, traits, effect labels, projections, and reified static objects.
 - [ ] Keep source spelling as metadata only.
 - [ ] Replace frontend module indexing keyed by `SyntaxFacts.moduleNameToText` with canonical structured module identities in [CompilationFrontend.fs](/D:/ws/kappa/src/Kappa.Compiler/CompilationFrontend.fs) and [SurfaceElaboration.fs](/D:/ws/kappa/src/Kappa.Compiler/SurfaceElaboration.fs). The [ElaborationEvaluation.fs](/D:/ws/kappa/src/Kappa.Compiler/ElaborationEvaluation.fs) slice now uses `ModuleIdentity` for module inventories, module models, imported lookup, and current elaboration scope.
+- [ ] Remove the `ModuleName: string` semantic-owner fields from `SurfaceElaboration` payload records such as `TypeFacetInfo`, `TypeAliasInfo`, `BindingSchemeInfo`, `ProjectionInfo`, `TraitInfo`, and `InstanceInfo`. These still force reparsing text back into `ModuleIdentity` during semantic lookup.
+- [ ] Remove other `SurfaceElaboration` stringly semantic carriers that still smuggle module identity as display text, including ambiguity candidates and helper DTOs that should carry resolved `ModuleIdentity` plus separately rendered spelling.
+- [ ] Remove stringly module ownership from origin/provenance helpers such as `declarationOrigin`, `syntheticOrigin`, and downstream `KCoreOrigin` payloads where semantic ownership is still recorded only as rendered text.
 - [ ] Replace visible-name environments that collapse declaration kinds into plain `Map<string, ...>` lookup with an explicit binding-group model matching section 2.8.
 - [ ] Rework same-spelling data-family handling so it is represented as one binding group with typed facets instead of separate text-keyed maps plus special cases.
 - [ ] Replace text-based post-resolution module/member lookup in lowering and backend preparation with resolved symbolic references.
@@ -60,6 +63,8 @@ Current M4 status note: started, not complete. The compiler now has a real effec
   [CheckpointVerification.fs](/D:/ws/kappa/src/Kappa.Compiler/CheckpointVerification.fs),
   [Backend.fs](/D:/ws/kappa/src/Kappa.Compiler/Backend.fs),
   [ZigCcBackendSupport.fs](/D:/ws/kappa/src/Kappa.Compiler/ZigCcBackendSupport.fs).
+- [ ] Continue the CLR backend migration past `IlNamed`. `IlDotNetBackendModel.IlType` now has a structured `TypeIdentity`, and primitive lowering in `IlDotNetBackendInput.fs` no longer matches bare names like `"Int"` or `"Bool"`. Remaining CLR metadata carriers such as `RawDataTypeInfo`, `ConstructorInfo`, `DataTypeInfo`, `ModuleSurface`, and `TraitInstanceInfo` still record semantic ownership as raw text.
+- [ ] Replace the verifier/runtime stringly type carriers that force semantic checks over rendered text, especially `KRuntimeIR` type-text fields and the substring fallback in `CheckpointVerification.runtimeTypeLeaksErasureMetadata`.
 - [ ] Replace text-based trait, constructor, and type matching in compile-time evaluation and backend typing with symbolic references.
   Current hot spots:
   [ElaborationEvaluation.fs](/D:/ws/kappa/src/Kappa.Compiler/ElaborationEvaluation.fs),
@@ -67,6 +72,7 @@ Current M4 status note: started, not complete. The compiler now has a real effec
   [IlDotNetBackendInput.fs](/D:/ws/kappa/src/Kappa.Compiler/IlDotNetBackendInput.fs),
   [IlDotNetBackendTyping.fs](/D:/ws/kappa/src/Kappa.Compiler/IlDotNetBackendTyping.fs),
   [ZigCcBackendArtifact.fs](/D:/ws/kappa/src/Kappa.Compiler/ZigCcBackendArtifact.fs).
+- [ ] Remove fabricated semantic identities such as the `ModuleIdentity.ofSegments [ "__unknown__" ]` fallback that still exists in `SurfaceElaboration.validateFrontendModule`.
 - [ ] Preserve canonical module identity casing through all artifact names and backend metadata per section 17.3.4.2.
 - [ ] Keep bridge/host spelling distinct from Kappa semantic identity.
 - [ ] Add regression tests before each refactor slice.

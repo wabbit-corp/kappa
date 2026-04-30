@@ -18,7 +18,7 @@ module internal IlDotNetBackendModel =
 
     type internal IlType =
         | IlPrimitive of IlPrimitiveType
-        | IlNamed of moduleName: string * typeName: string * arguments: IlType list
+        | IlNamed of identity: TypeIdentity * arguments: IlType list
         | IlTypeParameter of string
 
     type internal RawConstructorInfo =
@@ -189,14 +189,22 @@ module internal IlDotNetBackendModel =
         | IlString -> "String"
         | IlChar -> "Char"
 
+    let internal preludeModuleIdentity = ModuleIdentity.ofSegments Stdlib.PreludeModuleName
+
+    let internal preludeTypeIdentity name =
+        TypeIdentity.topLevel preludeModuleIdentity name
+
+    let internal namedIlType moduleName typeName arguments =
+        IlNamed(TypeIdentity.ofDottedTextUnchecked moduleName typeName, arguments)
+
     let internal unitIlType =
-        IlNamed("std.prelude", "Unit", [])
+        IlNamed(preludeTypeIdentity "Unit", [])
 
     let internal refIlType elementType =
-        IlNamed("std.prelude", "Ref", [ elementType ])
+        IlNamed(preludeTypeIdentity "Ref", [ elementType ])
 
     let internal dictionaryIlType traitName argumentTypes =
-        IlNamed("std.prelude", TraitRuntime.dictionaryTypeName traitName, argumentTypes)
+        IlNamed(preludeTypeIdentity (TraitRuntime.dictionaryTypeName traitName), argumentTypes)
 
     let internal isUnitIlType ilType =
         ilType = unitIlType
@@ -210,8 +218,8 @@ module internal IlDotNetBackendModel =
             primitiveTypeName primitiveType
         | IlTypeParameter name ->
             name
-        | IlNamed (_, typeName, []) ->
-            typeName
-        | IlNamed (_, typeName, arguments) ->
+        | IlNamed (identity, []) ->
+            TypeIdentity.name identity
+        | IlNamed (identity, arguments) ->
             let argumentText = arguments |> List.map formatIlType |> String.concat " "
-            $"{typeName} {argumentText}"
+            $"{TypeIdentity.name identity} {argumentText}"

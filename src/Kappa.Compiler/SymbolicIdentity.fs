@@ -41,3 +41,29 @@ module ModuleIdentity =
         identity
         |> segments
         |> List.map (fun segment -> segment.ToLowerInvariant())
+
+[<StructuralEquality; StructuralComparison>]
+type TypeIdentity = private TypeIdentity of ModuleIdentity * string list * string
+
+module TypeIdentity =
+    let create moduleIdentity scopePath name =
+        if String.IsNullOrWhiteSpace(name) then
+            invalidArg (nameof name) "Type identities must have a non-blank name."
+
+        TypeIdentity(moduleIdentity, scopePath, name)
+
+    let topLevel moduleIdentity name = create moduleIdentity [] name
+
+    let ofDottedTextUnchecked moduleText name =
+        topLevel (ModuleIdentity.ofDottedTextUnchecked moduleText) name
+
+    let moduleIdentity (TypeIdentity(moduleIdentity, _, _)) = moduleIdentity
+
+    let scopePath (TypeIdentity(_, scopePath, _)) = scopePath
+
+    let name (TypeIdentity(_, _, name)) = name
+
+    let hasTopLevelName expectedModuleIdentity expectedName identity =
+        expectedModuleIdentity = moduleIdentity identity
+        && List.isEmpty (scopePath identity)
+        && String.Equals(name identity, expectedName, StringComparison.Ordinal)

@@ -40,8 +40,11 @@ module internal EffectSemantics =
 
         $"{prefix}:{suffix}"
 
-    let private topLevelSeed moduleName declarationName =
-        $"top|{moduleName}|{declarationName}"
+    let private topLevelSeed (moduleIdentity: ModuleIdentity) declarationName =
+        $"top|{ModuleIdentity.text moduleIdentity}|{declarationName}"
+
+    let private topLevelSeedText moduleSeed declarationName =
+        $"top|{moduleSeed}|{declarationName}"
 
     let private localSeed identitySeed declarationName =
         $"local|{identitySeed}|{declarationName}"
@@ -77,8 +80,7 @@ module internal EffectSemantics =
         |> Option.map (fun (parameterTypes, _) -> List.length parameterTypes)
         |> Option.defaultValue 0
 
-    let ensureTopLevel moduleName (declaration: EffectDeclaration) =
-        let seed = topLevelSeed moduleName declaration.Name
+    let private ensureTopLevelWithSeed seed (declaration: EffectDeclaration) =
         let interfaceId = declaration.EffectInterfaceId |> Option.defaultValue (effectInterfaceId seed)
         let labelId = declaration.EffectLabelId |> Option.defaultValue (effectLabelId seed)
 
@@ -94,6 +96,9 @@ module internal EffectSemantics =
             EffectInterfaceId = Some interfaceId
             EffectLabelId = Some labelId
             Operations = operations }
+
+    let ensureTopLevel (moduleIdentity: ModuleIdentity) (declaration: EffectDeclaration) =
+        ensureTopLevelWithSeed (topLevelSeed moduleIdentity declaration.Name) declaration
 
     let ensureLocal identitySeed (declaration: EffectDeclaration) =
         let seed = localSeed identitySeed declaration.Name
@@ -180,9 +185,10 @@ module internal EffectSemantics =
                 DefaultValue = parameter.DefaultValue |> Option.map rewriteExpression })
 
     let assignDocumentEffectIdentities (document: ParsedDocument) =
-        let moduleIdentitySeed =
+        let topLevelModuleSeed =
             document.ModuleName
-            |> Option.map SyntaxFacts.moduleNameToText
+            |> ModuleIdentity.ofOptionalSegments
+            |> Option.map ModuleIdentity.text
             |> Option.defaultValue document.Source.FilePath
 
         let localEffectCounter = ref 0
@@ -325,7 +331,7 @@ module internal EffectSemantics =
                                         |> Option.map (rewriteDataConstructorParameters rewriteExpression) }) }
                 )
             | EffectDeclarationNode declaration ->
-                EffectDeclarationNode(ensureTopLevel moduleIdentitySeed declaration)
+                EffectDeclarationNode(ensureTopLevelWithSeed (topLevelSeedText topLevelModuleSeed declaration.Name) declaration)
             | ProjectionDeclarationNode declaration ->
                 ProjectionDeclarationNode(
                     { declaration with

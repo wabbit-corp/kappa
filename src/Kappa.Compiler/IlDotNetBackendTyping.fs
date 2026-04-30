@@ -407,7 +407,7 @@ module internal IlDotNetBackendTyping =
                             | LiteralValue.Character _
                             | LiteralValue.Grapheme _ -> IlPrimitive IlString
                             | LiteralValue.Byte _ -> IlPrimitive IlInt64
-                            | LiteralValue.Unit -> IlNamed("std.prelude", "Unit", [])
+                            | LiteralValue.Unit -> unitIlType
 
                         if literalType = expectedType then
                             Result.Ok(Map.empty<string, IlType>)
@@ -681,7 +681,9 @@ module internal IlDotNetBackendTyping =
                                                 ensureExpected (IlPrimitive IlBool)
                                             | ("==" | "!="), IlPrimitive IlBool, IlPrimitive IlBool ->
                                                 ensureExpected (IlPrimitive IlBool)
-                                            | ("==" | "!="), IlNamed (_, "Bool", []), IlNamed (_, "Bool", []) ->
+                                            | ("==" | "!="), IlNamed(leftIdentity, []), IlNamed(rightIdentity, [])
+                                                when TypeIdentity.hasTopLevelName preludeModuleIdentity "Bool" leftIdentity
+                                                     && TypeIdentity.hasTopLevelName preludeModuleIdentity "Bool" rightIdentity ->
                                                 ensureExpected (IlPrimitive IlBool)
                                             | ("==" | "!="), IlPrimitive IlString, IlPrimitive IlString ->
                                                 ensureExpected (IlPrimitive IlBool)
@@ -693,7 +695,9 @@ module internal IlDotNetBackendTyping =
                                                 ensureExpected (IlPrimitive IlBool)
                                             | ("&&" | "||"), IlPrimitive IlBool, IlPrimitive IlBool ->
                                                 ensureExpected (IlPrimitive IlBool)
-                                            | ("&&" | "||"), IlNamed (_, "Bool", []), IlNamed (_, "Bool", []) ->
+                                            | ("&&" | "||"), IlNamed(leftIdentity, []), IlNamed(rightIdentity, [])
+                                                when TypeIdentity.hasTopLevelName preludeModuleIdentity "Bool" leftIdentity
+                                                     && TypeIdentity.hasTopLevelName preludeModuleIdentity "Bool" rightIdentity ->
                                                 ensureExpected (IlPrimitive IlBool)
                                             | _ ->
                                                 Result.Error
