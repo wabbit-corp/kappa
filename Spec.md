@@ -7071,23 +7071,42 @@ Typing discipline:
 Borrow binders may optionally name a region variable already in scope:
 
 ```kappa
-(&[s] x : T)
-(@&[s] x : T)
+(&[ρ] x : T)
+(q &[ρ] x : T)
+(@&[ρ] x : T)
+(@q &[ρ] x : T)
 ```
 
-where `s : Region`.
+where `ρ : Region` and `q : Quantity`.
 
-A bare borrowed binder `(& x : T)` or `(@& x : T)` introduces a fresh anonymous rigid region local to the enclosing
-scope. The explicit forms are needed only when a borrow relationship must cross an interface boundary such as a
-top-level export.
+A bare borrowed binder introduces a fresh anonymous rigid region local to the enclosing scope:
+
+```kappa
+(& x : T)
+(q & x : T)
+(@& x : T)
+(@q & x : T)
+```
+
+The forms without an explicit quantity default to `ω`:
+
+```kappa
+(& x : T)       ≜ (ω & x : T)
+(&[ρ] x : T)    ≜ (ω &[ρ] x : T)
+(@& x : T)      ≜ (@ω & x : T)
+(@&[ρ] x : T)   ≜ (@ω &[ρ] x : T)
+```
+
+The explicit-region forms are needed when a borrow relationship crosses an interface boundary such as a top-level export.
 
 Borrow introduction at borrow-demanding positions:
 
-If a context demands borrowed quantity (`(& x : T)` for an explicit binder, or `(@& x : T)` for an implicit binder), and
-the supplied expression is a borrowable place expression (§5.1.7.2) of type `T`, the compiler may insert a temporary
-borrow.
+If a context demands borrowed access, for example through `(& x : T)`, `(q & x : T)`, `(@& x : T)`,
+or `(@q & x : T)`, and the supplied expression is a borrowable place expression (§5.1.7.2) of type `T`,
+the compiler may insert a temporary borrow.
 
-This is a separate elaboration rule. It does not modify the quantity-satisfaction relation `⊑`.
+This is a separate elaboration rule. It does not modify the quantity-satisfaction relation `⊑`,
+because borrowed access is not a quantity.
 
 Borrowable stable expressions are expressions that elaborate to stable places under §5.1.7.1, together with any fresh
 hidden temporaries introduced by elaboration.
@@ -7374,7 +7393,7 @@ distinct modal/coeffect layer.
 Consequences:
 
 * the surface quantity forms of §5.1.5 remain the only user-written quantity forms in v1;
-* the quantity-satisfaction relation `⊑` ranges only over interval quantities and the borrow mode `&`;
+* the quantity-satisfaction relation `⊑` ranges only over interval quantities;
 * borrow introduction, borrow lifetimes, and path-sensitive borrowing continue to be governed only by §§5.1.5-5.1.7;
 * quantity-governed erasure continues to be governed by §§5.1.3-5.1.7 and §14.4.
 
