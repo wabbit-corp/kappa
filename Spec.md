@@ -8528,14 +8528,15 @@ Record types are written:
 (x : Int, y : Int)
 (name : String, age : Int)
 (value : Int, array : Array Int)
-(1 data : Bytes, & file : File, len : Nat)
+(1 data : Bytes, & file : File, len : Nat)      -- means (1 data : Bytes, ω & file : File, len : Nat)
+(1 data : Bytes, 1 & file : File, len : Nat)
 (len : Nat, buf : SizedArray this.len Byte | r)
 ```
 
 Field declaration grammar:
 
 ```text
-recordFieldDecl ::= [ 'opaque' ] [ '@' ] [quantity] [ 'thunk' | 'lazy' ] ident ':' type
+recordFieldDecl ::= [ 'opaque' ] [ '@' ] binderPrefix? [ 'thunk' | 'lazy' ] ident ':' type
 ```
 
 Field-suspension sugar:
@@ -8560,7 +8561,16 @@ Compile-time members:
   ordinary fields do; and
 * are erased at runtime according to §§5.1.4 and 14.4 unless preserved by an explicit reified carrier.
 
-When both `@` and an explicit quantity are present, the surface spelling is `@q name : T`, not `q @name : T`.
+When both `@` and a binder prefix are present, the surface spelling is `@` followed by the binder prefix:
+
+```kappa
+(@1 field : T)
+(@& field : T)
+(@1 & field : T)
+(@1 &[ρ] field : T)
+```
+
+The spellings `1 @field`, `& @field`, and `& 1 @field` are ill-formed.
 
 Opaque members:
 
