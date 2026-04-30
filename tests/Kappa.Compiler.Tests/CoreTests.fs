@@ -967,6 +967,68 @@ let ``interpreter resolves bundled summon helper across imported trait modules``
         failwithf "Expected imported bundled summon helper resolution to succeed, got %s" issue.Message
 
 [<Fact>]
+let ``interpreter evaluates nested for clauses over query lowered top level bindings`` () =
+    let mainSource =
+        [
+            "module main"
+            ""
+            "type Node = (id : Int, parent : Int, name : Int)"
+            ""
+            "nodes : List Node"
+            "let nodes ="
+            "    ["
+            "        (id = 0, parent = -1, name = 0),"
+            "        (id = 1, parent = 0, name = 1),"
+            "        (id = 2, parent = 1, name = 2),"
+            "        (id = 3, parent = 2, name = 3),"
+            "        (id = 4, parent = 1, name = 4),"
+            "        (id = 5, parent = 4, name = 5),"
+            "        (id = 6, parent = 4, name = 6)"
+            "    ]"
+            ""
+            "descendantsTwoAway : Node -> List Node"
+            "let descendantsTwoAway root ="
+            "    ["
+            "        for child in nodes"
+            "        for grandChild in nodes"
+            "        if child.parent == root.id"
+            "        if grandChild.parent == child.id"
+            "        yield grandChild"
+            "    ]"
+            ""
+            "hits : List Node"
+            "let hits ="
+            "    ["
+            "        for root in nodes"
+            "        if root.parent == -1"
+            "        for hit in descendantsTwoAway root"
+            "        yield hit"
+            "    ]"
+            ""
+            "result : List Int"
+            "let result ="
+            "    ["
+            "        for hit in hits"
+            "        yield hit.name"
+            "    ]"
+        ]
+        |> String.concat "\n"
+
+    let workspace, result =
+        evaluateInMemoryBinding
+            "memory-query-top-level-nested-for-bindings-root"
+            "main.result"
+            [ "main.kp", mainSource ]
+
+    Assert.False(workspace.HasErrors, sprintf "Expected no diagnostics, got %A" workspace.Diagnostics)
+
+    match result with
+    | Result.Ok value ->
+        Assert.Equal("2 :: 4 :: Nil", RuntimeValue.format value)
+    | Result.Error issue ->
+        failwithf "Expected nested for evaluation to succeed, got %s" issue.Message
+
+[<Fact>]
 let ``explicit trait evidence values do not satisfy implicit trait constraints`` () =
     let mainSource =
         [

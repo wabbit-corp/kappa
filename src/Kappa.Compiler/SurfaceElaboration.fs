@@ -6364,30 +6364,6 @@ module SurfaceElaboration =
                     ]
                 )
 
-            let makeAppendExpression itemType prefixExpression suffixExpression =
-                let appendName = freshSyntheticName "__typed_query_append"
-                let prefixName = freshSyntheticName "__typed_query_append_prefix"
-                let suffixName = freshSyntheticName "__typed_query_append_suffix"
-                let headName = freshSyntheticName "__typed_query_append_head"
-                let tailName = freshSyntheticName "__typed_query_append_tail"
-                let listItemType = listType itemType
-                let appendType = functionType [ listItemType; listItemType ] listItemType
-
-                bindTypedName
-                    appendName
-                    appendType
-                    (Lambda(
-                        [ makeParameterWithType prefixName listItemType
-                          makeParameterWithType suffixName listItemType ],
-                        makeListMatch
-                            (Name [ prefixName ])
-                            headName
-                            tailName
-                            (cons (Name [ headName ]) (applyName appendName [ Name [ tailName ]; Name [ suffixName ] ]))
-                            (Name [ suffixName ])
-                    ))
-                    (applyName appendName [ prefixExpression; suffixExpression ])
-
             let trySourceInfo currentLocals sourceExpression =
                 inferExpressionType currentLocals sourceExpression
                 |> Option.bind (QuerySemantics.tryInferBuiltinQuerySource normalizeVisibleType)
@@ -6398,6 +6374,93 @@ module SurfaceElaboration =
                     items, TypedKnownUnordered
                 | _ ->
                     expression, TypedUnknownOrderedness
+
+            let tryBuildStreamingComprehension () =
+                let supportsStreamingLowering =
+                    comprehension.Clauses
+                    |> List.forall (function
+                        | ForClause _
+                        | LetClause _
+                        | IfClause _ -> true
+                        | _ -> false)
+
+                if not supportsStreamingLowering then
+                    None
+                else
+                    tryInferComprehensionPlanShape environment freshCounter localTypes inferExpressionType comprehension
+                    |> Option.map (fun plan ->
+                        let resultListType = listType plan.InferredItemType
+
+                        let yieldExpression =
+                            match comprehension.Yield with
+                            | YieldValue valueExpression ->
+                                valueExpression
+                            | YieldKeyValue(keyExpression, valueExpression) ->
+                                Apply(Name preludeResConstructorName, [ keyExpression; valueExpression ])
+
+                        let rec lowerStreaming currentLocals clauses nextExpression =
+                            match clauses with
+                            | [] ->
+                                cons yieldExpression nextExpression
+                            | clause :: rest ->
+                                match clause with
+                                | ForClause(_, _, binding, sourceExpression) ->
+                                    let enumeratedSourceExpression, _ = unwrapEnumeratedSource sourceExpression
+                                    let loopName = freshSyntheticName "__query_stream_for"
+                                    let sourceItemsName = freshSyntheticName "__query_stream_source"
+                                    let itemName = freshSyntheticName "__query_stream_item"
+                                    let itemTailName = freshSyntheticName "__query_stream_tail"
+                                    let sourceInfo = trySourceInfo currentLocals sourceExpression
+                                    let itemType =
+                                        sourceInfo
+                                        |> Option.map (fun info -> info.Query.ItemType)
+                                        |> Option.defaultValue (TypeVariable "QueryItem")
+                                    let sourceItemsType =
+                                        inferExpressionType currentLocals enumeratedSourceExpression
+                                        |> Option.defaultValue (listType itemType)
+                                    let loopType = functionType [ sourceItemsType ] resultListType
+                                    let typedBinding = cloneBindingWithTypeIfMissing binding itemType
+                                    let nextLocals =
+                                        extendBindingLocalTypes environment freshCounter currentLocals typedBinding (Some itemType)
+
+                                    bindTypedName
+                                        loopName
+                                        loopType
+                                        (Lambda(
+                                            [ makeParameterWithType sourceItemsName sourceItemsType ],
+                                            makeListMatch
+                                                (Name [ sourceItemsName ])
+                                                itemName
+                                                itemTailName
+                                                (wrapPatternBindings
+                                                    typedBinding
+                                                    (Name [ itemName ])
+                                                    (lowerStreaming nextLocals rest (applyName loopName [ Name [ itemTailName ] ])))
+                                                nextExpression
+                                        ))
+                                        (applyName loopName [ enumeratedSourceExpression ])
+                                | LetClause(_, binding, valueExpression) ->
+                                    let valueType =
+                                        inferExpressionType currentLocals valueExpression
+                                        |> Option.defaultValue (TypeVariable "QueryLet")
+                                    let typedBinding = cloneBindingWithTypeIfMissing binding valueType
+                                    let nextLocals =
+                                        extendBindingLocalTypes environment freshCounter currentLocals typedBinding (Some valueType)
+
+                                    wrapPatternBindings
+                                        typedBinding
+                                        valueExpression
+                                        (lowerStreaming nextLocals rest nextExpression)
+                                | IfClause conditionExpression ->
+                                    IfThenElse(
+                                        conditionExpression,
+                                        lowerStreaming currentLocals rest nextExpression,
+                                        nextExpression
+                                    )
+                                | _ ->
+                                    nextExpression
+
+                        lowerStreaming localTypes comprehension.Clauses listNil)
 
             let transformForClause (state: TypedQueryState) (binding: SurfaceBindPattern) sourceExpression =
                 let nextRowNames = extendRowNames state.RowNames (patternBoundNames binding.Pattern)
@@ -6452,12 +6515,9 @@ module SurfaceElaboration =
                                                     (cons
                                                         (makeRowExpression nextRowNames)
                                                         (applyName loopItemsName [ Name [ itemTailName ] ])))
-                                                listNil
+                                                (applyName loopRowsName [ Name [ rowTailName ] ])
                                         ))
-                                        (makeAppendExpression
-                                            nextRowType
-                                            (applyName loopItemsName [ enumeratedSourceExpression ])
-                                            (applyName loopRowsName [ Name [ rowTailName ] ]))))
+                                        (applyName loopItemsName [ enumeratedSourceExpression ])))
                                 listNil
                         ))
                         (applyName loopRowsName [ state.RowsExpression ])
@@ -6803,7 +6863,11 @@ module SurfaceElaboration =
                   CurrentLocals = localTypes
                   Orderedness = TypedKnownOrdered }
 
-            Some(lowerClauses initialState comprehension.Clauses)
+            match tryBuildStreamingComprehension () with
+            | Some expression ->
+                Some expression
+            | None ->
+                Some(lowerClauses initialState comprehension.Clauses)
 
     let private tryInstantiateTraitSupertraits
         (traitInfo: TraitInfo)
