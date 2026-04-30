@@ -1,14 +1,18 @@
 module main
 
-generatedNeed : (@x : Int) -> Int
-let generatedNeed (@x : Int) = x
+generatedEcho : forall (a : Type). (this x : a) -> a
+let generatedEcho @a (this x : a) = x
 
 generated_2426 : Int
-let generated_2426 =
-    block
-        let (@x : Int) = ((((((((left = (((if False then 0 else 0) + (0 + 0)) + 0), right = 0)).left + 0) + 0) + 0) + 0) + 0) + 0)
-
-        if True then generatedNeed else 0
+let generated_2426 = ((match ((match (Some 0)
+  case Some payload -> payload
+  case None -> 0) == (match (Some 0)
+  case Some payload -> payload
+  case None -> 0))
+  case True -> (match (Some 0)
+    case Some payload -> payload
+    case None -> 0)
+  case False -> 0) + 0).generatedEcho
 
 result : Int
 let result = generated_2426

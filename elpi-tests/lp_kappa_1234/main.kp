@@ -1,12 +1,23 @@
 module main
 
+generatedNeed : (@x : Int) -> Int
+let generatedNeed (@x : Int) = x
+
 generated_1234 : Int
 let generated_1234 =
     block
-        ranked : Int
-        let ranked = (((((((if False then 0 else ((0 + 0) + 0)) + 0) + 0) + 0) + 0) + 0) + 0)
+        let (@x : Int) = (match (Some (block
+            generatedSetCount : Set Int -> Int
+            let generatedSetCount values = 2
 
-        (ranked + 0)
+            let item = 0
+            let values = {|item, (item + 1)|}
+
+            generatedSetCount values))
+          case Some payload -> payload
+          case None -> 0)
+
+        if True then generatedNeed else 0
 
 result : Int
 let result = generated_1234
@@ -14,4 +25,4 @@ let result = generated_1234
 --! assertNoErrors
 --! assertType generated_1234 Int
 --! assertType result Int
---! assertDeclKinds signature, let, signature, let
+--! assertDeclKinds signature, let, signature, let, signature, let

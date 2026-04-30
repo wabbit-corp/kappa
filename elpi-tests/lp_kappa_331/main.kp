@@ -1,12 +1,21 @@
 module main
 
-generated_331 : String
-let generated_331 = (if (if (if (if (if (True || False) then True else False) then True else False) then True else False) then True else False) then #"raw lambda-prolog"# else "fallback")
+generated_331 : Int
+let generated_331 =
+    block
+        let pair = (x = ((match [0, (0 + 1)]
+          case head :: tail -> head
+          case Nil -> 0) + 0), y = ((match [0, (0 + 1)]
+          case head :: tail -> head
+          case Nil -> 0) + 1))
+        let (x = captured, y = other) = pair
 
-result : String
+        (captured + other)
+
+result : Int
 let result = generated_331
 
 --! assertNoErrors
---! assertType generated_331 String
---! assertType result String
+--! assertType generated_331 Int
+--! assertType result Int
 --! assertDeclKinds signature, let, signature, let

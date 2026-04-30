@@ -1,12 +1,26 @@
 module main
 
-generated_1232 : Option Int
-let generated_1232 = (if True then (if True then (if True then (if (((if True then (Some (0 + 0)) else None) ?: 0) == 1) then None else (if True then (Some (0 + 0)) else None)) else None) else None) else None)
+generated_1232 : Int
+let generated_1232 =
+    block
+        ranked : Int
+        let ranked = (match (Some (block
+            generatedSetCount : Set Int -> Int
+            let generatedSetCount values = 2
 
-result : Option Int
+            let item = 0
+            let values = {|item, (item + 1)|}
+
+            generatedSetCount values))
+          case Some payload -> payload
+          case None -> 0)
+
+        (ranked + 0)
+
+result : Int
 let result = generated_1232
 
 --! assertNoErrors
---! assertType generated_1232 Option Int
---! assertType result Option Int
+--! assertType generated_1232 Int
+--! assertType result Int
 --! assertDeclKinds signature, let, signature, let

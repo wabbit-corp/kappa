@@ -1,15 +1,14 @@
 module main
 
-generated_2360 : IO Int
-let generated_2360 =
-    do
-        value <- pure (((((((((left = ((if False then 0 else 0) + 0), right = 0)).left + 0) + 0) + 0) + 0) + 0) + 0) + 0)
-        pure (value + 2)
+generated_2360 : Int
+let generated_2360 = ((\(n : Int) -> n) (match (Some 0)
+  case Some payload -> payload
+  case None -> 0))
 
-result : IO Int
+result : Int
 let result = generated_2360
 
 --! assertNoErrors
---! assertType generated_2360 IO Int
---! assertType result IO Int
+--! assertType generated_2360 Int
+--! assertType result Int
 --! assertDeclKinds signature, let, signature, let

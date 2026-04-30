@@ -1,12 +1,20 @@
 module main
 
-generated_2945 : Set Int
-let generated_2945 = {| for x in [1, 2, 3], let y = x + 1, yield ((((((((Some (((x + 0) + 0) + 0)) ?: 0) + 0) + 0) + 0) + 0) + 0) + 0) |}
+generated_2945 : List Int
+let generated_2945 = [ for x in [1, 2, 3], order by x desc, yield (match ((match [x, (x + 1)]
+  case head :: tail -> head
+  case Nil -> 0) == (match [x, (x + 1)]
+  case head :: tail -> head
+  case Nil -> 0))
+  case True -> (match [x, (x + 1)]
+    case head :: tail -> head
+    case Nil -> 0)
+  case False -> 0) ]
 
-result : Set Int
+result : List Int
 let result = generated_2945
 
 --! assertNoErrors
---! assertType generated_2945 Set Int
---! assertType result Set Int
+--! assertType generated_2945 List Int
+--! assertType result List Int
 --! assertDeclKinds signature, let, signature, let

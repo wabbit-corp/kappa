@@ -1,12 +1,21 @@
 module main
 
-generated_4105 : String
-let generated_4105 = (if (if (if (if ((True || False) && False) then False else True) then True else False) then True else False) then #"raw lambda-prolog"# else "fallback")
+generated_4105 : Set Int
+let generated_4105 = {| for x in [1, 2, 3], let y = x + 1, if y > 0, yield (block
+    generatedMapCount : Map String Int -> Int
+    let generatedMapCount values = 1
 
-result : String
+    let item = (match (x == x)
+      case True -> x
+      case False -> 0)
+    let values = { yield "item" : item }
+
+    generatedMapCount values) |}
+
+result : Set Int
 let result = generated_4105
 
 --! assertNoErrors
---! assertType generated_4105 String
---! assertType result String
+--! assertType generated_4105 Set Int
+--! assertType result Set Int
 --! assertDeclKinds signature, let, signature, let

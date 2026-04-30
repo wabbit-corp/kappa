@@ -1,15 +1,29 @@
 module main
 
-generated_4585 : IO Int
-let generated_4585 =
-    do
-        let staged = ((((((0 + ((if False then 0 else ((left = 0, right = (0 + 0))).right) + 0)) + 0) + 0) + 0) + 0) + 0)
-        pure (staged + 1)
+trait GeneratedScore a =
+    score : a -> Int
 
-result : IO Int
+instance GeneratedScore Int =
+    let score x = x
+
+generated_4585 : Int
+let generated_4585 =
+    let
+        dict = summon (GeneratedScore Int)
+in
+        dict.score ((block
+            generatedMapCount : Map String Int -> Int
+            let generatedMapCount values = 1
+
+            let item = ((Some (0 + 1)) ?: (0 + 2))
+            let values = { yield "item" : item }
+
+            generatedMapCount values) + 0)
+
+result : Int
 let result = generated_4585
 
 --! assertNoErrors
---! assertType generated_4585 IO Int
---! assertType result IO Int
---! assertDeclKinds signature, let, signature, let
+--! assertType generated_4585 Int
+--! assertType result Int
+--! assertDeclKinds trait, instance, signature, let, signature, let

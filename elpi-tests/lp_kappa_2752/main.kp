@@ -1,12 +1,26 @@
 module main
 
-generated_2752 : List Int
-let generated_2752 = [ yield (((((((((left = 0, right = (((if True then 0 else 0) + 0) + 0))).right + 0) + 0) + 0) + 0) + 0) + 0) + 0) ]
+type GeneratedPair = (left : Int, right : Int)
 
-result : List Int
+generated_2752 : GeneratedPair
+let generated_2752 = ((left = (match [(match [0, (0 + 1)]
+  case head :: tail -> head
+  case Nil -> 0), ((match [0, (0 + 1)]
+  case head :: tail -> head
+  case Nil -> 0) + 1)]
+  case head :: tail -> head
+  case Nil -> 0), right = 0)).{ right = ((match [(match [0, (0 + 1)]
+  case head :: tail -> head
+  case Nil -> 0), ((match [0, (0 + 1)]
+  case head :: tail -> head
+  case Nil -> 0) + 1)]
+  case head :: tail -> head
+  case Nil -> 0) + 1) }
+
+result : GeneratedPair
 let result = generated_2752
 
 --! assertNoErrors
---! assertType generated_2752 List Int
---! assertType result List Int
---! assertDeclKinds signature, let, signature, let
+--! assertType generated_2752 GeneratedPair
+--! assertType result GeneratedPair
+--! assertDeclKinds type, signature, let, signature, let

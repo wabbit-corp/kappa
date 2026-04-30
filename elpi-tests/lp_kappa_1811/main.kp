@@ -1,12 +1,28 @@
 module main
 
-generated_1811 : (Int -> Int)
-let generated_1811 = \(x : Int) -> ((\(x : Int) -> ((\(x : Int) -> (((if False then \(x : Int) -> x else \(x : Int) -> if (x == 0) then ((\(x : Int) -> x) x) else x)) x)) x)) x)
+generated_1811 : List Int
+let generated_1811 = [ for x in [1, 2, 3], order by x desc, yield (match [(block
+    generatedMapCount : Map String Int -> Int
+    let generatedMapCount values = 1
 
-result : (Int -> Int)
+    let item = x
+    let values = { yield "item" : item }
+
+    generatedMapCount values), ((block
+    generatedMapCount : Map String Int -> Int
+    let generatedMapCount values = 1
+
+    let item = x
+    let values = { yield "item" : item }
+
+    generatedMapCount values) + 1)]
+  case head :: tail -> head
+  case Nil -> 0) ]
+
+result : List Int
 let result = generated_1811
 
 --! assertNoErrors
---! assertType generated_1811 (Int -> Int)
---! assertType result (Int -> Int)
+--! assertType generated_1811 List Int
+--! assertType result List Int
 --! assertDeclKinds signature, let, signature, let

@@ -2,11 +2,33 @@ module main
 
 generated_3462 : Int
 let generated_3462 =
-    block
-        let base : (x : Int) = (x = ((((((0 + (((((if True then 0 else 0) + 0) + 0) + 0) + 0)) + 0) + 0) + 0) + 0) + 0))
-        let extended = base.{ y := ((((((0 + (((((if True then 0 else 0) + 0) + 0) + 0) + 0)) + 0) + 0) + 0) + 0) + 1) }
+    match ((((Some ((block
+        let pair = (x = 0, y = (0 + 1))
+        let (x = captured, y = other) = pair
 
-        (extended.x + extended.y)
+        (captured + other)) + 1)) ?: ((block
+        let pair = (x = 0, y = (0 + 1))
+        let (x = captured, y = other) = pair
+
+        (captured + other)) + 2)) + 0) == (((Some ((block
+        let pair = (x = 0, y = (0 + 1))
+        let (x = captured, y = other) = pair
+
+        (captured + other)) + 1)) ?: ((block
+        let pair = (x = 0, y = (0 + 1))
+        let (x = captured, y = other) = pair
+
+        (captured + other)) + 2)) + 0))
+      case True -> (((Some ((block
+          let pair = (x = 0, y = (0 + 1))
+          let (x = captured, y = other) = pair
+
+          (captured + other)) + 1)) ?: ((block
+          let pair = (x = 0, y = (0 + 1))
+          let (x = captured, y = other) = pair
+
+          (captured + other)) + 2)) + 0)
+      case False -> 0
 
 result : Int
 let result = generated_3462

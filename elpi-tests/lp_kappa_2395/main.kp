@@ -1,22 +1,17 @@
 module main
 
-trait GeneratedScore a =
-    score : a -> Int
+generatedEcho : forall (a : Type). (this x : a) -> a
+let generatedEcho @a (this x : a) = x
 
-instance GeneratedScore Int =
-    let score x = x
+generated_2395 : Option Int
+let generated_2395 = (Some (((\(n : Int) -> n) (match (Some 0)
+  case Some payload -> payload
+  case None -> 0)) + 0))?.generatedEcho
 
-generated_2395 : Int
-let generated_2395 =
-    let
-        dict = summon (GeneratedScore Int)
-in
-        dict.score (((((((((left = (((if True then 0 else 0) + 0) + 0), right = 0)).left + 0) + 0) + 0) + 0) + 0) + 0) + 0)
-
-result : Int
+result : Option Int
 let result = generated_2395
 
 --! assertNoErrors
---! assertType generated_2395 Int
---! assertType result Int
---! assertDeclKinds trait, instance, signature, let, signature, let
+--! assertType generated_2395 Option Int
+--! assertType result Option Int
+--! assertDeclKinds signature, let, signature, let, signature, let

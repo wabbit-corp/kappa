@@ -1,18 +1,21 @@
 module main
 
-generatedNeed : (@x : Int) -> Int
-let generatedNeed (@x : Int) = x
+generatedEcho : forall (a : Type). (this x : a) -> a
+let generatedEcho @a (this x : a) = x
 
-generated_2750 : IO Int
-let generated_2750 =
-    do
-        let (@x : Int) = (((((((((left = 0, right = (((if True then 0 else 0) + 0) + 0))).right + 0) + 0) + 0) + 0) + 0) + 0) + 0)
-        pure generatedNeed
+generated_2750 : Int
+let generated_2750 = ((match [(match [0, (0 + 1)]
+  case head :: tail -> head
+  case Nil -> 0), ((match [0, (0 + 1)]
+  case head :: tail -> head
+  case Nil -> 0) + 1)]
+  case head :: tail -> head
+  case Nil -> 0) + 0).generatedEcho
 
-result : IO Int
+result : Int
 let result = generated_2750
 
 --! assertNoErrors
---! assertType generated_2750 IO Int
---! assertType result IO Int
+--! assertType generated_2750 Int
+--! assertType result Int
 --! assertDeclKinds signature, let, signature, let, signature, let

@@ -1,10 +1,68 @@
 module main
 
+type GeneratedTuple = (Int, Int)
+
 generated_4990 : Int
 let generated_4990 =
-    match (((((((0 + (((if False then 0 else 0) + (0 + 0)) + 0)) + 0) + 0) + 0) + 0) + 0) == ((((((0 + (((if False then 0 else 0) + (0 + 0)) + 0)) + 0) + 0) + 0) + 0) + 0))
-      case True -> ((((((0 + (((if False then 0 else 0) + (0 + 0)) + 0)) + 0) + 0) + 0) + 0) + 0)
-      case False -> 0
+    block
+        let pair : GeneratedTuple = (((block
+            generatedListLength : List Int -> Int
+            let generatedListLength xs decreases structural xs =
+                match xs
+                  case Nil -> 0
+                  case _ :: tail -> 1 + generatedListLength tail
+
+            let item = (block
+                generatedListLength : List Int -> Int
+                let generatedListLength xs decreases structural xs =
+                    match xs
+                      case Nil -> 0
+                      case _ :: tail -> 1 + generatedListLength tail
+
+                let item = (block
+                    generatedListLength : List Int -> Int
+                    let generatedListLength xs decreases structural xs =
+                        match xs
+                          case Nil -> 0
+                          case _ :: tail -> 1 + generatedListLength tail
+
+                    let item = 0
+
+                    generatedListLength [item, (item + 1), 0])
+
+                generatedListLength [item, (item + 1), 0])
+
+            generatedListLength [item, (item + 1), 0]) + 0), ((block
+            generatedListLength : List Int -> Int
+            let generatedListLength xs decreases structural xs =
+                match xs
+                  case Nil -> 0
+                  case _ :: tail -> 1 + generatedListLength tail
+
+            let item = (block
+                generatedListLength : List Int -> Int
+                let generatedListLength xs decreases structural xs =
+                    match xs
+                      case Nil -> 0
+                      case _ :: tail -> 1 + generatedListLength tail
+
+                let item = (block
+                    generatedListLength : List Int -> Int
+                    let generatedListLength xs decreases structural xs =
+                        match xs
+                          case Nil -> 0
+                          case _ :: tail -> 1 + generatedListLength tail
+
+                    let item = 0
+
+                    generatedListLength [item, (item + 1), 0])
+
+                generatedListLength [item, (item + 1), 0])
+
+            generatedListLength [item, (item + 1), 0]) + 1))
+        let (left, right) = pair
+
+        (left + right)
 
 result : Int
 let result = generated_4990
@@ -12,4 +70,4 @@ let result = generated_4990
 --! assertNoErrors
 --! assertType generated_4990 Int
 --! assertType result Int
---! assertDeclKinds signature, let, signature, let
+--! assertDeclKinds type, signature, let, signature, let

@@ -1,12 +1,22 @@
 module main
 
-generated_3364 : List Int
-let generated_3364 = [ yield ((((((0 + ((((0 + (0 + 0)) + 0) + 0) + 0)) + 0) + 0) + 0) + 0) + 0) ]
+generated_3364 : Int
+let generated_3364 =
+    block
+        type RankedAlias = Int
 
-result : List Int
+        let aliased : RankedAlias = (((\(n : Int) -> n) (block
+            let pair = (x = 0, y = (0 + 1))
+            let (x = captured, y = other) = pair
+
+            (captured + other))) + 0)
+
+        (aliased + 1)
+
+result : Int
 let result = generated_3364
 
 --! assertNoErrors
---! assertType generated_3364 List Int
---! assertType result List Int
+--! assertType generated_3364 Int
+--! assertType result Int
 --! assertDeclKinds signature, let, signature, let

@@ -2,11 +2,15 @@ module main
 
 generated_2900 : Int
 let generated_2900 =
-    block
-        ranked : Int
-        let ranked = ((((((((Some (0 + 0)) ?: 0) + 0) + 0) + 0) + 0) + 0) + 0)
-
-        (ranked + 0)
+    match ((match [0, (0 + 1)]
+      case head :: tail -> head
+      case Nil -> 0) == (match [0, (0 + 1)]
+      case head :: tail -> head
+      case Nil -> 0))
+      case True -> (match [0, (0 + 1)]
+        case head :: tail -> head
+        case Nil -> 0)
+      case False -> 0
 
 result : Int
 let result = generated_2900

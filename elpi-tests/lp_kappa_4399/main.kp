@@ -1,12 +1,23 @@
 module main
 
-generated_4399 : List Int
-let generated_4399 = [ for x in [1, 2, 3], yield (((((0 + ((if False then 0 else (if True then x else 0)) + 0)) + 0) + 0) + 0) + 0) ]
+generatedMakeConst : forall (a : Type). a -> Unit -> a
+let generatedMakeConst value = \() -> value
 
-result : List Int
+generated_4399 : Int
+let generated_4399 = ((generatedMakeConst @Int ((match ((match (0 == 0)
+  case True -> 0
+  case False -> 0) == (match (0 == 0)
+  case True -> 0
+  case False -> 0))
+  case True -> (match (0 == 0)
+    case True -> 0
+    case False -> 0)
+  case False -> 0) + 0)) ())
+
+result : Int
 let result = generated_4399
 
 --! assertNoErrors
---! assertType generated_4399 List Int
---! assertType result List Int
---! assertDeclKinds signature, let, signature, let
+--! assertType generated_4399 Int
+--! assertType result Int
+--! assertDeclKinds signature, let, signature, let, signature, let

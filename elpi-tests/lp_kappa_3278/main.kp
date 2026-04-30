@@ -1,15 +1,25 @@
 module main
 
-generated_3278 : IO Int
+generated_3278 : Int
 let generated_3278 =
-    do
-        value <- pure ((((((0 + (((0 + 0) + 0) + 0)) + 0) + 0) + 0) + 0) + 0)
-        pure (value + 2)
+    block
+        let pair = (x = (block
+            let pair = (x = 0, y = (0 + 1))
+            let (x = captured, y = other) = pair
 
-result : IO Int
+            (captured + other)), y = ((block
+            let pair = (x = 0, y = (0 + 1))
+            let (x = captured, y = other) = pair
+
+            (captured + other)) + 1))
+        let (x = captured, y = other) = pair
+
+        (captured + other)
+
+result : Int
 let result = generated_3278
 
 --! assertNoErrors
---! assertType generated_3278 IO Int
---! assertType result IO Int
+--! assertType generated_3278 Int
+--! assertType result Int
 --! assertDeclKinds signature, let, signature, let

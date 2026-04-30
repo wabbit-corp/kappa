@@ -1,12 +1,63 @@
 module main
 
-generated_1951 : List Int
-let generated_1951 = [ for x in [1, 2, 3], yield ((((((((if False then 0 else (0 + (x + 0))) + (0 + 0)) + 0) + 0) + 0) + 0) + 0) + 0) ]
+generated_1951 : Int
+let generated_1951 =
+    block
+        let pair = (x = ((match ((block
+            generatedMapCount : Map String Int -> Int
+            let generatedMapCount values = 1
 
-result : List Int
+            let item = 0
+            let values = { yield "item" : item }
+
+            generatedMapCount values) == (block
+            generatedMapCount : Map String Int -> Int
+            let generatedMapCount values = 1
+
+            let item = 0
+            let values = { yield "item" : item }
+
+            generatedMapCount values))
+          case True -> (block
+              generatedMapCount : Map String Int -> Int
+              let generatedMapCount values = 1
+
+              let item = 0
+              let values = { yield "item" : item }
+
+              generatedMapCount values)
+          case False -> 0) + 0), y = ((match ((block
+            generatedMapCount : Map String Int -> Int
+            let generatedMapCount values = 1
+
+            let item = 0
+            let values = { yield "item" : item }
+
+            generatedMapCount values) == (block
+            generatedMapCount : Map String Int -> Int
+            let generatedMapCount values = 1
+
+            let item = 0
+            let values = { yield "item" : item }
+
+            generatedMapCount values))
+          case True -> (block
+              generatedMapCount : Map String Int -> Int
+              let generatedMapCount values = 1
+
+              let item = 0
+              let values = { yield "item" : item }
+
+              generatedMapCount values)
+          case False -> 0) + 1))
+        let (x = captured, y = other) = pair
+
+        (captured + other)
+
+result : Int
 let result = generated_1951
 
 --! assertNoErrors
---! assertType generated_1951 List Int
---! assertType result List Int
+--! assertType generated_1951 Int
+--! assertType result Int
 --! assertDeclKinds signature, let, signature, let

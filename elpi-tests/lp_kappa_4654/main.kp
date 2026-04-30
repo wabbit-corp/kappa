@@ -6,7 +6,9 @@ let generatedNeed (@x : Int) = x
 generated_4654 : IO Int
 let generated_4654 =
     do
-        let (@x : Int) = ((((((0 + (((if True then 0 else 0) + 0) + 0)) + 0) + 0) + 0) + 0) + 0)
+        let (@x : Int) = ((match (Some ((Some (0 + 1)) ?: (0 + 2)))
+          case Some payload -> payload
+          case None -> 0) + 0)
         pure generatedNeed
 
 result : IO Int

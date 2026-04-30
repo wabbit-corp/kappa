@@ -1,10 +1,41 @@
 module main
 
-generatedResize : (image : Int) -> (width : Int) -> (height : Int) -> Int
-let generatedResize image width height = image + width * 10 + height
-
 generated_2841 : Int
-let generated_2841 = generatedResize { image = (((((((((left = 0, right = (((left = 0, right = (0 + 0))).right + 0))).right + 0) + 0) + 0) + 0) + 0) + 0) + 0), height = 3, width = 2 }
+let generated_2841 =
+    block
+        scoped effect Ask =
+            ask : Unit -> Bool
+
+        scoped effect Other =
+            other : Unit -> Int
+
+        let seed = (block
+            let pair = (x = (match [0, (0 + 1)]
+              case head :: tail -> head
+              case Nil -> 0), y = ((match [0, (0 + 1)]
+              case head :: tail -> head
+              case Nil -> 0) + 1))
+            let (x = captured, y = other) = pair
+
+            (captured + other))
+
+        let comp : Eff <[Ask : Ask, Other : Other]> Int =
+            do
+                let b <- Ask.ask ()
+                let n <- Other.other ()
+                if b then (n + seed) else seed
+
+        let askHandled : Eff <[Other : Other]> Int =
+            deep handle Ask comp with
+                case return x -> pure x
+                case ask () k -> k True
+
+        let handled : Eff <[ ]> Int =
+            deep handle Other askHandled with
+                case return x -> pure x
+                case other () k -> k 1
+
+        runPure handled
 
 result : Int
 let result = generated_2841
@@ -12,4 +43,4 @@ let result = generated_2841
 --! assertNoErrors
 --! assertType generated_2841 Int
 --! assertType result Int
---! assertDeclKinds signature, let, signature, let, signature, let
+--! assertDeclKinds signature, let, signature, let

@@ -3,10 +3,24 @@ module main
 generated_300 : Int
 let generated_300 =
     block
-        let base : (x : Int) = (x = ((((((((((if True then 0 else 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0))
-        let extended = base.{ y := ((((((((((if True then 0 else 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0) + 1) }
+        scoped effect Ask =
+            ask : Unit -> Bool
 
-        (extended.x + extended.y)
+        let seed = (match (Some 0)
+          case Some payload -> payload
+          case None -> 0)
+
+        let comp : Eff <[Ask : Ask]> Int =
+            do
+                let b <- Ask.ask ()
+                if b then seed else (seed + 1)
+
+        let handled : Eff <[ ]> Int =
+            deep handle Ask comp with
+                case return x -> pure x
+                case ask () k -> k True
+
+        runPure handled
 
 result : Int
 let result = generated_300

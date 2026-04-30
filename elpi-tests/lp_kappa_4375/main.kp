@@ -1,17 +1,20 @@
 module main
 
-generated_4375 : Int
-let generated_4375 =
-    block
-        rankedHelper : (Int -> Int)
-        let rankedHelper x = x + 1
+generated_4375 : Set Int
+let generated_4375 = {| for x in [1, 2, 3], yield (match ((match (x == x)
+  case True -> x
+  case False -> 0) == (match (x == x)
+  case True -> x
+  case False -> 0))
+  case True -> (match (x == x)
+    case True -> x
+    case False -> 0)
+  case False -> 0) |}
 
-        rankedHelper ((((((0 + ((if False then 0 else (0 + (0 + 0))) + 0)) + 0) + 0) + 0) + 0) + 0)
-
-result : Int
+result : Set Int
 let result = generated_4375
 
 --! assertNoErrors
---! assertType generated_4375 Int
---! assertType result Int
+--! assertType generated_4375 Set Int
+--! assertType result Set Int
 --! assertDeclKinds signature, let, signature, let

@@ -1,15 +1,14 @@
 module main
 
-generatedEcho : forall (a : Type). (this x : a) -> a
-let generatedEcho @a (this x : a) = x
+generated_4334 : Map String Int
+let generated_4334 = { yield "only" : (((\(n : Int) -> n) (match (0 == 0)
+  case True -> 0
+  case False -> 0)) + 0) }
 
-generated_4334 : Int
-let generated_4334 = ((((((0 + ((if False then 0 else ((0 + 0) + 0)) + 0)) + 0) + 0) + 0) + 0) + 0).generatedEcho
-
-result : Int
+result : Map String Int
 let result = generated_4334
 
 --! assertNoErrors
---! assertType generated_4334 Int
---! assertType result Int
---! assertDeclKinds signature, let, signature, let, signature, let
+--! assertType generated_4334 Map String Int
+--! assertType result Map String Int
+--! assertDeclKinds signature, let, signature, let

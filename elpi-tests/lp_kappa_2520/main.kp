@@ -1,7 +1,32 @@
 module main
 
 generated_2520 : Int
-let generated_2520 = ((((((((left = (((Some (0 + 0)) ?: 0) + 0), right = 0)).left + 0) + 0) + 0) + 0) + 0) + 0)
+let generated_2520 =
+    block
+        scoped effect Choice =
+            ω choose : Unit -> Bool
+
+        let seed = ((Some ((match (Some 0)
+          case Some payload -> payload
+          case None -> 0) + 1)) ?: ((match (Some 0)
+          case Some payload -> payload
+          case None -> 0) + 2))
+
+        let comp : Eff <[Choice : Choice]> Int =
+            do
+                let b <- Choice.choose ()
+                if b then seed else (seed + 1)
+
+        let handled : Eff <[ ]> Int =
+            deep handle Choice comp with
+                case return x -> pure x
+                case choose () k ->
+                    do
+                        let a <- k True
+                        let b <- k False
+                        pure (a + b)
+
+        runPure handled
 
 result : Int
 let result = generated_2520

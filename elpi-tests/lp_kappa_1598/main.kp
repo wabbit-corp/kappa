@@ -1,12 +1,51 @@
 module main
 
-generated_1598 : Map String Int
-let generated_1598 = { yield "only" : (((((((((if True then ((0 + 0) + 0) else 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0) }
+generated_1598 : Int
+let generated_1598 =
+    block
+        scoped effect Ask =
+            ask : Unit -> Bool
 
-result : Map String Int
+        let seed = (block
+            generatedListLength : List Int -> Int
+            let generatedListLength xs decreases structural xs =
+                match xs
+                  case Nil -> 0
+                  case _ :: tail -> 1 + generatedListLength tail
+
+            let item = (block
+                generatedMapCount : Map String Int -> Int
+                let generatedMapCount values = 1
+
+                let item = 0
+                let values = { yield "item" : item }
+
+                generatedMapCount values)
+
+            generatedListLength [item, (item + 1), 0])
+
+        let comp : Eff <[Ask : Ask]> Int =
+            do
+                let b <- Ask.ask ()
+                if b then seed else (seed + 1)
+
+        let rehandle : (1 k : ((1 x : Bool) -> Eff <[Ask : Ask]> Int)) -> Eff <[ ]> Int =
+            \(1 k : ((1 x : Bool) -> Eff <[Ask : Ask]> Int)) ->
+                handle Ask (k True) with
+                    case return y -> pure y
+                    case ask () k2 -> k2 False
+
+        let handled : Eff <[ ]> Int =
+            handle Ask comp with
+                case return y -> pure y
+                case ask () k -> rehandle k
+
+        runPure handled
+
+result : Int
 let result = generated_1598
 
 --! assertNoErrors
---! assertType generated_1598 Map String Int
---! assertType result Map String Int
+--! assertType generated_1598 Int
+--! assertType result Int
 --! assertDeclKinds signature, let, signature, let

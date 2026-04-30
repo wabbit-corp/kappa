@@ -1,17 +1,31 @@
 module main
 
-generated_1315 : Int
-let generated_1315 =
-    block
-        rankedHelper : (Int -> Int)
-        let rankedHelper x = x + 1
+generatedEcho : forall (a : Type). (this x : a) -> a
+let generatedEcho @a (this x : a) = x
 
-        rankedHelper ((((((((if False then 0 else (if True then 0 else 0)) + 0) + 0) + 0) + 0) + 0) + 0) + 0)
+generated_1315 : Option Int
+let generated_1315 = (Some ((match [(block
+    generatedSetCount : Set Int -> Int
+    let generatedSetCount values = 2
 
-result : Int
+    let item = 0
+    let values = {|item, (item + 1)|}
+
+    generatedSetCount values), ((block
+    generatedSetCount : Set Int -> Int
+    let generatedSetCount values = 2
+
+    let item = 0
+    let values = {|item, (item + 1)|}
+
+    generatedSetCount values) + 1)]
+  case head :: tail -> head
+  case Nil -> 0) + 0))?.generatedEcho
+
+result : Option Int
 let result = generated_1315
 
 --! assertNoErrors
---! assertType generated_1315 Int
---! assertType result Int
---! assertDeclKinds signature, let, signature, let
+--! assertType generated_1315 Option Int
+--! assertType result Option Int
+--! assertDeclKinds signature, let, signature, let, signature, let

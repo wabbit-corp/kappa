@@ -1,7 +1,16 @@
 module main
 
 generated_4078 : List Int
-let generated_4078 = [ yield ((((((0 + ((if True then (if True then 0 else 0) else 0) + 0)) + 0) + 0) + 0) + 0) + 0) ]
+let generated_4078 = [ for x in [1, 2, 3], skip 1, take 2, yield (block
+    generatedSetCount : Set Int -> Int
+    let generatedSetCount values = 2
+
+    let item = (match (x == x)
+      case True -> x
+      case False -> 0)
+    let values = {|item, (item + 1)|}
+
+    generatedSetCount values) ]
 
 result : List Int
 let result = generated_4078

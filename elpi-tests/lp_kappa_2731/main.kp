@@ -2,10 +2,27 @@ module main
 
 generated_2731 : Int
 let generated_2731 =
-    let
-        ranked : Int = ((((((((left = 0, right = (((if True then 0 else 0) + 0) + 0))).right + 0) + 0) + 0) + 0) + 0) + 0)
-in
-        (ranked + 0)
+    block
+        scoped effect State (s : Type) =
+            get : Unit -> s
+
+        let seed = (match (Some (match [0, (0 + 1)]
+          case head :: tail -> head
+          case Nil -> 0))
+          case Some payload -> payload
+          case None -> 0)
+
+        let comp : Eff <[State : State Int]> Int =
+            do
+                let n <- State.get ()
+                n
+
+        let handled : Eff <[ ]> Int =
+            deep handle State comp with
+                case return x -> pure x
+                case get () k -> k seed
+
+        runPure handled
 
 result : Int
 let result = generated_2731

@@ -1,18 +1,23 @@
 module main
 
-generatedNeed : (@x : Int) -> Int
-let generatedNeed (@x : Int) = x
-
-generated_1424 : IO Int
+generated_1424 : Int
 let generated_1424 =
-    do
-        let (@x : Int) = ((((((((if False then 0 else ((if False then 0 else 0) + (0 + 0))) + 0) + 0) + 0) + 0) + 0) + 0) + 0)
-        pure generatedNeed
+    block
+        let (captured : Int) = (((\(n : Int) -> n) (block
+            generatedSetCount : Set Int -> Int
+            let generatedSetCount values = 2
 
-result : IO Int
+            let item = 0
+            let values = {|item, (item + 1)|}
+
+            generatedSetCount values)) + 0)
+
+        captured
+
+result : Int
 let result = generated_1424
 
 --! assertNoErrors
---! assertType generated_1424 IO Int
---! assertType result IO Int
---! assertDeclKinds signature, let, signature, let, signature, let
+--! assertType generated_1424 Int
+--! assertType result Int
+--! assertDeclKinds signature, let, signature, let

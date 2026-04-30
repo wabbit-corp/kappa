@@ -1,12 +1,15 @@
 module main
 
-generated_4939 : (Int -> Int)
-let generated_4939 = \(x : Int) -> ((\(x : Int) -> ((\(x : Int) -> ((((if False then \(x : Int) -> x else \(x : Int) -> if (x == 0) then x else ((\(x : Int) -> x) x))) x) + 0)) x)) x)
+generatedMakeConst : forall (a : Type). a -> Unit -> a
+let generatedMakeConst value = \() -> value
 
-result : (Int -> Int)
+generated_4939 : Int
+let generated_4939 = ((generatedMakeConst @Int (((Some (((Some (0 + 1)) ?: (0 + 2)) + 1)) ?: (((Some (0 + 1)) ?: (0 + 2)) + 2)) + 0)) ())
+
+result : Int
 let result = generated_4939
 
 --! assertNoErrors
---! assertType generated_4939 (Int -> Int)
---! assertType result (Int -> Int)
---! assertDeclKinds signature, let, signature, let
+--! assertType generated_4939 Int
+--! assertType result Int
+--! assertDeclKinds signature, let, signature, let, signature, let

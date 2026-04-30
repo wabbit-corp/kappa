@@ -1,15 +1,19 @@
 module main
 
-generatedMakeConst : forall (a : Type). a -> Unit -> a
-let generatedMakeConst value = \() -> value
+generated_190 : List Int
+let generated_190 = [ for x in [1, 2, 3], skip 1, take 2, yield (block
+    generatedSetCount : Set Int -> Int
+    let generatedSetCount values = 2
 
-generated_190 : Int
-let generated_190 = ((generatedMakeConst (((((((((0 + 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0)) ())
+    let item = x
+    let values = {|item, (item + 1)|}
 
-result : Int
+    generatedSetCount values) ]
+
+result : List Int
 let result = generated_190
 
 --! assertNoErrors
---! assertType generated_190 Int
---! assertType result Int
---! assertDeclKinds signature, let, signature, let, signature, let
+--! assertType generated_190 List Int
+--! assertType result List Int
+--! assertDeclKinds signature, let, signature, let

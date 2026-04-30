@@ -1,12 +1,46 @@
 module main
 
-generated_646 : Map String Int
-let generated_646 = { yield "only" : ((((((((0 + ((if True then 0 else 0) + 0)) + 0) + 0) + 0) + 0) + 0) + 0) + 0) }
+type GeneratedPair = (left : Int, right : Int)
 
-result : Map String Int
+generated_646 : GeneratedPair
+let generated_646 = ((left = (block
+    generatedSetCount : Set Int -> Int
+    let generatedSetCount values = 2
+
+    let item = (block
+        generatedListLength : List Int -> Int
+        let generatedListLength xs decreases structural xs =
+            match xs
+              case Nil -> 0
+              case _ :: tail -> 1 + generatedListLength tail
+
+        let item = 0
+
+        generatedListLength [item, (item + 1), 0])
+    let values = {|item, (item + 1)|}
+
+    generatedSetCount values), right = 0)).{ right = ((block
+    generatedSetCount : Set Int -> Int
+    let generatedSetCount values = 2
+
+    let item = (block
+        generatedListLength : List Int -> Int
+        let generatedListLength xs decreases structural xs =
+            match xs
+              case Nil -> 0
+              case _ :: tail -> 1 + generatedListLength tail
+
+        let item = 0
+
+        generatedListLength [item, (item + 1), 0])
+    let values = {|item, (item + 1)|}
+
+    generatedSetCount values) + 1) }
+
+result : GeneratedPair
 let result = generated_646
 
 --! assertNoErrors
---! assertType generated_646 Map String Int
---! assertType result Map String Int
---! assertDeclKinds signature, let, signature, let
+--! assertType generated_646 GeneratedPair
+--! assertType result GeneratedPair
+--! assertDeclKinds type, signature, let, signature, let

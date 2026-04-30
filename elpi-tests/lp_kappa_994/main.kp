@@ -1,12 +1,77 @@
 module main
 
-generated_994 : Option Int
-let generated_994 = (if True then (if True then (if True then (if (((if (((Some (0 + 0)) ?: 0) == 1) then None else (Some (0 + 0))) ?: 0) == 0) then (if (((Some (0 + 0)) ?: 0) == 1) then None else (Some (0 + 0))) else None) else None) else None) else None)
+type GeneratedTuple = (Int, Int)
 
-result : Option Int
+generated_994 : Int
+let generated_994 =
+    block
+        let pair : GeneratedTuple = (((match ((block
+            generatedListLength : List Int -> Int
+            let generatedListLength xs decreases structural xs =
+                match xs
+                  case Nil -> 0
+                  case _ :: tail -> 1 + generatedListLength tail
+
+            let item = 0
+
+            generatedListLength [item, (item + 1), 0]) == (block
+            generatedListLength : List Int -> Int
+            let generatedListLength xs decreases structural xs =
+                match xs
+                  case Nil -> 0
+                  case _ :: tail -> 1 + generatedListLength tail
+
+            let item = 0
+
+            generatedListLength [item, (item + 1), 0]))
+          case True -> (block
+              generatedListLength : List Int -> Int
+              let generatedListLength xs decreases structural xs =
+                  match xs
+                    case Nil -> 0
+                    case _ :: tail -> 1 + generatedListLength tail
+
+              let item = 0
+
+              generatedListLength [item, (item + 1), 0])
+          case False -> 0) + 0), ((match ((block
+            generatedListLength : List Int -> Int
+            let generatedListLength xs decreases structural xs =
+                match xs
+                  case Nil -> 0
+                  case _ :: tail -> 1 + generatedListLength tail
+
+            let item = 0
+
+            generatedListLength [item, (item + 1), 0]) == (block
+            generatedListLength : List Int -> Int
+            let generatedListLength xs decreases structural xs =
+                match xs
+                  case Nil -> 0
+                  case _ :: tail -> 1 + generatedListLength tail
+
+            let item = 0
+
+            generatedListLength [item, (item + 1), 0]))
+          case True -> (block
+              generatedListLength : List Int -> Int
+              let generatedListLength xs decreases structural xs =
+                  match xs
+                    case Nil -> 0
+                    case _ :: tail -> 1 + generatedListLength tail
+
+              let item = 0
+
+              generatedListLength [item, (item + 1), 0])
+          case False -> 0) + 1))
+        let (left, right) = pair
+
+        (left + right)
+
+result : Int
 let result = generated_994
 
 --! assertNoErrors
---! assertType generated_994 Option Int
---! assertType result Option Int
---! assertDeclKinds signature, let, signature, let
+--! assertType generated_994 Int
+--! assertType result Int
+--! assertDeclKinds type, signature, let, signature, let

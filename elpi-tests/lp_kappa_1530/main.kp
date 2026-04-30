@@ -1,12 +1,29 @@
 module main
 
-generated_1530 : Map String Int
-let generated_1530 = { yield "only" : ((((((((if False then 0 else ((Some (0 + 0)) ?: 0)) + 0) + 0) + 0) + 0) + 0) + 0) + 0) }
+generatedNeed : (@x : Int) -> Int
+let generatedNeed (@x : Int) = x
 
-result : Map String Int
+generated_1530 : Int
+let generated_1530 = generatedNeed @((((Some ((block
+    generatedSetCount : Set Int -> Int
+    let generatedSetCount values = 2
+
+    let item = 0
+    let values = {|item, (item + 1)|}
+
+    generatedSetCount values) + 1)) ?: ((block
+    generatedSetCount : Set Int -> Int
+    let generatedSetCount values = 2
+
+    let item = 0
+    let values = {|item, (item + 1)|}
+
+    generatedSetCount values) + 2)) + 0))
+
+result : Int
 let result = generated_1530
 
 --! assertNoErrors
---! assertType generated_1530 Map String Int
---! assertType result Map String Int
---! assertDeclKinds signature, let, signature, let
+--! assertType generated_1530 Int
+--! assertType result Int
+--! assertDeclKinds signature, let, signature, let, signature, let

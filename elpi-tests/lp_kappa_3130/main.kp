@@ -1,18 +1,36 @@
 module main
 
-generated_3130 : Int
-let generated_3130 =
-    block
-        type RankedAlias = Int
+type GeneratedPair = (left : Int, right : Int)
 
-        let aliased : RankedAlias = (((((((((Some (((if False then 0 else 0) + (0 + 0)) + 0)) ?: 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0)
+generated_3130 : GeneratedPair
+let generated_3130 = ((left = (block
+    generatedMapCount : Map String Int -> Int
+    let generatedMapCount values = 1
 
-        (aliased + 1)
+    let item = (block
+        let pair = (x = 0, y = (0 + 1))
+        let (x = captured, y = other) = pair
 
-result : Int
+        (captured + other))
+    let values = { yield "item" : item }
+
+    generatedMapCount values), right = 0)).{ right = ((block
+    generatedMapCount : Map String Int -> Int
+    let generatedMapCount values = 1
+
+    let item = (block
+        let pair = (x = 0, y = (0 + 1))
+        let (x = captured, y = other) = pair
+
+        (captured + other))
+    let values = { yield "item" : item }
+
+    generatedMapCount values) + 1) }
+
+result : GeneratedPair
 let result = generated_3130
 
 --! assertNoErrors
---! assertType generated_3130 Int
---! assertType result Int
---! assertDeclKinds signature, let, signature, let
+--! assertType generated_3130 GeneratedPair
+--! assertType result GeneratedPair
+--! assertDeclKinds type, signature, let, signature, let

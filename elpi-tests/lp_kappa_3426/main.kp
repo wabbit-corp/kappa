@@ -2,9 +2,37 @@ module main
 
 generated_3426 : Int
 let generated_3426 =
-    match (((((((0 + ((((if False then 0 else 0) + 0) + 0) + 0)) + 0) + 0) + 0) + 0) + 0) == ((((((0 + ((((if False then 0 else 0) + 0) + 0) + 0)) + 0) + 0) + 0) + 0) + 0))
-      case True -> ((((((0 + ((((if False then 0 else 0) + 0) + 0) + 0)) + 0) + 0) + 0) + 0) + 0)
-      case False -> 0
+    match [((match ((block
+        let pair = (x = 0, y = (0 + 1))
+        let (x = captured, y = other) = pair
+
+        (captured + other)) == (block
+        let pair = (x = 0, y = (0 + 1))
+        let (x = captured, y = other) = pair
+
+        (captured + other)))
+      case True -> (block
+          let pair = (x = 0, y = (0 + 1))
+          let (x = captured, y = other) = pair
+
+          (captured + other))
+      case False -> 0) + 0), (((match ((block
+        let pair = (x = 0, y = (0 + 1))
+        let (x = captured, y = other) = pair
+
+        (captured + other)) == (block
+        let pair = (x = 0, y = (0 + 1))
+        let (x = captured, y = other) = pair
+
+        (captured + other)))
+      case True -> (block
+          let pair = (x = 0, y = (0 + 1))
+          let (x = captured, y = other) = pair
+
+          (captured + other))
+      case False -> 0) + 0) + 1)]
+      case head :: tail -> head
+      case Nil -> 0
 
 result : Int
 let result = generated_3426

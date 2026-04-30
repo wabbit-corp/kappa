@@ -1,12 +1,31 @@
 module main
 
-generated_1246 : Map String Int
-let generated_1246 = { for x in [1, 2, 3], let y = x + 1, if y > 0, yield (if y > 1 then "hi" else "lo") : (((((((if False then 0 else ((x + 0) + 0)) + 0) + 0) + 0) + 0) + 0) + 0) }
+generated_1246 : Int
+let generated_1246 =
+    block
+        trait RankedScore a =
+            rank : a -> Int
 
-result : Map String Int
+        instance RankedScore Int =
+            let rank x = x
+
+        let dict = summon (RankedScore Int)
+
+        dict.rank ((match (Some (block
+            generatedSetCount : Set Int -> Int
+            let generatedSetCount values = 2
+
+            let item = 0
+            let values = {|item, (item + 1)|}
+
+            generatedSetCount values))
+          case Some payload -> payload
+          case None -> 0) + 0)
+
+result : Int
 let result = generated_1246
 
 --! assertNoErrors
---! assertType generated_1246 Map String Int
---! assertType result Map String Int
+--! assertType generated_1246 Int
+--! assertType result Int
 --! assertDeclKinds signature, let, signature, let

@@ -3,10 +3,13 @@ module main
 generated_146 : Int
 let generated_146 =
     block
-        ranked : Int
-        let ranked = ((((((0 + 0) + 0) + 0) + 0) + 0) + 0)
+        generatedSetCount : Set Int -> Int
+        let generatedSetCount values = 2
 
-        (ranked + 0)
+        let item = 0
+        let values = {|item, (item + 1)|}
+
+        generatedSetCount values
 
 result : Int
 let result = generated_146

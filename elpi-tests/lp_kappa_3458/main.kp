@@ -1,22 +1,20 @@
 module main
 
-generated_3458 : Int
-let generated_3458 =
-    block
-        trait RankedScore a =
-            rank : a -> Int
+generated_3458 : Map String Int
+let generated_3458 = { for x in [1, 2, 3], let y = x + 1, if y > 0, yield (if y > 1 then "hi" else "lo") : ((Some ((block
+    let pair = (x = x, y = (x + 1))
+    let (x = captured, y = other) = pair
 
-        instance RankedScore Int =
-            let rank x = x
+    (captured + other)) + 1)) ?: ((block
+    let pair = (x = x, y = (x + 1))
+    let (x = captured, y = other) = pair
 
-        let dict = summon (RankedScore Int)
+    (captured + other)) + 2)) }
 
-        dict.rank ((((((0 + (((((if True then 0 else 0) + 0) + 0) + 0) + 0)) + 0) + 0) + 0) + 0) + 0)
-
-result : Int
+result : Map String Int
 let result = generated_3458
 
 --! assertNoErrors
---! assertType generated_3458 Int
---! assertType result Int
+--! assertType generated_3458 Map String Int
+--! assertType result Map String Int
 --! assertDeclKinds signature, let, signature, let

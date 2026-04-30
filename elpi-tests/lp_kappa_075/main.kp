@@ -1,14 +1,17 @@
 module main
 
-type GeneratedTuple = (Int, Int)
+generated_75 : Int
+let generated_75 =
+    block
+        let pair = (x = (0 + 0), y = (0 + 1))
+        let whole@(x = captured, y = other) = pair
 
-generated_75 : GeneratedTuple
-let generated_75 = (if True then (0, (0 + 0)) else (0, (0 + 0)))
+        (whole.x + (captured + other))
 
-result : GeneratedTuple
+result : Int
 let result = generated_75
 
 --! assertNoErrors
---! assertType generated_75 GeneratedTuple
---! assertType result GeneratedTuple
---! assertDeclKinds type, signature, let, signature, let
+--! assertType generated_75 Int
+--! assertType result Int
+--! assertDeclKinds signature, let, signature, let

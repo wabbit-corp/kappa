@@ -1,12 +1,49 @@
 module main
 
-generated_4972 : Option Int
-let generated_4972 = (if True then (if True then (if False then None else (if (((Some (0 + 0)) ?: 0) == 0) then (Some ((Some (0 + 0)) ?: 0)) else None)) else None) else None)
+generated_4972 : Int
+let generated_4972 =
+    block
+        trait RankedScore a =
+            rank : a -> Int
 
-result : Option Int
+        instance RankedScore Int =
+            let rank x = x
+
+        let dict = summon (RankedScore Int)
+
+        dict.rank ((block
+            generatedListLength : List Int -> Int
+            let generatedListLength xs decreases structural xs =
+                match xs
+                  case Nil -> 0
+                  case _ :: tail -> 1 + generatedListLength tail
+
+            let item = (block
+                generatedListLength : List Int -> Int
+                let generatedListLength xs decreases structural xs =
+                    match xs
+                      case Nil -> 0
+                      case _ :: tail -> 1 + generatedListLength tail
+
+                let item = (block
+                    generatedListLength : List Int -> Int
+                    let generatedListLength xs decreases structural xs =
+                        match xs
+                          case Nil -> 0
+                          case _ :: tail -> 1 + generatedListLength tail
+
+                    let item = 0
+
+                    generatedListLength [item, (item + 1), 0])
+
+                generatedListLength [item, (item + 1), 0])
+
+            generatedListLength [item, (item + 1), 0]) + 0)
+
+result : Int
 let result = generated_4972
 
 --! assertNoErrors
---! assertType generated_4972 Option Int
---! assertType result Option Int
+--! assertType generated_4972 Int
+--! assertType result Int
 --! assertDeclKinds signature, let, signature, let

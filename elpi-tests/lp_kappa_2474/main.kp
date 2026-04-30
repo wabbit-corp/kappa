@@ -2,9 +2,15 @@ module main
 
 generated_2474 : Int
 let generated_2474 =
-    match ((((((((((left = (((left = (0 + 0), right = 0)).left + 0), right = 0)).left + 0) + 0) + 0) + 0) + 0) + 0) + 0) == (((((((((left = (((left = (0 + 0), right = 0)).left + 0), right = 0)).left + 0) + 0) + 0) + 0) + 0) + 0) + 0))
-      case True -> (((((((((left = (((left = (0 + 0), right = 0)).left + 0), right = 0)).left + 0) + 0) + 0) + 0) + 0) + 0) + 0)
-      case False -> 0
+    block
+        ranked : Int
+        let ranked = ((Some ((match (Some 0)
+          case Some payload -> payload
+          case None -> 0) + 1)) ?: ((match (Some 0)
+          case Some payload -> payload
+          case None -> 0) + 2))
+
+        (ranked + 0)
 
 result : Int
 let result = generated_2474

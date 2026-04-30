@@ -1,12 +1,15 @@
 module main
 
-generated_4815 : Set Int
-let generated_4815 = {| for x in [1, 2, 3], yield (((((0 + (((if True then ((if True then x else 0) + 0) else 0) + 0) + 0)) + 0) + 0) + 0) + 0) |}
+generated_4815 : IO Int
+let generated_4815 =
+    do
+        let staged = (((\(n : Int) -> n) ((Some (0 + 1)) ?: (0 + 2))) + 0)
+        pure (staged + 1)
 
-result : Set Int
+result : IO Int
 let result = generated_4815
 
 --! assertNoErrors
---! assertType generated_4815 Set Int
---! assertType result Set Int
+--! assertType generated_4815 IO Int
+--! assertType result IO Int
 --! assertDeclKinds signature, let, signature, let

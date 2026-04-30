@@ -1,15 +1,24 @@
 module main
 
-generated_1238 : IO Int
-let generated_1238 =
-    do
-        value <- pure ((((((((if False then 0 else ((0 + 0) + 0)) + 0) + 0) + 0) + 0) + 0) + 0) + 0)
-        pure (value + 2)
+generatedEcho : forall (a : Type). (this x : a) -> a
+let generatedEcho @a (this x : a) = x
 
-result : IO Int
+generated_1238 : Int
+let generated_1238 = ((match (Some (block
+    generatedSetCount : Set Int -> Int
+    let generatedSetCount values = 2
+
+    let item = 0
+    let values = {|item, (item + 1)|}
+
+    generatedSetCount values))
+  case Some payload -> payload
+  case None -> 0) + 0).generatedEcho
+
+result : Int
 let result = generated_1238
 
 --! assertNoErrors
---! assertType generated_1238 IO Int
---! assertType result IO Int
---! assertDeclKinds signature, let, signature, let
+--! assertType generated_1238 Int
+--! assertType result Int
+--! assertDeclKinds signature, let, signature, let, signature, let

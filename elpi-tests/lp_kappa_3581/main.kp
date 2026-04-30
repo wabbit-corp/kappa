@@ -2,10 +2,21 @@ module main
 
 generated_3581 : Int
 let generated_3581 =
-    let
-        ranked : Int = (((((0 + (((((Some (0 + 0)) ?: 0) + 0) + 0) + 0)) + 0) + 0) + 0) + 0)
-in
-        (ranked + 0)
+    block
+        data RankedBox : Type =
+            RankedBox (value : Int)
+
+        let boxed = RankedBox ((block
+            generatedSetCount : Set Int -> Int
+            let generatedSetCount values = 2
+
+            let item = ((\(n : Int) -> n) 0)
+            let values = {|item, (item + 1)|}
+
+            generatedSetCount values) + 0)
+
+        match boxed
+          case RankedBox value -> (value + 1)
 
 result : Int
 let result = generated_3581

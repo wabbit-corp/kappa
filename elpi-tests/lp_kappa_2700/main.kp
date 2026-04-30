@@ -1,15 +1,19 @@
 module main
 
-generated_2700 : IO Int
-let generated_2700 =
-    do
-        value <- pure (((((((((left = 0, right = ((if False then 0 else 0) + 0))).right + 0) + 0) + 0) + 0) + 0) + 0) + 0)
-        pure (value + 2)
+generatedMakeConst : forall (a : Type). a -> Unit -> a
+let generatedMakeConst value = \() -> value
 
-result : IO Int
+generated_2700 : Int
+let generated_2700 = ((generatedMakeConst ((match (Some (match [0, (0 + 1)]
+  case head :: tail -> head
+  case Nil -> 0))
+  case Some payload -> payload
+  case None -> 0) + 0)) ())
+
+result : Int
 let result = generated_2700
 
 --! assertNoErrors
---! assertType generated_2700 IO Int
---! assertType result IO Int
---! assertDeclKinds signature, let, signature, let
+--! assertType generated_2700 Int
+--! assertType result Int
+--! assertDeclKinds signature, let, signature, let, signature, let

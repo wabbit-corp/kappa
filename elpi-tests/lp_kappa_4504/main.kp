@@ -1,10 +1,32 @@
 module main
 
-generatedEcho : forall (a : Type). (this x : a) -> a
-let generatedEcho @a (this x : a) = x
+type GeneratedTuple = (Int, Int)
 
 generated_4504 : Int
-let generated_4504 = ((((((0 + ((if False then 0 else ((if False then 0 else 0) + (0 + 0))) + 0)) + 0) + 0) + 0) + 0) + 0).generatedEcho
+let generated_4504 =
+    block
+        let pair : GeneratedTuple = (((block
+            generatedListLength : List Int -> Int
+            let generatedListLength xs decreases structural xs =
+                match xs
+                  case Nil -> 0
+                  case _ :: tail -> 1 + generatedListLength tail
+
+            let item = ((Some (0 + 1)) ?: (0 + 2))
+
+            generatedListLength [item, (item + 1), 0]) + 0), ((block
+            generatedListLength : List Int -> Int
+            let generatedListLength xs decreases structural xs =
+                match xs
+                  case Nil -> 0
+                  case _ :: tail -> 1 + generatedListLength tail
+
+            let item = ((Some (0 + 1)) ?: (0 + 2))
+
+            generatedListLength [item, (item + 1), 0]) + 1))
+        let (left, right) = pair
+
+        (left + right)
 
 result : Int
 let result = generated_4504
@@ -12,4 +34,4 @@ let result = generated_4504
 --! assertNoErrors
 --! assertType generated_4504 Int
 --! assertType result Int
---! assertDeclKinds signature, let, signature, let, signature, let
+--! assertDeclKinds type, signature, let, signature, let

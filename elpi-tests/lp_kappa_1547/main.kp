@@ -1,14 +1,40 @@
 module main
 
-data GeneratedChoice : Type =
-    GeneratedLeft (value : Int)
-    GeneratedRight
-
 generated_1547 : Int
 let generated_1547 =
-    match (GeneratedLeft (((((((((if True then 0 else 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0))
-      case GeneratedLeft payload -> (payload + 0)
-      case GeneratedRight -> (((((((((if True then 0 else 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0)
+    block
+        scoped effect Ask =
+            ask : Unit -> Bool
+
+        let pkg = (label = Ask)
+
+        let seed = ((Some ((block
+            generatedSetCount : Set Int -> Int
+            let generatedSetCount values = 2
+
+            let item = 0
+            let values = {|item, (item + 1)|}
+
+            generatedSetCount values) + 1)) ?: ((block
+            generatedSetCount : Set Int -> Int
+            let generatedSetCount values = 2
+
+            let item = 0
+            let values = {|item, (item + 1)|}
+
+            generatedSetCount values) + 2))
+
+        let comp : Eff <[Ask : Ask]> Int =
+            do
+                let b <- pkg.label.ask ()
+                if b then seed else (seed + 1)
+
+        let handled : Eff <[ ]> Int =
+            deep handle pkg.label comp with
+                case return x -> pure x
+                case ask () k -> k True
+
+        runPure handled
 
 result : Int
 let result = generated_1547
@@ -16,4 +42,4 @@ let result = generated_1547
 --! assertNoErrors
 --! assertType generated_1547 Int
 --! assertType result Int
---! assertDeclKinds data, signature, let, signature, let
+--! assertDeclKinds signature, let, signature, let

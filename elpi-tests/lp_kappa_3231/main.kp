@@ -1,14 +1,21 @@
 module main
 
-data GeneratedChoice : Type =
-    GeneratedLeft (value : Int)
-    GeneratedRight
-
 generated_3231 : Int
 let generated_3231 =
-    match GeneratedRight
-      case GeneratedLeft payload -> (payload + 0)
-      case GeneratedRight -> (((((((((Some (((Some (0 + 0)) ?: 0) + 0)) ?: 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0)
+    let
+        ranked : Int = (match [(block
+            let pair = (x = 0, y = (0 + 1))
+            let (x = captured, y = other) = pair
+
+            (captured + other)), ((block
+            let pair = (x = 0, y = (0 + 1))
+            let (x = captured, y = other) = pair
+
+            (captured + other)) + 1)]
+          case head :: tail -> head
+          case Nil -> 0)
+in
+        (ranked + 0)
 
 result : Int
 let result = generated_3231
@@ -16,4 +23,4 @@ let result = generated_3231
 --! assertNoErrors
 --! assertType generated_3231 Int
 --! assertType result Int
---! assertDeclKinds data, signature, let, signature, let
+--! assertDeclKinds signature, let, signature, let

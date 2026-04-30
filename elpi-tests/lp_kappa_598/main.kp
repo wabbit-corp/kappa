@@ -1,10 +1,35 @@
 module main
 
-generatedMakeConst : forall (a : Type). a -> Unit -> a
-let generatedMakeConst value = \() -> value
-
 generated_598 : Int
-let generated_598 = ((generatedMakeConst ((((((((0 + ((0 + (0 + 0)) + 0)) + 0) + 0) + 0) + 0) + 0) + 0) + 0)) ())
+let generated_598 =
+    block
+        trait RankedScore a =
+            rank : a -> Int
+
+        instance RankedScore Int =
+            let rank x = x
+
+        let dict = summon (RankedScore Int)
+
+        dict.rank ((block
+            generatedListLength : List Int -> Int
+            let generatedListLength xs decreases structural xs =
+                match xs
+                  case Nil -> 0
+                  case _ :: tail -> 1 + generatedListLength tail
+
+            let item = (block
+                generatedListLength : List Int -> Int
+                let generatedListLength xs decreases structural xs =
+                    match xs
+                      case Nil -> 0
+                      case _ :: tail -> 1 + generatedListLength tail
+
+                let item = 0
+
+                generatedListLength [item, (item + 1), 0])
+
+            generatedListLength [item, (item + 1), 0]) + 0)
 
 result : Int
 let result = generated_598
@@ -12,4 +37,4 @@ let result = generated_598
 --! assertNoErrors
 --! assertType generated_598 Int
 --! assertType result Int
---! assertDeclKinds signature, let, signature, let, signature, let
+--! assertDeclKinds signature, let, signature, let

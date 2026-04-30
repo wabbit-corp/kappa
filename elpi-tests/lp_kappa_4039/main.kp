@@ -1,17 +1,12 @@
 module main
 
-generated_4039 : Int
-let generated_4039 =
-    block
-        let pair = (x = ((((((0 + ((if True then (0 + (0 + 0)) else 0) + 0)) + 0) + 0) + 0) + 0) + 0), y = ((((((0 + ((if True then (0 + (0 + 0)) else 0) + 0)) + 0) + 0) + 0) + 0) + 1))
-        let (x = captured, y = other) = pair
+generated_4039 : (Int -> Int)
+let generated_4039 = \(x : Int) -> ((\(x : Int) -> ((\(x : Int) -> ((\(x : Int) -> if (x == 0) then ((\(x : Int) -> x) x) else x) x)) x)) x)
 
-        (captured + other)
-
-result : Int
+result : (Int -> Int)
 let result = generated_4039
 
 --! assertNoErrors
---! assertType generated_4039 Int
---! assertType result Int
+--! assertType generated_4039 (Int -> Int)
+--! assertType result (Int -> Int)
 --! assertDeclKinds signature, let, signature, let

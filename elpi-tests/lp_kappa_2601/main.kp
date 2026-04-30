@@ -1,19 +1,24 @@
 module main
 
-data GeneratedChoice : Type =
-    GeneratedLeft (value : Int)
-    GeneratedRight
-
-generated_2601 : Int
+generated_2601 : IO Int
 let generated_2601 =
-    match (GeneratedLeft (((((((((left = 0, right = (((0 + 0) + 0) + 0))).right + 0) + 0) + 0) + 0) + 0) + 0) + 0))
-      case GeneratedLeft payload -> (payload + 0)
-      case GeneratedRight -> (((((((((left = 0, right = (((0 + 0) + 0) + 0))).right + 0) + 0) + 0) + 0) + 0) + 0) + 0)
+    do
+        let staged = ((block
+            generatedSetCount : Set Int -> Int
+            let generatedSetCount values = 2
 
-result : Int
+            let item = (match [0, (0 + 1)]
+              case head :: tail -> head
+              case Nil -> 0)
+            let values = {|item, (item + 1)|}
+
+            generatedSetCount values) + 0)
+        pure (staged + 1)
+
+result : IO Int
 let result = generated_2601
 
 --! assertNoErrors
---! assertType generated_2601 Int
---! assertType result Int
---! assertDeclKinds data, signature, let, signature, let
+--! assertType generated_2601 IO Int
+--! assertType result IO Int
+--! assertDeclKinds signature, let, signature, let

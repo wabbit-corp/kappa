@@ -1,15 +1,40 @@
 module main
 
-generated_2409 : IO Int
+generated_2409 : Int
 let generated_2409 =
-    do
-        let staged = (((((((((left = (((if True then 0 else 0) + 0) + 0), right = 0)).left + 0) + 0) + 0) + 0) + 0) + 0) + 0)
-        pure (staged + 1)
+    block
+        scoped effect Ask =
+            ask : Unit -> Bool
 
-result : IO Int
+        scoped effect Other =
+            other : Unit -> Int
+
+        let seed = ((\(n : Int) -> n) (match (Some 0)
+          case Some payload -> payload
+          case None -> 0))
+
+        let comp : Eff <[Ask : Ask, Other : Other]> Int =
+            do
+                let b <- Ask.ask ()
+                let n <- Other.other ()
+                if b then (n + seed) else seed
+
+        let askHandled : Eff <[Other : Other]> Int =
+            deep handle Ask comp with
+                case return x -> pure x
+                case ask () k -> k True
+
+        let handled : Eff <[ ]> Int =
+            deep handle Other askHandled with
+                case return x -> pure x
+                case other () k -> k 1
+
+        runPure handled
+
+result : Int
 let result = generated_2409
 
 --! assertNoErrors
---! assertType generated_2409 IO Int
---! assertType result IO Int
+--! assertType generated_2409 Int
+--! assertType result Int
 --! assertDeclKinds signature, let, signature, let

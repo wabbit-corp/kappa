@@ -1,12 +1,26 @@
 module main
 
+trait GeneratedScore a =
+    score : a -> Int
+
+instance GeneratedScore Int =
+    let score x = x
+
 generated_4477 : Int
 let generated_4477 =
-    block
-        rankedHelper : (Int -> Int)
-        let rankedHelper x = x + 1
+    let
+        dict = summon (GeneratedScore Int)
+in
+        dict.score ((block
+            generatedListLength : List Int -> Int
+            let generatedListLength xs decreases structural xs =
+                match xs
+                  case Nil -> 0
+                  case _ :: tail -> 1 + generatedListLength tail
 
-        rankedHelper ((((((0 + ((if False then 0 else ((if True then 0 else 0) + 0)) + 0)) + 0) + 0) + 0) + 0) + 0)
+            let item = ((Some (0 + 1)) ?: (0 + 2))
+
+            generatedListLength [item, (item + 1), 0]) + 0)
 
 result : Int
 let result = generated_4477
@@ -14,4 +28,4 @@ let result = generated_4477
 --! assertNoErrors
 --! assertType generated_4477 Int
 --! assertType result Int
---! assertDeclKinds signature, let, signature, let
+--! assertDeclKinds trait, instance, signature, let, signature, let

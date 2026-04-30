@@ -1,10 +1,16 @@
 module main
 
-generatedMakeConst : forall (a : Type). a -> Unit -> a
-let generatedMakeConst value = \() -> value
+generatedEcho : forall (a : Type). (this x : a) -> a
+let generatedEcho @a (this x : a) = x
 
 generated_2264 : Int
-let generated_2264 = ((generatedMakeConst (((((((((left = (((0 + 0) + 0) + 0), right = 0)).left + 0) + 0) + 0) + 0) + 0) + 0) + 0)) ())
+let generated_2264 = ((match [(match (Some 0)
+  case Some payload -> payload
+  case None -> 0), ((match (Some 0)
+  case Some payload -> payload
+  case None -> 0) + 1)]
+  case head :: tail -> head
+  case Nil -> 0) + 0).generatedEcho
 
 result : Int
 let result = generated_2264

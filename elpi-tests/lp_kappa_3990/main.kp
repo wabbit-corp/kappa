@@ -1,19 +1,26 @@
 module main
 
-generatedNeed : (@x : Int) -> Int
-let generatedNeed (@x : Int) = x
-
-generated_3990 : Int
+generated_3990 : IO Int
 let generated_3990 =
-    block
-        let (@x : Int) = (((((0 + ((if True then ((0 + 0) + 0) else 0) + 0)) + 0) + 0) + 0) + 0)
+    do
+        value <- pure ((block
+            generatedListLength : List Int -> Int
+            let generatedListLength xs decreases structural xs =
+                match xs
+                  case Nil -> 0
+                  case _ :: tail -> 1 + generatedListLength tail
 
-        if True then generatedNeed else 0
+            let item = (match (0 == 0)
+              case True -> 0
+              case False -> 0)
 
-result : Int
+            generatedListLength [item, (item + 1), 0]) + 0)
+        pure (value + 2)
+
+result : IO Int
 let result = generated_3990
 
 --! assertNoErrors
---! assertType generated_3990 Int
---! assertType result Int
---! assertDeclKinds signature, let, signature, let, signature, let
+--! assertType generated_3990 IO Int
+--! assertType result IO Int
+--! assertDeclKinds signature, let, signature, let

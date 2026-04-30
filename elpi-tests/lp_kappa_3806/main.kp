@@ -1,12 +1,23 @@
 module main
 
-generated_3806 : List Int
-let generated_3806 = [ yield ((((((0 + ((0 + (((if True then 0 else 0) + 0) + 0)) + 0)) + 0) + 0) + 0) + 0) + 0) ]
+generatedUseWidth : (width : Int) -> Int
+let generatedUseWidth width = width
 
-result : List Int
+generated_3806 : Int
+let generated_3806 =
+    block
+        let width = ((block
+            let pair = (x = ((\(n : Int) -> n) 0), y = (((\(n : Int) -> n) 0) + 1))
+            let (x = captured, y = other) = pair
+
+            (captured + other)) + 0)
+
+        generatedUseWidth { width }
+
+result : Int
 let result = generated_3806
 
 --! assertNoErrors
---! assertType generated_3806 List Int
---! assertType result List Int
---! assertDeclKinds signature, let, signature, let
+--! assertType generated_3806 Int
+--! assertType result Int
+--! assertDeclKinds signature, let, signature, let, signature, let

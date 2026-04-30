@@ -1,12 +1,22 @@
 module main
 
-generated_3636 : List Int
-let generated_3636 = [ yield ((((((0 + ((0 + (0 + 0)) + 0)) + 0) + 0) + 0) + 0) + 0) ]
+generatedNeed : (@x : Int) -> Int
+let generatedNeed (@x : Int) = x
 
-result : List Int
+generated_3636 : Int
+let generated_3636 = generatedNeed @(((block
+    generatedMapCount : Map String Int -> Int
+    let generatedMapCount values = 1
+
+    let item = ((\(n : Int) -> n) 0)
+    let values = { yield "item" : item }
+
+    generatedMapCount values) + 0))
+
+result : Int
 let result = generated_3636
 
 --! assertNoErrors
---! assertType generated_3636 List Int
---! assertType result List Int
---! assertDeclKinds signature, let, signature, let
+--! assertType generated_3636 Int
+--! assertType result Int
+--! assertDeclKinds signature, let, signature, let, signature, let

@@ -3,11 +3,24 @@ module main
 generated_1124 : Int
 let generated_1124 =
     block
-        type RankedAlias = Int
+        ranked : Int
+        let ranked = (block
+            generatedSetCount : Set Int -> Int
+            let generatedSetCount values = 2
 
-        let aliased : RankedAlias = ((((((((if True then ((left = (0 + 0), right = 0)).left else 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0)
+            let item = (block
+                generatedSetCount : Set Int -> Int
+                let generatedSetCount values = 2
 
-        (aliased + 1)
+                let item = 0
+                let values = {|item, (item + 1)|}
+
+                generatedSetCount values)
+            let values = {|item, (item + 1)|}
+
+            generatedSetCount values)
+
+        (ranked + 0)
 
 result : Int
 let result = generated_1124

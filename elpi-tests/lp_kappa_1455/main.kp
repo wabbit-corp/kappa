@@ -1,12 +1,60 @@
 module main
 
+data GeneratedChoice : Type =
+    GeneratedLeft (value : Int)
+    GeneratedRight
+
 generated_1455 : Int
 let generated_1455 =
-    block
-        let pair = (x = ((((((((if False then 0 else ((left = (0 + 0), right = 0)).left) + 0) + 0) + 0) + 0) + 0) + 0) + 0), y = ((((((((if False then 0 else ((left = (0 + 0), right = 0)).left) + 0) + 0) + 0) + 0) + 0) + 0) + 1))
-        let (x = captured, y = other) = pair
+    match (GeneratedLeft ((match ((block
+        generatedSetCount : Set Int -> Int
+        let generatedSetCount values = 2
 
-        (captured + other)
+        let item = 0
+        let values = {|item, (item + 1)|}
+
+        generatedSetCount values) == (block
+        generatedSetCount : Set Int -> Int
+        let generatedSetCount values = 2
+
+        let item = 0
+        let values = {|item, (item + 1)|}
+
+        generatedSetCount values))
+      case True -> (block
+          generatedSetCount : Set Int -> Int
+          let generatedSetCount values = 2
+
+          let item = 0
+          let values = {|item, (item + 1)|}
+
+          generatedSetCount values)
+      case False -> 0) + 0))
+      case GeneratedLeft payload -> (payload + 0)
+      case GeneratedRight -> ((match ((block
+          generatedSetCount : Set Int -> Int
+          let generatedSetCount values = 2
+
+          let item = 0
+          let values = {|item, (item + 1)|}
+
+          generatedSetCount values) == (block
+          generatedSetCount : Set Int -> Int
+          let generatedSetCount values = 2
+
+          let item = 0
+          let values = {|item, (item + 1)|}
+
+          generatedSetCount values))
+        case True -> (block
+            generatedSetCount : Set Int -> Int
+            let generatedSetCount values = 2
+
+            let item = 0
+            let values = {|item, (item + 1)|}
+
+            generatedSetCount values)
+        case False -> 0) + 0)
 
 result : Int
 let result = generated_1455
@@ -14,4 +62,4 @@ let result = generated_1455
 --! assertNoErrors
 --! assertType generated_1455 Int
 --! assertType result Int
---! assertDeclKinds signature, let, signature, let
+--! assertDeclKinds data, signature, let, signature, let

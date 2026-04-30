@@ -1,12 +1,23 @@
 module main
 
-generated_757 : (Int -> Int)
-let generated_757 = \(x : Int) -> ((\(x : Int) -> ((\(x : Int) -> ((\(x : Int) -> ((((if (0 == 1) then \(x : Int) -> (0 + x) else \(x : Int) -> x)) x) + 0)) x)) x)) x)
+generated_757 : Set Int
+let generated_757 = {| for x in [1, 2, 3], let y = x + 1, yield (match (Some (block
+    generatedListLength : List Int -> Int
+    let generatedListLength xs decreases structural xs =
+        match xs
+          case Nil -> 0
+          case _ :: tail -> 1 + generatedListLength tail
 
-result : (Int -> Int)
+    let item = x
+
+    generatedListLength [item, (item + 1), 0]))
+  case Some payload -> payload
+  case None -> 0) |}
+
+result : Set Int
 let result = generated_757
 
 --! assertNoErrors
---! assertType generated_757 (Int -> Int)
---! assertType result (Int -> Int)
+--! assertType generated_757 Set Int
+--! assertType result Set Int
 --! assertDeclKinds signature, let, signature, let

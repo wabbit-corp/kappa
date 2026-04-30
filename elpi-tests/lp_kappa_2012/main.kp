@@ -1,12 +1,26 @@
 module main
 
-generated_2012 : Unit
-let generated_2012 = (if True then (if True then (if True then (if (False || True) then ((\(u : Unit) -> ()) ()) else ()) else ()) else ()) else ())
+generated_2012 : Map String Int
+let generated_2012 = { yield "only" : (((Some ((block
+    generatedMapCount : Map String Int -> Int
+    let generatedMapCount values = 1
 
-result : Unit
+    let item = 0
+    let values = { yield "item" : item }
+
+    generatedMapCount values) + 1)) ?: ((block
+    generatedMapCount : Map String Int -> Int
+    let generatedMapCount values = 1
+
+    let item = 0
+    let values = { yield "item" : item }
+
+    generatedMapCount values) + 2)) + 0) }
+
+result : Map String Int
 let result = generated_2012
 
 --! assertNoErrors
---! assertType generated_2012 Unit
---! assertType result Unit
+--! assertType generated_2012 Map String Int
+--! assertType result Map String Int
 --! assertDeclKinds signature, let, signature, let

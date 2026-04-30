@@ -1,12 +1,19 @@
 module main
 
-generated_2131 : Int
-let generated_2131 =
-    block
-        rankedHelper : (Int -> Int)
-        let rankedHelper x = x + 1
+generatedMakeConst : forall (a : Type). a -> Unit -> a
+let generatedMakeConst value = \() -> value
 
-        rankedHelper (((((((((if False then 0 else ((left = (0 + 0), right = 0)).left) + (0 + 0)) + 0) + 0) + 0) + 0) + 0) + 0) + 0)
+generated_2131 : Int
+let generated_2131 = ((generatedMakeConst @Int ((block
+    generatedSetCount : Set Int -> Int
+    let generatedSetCount values = 2
+
+    let item = (match (Some 0)
+      case Some payload -> payload
+      case None -> 0)
+    let values = {|item, (item + 1)|}
+
+    generatedSetCount values) + 0)) ())
 
 result : Int
 let result = generated_2131
@@ -14,4 +21,4 @@ let result = generated_2131
 --! assertNoErrors
 --! assertType generated_2131 Int
 --! assertType result Int
---! assertDeclKinds signature, let, signature, let
+--! assertDeclKinds signature, let, signature, let, signature, let

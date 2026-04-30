@@ -1,12 +1,32 @@
 module main
 
-generated_3311 : List Int
-let generated_3311 = [ for x in [1, 2, 3], yield (((((0 + (((((x + 0) + 0) + 0) + 0) + 0)) + 0) + 0) + 0) + 0) ]
+generated_3311 : Int
+let generated_3311 =
+    block
+        data RankedBox : Type =
+            RankedBox (value : Int)
 
-result : List Int
+        let boxed = RankedBox ((block
+            let pair = (x = (block
+                let pair = (x = 0, y = (0 + 1))
+                let (x = captured, y = other) = pair
+
+                (captured + other)), y = ((block
+                let pair = (x = 0, y = (0 + 1))
+                let (x = captured, y = other) = pair
+
+                (captured + other)) + 1))
+            let (x = captured, y = other) = pair
+
+            (captured + other)) + 0)
+
+        match boxed
+          case RankedBox value -> (value + 1)
+
+result : Int
 let result = generated_3311
 
 --! assertNoErrors
---! assertType generated_3311 List Int
---! assertType result List Int
+--! assertType generated_3311 Int
+--! assertType result Int
 --! assertDeclKinds signature, let, signature, let

@@ -1,12 +1,25 @@
 module main
 
-generated_399 : String
-let generated_399 = (if (if (if (if (if (if False then True else (True || False)) then True else False) then True else False) then True else False) then True else False) then #"raw lambda-prolog"# else "fallback")
+generated_399 : Int
+let generated_399 =
+    block
+        let pair = (x = ((block
+            let pair = (x = 0, y = (0 + 1))
+            let (x = captured, y = other) = pair
 
-result : String
+            (captured + other)) + 0), y = ((block
+            let pair = (x = 0, y = (0 + 1))
+            let (x = captured, y = other) = pair
+
+            (captured + other)) + 1))
+        let whole@(x = captured, y = other) = pair
+
+        (whole.x + (captured + other))
+
+result : Int
 let result = generated_399
 
 --! assertNoErrors
---! assertType generated_399 String
---! assertType result String
+--! assertType generated_399 Int
+--! assertType result Int
 --! assertDeclKinds signature, let, signature, let

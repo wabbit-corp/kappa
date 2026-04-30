@@ -1,12 +1,26 @@
 module main
 
-generated_1245 : Set Int
-let generated_1245 = {| for x in [1, 2, 3], let y = x + 1, if y > 0, yield (((((((if False then 0 else ((x + 0) + 0)) + 0) + 0) + 0) + 0) + 0) + 0) |}
+generated_1245 : Int
+let generated_1245 =
+    block
+        rankedHelper : (Int -> Int)
+        let rankedHelper x = x + 1
 
-result : Set Int
+        rankedHelper ((match (Some (block
+            generatedSetCount : Set Int -> Int
+            let generatedSetCount values = 2
+
+            let item = 0
+            let values = {|item, (item + 1)|}
+
+            generatedSetCount values))
+          case Some payload -> payload
+          case None -> 0) + 0)
+
+result : Int
 let result = generated_1245
 
 --! assertNoErrors
---! assertType generated_1245 Set Int
---! assertType result Set Int
+--! assertType generated_1245 Int
+--! assertType result Int
 --! assertDeclKinds signature, let, signature, let

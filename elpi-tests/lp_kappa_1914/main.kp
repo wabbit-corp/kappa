@@ -2,11 +2,23 @@ module main
 
 generated_1914 : Int
 let generated_1914 =
-    block
-        ranked : Int
-        let ranked = ((((((((if False then 0 else ((0 + 0) + 0)) + (0 + 0)) + 0) + 0) + 0) + 0) + 0) + 0)
+    match [(((\(n : Int) -> n) (block
+        generatedMapCount : Map String Int -> Int
+        let generatedMapCount values = 1
 
-        (ranked + 0)
+        let item = 0
+        let values = { yield "item" : item }
+
+        generatedMapCount values)) + 0), ((((\(n : Int) -> n) (block
+        generatedMapCount : Map String Int -> Int
+        let generatedMapCount values = 1
+
+        let item = 0
+        let values = { yield "item" : item }
+
+        generatedMapCount values)) + 0) + 1)]
+      case head :: tail -> head
+      case Nil -> 0
 
 result : Int
 let result = generated_1914

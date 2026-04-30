@@ -1,12 +1,41 @@
 module main
 
-generated_890 : Unit
-let generated_890 = (if True then (if True then (if True then ((\(u : Unit) -> u) (if True then () else ())) else ()) else ()) else ())
+generatedUseWidth : (width : Int) -> Int
+let generatedUseWidth width = width
 
-result : Unit
+generated_890 : Int
+let generated_890 =
+    block
+        let width = ((block
+            let pair = (x = (block
+                generatedListLength : List Int -> Int
+                let generatedListLength xs decreases structural xs =
+                    match xs
+                      case Nil -> 0
+                      case _ :: tail -> 1 + generatedListLength tail
+
+                let item = 0
+
+                generatedListLength [item, (item + 1), 0]), y = ((block
+                generatedListLength : List Int -> Int
+                let generatedListLength xs decreases structural xs =
+                    match xs
+                      case Nil -> 0
+                      case _ :: tail -> 1 + generatedListLength tail
+
+                let item = 0
+
+                generatedListLength [item, (item + 1), 0]) + 1))
+            let (x = captured, y = other) = pair
+
+            (captured + other)) + 0)
+
+        generatedUseWidth { width }
+
+result : Int
 let result = generated_890
 
 --! assertNoErrors
---! assertType generated_890 Unit
---! assertType result Unit
---! assertDeclKinds signature, let, signature, let
+--! assertType generated_890 Int
+--! assertType result Int
+--! assertDeclKinds signature, let, signature, let, signature, let

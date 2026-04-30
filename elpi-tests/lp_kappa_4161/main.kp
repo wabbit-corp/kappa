@@ -1,12 +1,21 @@
 module main
 
-generated_4161 : List Int
-let generated_4161 = [ for x in [1, 2, 3], let y = x + 1, yield (((((0 + ((if True then ((if False then 0 else x) + (0 + 0)) else 0) + 0)) + 0) + 0) + 0) + 0) ]
+generated_4161 : Int
+let generated_4161 =
+    block
+        rankedHelper : (Int -> Int)
+        let rankedHelper x = x + 1
 
-result : List Int
+        rankedHelper ((match (Some (match (0 == 0)
+          case True -> 0
+          case False -> 0))
+          case Some payload -> payload
+          case None -> 0) + 0)
+
+result : Int
 let result = generated_4161
 
 --! assertNoErrors
---! assertType generated_4161 List Int
---! assertType result List Int
+--! assertType generated_4161 Int
+--! assertType result Int
 --! assertDeclKinds signature, let, signature, let

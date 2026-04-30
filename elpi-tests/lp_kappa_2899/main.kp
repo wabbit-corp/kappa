@@ -1,12 +1,37 @@
 module main
 
-generated_2899 : (Int -> Int)
-let generated_2899 = \(x : Int) -> ((\(x : Int) -> ((\(x : Int) -> ((\(x : Int) -> if (x == 0) then x else ((\(x : Int) -> x) x)) x)) x)) x)
+generated_2899 : Int
+let generated_2899 =
+    block
+        scoped effect Choice =
+            ω choose : Unit -> Bool
 
-result : (Int -> Int)
+        let c = Choice
+
+        let seed = ((\(n : Int) -> n) (match [0, (0 + 1)]
+          case head :: tail -> head
+          case Nil -> 0))
+
+        let comp : Eff <[Choice : Choice]> Int =
+            do
+                let b <- c.choose ()
+                if b then seed else (seed + 1)
+
+        let handled : Eff <[ ]> Int =
+            deep handle Choice comp with
+                case return x -> pure x
+                case choose () k ->
+                    do
+                        let a <- k True
+                        let b <- k False
+                        pure (a + b)
+
+        runPure handled
+
+result : Int
 let result = generated_2899
 
 --! assertNoErrors
---! assertType generated_2899 (Int -> Int)
---! assertType result (Int -> Int)
+--! assertType generated_2899 Int
+--! assertType result Int
 --! assertDeclKinds signature, let, signature, let

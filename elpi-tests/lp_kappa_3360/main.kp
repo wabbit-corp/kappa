@@ -1,17 +1,16 @@
 module main
 
-generated_3360 : Int
-let generated_3360 =
-    block
-        let base : (x : Int) = (x = ((((((0 + ((((0 + (0 + 0)) + 0) + 0) + 0)) + 0) + 0) + 0) + 0) + 0))
-        let extended = base.{ y := ((((((0 + ((((0 + (0 + 0)) + 0) + 0) + 0)) + 0) + 0) + 0) + 0) + 1) }
+generated_3360 : List Int
+let generated_3360 = [ yield (((\(n : Int) -> n) (block
+    let pair = (x = 0, y = (0 + 1))
+    let (x = captured, y = other) = pair
 
-        (extended.x + extended.y)
+    (captured + other))) + 0) ]
 
-result : Int
+result : List Int
 let result = generated_3360
 
 --! assertNoErrors
---! assertType generated_3360 Int
---! assertType result Int
+--! assertType generated_3360 List Int
+--! assertType result List Int
 --! assertDeclKinds signature, let, signature, let

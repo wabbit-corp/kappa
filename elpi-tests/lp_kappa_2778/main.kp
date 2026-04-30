@@ -2,16 +2,21 @@ module main
 
 generated_2778 : Int
 let generated_2778 =
-    block
-        trait RankedScore a =
-            rank : a -> Int
-
-        instance RankedScore Int =
-            let rank x = x
-
-        let dict = summon (RankedScore Int)
-
-        dict.rank (((((((((left = 0, right = (((if False then 0 else 0) + (0 + 0)) + 0))).right + 0) + 0) + 0) + 0) + 0) + 0) + 0)
+    match [((match [(match [0, (0 + 1)]
+      case head :: tail -> head
+      case Nil -> 0), ((match [0, (0 + 1)]
+      case head :: tail -> head
+      case Nil -> 0) + 1)]
+      case head :: tail -> head
+      case Nil -> 0) + 0), (((match [(match [0, (0 + 1)]
+      case head :: tail -> head
+      case Nil -> 0), ((match [0, (0 + 1)]
+      case head :: tail -> head
+      case Nil -> 0) + 1)]
+      case head :: tail -> head
+      case Nil -> 0) + 0) + 1)]
+      case head :: tail -> head
+      case Nil -> 0
 
 result : Int
 let result = generated_2778

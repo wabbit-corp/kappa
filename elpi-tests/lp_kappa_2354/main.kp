@@ -1,12 +1,43 @@
 module main
 
-generated_2354 : Option Int
-let generated_2354 = (if True then (if True then (if True then (if (((if (((Some (0 + 0)) ?: 0) == 1) then None else (Some (0 + 0))) ?: 0) == 1) then (Some (((if (((Some (0 + 0)) ?: 0) == 1) then None else (Some (0 + 0))) ?: 0) + 0)) else (if (((Some (0 + 0)) ?: 0) == 1) then None else (Some (0 + 0)))) else None) else None) else None)
+generated_2354 : Int
+let generated_2354 =
+    block
+        scoped effect Ask =
+            ask : Unit -> Bool
 
-result : Option Int
+        let seed = (block
+            let pair = (x = (match (Some 0)
+              case Some payload -> payload
+              case None -> 0), y = ((match (Some 0)
+              case Some payload -> payload
+              case None -> 0) + 1))
+            let (x = captured, y = other) = pair
+
+            (captured + other))
+
+        let comp : Eff <[Ask : Ask]> Int =
+            do
+                let b <- Ask.ask ()
+                if b then seed else (seed + 1)
+
+        let rehandle : (1 k : ((1 x : Bool) -> Eff <[Ask : Ask]> Int)) -> Eff <[ ]> Int =
+            \(1 k : ((1 x : Bool) -> Eff <[Ask : Ask]> Int)) ->
+                handle Ask (k True) with
+                    case return y -> pure y
+                    case ask () k2 -> k2 False
+
+        let handled : Eff <[ ]> Int =
+            handle Ask comp with
+                case return y -> pure y
+                case ask () k -> rehandle k
+
+        runPure handled
+
+result : Int
 let result = generated_2354
 
 --! assertNoErrors
---! assertType generated_2354 Option Int
---! assertType result Option Int
+--! assertType generated_2354 Int
+--! assertType result Int
 --! assertDeclKinds signature, let, signature, let

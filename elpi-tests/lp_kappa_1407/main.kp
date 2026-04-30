@@ -1,12 +1,24 @@
 module main
 
-generated_1407 : List Int
-let generated_1407 = [ for x in [1, 2, 3], yield (((((((if False then 0 else ((if False then 0 else x) + (0 + 0))) + 0) + 0) + 0) + 0) + 0) + 0) ]
+generated_1407 : Int
+let generated_1407 =
+    block
+        rankedHelper : (Int -> Int)
+        let rankedHelper x = x + 1
 
-result : List Int
+        rankedHelper (((\(n : Int) -> n) (block
+            generatedSetCount : Set Int -> Int
+            let generatedSetCount values = 2
+
+            let item = 0
+            let values = {|item, (item + 1)|}
+
+            generatedSetCount values)) + 0)
+
+result : Int
 let result = generated_1407
 
 --! assertNoErrors
---! assertType generated_1407 List Int
---! assertType result List Int
+--! assertType generated_1407 Int
+--! assertType result Int
 --! assertDeclKinds signature, let, signature, let

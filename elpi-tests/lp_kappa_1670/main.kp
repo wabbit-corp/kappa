@@ -1,7 +1,24 @@
 module main
 
+generatedEcho : forall (a : Type). (this x : a) -> a
+let generatedEcho @a (this x : a) = x
+
 generated_1670 : Int
-let generated_1670 = ((((((((if True then (if False then 0 else 0) else 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0)
+let generated_1670 = ((block
+    generatedMapCount : Map String Int -> Int
+    let generatedMapCount values = 1
+
+    let item = (block
+        generatedMapCount : Map String Int -> Int
+        let generatedMapCount values = 1
+
+        let item = 0
+        let values = { yield "item" : item }
+
+        generatedMapCount values)
+    let values = { yield "item" : item }
+
+    generatedMapCount values) + 0).generatedEcho
 
 result : Int
 let result = generated_1670
@@ -9,4 +26,4 @@ let result = generated_1670
 --! assertNoErrors
 --! assertType generated_1670 Int
 --! assertType result Int
---! assertDeclKinds signature, let, signature, let
+--! assertDeclKinds signature, let, signature, let, signature, let

@@ -1,15 +1,32 @@
 module main
 
-generated_1522 : Int
-let generated_1522 =
-    match (((((((((if False then 0 else ((Some (0 + 0)) ?: 0)) + 0) + 0) + 0) + 0) + 0) + 0) + 0) == ((((((((if False then 0 else ((Some (0 + 0)) ?: 0)) + 0) + 0) + 0) + 0) + 0) + 0) + 0))
-      case True -> ((((((((if False then 0 else ((Some (0 + 0)) ?: 0)) + 0) + 0) + 0) + 0) + 0) + 0) + 0)
-      case False -> 0
+generatedNeed : (@x : Int) -> Int
+let generatedNeed (@x : Int) = x
 
-result : Int
+generated_1522 : IO Int
+let generated_1522 =
+    do
+        let (@x : Int) = (((Some ((block
+            generatedSetCount : Set Int -> Int
+            let generatedSetCount values = 2
+
+            let item = 0
+            let values = {|item, (item + 1)|}
+
+            generatedSetCount values) + 1)) ?: ((block
+            generatedSetCount : Set Int -> Int
+            let generatedSetCount values = 2
+
+            let item = 0
+            let values = {|item, (item + 1)|}
+
+            generatedSetCount values) + 2)) + 0)
+        pure generatedNeed
+
+result : IO Int
 let result = generated_1522
 
 --! assertNoErrors
---! assertType generated_1522 Int
---! assertType result Int
---! assertDeclKinds signature, let, signature, let
+--! assertType generated_1522 IO Int
+--! assertType result IO Int
+--! assertDeclKinds signature, let, signature, let, signature, let

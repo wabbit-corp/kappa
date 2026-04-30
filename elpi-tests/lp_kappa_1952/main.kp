@@ -1,15 +1,63 @@
 module main
 
-generated_1952 : IO Int
+generated_1952 : Int
 let generated_1952 =
-    do
-        value <- pure (((((((((if False then 0 else (0 + (0 + 0))) + (0 + 0)) + 0) + 0) + 0) + 0) + 0) + 0) + 0)
-        pure (value + 2)
+    block
+        let base : (x : Int) = (x = ((match ((block
+            generatedMapCount : Map String Int -> Int
+            let generatedMapCount values = 1
 
-result : IO Int
+            let item = 0
+            let values = { yield "item" : item }
+
+            generatedMapCount values) == (block
+            generatedMapCount : Map String Int -> Int
+            let generatedMapCount values = 1
+
+            let item = 0
+            let values = { yield "item" : item }
+
+            generatedMapCount values))
+          case True -> (block
+              generatedMapCount : Map String Int -> Int
+              let generatedMapCount values = 1
+
+              let item = 0
+              let values = { yield "item" : item }
+
+              generatedMapCount values)
+          case False -> 0) + 0))
+        let extended = base.{ y := ((match ((block
+            generatedMapCount : Map String Int -> Int
+            let generatedMapCount values = 1
+
+            let item = 0
+            let values = { yield "item" : item }
+
+            generatedMapCount values) == (block
+            generatedMapCount : Map String Int -> Int
+            let generatedMapCount values = 1
+
+            let item = 0
+            let values = { yield "item" : item }
+
+            generatedMapCount values))
+          case True -> (block
+              generatedMapCount : Map String Int -> Int
+              let generatedMapCount values = 1
+
+              let item = 0
+              let values = { yield "item" : item }
+
+              generatedMapCount values)
+          case False -> 0) + 1) }
+
+        (extended.x + extended.y)
+
+result : Int
 let result = generated_1952
 
 --! assertNoErrors
---! assertType generated_1952 IO Int
---! assertType result IO Int
+--! assertType generated_1952 Int
+--! assertType result Int
 --! assertDeclKinds signature, let, signature, let

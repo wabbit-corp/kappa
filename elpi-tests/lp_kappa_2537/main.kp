@@ -1,12 +1,26 @@
 module main
 
-generated_2537 : Set Int
-let generated_2537 = {| for x in [1, 2, 3], let y = x + 1, yield ((((((((left = (((Some (x + 0)) ?: 0) + 0), right = 0)).left + 0) + 0) + 0) + 0) + 0) + 0) |}
+generatedResize : (image : Int) -> (width : Int) -> (height : Int) -> Int
+let generatedResize image width height = image + width * 10 + height
 
-result : Set Int
+generated_2537 : Int
+let generated_2537 = generatedResize { image = ((block
+    generatedListLength : List Int -> Int
+    let generatedListLength xs decreases structural xs =
+        match xs
+          case Nil -> 0
+          case _ :: tail -> 1 + generatedListLength tail
+
+    let item = (match [0, (0 + 1)]
+      case head :: tail -> head
+      case Nil -> 0)
+
+    generatedListLength [item, (item + 1), 0]) + 0), height = 3, width = 2 }
+
+result : Int
 let result = generated_2537
 
 --! assertNoErrors
---! assertType generated_2537 Set Int
---! assertType result Set Int
---! assertDeclKinds signature, let, signature, let
+--! assertType generated_2537 Int
+--! assertType result Int
+--! assertDeclKinds signature, let, signature, let, signature, let

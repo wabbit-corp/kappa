@@ -1,7 +1,22 @@
 module main
 
 generated_4016 : Int
-let generated_4016 = (((((0 + ((if True then (0 + (0 + 0)) else 0) + 0)) + 0) + 0) + 0) + 0)
+let generated_4016 =
+    block
+        let (captured : Int) = ((block
+            generatedListLength : List Int -> Int
+            let generatedListLength xs decreases structural xs =
+                match xs
+                  case Nil -> 0
+                  case _ :: tail -> 1 + generatedListLength tail
+
+            let item = (match (0 == 0)
+              case True -> 0
+              case False -> 0)
+
+            generatedListLength [item, (item + 1), 0]) + 0)
+
+        captured
 
 result : Int
 let result = generated_4016

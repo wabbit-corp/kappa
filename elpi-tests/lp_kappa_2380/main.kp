@@ -1,12 +1,24 @@
 module main
 
-generated_2380 : Map String Int
-let generated_2380 = { yield "only" : (((((((((left = ((if False then 0 else 0) + 0), right = 0)).left + 0) + 0) + 0) + 0) + 0) + 0) + 0) }
+generated_2380 : Int
+let generated_2380 =
+    block
+        trait RankedScore a =
+            rank : a -> Int
 
-result : Map String Int
+        instance RankedScore Int =
+            let rank x = x
+
+        let dict = summon (RankedScore Int)
+
+        dict.rank (((\(n : Int) -> n) (match (Some 0)
+          case Some payload -> payload
+          case None -> 0)) + 0)
+
+result : Int
 let result = generated_2380
 
 --! assertNoErrors
---! assertType generated_2380 Map String Int
---! assertType result Map String Int
+--! assertType generated_2380 Int
+--! assertType result Int
 --! assertDeclKinds signature, let, signature, let

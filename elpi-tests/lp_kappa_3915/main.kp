@@ -1,12 +1,14 @@
 module main
 
-generated_3915 : Bool
-let generated_3915 = (if (if (if (if ((if True then True else False) && True) then False else True) then False else True) then True else False) then True else False)
+generated_3915 : Map String Int
+let generated_3915 = { for x in [1, 2, 3], yield "k" : (match (((\(n : Int) -> n) x) == ((\(n : Int) -> n) x))
+  case True -> ((\(n : Int) -> n) x)
+  case False -> 0), on conflict keep first }
 
-result : Bool
+result : Map String Int
 let result = generated_3915
 
 --! assertNoErrors
---! assertType generated_3915 Bool
---! assertType result Bool
+--! assertType generated_3915 Map String Int
+--! assertType result Map String Int
 --! assertDeclKinds signature, let, signature, let

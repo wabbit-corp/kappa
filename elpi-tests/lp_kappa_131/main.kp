@@ -1,15 +1,24 @@
 module main
 
-generated_131 : IO Int
+generated_131 : Int
 let generated_131 =
-    do
-        let staged = (((((0 + 0) + 0) + 0) + 0) + 0)
-        pure (staged + 1)
+    match (Some ((block
+        generatedListLength : List Int -> Int
+        let generatedListLength xs decreases structural xs =
+            match xs
+              case Nil -> 0
+              case _ :: tail -> 1 + generatedListLength tail
 
-result : IO Int
+        let item = 0
+
+        generatedListLength [item, (item + 1), 0]) + 0))
+      case Some payload -> payload
+      case None -> 0
+
+result : Int
 let result = generated_131
 
 --! assertNoErrors
---! assertType generated_131 IO Int
---! assertType result IO Int
+--! assertType generated_131 Int
+--! assertType result Int
 --! assertDeclKinds signature, let, signature, let

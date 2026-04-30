@@ -1,15 +1,18 @@
 module main
 
-generatedEcho : forall (a : Type). (this x : a) -> a
-let generatedEcho @a (this x : a) = x
+type GeneratedPair = (left : Int, right : Int)
 
-generated_322 : Int
-let generated_322 = ((((((((((if False then 0 else 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0).generatedEcho
+generated_322 : GeneratedPair
+let generated_322 = ((left = (match [0, (0 + 1)]
+  case head :: tail -> head
+  case Nil -> 0), right = 0)).{ right = ((match [0, (0 + 1)]
+  case head :: tail -> head
+  case Nil -> 0) + 1) }
 
-result : Int
+result : GeneratedPair
 let result = generated_322
 
 --! assertNoErrors
---! assertType generated_322 Int
---! assertType result Int
---! assertDeclKinds signature, let, signature, let, signature, let
+--! assertType generated_322 GeneratedPair
+--! assertType result GeneratedPair
+--! assertDeclKinds type, signature, let, signature, let

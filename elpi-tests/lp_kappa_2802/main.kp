@@ -3,7 +3,15 @@ module main
 generated_2802 : IO Int
 let generated_2802 =
     do
-        value <- pure (((((((((left = 0, right = (((left = (0 + 0), right = 0)).left + 0))).right + 0) + 0) + 0) + 0) + 0) + 0) + 0)
+        value <- pure ((block
+            let pair = (x = (match [0, (0 + 1)]
+              case head :: tail -> head
+              case Nil -> 0), y = ((match [0, (0 + 1)]
+              case head :: tail -> head
+              case Nil -> 0) + 1))
+            let (x = captured, y = other) = pair
+
+            (captured + other)) + 0)
         pure (value + 2)
 
 result : IO Int

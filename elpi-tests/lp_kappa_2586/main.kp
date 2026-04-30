@@ -1,18 +1,24 @@
 module main
 
-generated_2586 : Int
+generated_2586 : IO Int
 let generated_2586 =
-    block
-        type RankedAlias = Int
+    do
+        value <- pure ((block
+            generatedSetCount : Set Int -> Int
+            let generatedSetCount values = 2
 
-        let aliased : RankedAlias = (((((((((left = 0, right = (0 + 0))).right + 0) + 0) + 0) + 0) + 0) + 0) + 0)
+            let item = (match [0, (0 + 1)]
+              case head :: tail -> head
+              case Nil -> 0)
+            let values = {|item, (item + 1)|}
 
-        (aliased + 1)
+            generatedSetCount values) + 0)
+        pure (value + 2)
 
-result : Int
+result : IO Int
 let result = generated_2586
 
 --! assertNoErrors
---! assertType generated_2586 Int
---! assertType result Int
+--! assertType generated_2586 IO Int
+--! assertType result IO Int
 --! assertDeclKinds signature, let, signature, let

@@ -1,12 +1,34 @@
 module main
 
-generated_892 : Option Int
-let generated_892 = (if True then (if True then (if True then (if (((if True then (Some (0 + 0)) else None) ?: 0) == 0) then (if True then (Some (0 + 0)) else None) else None) else None) else None) else None)
+generated_892 : List Int
+let generated_892 = [ for x in [1, 2, 3], skip 1, take 2, yield (block
+    let pair = (x = (block
+        generatedListLength : List Int -> Int
+        let generatedListLength xs decreases structural xs =
+            match xs
+              case Nil -> 0
+              case _ :: tail -> 1 + generatedListLength tail
 
-result : Option Int
+        let item = x
+
+        generatedListLength [item, (item + 1), 0]), y = ((block
+        generatedListLength : List Int -> Int
+        let generatedListLength xs decreases structural xs =
+            match xs
+              case Nil -> 0
+              case _ :: tail -> 1 + generatedListLength tail
+
+        let item = x
+
+        generatedListLength [item, (item + 1), 0]) + 1))
+    let (x = captured, y = other) = pair
+
+    (captured + other)) ]
+
+result : List Int
 let result = generated_892
 
 --! assertNoErrors
---! assertType generated_892 Option Int
---! assertType result Option Int
+--! assertType generated_892 List Int
+--! assertType result List Int
 --! assertDeclKinds signature, let, signature, let

@@ -1,12 +1,27 @@
 module main
 
-generated_3303 : Bool
-let generated_3303 = (if (if (if (if (if True then True else False) then True else False) then False else True) then True else False) then True else False)
+generated_3303 : IO Int
+let generated_3303 =
+    do
+        let staged = ((block
+            let pair = (x = (block
+                let pair = (x = 0, y = (0 + 1))
+                let (x = captured, y = other) = pair
 
-result : Bool
+                (captured + other)), y = ((block
+                let pair = (x = 0, y = (0 + 1))
+                let (x = captured, y = other) = pair
+
+                (captured + other)) + 1))
+            let (x = captured, y = other) = pair
+
+            (captured + other)) + 0)
+        pure (staged + 1)
+
+result : IO Int
 let result = generated_3303
 
 --! assertNoErrors
---! assertType generated_3303 Bool
---! assertType result Bool
+--! assertType generated_3303 IO Int
+--! assertType result IO Int
 --! assertDeclKinds signature, let, signature, let

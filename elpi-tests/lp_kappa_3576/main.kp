@@ -1,12 +1,19 @@
 module main
 
-generated_3576 : Unit
-let generated_3576 = (if True then (if True then (if False then () else (if True then ((\(u : Unit) -> if True then u else ()) ()) else ())) else ()) else ())
+generated_3576 : List Int
+let generated_3576 = [ yield ((block
+    generatedSetCount : Set Int -> Int
+    let generatedSetCount values = 2
 
-result : Unit
+    let item = ((\(n : Int) -> n) 0)
+    let values = {|item, (item + 1)|}
+
+    generatedSetCount values) + 0) ]
+
+result : List Int
 let result = generated_3576
 
 --! assertNoErrors
---! assertType generated_3576 Unit
---! assertType result Unit
+--! assertType generated_3576 List Int
+--! assertType result List Int
 --! assertDeclKinds signature, let, signature, let

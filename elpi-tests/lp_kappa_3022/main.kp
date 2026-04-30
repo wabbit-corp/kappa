@@ -1,18 +1,40 @@
 module main
 
-generatedNeed : (@x : Int) -> Int
-let generatedNeed (@x : Int) = x
+type GeneratedPair = (left : Int, right : Int)
 
-generated_3022 : IO Int
-let generated_3022 =
-    do
-        let (@x : Int) = (((((((((Some ((if True then 0 else 0) + 0)) ?: 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0)
-        pure generatedNeed
+generated_3022 : GeneratedPair
+let generated_3022 = ((left = (block
+    generatedListLength : List Int -> Int
+    let generatedListLength xs decreases structural xs =
+        match xs
+          case Nil -> 0
+          case _ :: tail -> 1 + generatedListLength tail
 
-result : IO Int
+    let item = (block
+        let pair = (x = 0, y = (0 + 1))
+        let (x = captured, y = other) = pair
+
+        (captured + other))
+
+    generatedListLength [item, (item + 1), 0]), right = 0)).{ right = ((block
+    generatedListLength : List Int -> Int
+    let generatedListLength xs decreases structural xs =
+        match xs
+          case Nil -> 0
+          case _ :: tail -> 1 + generatedListLength tail
+
+    let item = (block
+        let pair = (x = 0, y = (0 + 1))
+        let (x = captured, y = other) = pair
+
+        (captured + other))
+
+    generatedListLength [item, (item + 1), 0]) + 1) }
+
+result : GeneratedPair
 let result = generated_3022
 
 --! assertNoErrors
---! assertType generated_3022 IO Int
---! assertType result IO Int
---! assertDeclKinds signature, let, signature, let, signature, let
+--! assertType generated_3022 GeneratedPair
+--! assertType result GeneratedPair
+--! assertDeclKinds type, signature, let, signature, let

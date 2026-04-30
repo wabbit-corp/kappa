@@ -2,12 +2,78 @@ module main
 
 generated_1464 : Int
 let generated_1464 =
-    block
-        type RankedAlias = Int
+    match (((match ((block
+        generatedSetCount : Set Int -> Int
+        let generatedSetCount values = 2
 
-        let aliased : RankedAlias = ((((((((if False then 0 else ((left = (0 + 0), right = 0)).left) + 0) + 0) + 0) + 0) + 0) + 0) + 0)
+        let item = 0
+        let values = {|item, (item + 1)|}
 
-        (aliased + 1)
+        generatedSetCount values) == (block
+        generatedSetCount : Set Int -> Int
+        let generatedSetCount values = 2
+
+        let item = 0
+        let values = {|item, (item + 1)|}
+
+        generatedSetCount values))
+      case True -> (block
+          generatedSetCount : Set Int -> Int
+          let generatedSetCount values = 2
+
+          let item = 0
+          let values = {|item, (item + 1)|}
+
+          generatedSetCount values)
+      case False -> 0) + 0) == ((match ((block
+        generatedSetCount : Set Int -> Int
+        let generatedSetCount values = 2
+
+        let item = 0
+        let values = {|item, (item + 1)|}
+
+        generatedSetCount values) == (block
+        generatedSetCount : Set Int -> Int
+        let generatedSetCount values = 2
+
+        let item = 0
+        let values = {|item, (item + 1)|}
+
+        generatedSetCount values))
+      case True -> (block
+          generatedSetCount : Set Int -> Int
+          let generatedSetCount values = 2
+
+          let item = 0
+          let values = {|item, (item + 1)|}
+
+          generatedSetCount values)
+      case False -> 0) + 0))
+      case True -> ((match ((block
+          generatedSetCount : Set Int -> Int
+          let generatedSetCount values = 2
+
+          let item = 0
+          let values = {|item, (item + 1)|}
+
+          generatedSetCount values) == (block
+          generatedSetCount : Set Int -> Int
+          let generatedSetCount values = 2
+
+          let item = 0
+          let values = {|item, (item + 1)|}
+
+          generatedSetCount values))
+        case True -> (block
+            generatedSetCount : Set Int -> Int
+            let generatedSetCount values = 2
+
+            let item = 0
+            let values = {|item, (item + 1)|}
+
+            generatedSetCount values)
+        case False -> 0) + 0)
+      case False -> 0
 
 result : Int
 let result = generated_1464

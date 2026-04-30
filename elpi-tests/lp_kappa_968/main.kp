@@ -4,7 +4,36 @@ generatedEcho : forall (a : Type). (this x : a) -> a
 let generatedEcho @a (this x : a) = x
 
 generated_968 : Int
-let generated_968 = ((((((((if True then (if True then 0 else 0) else 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0).generatedEcho
+let generated_968 = ((match ((block
+    generatedListLength : List Int -> Int
+    let generatedListLength xs decreases structural xs =
+        match xs
+          case Nil -> 0
+          case _ :: tail -> 1 + generatedListLength tail
+
+    let item = 0
+
+    generatedListLength [item, (item + 1), 0]) == (block
+    generatedListLength : List Int -> Int
+    let generatedListLength xs decreases structural xs =
+        match xs
+          case Nil -> 0
+          case _ :: tail -> 1 + generatedListLength tail
+
+    let item = 0
+
+    generatedListLength [item, (item + 1), 0]))
+  case True -> (block
+      generatedListLength : List Int -> Int
+      let generatedListLength xs decreases structural xs =
+          match xs
+            case Nil -> 0
+            case _ :: tail -> 1 + generatedListLength tail
+
+      let item = 0
+
+      generatedListLength [item, (item + 1), 0])
+  case False -> 0) + 0).generatedEcho
 
 result : Int
 let result = generated_968

@@ -1,12 +1,34 @@
 module main
 
-generated_3238 : Option Int
-let generated_3238 = (if True then (if True then (if False then None else (Some (0 + 0))) else None) else None)
+type GeneratedPair = (left : Int, right : Int)
 
-result : Option Int
+generated_3238 : GeneratedPair
+let generated_3238 = ((left = (match [(block
+    let pair = (x = 0, y = (0 + 1))
+    let (x = captured, y = other) = pair
+
+    (captured + other)), ((block
+    let pair = (x = 0, y = (0 + 1))
+    let (x = captured, y = other) = pair
+
+    (captured + other)) + 1)]
+  case head :: tail -> head
+  case Nil -> 0), right = 0)).{ right = ((match [(block
+    let pair = (x = 0, y = (0 + 1))
+    let (x = captured, y = other) = pair
+
+    (captured + other)), ((block
+    let pair = (x = 0, y = (0 + 1))
+    let (x = captured, y = other) = pair
+
+    (captured + other)) + 1)]
+  case head :: tail -> head
+  case Nil -> 0) + 1) }
+
+result : GeneratedPair
 let result = generated_3238
 
 --! assertNoErrors
---! assertType generated_3238 Option Int
---! assertType result Option Int
---! assertDeclKinds signature, let, signature, let
+--! assertType generated_3238 GeneratedPair
+--! assertType result GeneratedPair
+--! assertDeclKinds type, signature, let, signature, let

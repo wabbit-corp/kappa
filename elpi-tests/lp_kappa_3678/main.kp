@@ -1,12 +1,21 @@
 module main
 
-generated_3678 : Unit
-let generated_3678 = (if True then (if True then (if False then () else (if False then () else (if False then () else ()))) else ()) else ())
+generated_3678 : Int
+let generated_3678 =
+    match (((match (Some ((\(n : Int) -> n) 0))
+      case Some payload -> payload
+      case None -> 0) + 0) == ((match (Some ((\(n : Int) -> n) 0))
+      case Some payload -> payload
+      case None -> 0) + 0))
+      case True -> ((match (Some ((\(n : Int) -> n) 0))
+        case Some payload -> payload
+        case None -> 0) + 0)
+      case False -> 0
 
-result : Unit
+result : Int
 let result = generated_3678
 
 --! assertNoErrors
---! assertType generated_3678 Unit
---! assertType result Unit
+--! assertType generated_3678 Int
+--! assertType result Int
 --! assertDeclKinds signature, let, signature, let

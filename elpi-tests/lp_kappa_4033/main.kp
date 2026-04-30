@@ -1,12 +1,46 @@
 module main
 
-generated_4033 : Set Int
-let generated_4033 = {| for x in [1, 2, 3], let y = x + 1, yield (((((0 + ((if True then (0 + (x + 0)) else 0) + 0)) + 0) + 0) + 0) + 0) |}
+generated_4033 : Int
+let generated_4033 =
+    block
+        scoped effect Choice =
+            ω choose : Unit -> Bool
 
-result : Set Int
+        let c = Choice
+
+        let seed = (block
+            generatedListLength : List Int -> Int
+            let generatedListLength xs decreases structural xs =
+                match xs
+                  case Nil -> 0
+                  case _ :: tail -> 1 + generatedListLength tail
+
+            let item = (match (0 == 0)
+              case True -> 0
+              case False -> 0)
+
+            generatedListLength [item, (item + 1), 0])
+
+        let comp : Eff <[Choice : Choice]> Int =
+            do
+                let b <- c.choose ()
+                if b then seed else (seed + 1)
+
+        let handled : Eff <[ ]> Int =
+            deep handle Choice comp with
+                case return x -> pure x
+                case choose () k ->
+                    do
+                        let a <- k True
+                        let b <- k False
+                        pure (a + b)
+
+        runPure handled
+
+result : Int
 let result = generated_4033
 
 --! assertNoErrors
---! assertType generated_4033 Set Int
---! assertType result Set Int
+--! assertType generated_4033 Int
+--! assertType result Int
 --! assertDeclKinds signature, let, signature, let

@@ -1,12 +1,12 @@
 module main
 
-generated_4885 : Int
-let generated_4885 =
-    block
-        rankedHelper : (Int -> Int)
-        let rankedHelper x = x + 1
+generatedMakeConst : forall (a : Type). a -> Unit -> a
+let generatedMakeConst value = \() -> value
 
-        rankedHelper ((((((0 + (((if True then ((left = (0 + 0), right = 0)).left else 0) + 0) + 0)) + 0) + 0) + 0) + 0) + 0)
+generated_4885 : Int
+let generated_4885 = ((generatedMakeConst @Int ((match (((Some (0 + 1)) ?: (0 + 2)) == ((Some (0 + 1)) ?: (0 + 2)))
+  case True -> ((Some (0 + 1)) ?: (0 + 2))
+  case False -> 0) + 0)) ())
 
 result : Int
 let result = generated_4885
@@ -14,4 +14,4 @@ let result = generated_4885
 --! assertNoErrors
 --! assertType generated_4885 Int
 --! assertType result Int
---! assertDeclKinds signature, let, signature, let
+--! assertDeclKinds signature, let, signature, let, signature, let

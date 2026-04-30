@@ -1,12 +1,38 @@
 module main
 
-generated_884 : Map String Int
-let generated_884 = { yield "only" : ((((((((if True then 0 else 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0) }
+generated_884 : Int
+let generated_884 =
+    block
+        let (captured : Int) = ((block
+            let pair = (x = (block
+                generatedListLength : List Int -> Int
+                let generatedListLength xs decreases structural xs =
+                    match xs
+                      case Nil -> 0
+                      case _ :: tail -> 1 + generatedListLength tail
 
-result : Map String Int
+                let item = 0
+
+                generatedListLength [item, (item + 1), 0]), y = ((block
+                generatedListLength : List Int -> Int
+                let generatedListLength xs decreases structural xs =
+                    match xs
+                      case Nil -> 0
+                      case _ :: tail -> 1 + generatedListLength tail
+
+                let item = 0
+
+                generatedListLength [item, (item + 1), 0]) + 1))
+            let (x = captured, y = other) = pair
+
+            (captured + other)) + 0)
+
+        captured
+
+result : Int
 let result = generated_884
 
 --! assertNoErrors
---! assertType generated_884 Map String Int
---! assertType result Map String Int
+--! assertType generated_884 Int
+--! assertType result Int
 --! assertDeclKinds signature, let, signature, let

@@ -1,18 +1,30 @@
 module main
 
-generated_1362 : Int
-let generated_1362 =
-    block
-        type RankedAlias = Int
+generated_1362 : List Int
+let generated_1362 = [ yield ((block
+    let pair = (x = (block
+        generatedSetCount : Set Int -> Int
+        let generatedSetCount values = 2
 
-        let aliased : RankedAlias = ((((((((if False then 0 else (if False then 0 else 0)) + 0) + 0) + 0) + 0) + 0) + 0) + 0)
+        let item = 0
+        let values = {|item, (item + 1)|}
 
-        (aliased + 1)
+        generatedSetCount values), y = ((block
+        generatedSetCount : Set Int -> Int
+        let generatedSetCount values = 2
 
-result : Int
+        let item = 0
+        let values = {|item, (item + 1)|}
+
+        generatedSetCount values) + 1))
+    let (x = captured, y = other) = pair
+
+    (captured + other)) + 0) ]
+
+result : List Int
 let result = generated_1362
 
 --! assertNoErrors
---! assertType generated_1362 Int
---! assertType result Int
+--! assertType generated_1362 List Int
+--! assertType result List Int
 --! assertDeclKinds signature, let, signature, let

@@ -1,12 +1,22 @@
 module main
 
-generated_3252 : Map String Int
-let generated_3252 = { for x in [1, 2, 3], if x > 0, yield "k" : (((((0 + (x + 0)) + 0) + 0) + 0) + 0) }
+generated_3252 : List Int
+let generated_3252 = [ yield ((match [(block
+    let pair = (x = 0, y = (0 + 1))
+    let (x = captured, y = other) = pair
 
-result : Map String Int
+    (captured + other)), ((block
+    let pair = (x = 0, y = (0 + 1))
+    let (x = captured, y = other) = pair
+
+    (captured + other)) + 1)]
+  case head :: tail -> head
+  case Nil -> 0) + 0) ]
+
+result : List Int
 let result = generated_3252
 
 --! assertNoErrors
---! assertType generated_3252 Map String Int
---! assertType result Map String Int
+--! assertType generated_3252 List Int
+--! assertType result List Int
 --! assertDeclKinds signature, let, signature, let

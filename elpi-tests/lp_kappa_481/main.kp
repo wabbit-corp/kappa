@@ -1,12 +1,24 @@
 module main
 
-generated_481 : Bool
-let generated_481 = (if (if (if (if ((if True then True else False) && True) then True else False) then True else False) then True else False) then True else False)
+trait GeneratedScore a =
+    score : a -> Int
 
-result : Bool
+instance GeneratedScore Int =
+    let score x = x
+
+generated_481 : Int
+let generated_481 =
+    let
+        dict = summon (GeneratedScore Int)
+in
+        dict.score ((match (0 == 0)
+          case True -> 0
+          case False -> 0) + 0)
+
+result : Int
 let result = generated_481
 
 --! assertNoErrors
---! assertType generated_481 Bool
---! assertType result Bool
---! assertDeclKinds signature, let, signature, let
+--! assertType generated_481 Int
+--! assertType result Int
+--! assertDeclKinds trait, instance, signature, let, signature, let

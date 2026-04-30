@@ -1,12 +1,16 @@
 module main
 
-generated_407 : Set Int
-let generated_407 = {| yield (((((((((((if False then 0 else 0) + (0 + 0)) + 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0) |}
+generated_407 : List Int
+let generated_407 = [ for x in [1, 2, 3], order by x desc, yield (block
+    let pair = (x = x, y = (x + 1))
+    let (x = captured, y = other) = pair
 
-result : Set Int
+    (captured + other)) ]
+
+result : List Int
 let result = generated_407
 
 --! assertNoErrors
---! assertType generated_407 Set Int
---! assertType result Set Int
+--! assertType generated_407 List Int
+--! assertType result List Int
 --! assertDeclKinds signature, let, signature, let

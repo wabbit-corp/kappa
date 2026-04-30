@@ -1,12 +1,63 @@
 module main
 
-generated_654 : Option Int
-let generated_654 = (if True then (if True then (if True then (if False then None else (if (((Some (0 + 0)) ?: 0) == 1) then None else (Some (0 + 0)))) else None) else None) else None)
+generated_654 : Int
+let generated_654 =
+    match (((block
+        generatedSetCount : Set Int -> Int
+        let generatedSetCount values = 2
 
-result : Option Int
+        let item = (block
+            generatedListLength : List Int -> Int
+            let generatedListLength xs decreases structural xs =
+                match xs
+                  case Nil -> 0
+                  case _ :: tail -> 1 + generatedListLength tail
+
+            let item = 0
+
+            generatedListLength [item, (item + 1), 0])
+        let values = {|item, (item + 1)|}
+
+        generatedSetCount values) + 0) == ((block
+        generatedSetCount : Set Int -> Int
+        let generatedSetCount values = 2
+
+        let item = (block
+            generatedListLength : List Int -> Int
+            let generatedListLength xs decreases structural xs =
+                match xs
+                  case Nil -> 0
+                  case _ :: tail -> 1 + generatedListLength tail
+
+            let item = 0
+
+            generatedListLength [item, (item + 1), 0])
+        let values = {|item, (item + 1)|}
+
+        generatedSetCount values) + 0))
+      case True -> ((block
+          generatedSetCount : Set Int -> Int
+          let generatedSetCount values = 2
+
+          let item = (block
+              generatedListLength : List Int -> Int
+              let generatedListLength xs decreases structural xs =
+                  match xs
+                    case Nil -> 0
+                    case _ :: tail -> 1 + generatedListLength tail
+
+              let item = 0
+
+              generatedListLength [item, (item + 1), 0])
+          let values = {|item, (item + 1)|}
+
+          generatedSetCount values) + 0)
+      case False -> 0
+
+result : Int
 let result = generated_654
 
 --! assertNoErrors
---! assertType generated_654 Option Int
---! assertType result Option Int
+--! assertType generated_654 Int
+--! assertType result Int
 --! assertDeclKinds signature, let, signature, let

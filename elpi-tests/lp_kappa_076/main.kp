@@ -1,12 +1,19 @@
 module main
 
-generated_76 : Option Int
-let generated_76 = (if True then (Some (0 + 0)) else None)
+type GeneratedTuple = (Int, Int)
 
-result : Option Int
+generated_76 : Int
+let generated_76 =
+    block
+        let pair : GeneratedTuple = ((0 + 0), (0 + 1))
+        let (left, right) = pair
+
+        (left + right)
+
+result : Int
 let result = generated_76
 
 --! assertNoErrors
---! assertType generated_76 Option Int
---! assertType result Option Int
---! assertDeclKinds signature, let, signature, let
+--! assertType generated_76 Int
+--! assertType result Int
+--! assertDeclKinds type, signature, let, signature, let

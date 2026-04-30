@@ -1,12 +1,28 @@
 module main
 
-generated_3024 : List Int
-let generated_3024 = [ yield (((((((((Some ((if True then 0 else 0) + 0)) ?: 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0) ]
+generatedMakeConst : forall (a : Type). a -> Unit -> a
+let generatedMakeConst value = \() -> value
 
-result : List Int
+generated_3024 : Int
+let generated_3024 = ((generatedMakeConst ((block
+    generatedListLength : List Int -> Int
+    let generatedListLength xs decreases structural xs =
+        match xs
+          case Nil -> 0
+          case _ :: tail -> 1 + generatedListLength tail
+
+    let item = (block
+        let pair = (x = 0, y = (0 + 1))
+        let (x = captured, y = other) = pair
+
+        (captured + other))
+
+    generatedListLength [item, (item + 1), 0]) + 0)) ())
+
+result : Int
 let result = generated_3024
 
 --! assertNoErrors
---! assertType generated_3024 List Int
---! assertType result List Int
---! assertDeclKinds signature, let, signature, let
+--! assertType generated_3024 Int
+--! assertType result Int
+--! assertDeclKinds signature, let, signature, let, signature, let

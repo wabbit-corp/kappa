@@ -1,12 +1,27 @@
 module main
 
-generated_3354 : Map String Int
-let generated_3354 = { for x in [1, 2, 3], let y = x + 1, yield "k" : (((((0 + ((((0 + (x + 0)) + 0) + 0) + 0)) + 0) + 0) + 0) + 0) }
+generated_3354 : Int
+let generated_3354 =
+    match ((((\(n : Int) -> n) (block
+        let pair = (x = 0, y = (0 + 1))
+        let (x = captured, y = other) = pair
 
-result : Map String Int
+        (captured + other))) + 0) == (((\(n : Int) -> n) (block
+        let pair = (x = 0, y = (0 + 1))
+        let (x = captured, y = other) = pair
+
+        (captured + other))) + 0))
+      case True -> (((\(n : Int) -> n) (block
+          let pair = (x = 0, y = (0 + 1))
+          let (x = captured, y = other) = pair
+
+          (captured + other))) + 0)
+      case False -> 0
+
+result : Int
 let result = generated_3354
 
 --! assertNoErrors
---! assertType generated_3354 Map String Int
---! assertType result Map String Int
+--! assertType generated_3354 Int
+--! assertType result Int
 --! assertDeclKinds signature, let, signature, let

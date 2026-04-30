@@ -1,12 +1,31 @@
 module main
 
-generated_2555 : Bool
-let generated_2555 = (if (if (if ((if True then (0 + 1) else 1) == 1) then True else False) then True else False) then True else False)
+generated_2555 : Int
+let generated_2555 =
+    block
+        data RankedBox : Type =
+            RankedBox (value : Int)
 
-result : Bool
+        let boxed = RankedBox ((block
+            generatedListLength : List Int -> Int
+            let generatedListLength xs decreases structural xs =
+                match xs
+                  case Nil -> 0
+                  case _ :: tail -> 1 + generatedListLength tail
+
+            let item = (match [0, (0 + 1)]
+              case head :: tail -> head
+              case Nil -> 0)
+
+            generatedListLength [item, (item + 1), 0]) + 0)
+
+        match boxed
+          case RankedBox value -> (value + 1)
+
+result : Int
 let result = generated_2555
 
 --! assertNoErrors
---! assertType generated_2555 Bool
---! assertType result Bool
+--! assertType generated_2555 Int
+--! assertType result Int
 --! assertDeclKinds signature, let, signature, let

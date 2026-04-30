@@ -1,12 +1,31 @@
 module main
 
-generated_3919 : (Int -> Int)
-let generated_3919 = \(x : Int) -> ((\(x : Int) -> ((\(x : Int) -> (((\(x : Int) -> (((\(x : Int) -> if (x == 0) then x else ((\(x : Int) -> x) x)) x) + 0)) x) + 0)) x)) x)
+generated_3919 : Int
+let generated_3919 =
+    block
+        scoped effect State (s : Type) =
+            get : Unit -> s
 
-result : (Int -> Int)
+        let seed = (match (((\(n : Int) -> n) 0) == ((\(n : Int) -> n) 0))
+          case True -> ((\(n : Int) -> n) 0)
+          case False -> 0)
+
+        let comp : Eff <[State : State Int]> Int =
+            do
+                let n <- State.get ()
+                n
+
+        let handled : Eff <[ ]> Int =
+            deep handle State comp with
+                case return x -> pure x
+                case get () k -> k seed
+
+        runPure handled
+
+result : Int
 let result = generated_3919
 
 --! assertNoErrors
---! assertType generated_3919 (Int -> Int)
---! assertType result (Int -> Int)
+--! assertType generated_3919 Int
+--! assertType result Int
 --! assertDeclKinds signature, let, signature, let

@@ -1,12 +1,24 @@
 module main
 
-generated_943 : String
-let generated_943 = (if (if (if (if ((if True then False else True) && False) then True else False) then True else False) then True else False) then #"raw lambda-prolog"# else "fallback")
+generatedMakeConst : forall (a : Type). a -> Unit -> a
+let generatedMakeConst value = \() -> value
 
-result : String
+generated_943 : Int
+let generated_943 = ((generatedMakeConst @Int (((\(n : Int) -> n) (block
+    generatedListLength : List Int -> Int
+    let generatedListLength xs decreases structural xs =
+        match xs
+          case Nil -> 0
+          case _ :: tail -> 1 + generatedListLength tail
+
+    let item = 0
+
+    generatedListLength [item, (item + 1), 0])) + 0)) ())
+
+result : Int
 let result = generated_943
 
 --! assertNoErrors
---! assertType generated_943 String
---! assertType result String
---! assertDeclKinds signature, let, signature, let
+--! assertType generated_943 Int
+--! assertType result Int
+--! assertDeclKinds signature, let, signature, let, signature, let

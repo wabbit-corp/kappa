@@ -1,12 +1,19 @@
 module main
 
-generated_387 : List Int
-let generated_387 = [ for x in [1, 2, 3], if x > 0, yield ((((((((((if False then 0 else x) + (0 + 0)) + 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0) ]
+generated_387 : IO Int
+let generated_387 =
+    do
+        let staged = ((block
+            let pair = (x = 0, y = (0 + 1))
+            let (x = captured, y = other) = pair
 
-result : List Int
+            (captured + other)) + 0)
+        pure (staged + 1)
+
+result : IO Int
 let result = generated_387
 
 --! assertNoErrors
---! assertType generated_387 List Int
---! assertType result List Int
+--! assertType generated_387 IO Int
+--! assertType result IO Int
 --! assertDeclKinds signature, let, signature, let

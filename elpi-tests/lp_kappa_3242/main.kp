@@ -1,19 +1,22 @@
 module main
 
-generatedNeed : (@x : Int) -> Int
-let generatedNeed (@x : Int) = x
+generated_3242 : Map String Int
+let generated_3242 = { for x in [1, 2, 3], let y = x + 1, if y > 0, yield (if y > 1 then "hi" else "lo") : (match [(block
+    let pair = (x = x, y = (x + 1))
+    let (x = captured, y = other) = pair
 
-generated_3242 : Int
-let generated_3242 =
-    block
-        let (@x : Int) = (((((0 + (0 + 0)) + 0) + 0) + 0) + 0)
+    (captured + other)), ((block
+    let pair = (x = x, y = (x + 1))
+    let (x = captured, y = other) = pair
 
-        if True then generatedNeed else 0
+    (captured + other)) + 1)]
+  case head :: tail -> head
+  case Nil -> 0) }
 
-result : Int
+result : Map String Int
 let result = generated_3242
 
 --! assertNoErrors
---! assertType generated_3242 Int
---! assertType result Int
---! assertDeclKinds signature, let, signature, let, signature, let
+--! assertType generated_3242 Map String Int
+--! assertType result Map String Int
+--! assertDeclKinds signature, let, signature, let

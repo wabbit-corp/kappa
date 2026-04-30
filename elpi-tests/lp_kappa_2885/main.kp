@@ -1,15 +1,17 @@
 module main
 
-generated_2885 : IO Int
+generated_2885 : Int
 let generated_2885 =
-    do
-        let staged = (((((((((left = 0, right = (((Some (0 + 0)) ?: 0) + 0))).right + 0) + 0) + 0) + 0) + 0) + 0) + 0)
-        pure (staged + 1)
+    match (Some (((\(n : Int) -> n) (match [0, (0 + 1)]
+      case head :: tail -> head
+      case Nil -> 0)) + 0))
+      case Some payload -> payload
+      case None -> 0
 
-result : IO Int
+result : Int
 let result = generated_2885
 
 --! assertNoErrors
---! assertType generated_2885 IO Int
---! assertType result IO Int
+--! assertType generated_2885 Int
+--! assertType result Int
 --! assertDeclKinds signature, let, signature, let

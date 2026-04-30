@@ -1,15 +1,20 @@
 module main
 
-generated_2836 : IO Int
-let generated_2836 =
-    do
-        value <- pure (((((((((left = 0, right = (((left = 0, right = (0 + 0))).right + 0))).right + 0) + 0) + 0) + 0) + 0) + 0) + 0)
-        pure (value + 2)
+generated_2836 : List Int
+let generated_2836 = [ for x in [1, 2, 3], skip 1, take 2, yield (block
+    let pair = (x = (match [x, (x + 1)]
+      case head :: tail -> head
+      case Nil -> 0), y = ((match [x, (x + 1)]
+      case head :: tail -> head
+      case Nil -> 0) + 1))
+    let (x = captured, y = other) = pair
 
-result : IO Int
+    (captured + other)) ]
+
+result : List Int
 let result = generated_2836
 
 --! assertNoErrors
---! assertType generated_2836 IO Int
---! assertType result IO Int
+--! assertType generated_2836 List Int
+--! assertType result List Int
 --! assertDeclKinds signature, let, signature, let

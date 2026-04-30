@@ -1,7 +1,32 @@
 module main
 
 generated_4730 : Int
-let generated_4730 = (((((0 + (((if True then (if True then 0 else 0) else 0) + 0) + 0)) + 0) + 0) + 0) + 0)
+let generated_4730 =
+    block
+        scoped effect Ask =
+            ask : Unit -> Bool
+
+        let seed = (match [((Some (0 + 1)) ?: (0 + 2)), (((Some (0 + 1)) ?: (0 + 2)) + 1)]
+          case head :: tail -> head
+          case Nil -> 0)
+
+        let comp : Eff <[Ask : Ask]> Int =
+            do
+                let b <- Ask.ask ()
+                if b then seed else (seed + 1)
+
+        let rehandle : (1 k : ((1 x : Bool) -> Eff <[Ask : Ask]> Int)) -> Eff <[ ]> Int =
+            \(1 k : ((1 x : Bool) -> Eff <[Ask : Ask]> Int)) ->
+                handle Ask (k True) with
+                    case return y -> pure y
+                    case ask () k2 -> k2 False
+
+        let handled : Eff <[ ]> Int =
+            handle Ask comp with
+                case return y -> pure y
+                case ask () k -> rehandle k
+
+        runPure handled
 
 result : Int
 let result = generated_4730

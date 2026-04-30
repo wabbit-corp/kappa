@@ -1,12 +1,33 @@
 module main
 
-generated_1912 : Option Int
-let generated_1912 = (if True then (if True then (if True then (if (((if True then (Some (0 + 0)) else None) ?: 0) == 0) then (Some ((if True then (Some (0 + 0)) else None) ?: 0)) else None) else None) else None) else None)
+type GeneratedTuple = (Int, Int)
 
-result : Option Int
+generated_1912 : Int
+let generated_1912 =
+    block
+        let pair : GeneratedTuple = ((((\(n : Int) -> n) (block
+            generatedMapCount : Map String Int -> Int
+            let generatedMapCount values = 1
+
+            let item = 0
+            let values = { yield "item" : item }
+
+            generatedMapCount values)) + 0), (((\(n : Int) -> n) (block
+            generatedMapCount : Map String Int -> Int
+            let generatedMapCount values = 1
+
+            let item = 0
+            let values = { yield "item" : item }
+
+            generatedMapCount values)) + 1))
+        let (left, right) = pair
+
+        (left + right)
+
+result : Int
 let result = generated_1912
 
 --! assertNoErrors
---! assertType generated_1912 Option Int
---! assertType result Option Int
---! assertDeclKinds signature, let, signature, let
+--! assertType generated_1912 Int
+--! assertType result Int
+--! assertDeclKinds type, signature, let, signature, let

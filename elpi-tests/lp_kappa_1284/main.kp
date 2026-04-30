@@ -1,15 +1,12 @@
 module main
 
-generated_1284 : Int
-let generated_1284 =
-    match (((((((((if False then 0 else (0 + (0 + 0))) + 0) + 0) + 0) + 0) + 0) + 0) + 0) == ((((((((if False then 0 else (0 + (0 + 0))) + 0) + 0) + 0) + 0) + 0) + 0) + 0))
-      case True -> ((((((((if False then 0 else (0 + (0 + 0))) + 0) + 0) + 0) + 0) + 0) + 0) + 0)
-      case False -> 0
+generated_1284 : Option Int
+let generated_1284 = (if True then (if True then (if True then (if False then None else (if (True && True) then (if False then None else (Some (0 + 0))) else (Some 2))) else None) else None) else None)
 
-result : Int
+result : Option Int
 let result = generated_1284
 
 --! assertNoErrors
---! assertType generated_1284 Int
---! assertType result Int
+--! assertType generated_1284 Option Int
+--! assertType result Option Int
 --! assertDeclKinds signature, let, signature, let

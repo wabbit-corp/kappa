@@ -3,15 +3,35 @@ module main
 generated_194 : Int
 let generated_194 =
     block
-        trait RankedScore a =
-            rank : a -> Int
+        scoped effect Ask =
+            ask : Unit -> Bool
 
-        instance RankedScore Int =
-            let rank x = x
+        let seed = (block
+            generatedSetCount : Set Int -> Int
+            let generatedSetCount values = 2
 
-        let dict = summon (RankedScore Int)
+            let item = 0
+            let values = {|item, (item + 1)|}
 
-        dict.rank (((((((((0 + 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0)
+            generatedSetCount values)
+
+        let comp : Eff <[Ask : Ask]> Int =
+            do
+                let b <- Ask.ask ()
+                if b then seed else (seed + 1)
+
+        let rehandle : (1 k : ((1 x : Bool) -> Eff <[Ask : Ask]> Int)) -> Eff <[ ]> Int =
+            \(1 k : ((1 x : Bool) -> Eff <[Ask : Ask]> Int)) ->
+                handle Ask (k True) with
+                    case return y -> pure y
+                    case ask () k2 -> k2 False
+
+        let handled : Eff <[ ]> Int =
+            handle Ask comp with
+                case return y -> pure y
+                case ask () k -> rehandle k
+
+        runPure handled
 
 result : Int
 let result = generated_194

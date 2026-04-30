@@ -1,15 +1,32 @@
 module main
 
-generated_3244 : IO Int
+generated_3244 : Int
 let generated_3244 =
-    do
-        value <- pure ((((((0 + (0 + 0)) + 0) + 0) + 0) + 0) + 0)
-        pure (value + 2)
+    block
+        trait RankedScore a =
+            rank : a -> Int
 
-result : IO Int
+        instance RankedScore Int =
+            let rank x = x
+
+        let dict = summon (RankedScore Int)
+
+        dict.rank ((match [(block
+            let pair = (x = 0, y = (0 + 1))
+            let (x = captured, y = other) = pair
+
+            (captured + other)), ((block
+            let pair = (x = 0, y = (0 + 1))
+            let (x = captured, y = other) = pair
+
+            (captured + other)) + 1)]
+          case head :: tail -> head
+          case Nil -> 0) + 0)
+
+result : Int
 let result = generated_3244
 
 --! assertNoErrors
---! assertType generated_3244 IO Int
---! assertType result IO Int
+--! assertType generated_3244 Int
+--! assertType result Int
 --! assertDeclKinds signature, let, signature, let

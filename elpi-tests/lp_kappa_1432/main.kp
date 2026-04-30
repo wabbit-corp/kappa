@@ -1,12 +1,19 @@
 module main
 
-generated_1432 : Int
-let generated_1432 = (((((((if False then 0 else ((left = (0 + 0), right = 0)).left) + 0) + 0) + 0) + 0) + 0) + 0)
+generated_1432 : List Int
+let generated_1432 = [ for x in [1, 2, 3], skip 1, take 2, yield ((\(n : Int) -> n) (block
+    generatedSetCount : Set Int -> Int
+    let generatedSetCount values = 2
 
-result : Int
+    let item = x
+    let values = {|item, (item + 1)|}
+
+    generatedSetCount values)) ]
+
+result : List Int
 let result = generated_1432
 
 --! assertNoErrors
---! assertType generated_1432 Int
---! assertType result Int
+--! assertType generated_1432 List Int
+--! assertType result List Int
 --! assertDeclKinds signature, let, signature, let

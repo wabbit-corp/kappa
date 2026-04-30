@@ -3,7 +3,9 @@ module main
 generated_4635 : Int
 let generated_4635 =
     let
-        ranked : Int = (((((0 + (((if True then 0 else 0) + 0) + 0)) + 0) + 0) + 0) + 0)
+        ranked : Int = (match (Some ((Some (0 + 1)) ?: (0 + 2)))
+          case Some payload -> payload
+          case None -> 0)
 in
         (ranked + 0)
 

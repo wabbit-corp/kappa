@@ -1,12 +1,25 @@
 module main
 
+data GeneratedChoice : Type =
+    GeneratedLeft (value : Int)
+    GeneratedRight
+
 generated_2067 : Int
 let generated_2067 =
-    block
-        let pair = (x = (((((((((if False then 0 else ((if True then 0 else 0) + 0)) + (0 + 0)) + 0) + 0) + 0) + 0) + 0) + 0) + 0), y = (((((((((if False then 0 else ((if True then 0 else 0) + 0)) + (0 + 0)) + 0) + 0) + 0) + 0) + 0) + 0) + 1))
-        let (x = captured, y = other) = pair
+    match GeneratedRight
+      case GeneratedLeft payload -> (payload + 0)
+      case GeneratedRight -> ((block
+          generatedListLength : List Int -> Int
+          let generatedListLength xs decreases structural xs =
+              match xs
+                case Nil -> 0
+                case _ :: tail -> 1 + generatedListLength tail
 
-        (captured + other)
+          let item = (match (Some 0)
+            case Some payload -> payload
+            case None -> 0)
+
+          generatedListLength [item, (item + 1), 0]) + 0)
 
 result : Int
 let result = generated_2067
@@ -14,4 +27,4 @@ let result = generated_2067
 --! assertNoErrors
 --! assertType generated_2067 Int
 --! assertType result Int
---! assertDeclKinds signature, let, signature, let
+--! assertDeclKinds data, signature, let, signature, let

@@ -1,12 +1,10 @@
 module main
 
-generated_431 : Int
-let generated_431 =
-    block
-        rankedHelper : (Int -> Int)
-        let rankedHelper x = x + 1
+generatedResize : (image : Int) -> (width : Int) -> (height : Int) -> Int
+let generatedResize image width height = image + width * 10 + height
 
-        rankedHelper (((((((((((left = (0 + 0), right = 0)).left + 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0)
+generated_431 : Int
+let generated_431 = generatedResize { image = (((\(n : Int) -> n) 0) + 0), height = 3, width = 2 }
 
 result : Int
 let result = generated_431
@@ -14,4 +12,4 @@ let result = generated_431
 --! assertNoErrors
 --! assertType generated_431 Int
 --! assertType result Int
---! assertDeclKinds signature, let, signature, let
+--! assertDeclKinds signature, let, signature, let, signature, let

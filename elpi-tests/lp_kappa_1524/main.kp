@@ -1,17 +1,26 @@
 module main
 
-generated_1524 : Int
-let generated_1524 =
-    block
-        let base : (x : Int) = (x = ((((((((if False then 0 else ((Some (0 + 0)) ?: 0)) + 0) + 0) + 0) + 0) + 0) + 0) + 0))
-        let extended = base.{ y := ((((((((if False then 0 else ((Some (0 + 0)) ?: 0)) + 0) + 0) + 0) + 0) + 0) + 0) + 1) }
+generated_1524 : List Int
+let generated_1524 = [ yield (((Some ((block
+    generatedSetCount : Set Int -> Int
+    let generatedSetCount values = 2
 
-        (extended.x + extended.y)
+    let item = 0
+    let values = {|item, (item + 1)|}
 
-result : Int
+    generatedSetCount values) + 1)) ?: ((block
+    generatedSetCount : Set Int -> Int
+    let generatedSetCount values = 2
+
+    let item = 0
+    let values = {|item, (item + 1)|}
+
+    generatedSetCount values) + 2)) + 0) ]
+
+result : List Int
 let result = generated_1524
 
 --! assertNoErrors
---! assertType generated_1524 Int
---! assertType result Int
+--! assertType generated_1524 List Int
+--! assertType result List Int
 --! assertDeclKinds signature, let, signature, let

@@ -1,12 +1,23 @@
 module main
 
-generated_4392 : Unit
-let generated_4392 = (if True then (if True then (if False then () else ((\(u : Unit) -> ()) ((\(u : Unit) -> u) ()))) else ()) else ())
+generatedNeed : (@x : Int) -> Int
+let generatedNeed (@x : Int) = x
 
-result : Unit
+generated_4392 : Int
+let generated_4392 = generatedNeed @(((match ((match (0 == 0)
+  case True -> 0
+  case False -> 0) == (match (0 == 0)
+  case True -> 0
+  case False -> 0))
+  case True -> (match (0 == 0)
+    case True -> 0
+    case False -> 0)
+  case False -> 0) + 0))
+
+result : Int
 let result = generated_4392
 
 --! assertNoErrors
---! assertType generated_4392 Unit
---! assertType result Unit
---! assertDeclKinds signature, let, signature, let
+--! assertType generated_4392 Int
+--! assertType result Int
+--! assertDeclKinds signature, let, signature, let, signature, let

@@ -1,15 +1,16 @@
 module main
 
-generatedResize : (image : Int) -> (width : Int) -> (height : Int) -> Int
-let generatedResize image width height = image + width * 10 + height
+generated_4779 : Map String Int
+let generated_4779 = { for x in [1, 2, 3], yield "k" : (block
+    let pair = (x = ((Some (x + 1)) ?: (x + 2)), y = (((Some (x + 1)) ?: (x + 2)) + 1))
+    let (x = captured, y = other) = pair
 
-generated_4779 : Int
-let generated_4779 = generatedResize { image = ((((((0 + (((if True then (if False then 0 else 0) else 0) + 0) + 0)) + 0) + 0) + 0) + 0) + 0), height = 3, width = 2 }
+    (captured + other)), on conflict keep first }
 
-result : Int
+result : Map String Int
 let result = generated_4779
 
 --! assertNoErrors
---! assertType generated_4779 Int
---! assertType result Int
---! assertDeclKinds signature, let, signature, let, signature, let
+--! assertType generated_4779 Map String Int
+--! assertType result Map String Int
+--! assertDeclKinds signature, let, signature, let

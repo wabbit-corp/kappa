@@ -3,11 +3,37 @@ module main
 generated_4082 : Int
 let generated_4082 =
     block
-        type RankedAlias = Int
+        scoped effect Ask =
+            ask : Unit -> Bool
 
-        let aliased : RankedAlias = ((((((0 + ((if True then (if True then 0 else 0) else 0) + 0)) + 0) + 0) + 0) + 0) + 0)
+        let seed = (block
+            generatedSetCount : Set Int -> Int
+            let generatedSetCount values = 2
 
-        (aliased + 1)
+            let item = (match (0 == 0)
+              case True -> 0
+              case False -> 0)
+            let values = {|item, (item + 1)|}
+
+            generatedSetCount values)
+
+        let comp : Eff <[Ask : Ask]> Int =
+            do
+                let b <- Ask.ask ()
+                if b then seed else (seed + 1)
+
+        let rehandle : (1 k : ((1 x : Bool) -> Eff <[Ask : Ask]> Int)) -> Eff <[ ]> Int =
+            \(1 k : ((1 x : Bool) -> Eff <[Ask : Ask]> Int)) ->
+                handle Ask (k True) with
+                    case return y -> pure y
+                    case ask () k2 -> k2 False
+
+        let handled : Eff <[ ]> Int =
+            handle Ask comp with
+                case return y -> pure y
+                case ask () k -> rehandle k
+
+        runPure handled
 
 result : Int
 let result = generated_4082

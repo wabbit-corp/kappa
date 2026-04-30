@@ -1,15 +1,21 @@
 module main
 
-generatedEcho : forall (a : Type). (this x : a) -> a
-let generatedEcho @a (this x : a) = x
+generated_4077 : Map String Int
+let generated_4077 = { for x in [1, 2, 3], yield "k" : (block
+    generatedSetCount : Set Int -> Int
+    let generatedSetCount values = 2
 
-generated_4077 : Int
-let generated_4077 = ((.generatedEcho) ((((((0 + ((if True then (if True then 0 else 0) else 0) + 0)) + 0) + 0) + 0) + 0) + 0))
+    let item = (match (x == x)
+      case True -> x
+      case False -> 0)
+    let values = {|item, (item + 1)|}
 
-result : Int
+    generatedSetCount values), on conflict keep first }
+
+result : Map String Int
 let result = generated_4077
 
 --! assertNoErrors
---! assertType generated_4077 Int
---! assertType result Int
---! assertDeclKinds signature, let, signature, let, signature, let
+--! assertType generated_4077 Map String Int
+--! assertType result Map String Int
+--! assertDeclKinds signature, let, signature, let

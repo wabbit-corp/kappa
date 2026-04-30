@@ -111,12 +111,12 @@ let result = ()
         output = kappa_lp_generate.run_elpi(
             elpi,
             kappa_lp_generate.DEFAULT_ELPI_PROGRAM,
-            count=72,
+            count=92,
             depth=5,
         )
         samples = kappa_lp_generate.parse_elpi_samples(output)
 
-        self.assertEqual(72, len(samples))
+        self.assertEqual(92, len(samples))
         self.assertIn("generated_38 : Int", samples[38].source)
         self.assertIn("generated_39 : Bool", samples[39].source)
         self.assertIn("generated_40 : Unit", samples[40].source)
@@ -151,6 +151,100 @@ let result = ()
         self.assertIn("match GeneratedRight", samples[69].source)
         self.assertIn("type RankedAlias = Int", samples[70].source)
         self.assertIn("data RankedBox : Type", samples[71].source)
+        self.assertIn("generatedNeed @(", samples[72].source)
+        self.assertIn(")?.generatedEcho", samples[73].source)
+        self.assertIn("let (captured : Int) =", samples[74].source)
+        self.assertIn("whole@(x = captured, y = other)", samples[75].source)
+        self.assertIn("let (left, right) = pair", samples[76].source)
+        self.assertIn("match (Some ", samples[77].source)
+        self.assertIn("case head :: tail -> head", samples[78].source)
+        self.assertIn("generatedMakeConst @Int", samples[79].source)
+        self.assertIn("generatedUseWidth { width }", samples[80].source)
+        self.assertIn("on conflict keep first", samples[81].source)
+        self.assertIn("skip 1, take 2", samples[82].source)
+        self.assertIn("order by x desc", samples[83].source)
+        self.assertIn("scoped effect Ask", samples[84].source)
+        self.assertIn("scoped effect State (s : Type)", samples[85].source)
+        self.assertIn("handle Ask (k True) with", samples[86].source)
+        self.assertIn("Eff <[Ask : Ask, Other : Other]> Int", samples[87].source)
+        self.assertIn("deep handle l comp with", samples[88].source)
+        self.assertIn("deep handle pkg.label comp with", samples[89].source)
+        self.assertIn("ω choose : Unit -> Bool", samples[90].source)
+        self.assertIn("let c = Choice", samples[91].source)
+
+    def test_local_elpi_emits_eff_handler_families_when_available(self) -> None:
+        elpi = kappa_lp_generate.resolve_elpi()
+        if elpi is None:
+            self.skipTest("elpi is not installed")
+
+        expected_by_start = {
+            84: ("scoped effect Ask", "deep handle Ask comp with", "runPure handled"),
+            85: ("scoped effect State (s : Type)", "State.get ()", "case get () k -> k"),
+            86: ("handle Ask (k True) with", "case ask () k -> rehandle k"),
+            87: ("Eff <[Ask : Ask, Other : Other]> Int", "Eff <[Other : Other]> Int"),
+            88: ("let l = Ask", "l.ask ()", "deep handle l comp with"),
+            89: ("let pkg = (label = Ask)", "pkg.label.ask ()", "deep handle pkg.label comp with"),
+            90: ("ω choose : Unit -> Bool", "let a <- k True", "let b <- k False"),
+            91: ("let c = Choice", "c.choose ()", "deep handle Choice comp with"),
+        }
+
+        for start_index, expected_fragments in expected_by_start.items():
+            with self.subTest(start_index=start_index):
+                output = kappa_lp_generate.run_elpi(
+                    elpi,
+                    kappa_lp_generate.DEFAULT_ELPI_PROGRAM,
+                    count=1,
+                    depth=5,
+                    start_index=start_index,
+                )
+                sample = kappa_lp_generate.parse_elpi_samples(output)[0]
+
+                for expected in expected_fragments:
+                    self.assertIn(expected, sample.source)
+
+    def test_local_elpi_ranked_int_synthesis_uses_collection_and_pattern_shapes_when_available(self) -> None:
+        elpi = kappa_lp_generate.resolve_elpi()
+        if elpi is None:
+            self.skipTest("elpi is not installed")
+
+        expected_by_start = {
+            92: "generatedListLength",
+            146: "generatedSetCount",
+            200: "generatedMapCount",
+            254: "match (Some ",
+            308: "case head :: tail -> head",
+            362: "let (x = captured, y = other) = pair",
+        }
+
+        for start_index, expected in expected_by_start.items():
+            with self.subTest(start_index=start_index):
+                output = kappa_lp_generate.run_elpi(
+                    elpi,
+                    kappa_lp_generate.DEFAULT_ELPI_PROGRAM,
+                    count=1,
+                    depth=5,
+                    start_index=start_index,
+                )
+                sample = kappa_lp_generate.parse_elpi_samples(output)[0]
+
+                self.assertIn(expected, sample.source)
+
+    def test_local_elpi_nested_multiline_int_synthesis_preserves_indentation_when_available(self) -> None:
+        elpi = kappa_lp_generate.resolve_elpi()
+        if elpi is None:
+            self.skipTest("elpi is not installed")
+
+        output = kappa_lp_generate.run_elpi(
+            elpi,
+            kappa_lp_generate.DEFAULT_ELPI_PROGRAM,
+            count=1,
+            depth=5,
+            start_index=98,
+        )
+        sample = kappa_lp_generate.parse_elpi_samples(output)[0]
+
+        self.assertIn("let ranked = (block\n            generatedListLength", sample.source)
+        self.assertNotIn("let ranked = (block\n    generatedListLength", sample.source)
 
     def test_local_elpi_can_start_from_later_candidate_when_available(self) -> None:
         elpi = kappa_lp_generate.resolve_elpi()

@@ -1,12 +1,15 @@
 module main
 
-generated_441 : Set Int
-let generated_441 = {| yield (((((((((((left = (0 + 0), right = 0)).left + 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0) |}
+generated_441 : IO Int
+let generated_441 =
+    do
+        let staged = (((\(n : Int) -> n) 0) + 0)
+        pure (staged + 1)
 
-result : Set Int
+result : IO Int
 let result = generated_441
 
 --! assertNoErrors
---! assertType generated_441 Set Int
---! assertType result Set Int
+--! assertType generated_441 IO Int
+--! assertType result IO Int
 --! assertDeclKinds signature, let, signature, let

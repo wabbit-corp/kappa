@@ -1,17 +1,28 @@
 module main
 
-generated_1082 : Int
-let generated_1082 =
-    block
-        let base : (x : Int) = (x = ((((((((if True then ((if False then 0 else 0) + (0 + 0)) else 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0))
-        let extended = base.{ y := ((((((((if True then ((if False then 0 else 0) + (0 + 0)) else 0) + 0) + 0) + 0) + 0) + 0) + 0) + 1) }
+generated_1082 : Map String Int
+let generated_1082 = { for x in [1, 2, 3], let y = x + 1, if y > 0, yield (if y > 1 then "hi" else "lo") : (block
+    generatedListLength : List Int -> Int
+    let generatedListLength xs decreases structural xs =
+        match xs
+          case Nil -> 0
+          case _ :: tail -> 1 + generatedListLength tail
 
-        (extended.x + extended.y)
+    let item = (block
+        generatedSetCount : Set Int -> Int
+        let generatedSetCount values = 2
 
-result : Int
+        let item = x
+        let values = {|item, (item + 1)|}
+
+        generatedSetCount values)
+
+    generatedListLength [item, (item + 1), 0]) }
+
+result : Map String Int
 let result = generated_1082
 
 --! assertNoErrors
---! assertType generated_1082 Int
---! assertType result Int
+--! assertType generated_1082 Map String Int
+--! assertType result Map String Int
 --! assertDeclKinds signature, let, signature, let

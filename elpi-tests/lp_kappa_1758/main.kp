@@ -3,15 +3,31 @@ module main
 generated_1758 : Int
 let generated_1758 =
     block
-        trait RankedScore a =
-            rank : a -> Int
+        scoped effect Ask =
+            ask : Unit -> Bool
 
-        instance RankedScore Int =
-            let rank x = x
+        let seed = (match (Some (block
+            generatedMapCount : Map String Int -> Int
+            let generatedMapCount values = 1
 
-        let dict = summon (RankedScore Int)
+            let item = 0
+            let values = { yield "item" : item }
 
-        dict.rank (((((((((if True then ((if False then 0 else 0) + (0 + 0)) else 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0)
+            generatedMapCount values))
+          case Some payload -> payload
+          case None -> 0)
+
+        let comp : Eff <[Ask : Ask]> Int =
+            do
+                let b <- Ask.ask ()
+                if b then seed else (seed + 1)
+
+        let handled : Eff <[ ]> Int =
+            deep handle Ask comp with
+                case return x -> pure x
+                case ask () k -> k True
+
+        runPure handled
 
 result : Int
 let result = generated_1758

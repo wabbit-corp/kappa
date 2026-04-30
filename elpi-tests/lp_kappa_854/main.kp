@@ -1,7 +1,34 @@
 module main
 
 generated_854 : Int
-let generated_854 = (((((((if True then 0 else 0) + 0) + 0) + 0) + 0) + 0) + 0)
+let generated_854 =
+    block
+        ranked : Int
+        let ranked = (block
+            let pair = (x = (block
+                generatedListLength : List Int -> Int
+                let generatedListLength xs decreases structural xs =
+                    match xs
+                      case Nil -> 0
+                      case _ :: tail -> 1 + generatedListLength tail
+
+                let item = 0
+
+                generatedListLength [item, (item + 1), 0]), y = ((block
+                generatedListLength : List Int -> Int
+                let generatedListLength xs decreases structural xs =
+                    match xs
+                      case Nil -> 0
+                      case _ :: tail -> 1 + generatedListLength tail
+
+                let item = 0
+
+                generatedListLength [item, (item + 1), 0]) + 1))
+            let (x = captured, y = other) = pair
+
+            (captured + other))
+
+        (ranked + 0)
 
 result : Int
 let result = generated_854

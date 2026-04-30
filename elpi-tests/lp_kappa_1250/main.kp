@@ -2,9 +2,29 @@ module main
 
 generated_1250 : Int
 let generated_1250 =
-    match (((((((((if False then 0 else ((0 + 0) + 0)) + 0) + 0) + 0) + 0) + 0) + 0) + 0) == ((((((((if False then 0 else ((0 + 0) + 0)) + 0) + 0) + 0) + 0) + 0) + 0) + 0))
-      case True -> ((((((((if False then 0 else ((0 + 0) + 0)) + 0) + 0) + 0) + 0) + 0) + 0) + 0)
-      case False -> 0
+    block
+        let base : (x : Int) = (x = ((match (Some (block
+            generatedSetCount : Set Int -> Int
+            let generatedSetCount values = 2
+
+            let item = 0
+            let values = {|item, (item + 1)|}
+
+            generatedSetCount values))
+          case Some payload -> payload
+          case None -> 0) + 0))
+        let extended = base.{ y := ((match (Some (block
+            generatedSetCount : Set Int -> Int
+            let generatedSetCount values = 2
+
+            let item = 0
+            let values = {|item, (item + 1)|}
+
+            generatedSetCount values))
+          case Some payload -> payload
+          case None -> 0) + 1) }
+
+        (extended.x + extended.y)
 
 result : Int
 let result = generated_1250

@@ -1,12 +1,43 @@
 module main
 
-generated_1705 : Bool
-let generated_1705 = (if (if (if (if True then ((if True then (True && True) else False) && True) else False) then True else False) then True else False) then True else False)
+generated_1705 : Int
+let generated_1705 =
+    block
+        scoped effect State (s : Type) =
+            get : Unit -> s
 
-result : Bool
+        let seed = (block
+            generatedMapCount : Map String Int -> Int
+            let generatedMapCount values = 1
+
+            let item = (block
+                generatedMapCount : Map String Int -> Int
+                let generatedMapCount values = 1
+
+                let item = 0
+                let values = { yield "item" : item }
+
+                generatedMapCount values)
+            let values = { yield "item" : item }
+
+            generatedMapCount values)
+
+        let comp : Eff <[State : State Int]> Int =
+            do
+                let n <- State.get ()
+                n
+
+        let handled : Eff <[ ]> Int =
+            deep handle State comp with
+                case return x -> pure x
+                case get () k -> k seed
+
+        runPure handled
+
+result : Int
 let result = generated_1705
 
 --! assertNoErrors
---! assertType generated_1705 Bool
---! assertType result Bool
+--! assertType generated_1705 Int
+--! assertType result Int
 --! assertDeclKinds signature, let, signature, let

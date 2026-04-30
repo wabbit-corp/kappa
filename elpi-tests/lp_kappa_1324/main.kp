@@ -1,7 +1,23 @@
 module main
 
 generated_1324 : List Int
-let generated_1324 = [ yield ((((((((if False then 0 else (if True then 0 else 0)) + 0) + 0) + 0) + 0) + 0) + 0) + 0) ]
+let generated_1324 = [ for x in [1, 2, 3], skip 1, take 2, yield (match [(block
+    generatedSetCount : Set Int -> Int
+    let generatedSetCount values = 2
+
+    let item = x
+    let values = {|item, (item + 1)|}
+
+    generatedSetCount values), ((block
+    generatedSetCount : Set Int -> Int
+    let generatedSetCount values = 2
+
+    let item = x
+    let values = {|item, (item + 1)|}
+
+    generatedSetCount values) + 1)]
+  case head :: tail -> head
+  case Nil -> 0) ]
 
 result : List Int
 let result = generated_1324

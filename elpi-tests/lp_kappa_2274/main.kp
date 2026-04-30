@@ -1,18 +1,33 @@
 module main
 
-generatedNeed : (@x : Int) -> Int
-let generatedNeed (@x : Int) = x
-
-generated_2274 : IO Int
+generated_2274 : Int
 let generated_2274 =
-    do
-        let (@x : Int) = (((((((((left = (((0 + 0) + 0) + 0), right = 0)).left + 0) + 0) + 0) + 0) + 0) + 0) + 0)
-        pure generatedNeed
+    match (((match [(match (Some 0)
+      case Some payload -> payload
+      case None -> 0), ((match (Some 0)
+      case Some payload -> payload
+      case None -> 0) + 1)]
+      case head :: tail -> head
+      case Nil -> 0) + 0) == ((match [(match (Some 0)
+      case Some payload -> payload
+      case None -> 0), ((match (Some 0)
+      case Some payload -> payload
+      case None -> 0) + 1)]
+      case head :: tail -> head
+      case Nil -> 0) + 0))
+      case True -> ((match [(match (Some 0)
+        case Some payload -> payload
+        case None -> 0), ((match (Some 0)
+        case Some payload -> payload
+        case None -> 0) + 1)]
+        case head :: tail -> head
+        case Nil -> 0) + 0)
+      case False -> 0
 
-result : IO Int
+result : Int
 let result = generated_2274
 
 --! assertNoErrors
---! assertType generated_2274 IO Int
---! assertType result IO Int
---! assertDeclKinds signature, let, signature, let, signature, let
+--! assertType generated_2274 Int
+--! assertType result Int
+--! assertDeclKinds signature, let, signature, let

@@ -1,12 +1,19 @@
 module main
 
-generated_3779 : Bool
-let generated_3779 = (if (if (if (if (if True then (True && True) else False) then False else True) then False else True) then True else False) then True else False)
+generatedResize : (image : Int) -> (width : Int) -> (height : Int) -> Int
+let generatedResize image width height = image + width * 10 + height
 
-result : Bool
+generated_3779 : Int
+let generated_3779 = generatedResize { image = ((block
+    let pair = (x = ((\(n : Int) -> n) 0), y = (((\(n : Int) -> n) 0) + 1))
+    let (x = captured, y = other) = pair
+
+    (captured + other)) + 0), height = 3, width = 2 }
+
+result : Int
 let result = generated_3779
 
 --! assertNoErrors
---! assertType generated_3779 Bool
---! assertType result Bool
---! assertDeclKinds signature, let, signature, let
+--! assertType generated_3779 Int
+--! assertType result Int
+--! assertDeclKinds signature, let, signature, let, signature, let

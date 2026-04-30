@@ -1,12 +1,12 @@
 module main
 
-generated_583 : Bool
-let generated_583 = (if (if (if (if (if True then False else True) then False else True) then True else False) then True else False) then True else False)
+generated_583 : (Int -> Int)
+let generated_583 = \(x : Int) -> ((\(x : Int) -> ((\(x : Int) -> ((\(x : Int) -> (((if (0 == 0) then \(x : Int) -> x else \(x : Int) -> (x + 0))) x)) x)) x)) x)
 
-result : Bool
+result : (Int -> Int)
 let result = generated_583
 
 --! assertNoErrors
---! assertType generated_583 Bool
---! assertType result Bool
+--! assertType generated_583 (Int -> Int)
+--! assertType result (Int -> Int)
 --! assertDeclKinds signature, let, signature, let

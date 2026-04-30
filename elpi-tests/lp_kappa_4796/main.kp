@@ -3,11 +3,10 @@ module main
 generated_4796 : Int
 let generated_4796 =
     block
-        type RankedAlias = Int
+        ranked : Int
+        let ranked = ((\(n : Int) -> n) ((Some (0 + 1)) ?: (0 + 2)))
 
-        let aliased : RankedAlias = ((((((0 + (((if True then (if False then 0 else 0) else 0) + 0) + 0)) + 0) + 0) + 0) + 0) + 0)
-
-        (aliased + 1)
+        (ranked + 0)
 
 result : Int
 let result = generated_4796

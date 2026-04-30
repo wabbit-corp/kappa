@@ -1,12 +1,16 @@
 module main
 
-generated_3332 : Map String Int
-let generated_3332 = { yield "only" : ((((((0 + (((((0 + 0) + 0) + 0) + 0) + 0)) + 0) + 0) + 0) + 0) + 0) }
+generated_3332 : Int
+let generated_3332 = ((\(n : Int) -> n) (block
+    let pair = (x = 0, y = (0 + 1))
+    let (x = captured, y = other) = pair
 
-result : Map String Int
+    (captured + other)))
+
+result : Int
 let result = generated_3332
 
 --! assertNoErrors
---! assertType generated_3332 Map String Int
---! assertType result Map String Int
+--! assertType generated_3332 Int
+--! assertType result Int
 --! assertDeclKinds signature, let, signature, let

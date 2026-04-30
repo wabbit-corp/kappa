@@ -1,17 +1,52 @@
 module main
 
-trait GeneratedScore a =
-    score : a -> Int
-
-instance GeneratedScore Int =
-    let score x = x
-
 generated_831 : Int
 let generated_831 =
-    let
-        dict = summon (GeneratedScore Int)
-in
-        dict.score ((((((((0 + (((Some (0 + 0)) ?: 0) + 0)) + 0) + 0) + 0) + 0) + 0) + 0) + 0)
+    block
+        let pair = (x = ((match [(block
+            generatedListLength : List Int -> Int
+            let generatedListLength xs decreases structural xs =
+                match xs
+                  case Nil -> 0
+                  case _ :: tail -> 1 + generatedListLength tail
+
+            let item = 0
+
+            generatedListLength [item, (item + 1), 0]), ((block
+            generatedListLength : List Int -> Int
+            let generatedListLength xs decreases structural xs =
+                match xs
+                  case Nil -> 0
+                  case _ :: tail -> 1 + generatedListLength tail
+
+            let item = 0
+
+            generatedListLength [item, (item + 1), 0]) + 1)]
+          case head :: tail -> head
+          case Nil -> 0) + 0), y = ((match [(block
+            generatedListLength : List Int -> Int
+            let generatedListLength xs decreases structural xs =
+                match xs
+                  case Nil -> 0
+                  case _ :: tail -> 1 + generatedListLength tail
+
+            let item = 0
+
+            generatedListLength [item, (item + 1), 0]), ((block
+            generatedListLength : List Int -> Int
+            let generatedListLength xs decreases structural xs =
+                match xs
+                  case Nil -> 0
+                  case _ :: tail -> 1 + generatedListLength tail
+
+            let item = 0
+
+            generatedListLength [item, (item + 1), 0]) + 1)]
+          case head :: tail -> head
+          case Nil -> 0) + 1))
+        let whole@(x = captured, y = other) = pair
+
+        (whole.x + (captured + other))
 
 result : Int
 let result = generated_831
@@ -19,4 +54,4 @@ let result = generated_831
 --! assertNoErrors
 --! assertType generated_831 Int
 --! assertType result Int
---! assertDeclKinds trait, instance, signature, let, signature, let
+--! assertDeclKinds signature, let, signature, let

@@ -1,15 +1,21 @@
 module main
 
-generated_4106 : Int
-let generated_4106 =
-    match (((((((0 + ((if True then (if False then 0 else 0) else 0) + 0)) + 0) + 0) + 0) + 0) + 0) == ((((((0 + ((if True then (if False then 0 else 0) else 0) + 0)) + 0) + 0) + 0) + 0) + 0))
-      case True -> ((((((0 + ((if True then (if False then 0 else 0) else 0) + 0)) + 0) + 0) + 0) + 0) + 0)
-      case False -> 0
+generated_4106 : Map String Int
+let generated_4106 = { for x in [1, 2, 3], let y = x + 1, if y > 0, yield (if y > 1 then "hi" else "lo") : (block
+    generatedMapCount : Map String Int -> Int
+    let generatedMapCount values = 1
 
-result : Int
+    let item = (match (x == x)
+      case True -> x
+      case False -> 0)
+    let values = { yield "item" : item }
+
+    generatedMapCount values) }
+
+result : Map String Int
 let result = generated_4106
 
 --! assertNoErrors
---! assertType generated_4106 Int
---! assertType result Int
+--! assertType generated_4106 Map String Int
+--! assertType result Map String Int
 --! assertDeclKinds signature, let, signature, let

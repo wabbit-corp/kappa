@@ -1,12 +1,29 @@
 module main
 
-generated_1128 : Unit
-let generated_1128 = (if True then (if True then (if True then ((\(u : Unit) -> u) (if (0 == 1) then () else ())) else ()) else ()) else ())
+generated_1128 : IO Int
+let generated_1128 =
+    do
+        value <- pure ((block
+            generatedSetCount : Set Int -> Int
+            let generatedSetCount values = 2
 
-result : Unit
+            let item = (block
+                generatedSetCount : Set Int -> Int
+                let generatedSetCount values = 2
+
+                let item = 0
+                let values = {|item, (item + 1)|}
+
+                generatedSetCount values)
+            let values = {|item, (item + 1)|}
+
+            generatedSetCount values) + 0)
+        pure (value + 2)
+
+result : IO Int
 let result = generated_1128
 
 --! assertNoErrors
---! assertType generated_1128 Unit
---! assertType result Unit
+--! assertType generated_1128 IO Int
+--! assertType result IO Int
 --! assertDeclKinds signature, let, signature, let

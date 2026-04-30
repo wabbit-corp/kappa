@@ -3,7 +3,36 @@ module main
 generated_963 : Int
 let generated_963 =
     let
-        ranked : Int = (((((((if True then (if True then 0 else 0) else 0) + 0) + 0) + 0) + 0) + 0) + 0)
+        ranked : Int = (match ((block
+            generatedListLength : List Int -> Int
+            let generatedListLength xs decreases structural xs =
+                match xs
+                  case Nil -> 0
+                  case _ :: tail -> 1 + generatedListLength tail
+
+            let item = 0
+
+            generatedListLength [item, (item + 1), 0]) == (block
+            generatedListLength : List Int -> Int
+            let generatedListLength xs decreases structural xs =
+                match xs
+                  case Nil -> 0
+                  case _ :: tail -> 1 + generatedListLength tail
+
+            let item = 0
+
+            generatedListLength [item, (item + 1), 0]))
+          case True -> (block
+              generatedListLength : List Int -> Int
+              let generatedListLength xs decreases structural xs =
+                  match xs
+                    case Nil -> 0
+                    case _ :: tail -> 1 + generatedListLength tail
+
+              let item = 0
+
+              generatedListLength [item, (item + 1), 0])
+          case False -> 0)
 in
         (ranked + 0)
 

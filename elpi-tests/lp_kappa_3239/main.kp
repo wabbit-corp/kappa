@@ -1,12 +1,25 @@
 module main
 
-generated_3239 : (Int -> Int)
-let generated_3239 = \(x : Int) -> ((\(x : Int) -> ((\(x : Int) -> (((\(x : Int) -> x) x) + 0)) x)) x)
+generatedResize : (image : Int) -> (width : Int) -> (height : Int) -> Int
+let generatedResize image width height = image + width * 10 + height
 
-result : (Int -> Int)
+generated_3239 : Int
+let generated_3239 = generatedResize { image = ((match [(block
+    let pair = (x = 0, y = (0 + 1))
+    let (x = captured, y = other) = pair
+
+    (captured + other)), ((block
+    let pair = (x = 0, y = (0 + 1))
+    let (x = captured, y = other) = pair
+
+    (captured + other)) + 1)]
+  case head :: tail -> head
+  case Nil -> 0) + 0), height = 3, width = 2 }
+
+result : Int
 let result = generated_3239
 
 --! assertNoErrors
---! assertType generated_3239 (Int -> Int)
---! assertType result (Int -> Int)
---! assertDeclKinds signature, let, signature, let
+--! assertType generated_3239 Int
+--! assertType result Int
+--! assertDeclKinds signature, let, signature, let, signature, let

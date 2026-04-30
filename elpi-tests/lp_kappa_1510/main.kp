@@ -1,15 +1,42 @@
 module main
 
-generated_1510 : IO Int
-let generated_1510 =
-    do
-        value <- pure ((((((((if False then 0 else ((Some (0 + 0)) ?: 0)) + 0) + 0) + 0) + 0) + 0) + 0) + 0)
-        pure (value + 2)
+type GeneratedPair = (left : Int, right : Int)
 
-result : IO Int
+generated_1510 : GeneratedPair
+let generated_1510 = ((left = ((Some ((block
+    generatedSetCount : Set Int -> Int
+    let generatedSetCount values = 2
+
+    let item = 0
+    let values = {|item, (item + 1)|}
+
+    generatedSetCount values) + 1)) ?: ((block
+    generatedSetCount : Set Int -> Int
+    let generatedSetCount values = 2
+
+    let item = 0
+    let values = {|item, (item + 1)|}
+
+    generatedSetCount values) + 2)), right = 0)).{ right = (((Some ((block
+    generatedSetCount : Set Int -> Int
+    let generatedSetCount values = 2
+
+    let item = 0
+    let values = {|item, (item + 1)|}
+
+    generatedSetCount values) + 1)) ?: ((block
+    generatedSetCount : Set Int -> Int
+    let generatedSetCount values = 2
+
+    let item = 0
+    let values = {|item, (item + 1)|}
+
+    generatedSetCount values) + 2)) + 1) }
+
+result : GeneratedPair
 let result = generated_1510
 
 --! assertNoErrors
---! assertType generated_1510 IO Int
---! assertType result IO Int
---! assertDeclKinds signature, let, signature, let
+--! assertType generated_1510 GeneratedPair
+--! assertType result GeneratedPair
+--! assertDeclKinds type, signature, let, signature, let

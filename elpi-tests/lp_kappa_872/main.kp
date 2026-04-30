@@ -1,12 +1,61 @@
 module main
 
-generated_872 : Map String Int
-let generated_872 = { for x in [1, 2, 3], yield "k" : (((((((if True then x else 0) + 0) + 0) + 0) + 0) + 0) + 0) }
+generated_872 : Int
+let generated_872 =
+    block
+        let base : (x : Int) = (x = ((block
+            let pair = (x = (block
+                generatedListLength : List Int -> Int
+                let generatedListLength xs decreases structural xs =
+                    match xs
+                      case Nil -> 0
+                      case _ :: tail -> 1 + generatedListLength tail
 
-result : Map String Int
+                let item = 0
+
+                generatedListLength [item, (item + 1), 0]), y = ((block
+                generatedListLength : List Int -> Int
+                let generatedListLength xs decreases structural xs =
+                    match xs
+                      case Nil -> 0
+                      case _ :: tail -> 1 + generatedListLength tail
+
+                let item = 0
+
+                generatedListLength [item, (item + 1), 0]) + 1))
+            let (x = captured, y = other) = pair
+
+            (captured + other)) + 0))
+        let extended = base.{ y := ((block
+            let pair = (x = (block
+                generatedListLength : List Int -> Int
+                let generatedListLength xs decreases structural xs =
+                    match xs
+                      case Nil -> 0
+                      case _ :: tail -> 1 + generatedListLength tail
+
+                let item = 0
+
+                generatedListLength [item, (item + 1), 0]), y = ((block
+                generatedListLength : List Int -> Int
+                let generatedListLength xs decreases structural xs =
+                    match xs
+                      case Nil -> 0
+                      case _ :: tail -> 1 + generatedListLength tail
+
+                let item = 0
+
+                generatedListLength [item, (item + 1), 0]) + 1))
+            let (x = captured, y = other) = pair
+
+            (captured + other)) + 1) }
+
+        (extended.x + extended.y)
+
+result : Int
 let result = generated_872
 
 --! assertNoErrors
---! assertType generated_872 Map String Int
---! assertType result Map String Int
+--! assertType generated_872 Int
+--! assertType result Int
 --! assertDeclKinds signature, let, signature, let

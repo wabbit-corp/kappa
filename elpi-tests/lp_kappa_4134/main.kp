@@ -1,10 +1,33 @@
 module main
 
-generatedMakeConst : forall (a : Type). a -> Unit -> a
-let generatedMakeConst value = \() -> value
-
 generated_4134 : Int
-let generated_4134 = ((generatedMakeConst ((((((0 + ((if True then ((if True then 0 else 0) + 0) else 0) + 0)) + 0) + 0) + 0) + 0) + 0)) ())
+let generated_4134 =
+    block
+        scoped effect Ask =
+            ask : Unit -> Bool
+
+        let seed = (block
+            generatedMapCount : Map String Int -> Int
+            let generatedMapCount values = 1
+
+            let item = (match (0 == 0)
+              case True -> 0
+              case False -> 0)
+            let values = { yield "item" : item }
+
+            generatedMapCount values)
+
+        let comp : Eff <[Ask : Ask]> Int =
+            do
+                let b <- Ask.ask ()
+                if b then seed else (seed + 1)
+
+        let handled : Eff <[ ]> Int =
+            deep handle Ask comp with
+                case return x -> pure x
+                case ask () k -> k True
+
+        runPure handled
 
 result : Int
 let result = generated_4134
@@ -12,4 +35,4 @@ let result = generated_4134
 --! assertNoErrors
 --! assertType generated_4134 Int
 --! assertType result Int
---! assertDeclKinds signature, let, signature, let, signature, let
+--! assertDeclKinds signature, let, signature, let

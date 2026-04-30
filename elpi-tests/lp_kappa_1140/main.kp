@@ -1,14 +1,57 @@
 module main
 
-type GeneratedPair = (left : Int, right : Int)
+generated_1140 : Int
+let generated_1140 =
+    match (((block
+        generatedSetCount : Set Int -> Int
+        let generatedSetCount values = 2
 
-generated_1140 : GeneratedPair
-let generated_1140 = ((left = (((((((if True then ((left = 0, right = (0 + 0))).right else 0) + 0) + 0) + 0) + 0) + 0) + 0), right = 0)).{ right = ((((((((if True then ((left = 0, right = (0 + 0))).right else 0) + 0) + 0) + 0) + 0) + 0) + 0) + 1) }
+        let item = (block
+            generatedSetCount : Set Int -> Int
+            let generatedSetCount values = 2
 
-result : GeneratedPair
+            let item = 0
+            let values = {|item, (item + 1)|}
+
+            generatedSetCount values)
+        let values = {|item, (item + 1)|}
+
+        generatedSetCount values) + 0) == ((block
+        generatedSetCount : Set Int -> Int
+        let generatedSetCount values = 2
+
+        let item = (block
+            generatedSetCount : Set Int -> Int
+            let generatedSetCount values = 2
+
+            let item = 0
+            let values = {|item, (item + 1)|}
+
+            generatedSetCount values)
+        let values = {|item, (item + 1)|}
+
+        generatedSetCount values) + 0))
+      case True -> ((block
+          generatedSetCount : Set Int -> Int
+          let generatedSetCount values = 2
+
+          let item = (block
+              generatedSetCount : Set Int -> Int
+              let generatedSetCount values = 2
+
+              let item = 0
+              let values = {|item, (item + 1)|}
+
+              generatedSetCount values)
+          let values = {|item, (item + 1)|}
+
+          generatedSetCount values) + 0)
+      case False -> 0
+
+result : Int
 let result = generated_1140
 
 --! assertNoErrors
---! assertType generated_1140 GeneratedPair
---! assertType result GeneratedPair
---! assertDeclKinds type, signature, let, signature, let
+--! assertType generated_1140 Int
+--! assertType result Int
+--! assertDeclKinds signature, let, signature, let

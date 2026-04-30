@@ -1,15 +1,12 @@
 module main
 
-generated_3550 : IO Int
-let generated_3550 =
-    do
-        value <- pure ((((((0 + (((((left = 0, right = (0 + 0))).right + 0) + 0) + 0)) + 0) + 0) + 0) + 0) + 0)
-        pure (value + 2)
+generated_3550 : Unit
+let generated_3550 = (if True then (if True then (if True then ((\(u : Unit) -> if False then () else u) (if True then () else ())) else ()) else ()) else ())
 
-result : IO Int
+result : Unit
 let result = generated_3550
 
 --! assertNoErrors
---! assertType generated_3550 IO Int
---! assertType result IO Int
+--! assertType generated_3550 Unit
+--! assertType result Unit
 --! assertDeclKinds signature, let, signature, let

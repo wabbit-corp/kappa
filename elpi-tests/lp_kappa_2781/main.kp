@@ -1,17 +1,18 @@
 module main
 
-generated_2781 : Int
-let generated_2781 =
-    block
-        let pair = (x = (((((((((left = 0, right = (((if False then 0 else 0) + (0 + 0)) + 0))).right + 0) + 0) + 0) + 0) + 0) + 0) + 0), y = (((((((((left = 0, right = (((if False then 0 else 0) + (0 + 0)) + 0))).right + 0) + 0) + 0) + 0) + 0) + 0) + 1))
-        let (x = captured, y = other) = pair
+generated_2781 : Map String Int
+let generated_2781 = { for x in [1, 2, 3], yield "k" : (match [(match [x, (x + 1)]
+  case head :: tail -> head
+  case Nil -> 0), ((match [x, (x + 1)]
+  case head :: tail -> head
+  case Nil -> 0) + 1)]
+  case head :: tail -> head
+  case Nil -> 0), on conflict keep first }
 
-        (captured + other)
-
-result : Int
+result : Map String Int
 let result = generated_2781
 
 --! assertNoErrors
---! assertType generated_2781 Int
---! assertType result Int
+--! assertType generated_2781 Map String Int
+--! assertType result Map String Int
 --! assertDeclKinds signature, let, signature, let

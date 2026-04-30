@@ -3,10 +3,31 @@ module main
 generated_197 : Int
 let generated_197 =
     block
-        let pair = (x = (((((((((0 + 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0), y = (((((((((0 + 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0) + 1))
-        let (x = captured, y = other) = pair
+        scoped effect Ask =
+            ask : Unit -> Bool
 
-        (captured + other)
+        let pkg = (label = Ask)
+
+        let seed = (block
+            generatedSetCount : Set Int -> Int
+            let generatedSetCount values = 2
+
+            let item = 0
+            let values = {|item, (item + 1)|}
+
+            generatedSetCount values)
+
+        let comp : Eff <[Ask : Ask]> Int =
+            do
+                let b <- pkg.label.ask ()
+                if b then seed else (seed + 1)
+
+        let handled : Eff <[ ]> Int =
+            deep handle pkg.label comp with
+                case return x -> pure x
+                case ask () k -> k True
+
+        runPure handled
 
 result : Int
 let result = generated_197

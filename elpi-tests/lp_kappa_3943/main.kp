@@ -1,7 +1,7 @@
 module main
 
 generated_3943 : Set Int
-let generated_3943 = {| yield ((((((0 + ((0 + (((Some (0 + 0)) ?: 0) + 0)) + 0)) + 0) + 0) + 0) + 0) + 0) |}
+let generated_3943 = {| for x in [1, 2, 3], yield ((Some (((\(n : Int) -> n) x) + 1)) ?: (((\(n : Int) -> n) x) + 2)) |}
 
 result : Set Int
 let result = generated_3943

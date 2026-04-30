@@ -1,15 +1,12 @@
 module main
 
-generated_2851 : IO Int
-let generated_2851 =
-    do
-        let staged = (((((((((left = 0, right = (((left = 0, right = (0 + 0))).right + 0))).right + 0) + 0) + 0) + 0) + 0) + 0) + 0)
-        pure (staged + 1)
+generated_2851 : (Int -> Int)
+let generated_2851 = \(x : Int) -> ((\(x : Int) -> ((\(x : Int) -> (((if False then \(x : Int) -> x else \(x : Int) -> if (x == 0) then ((\(x : Int) -> x) x) else x)) x)) x)) x)
 
-result : IO Int
+result : (Int -> Int)
 let result = generated_2851
 
 --! assertNoErrors
---! assertType generated_2851 IO Int
---! assertType result IO Int
+--! assertType generated_2851 (Int -> Int)
+--! assertType result (Int -> Int)
 --! assertDeclKinds signature, let, signature, let

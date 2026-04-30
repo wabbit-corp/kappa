@@ -1,18 +1,34 @@
 module main
 
-generated_1090 : Int
+generatedNeed : (@x : Int) -> Int
+let generatedNeed (@x : Int) = x
+
+generated_1090 : IO Int
 let generated_1090 =
-    block
-        type RankedAlias = Int
+    do
+        let (@x : Int) = ((block
+            generatedListLength : List Int -> Int
+            let generatedListLength xs decreases structural xs =
+                match xs
+                  case Nil -> 0
+                  case _ :: tail -> 1 + generatedListLength tail
 
-        let aliased : RankedAlias = ((((((((if True then ((if False then 0 else 0) + (0 + 0)) else 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0)
+            let item = (block
+                generatedSetCount : Set Int -> Int
+                let generatedSetCount values = 2
 
-        (aliased + 1)
+                let item = 0
+                let values = {|item, (item + 1)|}
 
-result : Int
+                generatedSetCount values)
+
+            generatedListLength [item, (item + 1), 0]) + 0)
+        pure generatedNeed
+
+result : IO Int
 let result = generated_1090
 
 --! assertNoErrors
---! assertType generated_1090 Int
---! assertType result Int
---! assertDeclKinds signature, let, signature, let
+--! assertType generated_1090 IO Int
+--! assertType result IO Int
+--! assertDeclKinds signature, let, signature, let, signature, let

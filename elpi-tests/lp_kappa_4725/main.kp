@@ -1,12 +1,14 @@
 module main
 
-generated_4725 : Set Int
-let generated_4725 = {| yield ((((((0 + (((if True then (0 + (0 + 0)) else 0) + 0) + 0)) + 0) + 0) + 0) + 0) + 0) |}
+generated_4725 : Map String Int
+let generated_4725 = { for x in [1, 2, 3], yield "k" : (match [((Some (x + 1)) ?: (x + 2)), (((Some (x + 1)) ?: (x + 2)) + 1)]
+  case head :: tail -> head
+  case Nil -> 0), on conflict keep first }
 
-result : Set Int
+result : Map String Int
 let result = generated_4725
 
 --! assertNoErrors
---! assertType generated_4725 Set Int
---! assertType result Set Int
+--! assertType generated_4725 Map String Int
+--! assertType result Map String Int
 --! assertDeclKinds signature, let, signature, let

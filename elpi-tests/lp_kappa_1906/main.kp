@@ -5,7 +5,14 @@ let generated_1906 =
     block
         type RankedAlias = Int
 
-        let aliased : RankedAlias = (((((((((if False then 0 else 0) + (0 + 0)) + 0) + 0) + 0) + 0) + 0) + 0) + 0)
+        let aliased : RankedAlias = (((\(n : Int) -> n) (block
+            generatedMapCount : Map String Int -> Int
+            let generatedMapCount values = 1
+
+            let item = 0
+            let values = { yield "item" : item }
+
+            generatedMapCount values)) + 0)
 
         (aliased + 1)
 

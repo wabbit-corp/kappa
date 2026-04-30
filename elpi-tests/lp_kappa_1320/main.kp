@@ -2,11 +2,41 @@ module main
 
 generated_1320 : Int
 let generated_1320 =
-    block
-        let base : (x : Int) = (x = ((((((((if False then 0 else (if True then 0 else 0)) + 0) + 0) + 0) + 0) + 0) + 0) + 0))
-        let extended = base.{ y := ((((((((if False then 0 else (if True then 0 else 0)) + 0) + 0) + 0) + 0) + 0) + 0) + 1) }
+    match [((match [(block
+        generatedSetCount : Set Int -> Int
+        let generatedSetCount values = 2
 
-        (extended.x + extended.y)
+        let item = 0
+        let values = {|item, (item + 1)|}
+
+        generatedSetCount values), ((block
+        generatedSetCount : Set Int -> Int
+        let generatedSetCount values = 2
+
+        let item = 0
+        let values = {|item, (item + 1)|}
+
+        generatedSetCount values) + 1)]
+      case head :: tail -> head
+      case Nil -> 0) + 0), (((match [(block
+        generatedSetCount : Set Int -> Int
+        let generatedSetCount values = 2
+
+        let item = 0
+        let values = {|item, (item + 1)|}
+
+        generatedSetCount values), ((block
+        generatedSetCount : Set Int -> Int
+        let generatedSetCount values = 2
+
+        let item = 0
+        let values = {|item, (item + 1)|}
+
+        generatedSetCount values) + 1)]
+      case head :: tail -> head
+      case Nil -> 0) + 0) + 1)]
+      case head :: tail -> head
+      case Nil -> 0
 
 result : Int
 let result = generated_1320

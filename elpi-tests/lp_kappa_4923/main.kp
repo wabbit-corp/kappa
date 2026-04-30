@@ -1,17 +1,15 @@
 module main
 
-generated_4923 : Int
+generated_4923 : IO Int
 let generated_4923 =
-    block
-        let pair = (x = ((((((0 + (((if True then ((left = 0, right = (0 + 0))).right else 0) + 0) + 0)) + 0) + 0) + 0) + 0) + 0), y = ((((((0 + (((if True then ((left = 0, right = (0 + 0))).right else 0) + 0) + 0)) + 0) + 0) + 0) + 0) + 1))
-        let (x = captured, y = other) = pair
+    do
+        let staged = (((Some (((Some (0 + 1)) ?: (0 + 2)) + 1)) ?: (((Some (0 + 1)) ?: (0 + 2)) + 2)) + 0)
+        pure (staged + 1)
 
-        (captured + other)
-
-result : Int
+result : IO Int
 let result = generated_4923
 
 --! assertNoErrors
---! assertType generated_4923 Int
---! assertType result Int
+--! assertType generated_4923 IO Int
+--! assertType result IO Int
 --! assertDeclKinds signature, let, signature, let

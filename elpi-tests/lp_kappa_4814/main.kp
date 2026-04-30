@@ -1,10 +1,12 @@
 module main
 
-generatedMakeConst : forall (a : Type). a -> Unit -> a
-let generatedMakeConst value = \() -> value
-
 generated_4814 : Int
-let generated_4814 = ((generatedMakeConst ((((((0 + (((if True then ((if True then 0 else 0) + 0) else 0) + 0) + 0)) + 0) + 0) + 0) + 0) + 0)) ())
+let generated_4814 =
+    block
+        let base : (x : Int) = (x = (((\(n : Int) -> n) ((Some (0 + 1)) ?: (0 + 2))) + 0))
+        let extended = base.{ y := (((\(n : Int) -> n) ((Some (0 + 1)) ?: (0 + 2))) + 1) }
+
+        (extended.x + extended.y)
 
 result : Int
 let result = generated_4814
@@ -12,4 +14,4 @@ let result = generated_4814
 --! assertNoErrors
 --! assertType generated_4814 Int
 --! assertType result Int
---! assertDeclKinds signature, let, signature, let, signature, let
+--! assertDeclKinds signature, let, signature, let

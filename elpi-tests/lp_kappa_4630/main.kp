@@ -1,7 +1,7 @@
 module main
 
 generated_4630 : Unit
-let generated_4630 = (if True then (if True then (if False then () else (if (True && True) then () else ())) else ()) else ())
+let generated_4630 = (if True then (if True then (if True then ((\(u : Unit) -> if True then u else ()) (if True then () else ())) else ()) else ()) else ())
 
 result : Unit
 let result = generated_4630

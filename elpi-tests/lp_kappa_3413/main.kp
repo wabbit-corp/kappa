@@ -1,12 +1,29 @@
 module main
 
-generated_3413 : List Int
-let generated_3413 = [ for x in [1, 2, 3], let y = x + 1, if y > 0, yield (((((0 + ((((if False then 0 else x) + 0) + 0) + 0)) + 0) + 0) + 0) + 0) ]
+generatedEcho : forall (a : Type). (this x : a) -> a
+let generatedEcho @a (this x : a) = x
 
-result : List Int
+generated_3413 : Int
+let generated_3413 = ((.generatedEcho) ((match ((block
+    let pair = (x = 0, y = (0 + 1))
+    let (x = captured, y = other) = pair
+
+    (captured + other)) == (block
+    let pair = (x = 0, y = (0 + 1))
+    let (x = captured, y = other) = pair
+
+    (captured + other)))
+  case True -> (block
+      let pair = (x = 0, y = (0 + 1))
+      let (x = captured, y = other) = pair
+
+      (captured + other))
+  case False -> 0) + 0))
+
+result : Int
 let result = generated_3413
 
 --! assertNoErrors
---! assertType generated_3413 List Int
---! assertType result List Int
---! assertDeclKinds signature, let, signature, let
+--! assertType generated_3413 Int
+--! assertType result Int
+--! assertDeclKinds signature, let, signature, let, signature, let

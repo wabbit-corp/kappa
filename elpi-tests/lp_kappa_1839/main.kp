@@ -3,13 +3,28 @@ module main
 generated_1839 : Int
 let generated_1839 =
     block
-        data RankedBox : Type =
-            RankedBox (value : Int)
+        rankedHelper : (Int -> Int)
+        let rankedHelper x = x + 1
 
-        let boxed = RankedBox (((((((((if True then ((left = 0, right = (0 + 0))).right else 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0)
+        rankedHelper ((block
+            let pair = (x = (block
+                generatedMapCount : Map String Int -> Int
+                let generatedMapCount values = 1
 
-        match boxed
-          case RankedBox value -> (value + 1)
+                let item = 0
+                let values = { yield "item" : item }
+
+                generatedMapCount values), y = ((block
+                generatedMapCount : Map String Int -> Int
+                let generatedMapCount values = 1
+
+                let item = 0
+                let values = { yield "item" : item }
+
+                generatedMapCount values) + 1))
+            let (x = captured, y = other) = pair
+
+            (captured + other)) + 0)
 
 result : Int
 let result = generated_1839

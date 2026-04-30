@@ -4,7 +4,9 @@ generatedResize : (image : Int) -> (width : Int) -> (height : Int) -> Int
 let generatedResize image width height = image + width * 10 + height
 
 generated_4643 : Int
-let generated_4643 = generatedResize { image = ((((((0 + (((if True then 0 else 0) + 0) + 0)) + 0) + 0) + 0) + 0) + 0), height = 3, width = 2 }
+let generated_4643 = generatedResize { image = ((match (Some ((Some (0 + 1)) ?: (0 + 2)))
+  case Some payload -> payload
+  case None -> 0) + 0), height = 3, width = 2 }
 
 result : Int
 let result = generated_4643

@@ -1,12 +1,31 @@
 module main
 
-generated_3405 : Bool
-let generated_3405 = (if (if (if (if (True || False) then True else False) then False else True) then True else False) then True else False)
+generated_3405 : Int
+let generated_3405 =
+    block
+        rankedHelper : (Int -> Int)
+        let rankedHelper x = x + 1
 
-result : Bool
+        rankedHelper ((match ((block
+            let pair = (x = 0, y = (0 + 1))
+            let (x = captured, y = other) = pair
+
+            (captured + other)) == (block
+            let pair = (x = 0, y = (0 + 1))
+            let (x = captured, y = other) = pair
+
+            (captured + other)))
+          case True -> (block
+              let pair = (x = 0, y = (0 + 1))
+              let (x = captured, y = other) = pair
+
+              (captured + other))
+          case False -> 0) + 0)
+
+result : Int
 let result = generated_3405
 
 --! assertNoErrors
---! assertType generated_3405 Bool
---! assertType result Bool
+--! assertType generated_3405 Int
+--! assertType result Int
 --! assertDeclKinds signature, let, signature, let

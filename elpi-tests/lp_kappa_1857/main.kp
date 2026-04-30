@@ -1,12 +1,53 @@
 module main
 
-generated_1857 : Set Int
-let generated_1857 = {| for x in [1, 2, 3], let y = x + 1, yield ((((((((if True then ((Some (x + 0)) ?: 0) else 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0) |}
+generated_1857 : Int
+let generated_1857 =
+    block
+        let pair = (x = ((block
+            let pair = (x = (block
+                generatedMapCount : Map String Int -> Int
+                let generatedMapCount values = 1
 
-result : Set Int
+                let item = 0
+                let values = { yield "item" : item }
+
+                generatedMapCount values), y = ((block
+                generatedMapCount : Map String Int -> Int
+                let generatedMapCount values = 1
+
+                let item = 0
+                let values = { yield "item" : item }
+
+                generatedMapCount values) + 1))
+            let (x = captured, y = other) = pair
+
+            (captured + other)) + 0), y = ((block
+            let pair = (x = (block
+                generatedMapCount : Map String Int -> Int
+                let generatedMapCount values = 1
+
+                let item = 0
+                let values = { yield "item" : item }
+
+                generatedMapCount values), y = ((block
+                generatedMapCount : Map String Int -> Int
+                let generatedMapCount values = 1
+
+                let item = 0
+                let values = { yield "item" : item }
+
+                generatedMapCount values) + 1))
+            let (x = captured, y = other) = pair
+
+            (captured + other)) + 1))
+        let whole@(x = captured, y = other) = pair
+
+        (whole.x + (captured + other))
+
+result : Int
 let result = generated_1857
 
 --! assertNoErrors
---! assertType generated_1857 Set Int
---! assertType result Set Int
+--! assertType generated_1857 Int
+--! assertType result Int
 --! assertDeclKinds signature, let, signature, let

@@ -2,9 +2,27 @@ module main
 
 generated_2542 : Int
 let generated_2542 =
-    match ((((((((((left = (((Some (0 + 0)) ?: 0) + 0), right = 0)).left + 0) + 0) + 0) + 0) + 0) + 0) + 0) == (((((((((left = (((Some (0 + 0)) ?: 0) + 0), right = 0)).left + 0) + 0) + 0) + 0) + 0) + 0) + 0))
-      case True -> (((((((((left = (((Some (0 + 0)) ?: 0) + 0), right = 0)).left + 0) + 0) + 0) + 0) + 0) + 0) + 0)
-      case False -> 0
+    block
+        trait RankedScore a =
+            rank : a -> Int
+
+        instance RankedScore Int =
+            let rank x = x
+
+        let dict = summon (RankedScore Int)
+
+        dict.rank ((block
+            generatedListLength : List Int -> Int
+            let generatedListLength xs decreases structural xs =
+                match xs
+                  case Nil -> 0
+                  case _ :: tail -> 1 + generatedListLength tail
+
+            let item = (match [0, (0 + 1)]
+              case head :: tail -> head
+              case Nil -> 0)
+
+            generatedListLength [item, (item + 1), 0]) + 0)
 
 result : Int
 let result = generated_2542

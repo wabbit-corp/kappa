@@ -1,7 +1,23 @@
 module main
 
 generated_2758 : Int
-let generated_2758 = ((((((((left = 0, right = (((if False then 0 else 0) + (0 + 0)) + 0))).right + 0) + 0) + 0) + 0) + 0) + 0)
+let generated_2758 =
+    block
+        trait RankedScore a =
+            rank : a -> Int
+
+        instance RankedScore Int =
+            let rank x = x
+
+        let dict = summon (RankedScore Int)
+
+        dict.rank ((match [(match [0, (0 + 1)]
+          case head :: tail -> head
+          case Nil -> 0), ((match [0, (0 + 1)]
+          case head :: tail -> head
+          case Nil -> 0) + 1)]
+          case head :: tail -> head
+          case Nil -> 0) + 0)
 
 result : Int
 let result = generated_2758

@@ -4,7 +4,9 @@ generatedResize : (image : Int) -> (width : Int) -> (height : Int) -> Int
 let generatedResize image width height = image + width * 10 + height
 
 generated_3725 : Int
-let generated_3725 = generatedResize { image = ((((((0 + ((0 + ((if True then 0 else 0) + 0)) + 0)) + 0) + 0) + 0) + 0) + 0), height = 3, width = 2 }
+let generated_3725 = generatedResize { image = ((match [((\(n : Int) -> n) 0), (((\(n : Int) -> n) 0) + 1)]
+  case head :: tail -> head
+  case Nil -> 0) + 0), height = 3, width = 2 }
 
 result : Int
 let result = generated_3725

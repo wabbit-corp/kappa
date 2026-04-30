@@ -1,14 +1,47 @@
 module main
 
-type GeneratedTuple = (Int, Int)
+generated_3543 : Int
+let generated_3543 =
+    block
+        scoped effect Ask =
+            ask : Unit -> Bool
 
-generated_3543 : GeneratedTuple
-let generated_3543 = (if True then (if True then (if False then (0, (0 + 0)) else (if True then (if (False || True) then (0, (0 + 0)) else ((2 + 2), 2)) else (0, (0 + 0)))) else (0, (0 + 0))) else (0, (0 + 0)))
+        scoped effect Other =
+            other : Unit -> Int
 
-result : GeneratedTuple
+        let seed = (block
+            generatedListLength : List Int -> Int
+            let generatedListLength xs decreases structural xs =
+                match xs
+                  case Nil -> 0
+                  case _ :: tail -> 1 + generatedListLength tail
+
+            let item = ((\(n : Int) -> n) 0)
+
+            generatedListLength [item, (item + 1), 0])
+
+        let comp : Eff <[Ask : Ask, Other : Other]> Int =
+            do
+                let b <- Ask.ask ()
+                let n <- Other.other ()
+                if b then (n + seed) else seed
+
+        let askHandled : Eff <[Other : Other]> Int =
+            deep handle Ask comp with
+                case return x -> pure x
+                case ask () k -> k True
+
+        let handled : Eff <[ ]> Int =
+            deep handle Other askHandled with
+                case return x -> pure x
+                case other () k -> k 1
+
+        runPure handled
+
+result : Int
 let result = generated_3543
 
 --! assertNoErrors
---! assertType generated_3543 GeneratedTuple
---! assertType result GeneratedTuple
---! assertDeclKinds type, signature, let, signature, let
+--! assertType generated_3543 Int
+--! assertType result Int
+--! assertDeclKinds signature, let, signature, let

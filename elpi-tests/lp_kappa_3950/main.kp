@@ -1,12 +1,17 @@
 module main
 
-generated_3950 : Unit
-let generated_3950 = (if True then (if True then (if False then () else ((\(u : Unit) -> u) ())) else ()) else ())
+generated_3950 : Int
+let generated_3950 =
+    block
+        let base : (x : Int) = (x = (((Some (((\(n : Int) -> n) 0) + 1)) ?: (((\(n : Int) -> n) 0) + 2)) + 0))
+        let extended = base.{ y := (((Some (((\(n : Int) -> n) 0) + 1)) ?: (((\(n : Int) -> n) 0) + 2)) + 1) }
 
-result : Unit
+        (extended.x + extended.y)
+
+result : Int
 let result = generated_3950
 
 --! assertNoErrors
---! assertType generated_3950 Unit
---! assertType result Unit
+--! assertType generated_3950 Int
+--! assertType result Int
 --! assertDeclKinds signature, let, signature, let

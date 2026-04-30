@@ -1,12 +1,31 @@
 module main
 
-generated_2454 : Unit
-let generated_2454 = (if True then (if True then (if True then ((\(u : Unit) -> if False then () else u) ((\(u : Unit) -> if False then () else u) ())) else ()) else ()) else ())
+generated_2454 : Int
+let generated_2454 =
+    match [((match ((match (Some 0)
+      case Some payload -> payload
+      case None -> 0) == (match (Some 0)
+      case Some payload -> payload
+      case None -> 0))
+      case True -> (match (Some 0)
+        case Some payload -> payload
+        case None -> 0)
+      case False -> 0) + 0), (((match ((match (Some 0)
+      case Some payload -> payload
+      case None -> 0) == (match (Some 0)
+      case Some payload -> payload
+      case None -> 0))
+      case True -> (match (Some 0)
+        case Some payload -> payload
+        case None -> 0)
+      case False -> 0) + 0) + 1)]
+      case head :: tail -> head
+      case Nil -> 0
 
-result : Unit
+result : Int
 let result = generated_2454
 
 --! assertNoErrors
---! assertType generated_2454 Unit
---! assertType result Unit
+--! assertType generated_2454 Int
+--! assertType result Int
 --! assertDeclKinds signature, let, signature, let

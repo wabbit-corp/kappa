@@ -1,15 +1,27 @@
 module main
 
-generated_3123 : IO Int
+generated_3123 : Int
 let generated_3123 =
-    do
-        let staged = (((((((((Some (((if False then 0 else 0) + (0 + 0)) + 0)) ?: 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0)
-        pure (staged + 1)
+    let
+        ranked : Int = (block
+            generatedMapCount : Map String Int -> Int
+            let generatedMapCount values = 1
 
-result : IO Int
+            let item = (block
+                let pair = (x = 0, y = (0 + 1))
+                let (x = captured, y = other) = pair
+
+                (captured + other))
+            let values = { yield "item" : item }
+
+            generatedMapCount values)
+in
+        (ranked + 0)
+
+result : Int
 let result = generated_3123
 
 --! assertNoErrors
---! assertType generated_3123 IO Int
---! assertType result IO Int
+--! assertType generated_3123 Int
+--! assertType result Int
 --! assertDeclKinds signature, let, signature, let

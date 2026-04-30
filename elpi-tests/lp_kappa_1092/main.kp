@@ -1,12 +1,28 @@
 module main
 
-generated_1092 : Int
-let generated_1092 = (((((((if True then ((left = (0 + 0), right = 0)).left else 0) + 0) + 0) + 0) + 0) + 0) + 0)
+generated_1092 : List Int
+let generated_1092 = [ yield ((block
+    generatedListLength : List Int -> Int
+    let generatedListLength xs decreases structural xs =
+        match xs
+          case Nil -> 0
+          case _ :: tail -> 1 + generatedListLength tail
 
-result : Int
+    let item = (block
+        generatedSetCount : Set Int -> Int
+        let generatedSetCount values = 2
+
+        let item = 0
+        let values = {|item, (item + 1)|}
+
+        generatedSetCount values)
+
+    generatedListLength [item, (item + 1), 0]) + 0) ]
+
+result : List Int
 let result = generated_1092
 
 --! assertNoErrors
---! assertType generated_1092 Int
---! assertType result Int
+--! assertType generated_1092 List Int
+--! assertType result List Int
 --! assertDeclKinds signature, let, signature, let

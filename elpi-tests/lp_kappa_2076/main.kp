@@ -2,12 +2,31 @@ module main
 
 generated_2076 : Int
 let generated_2076 =
-    block
-        type RankedAlias = Int
+    match [((block
+        generatedListLength : List Int -> Int
+        let generatedListLength xs decreases structural xs =
+            match xs
+              case Nil -> 0
+              case _ :: tail -> 1 + generatedListLength tail
 
-        let aliased : RankedAlias = (((((((((if False then 0 else ((if True then 0 else 0) + 0)) + (0 + 0)) + 0) + 0) + 0) + 0) + 0) + 0) + 0)
+        let item = (match (Some 0)
+          case Some payload -> payload
+          case None -> 0)
 
-        (aliased + 1)
+        generatedListLength [item, (item + 1), 0]) + 0), (((block
+        generatedListLength : List Int -> Int
+        let generatedListLength xs decreases structural xs =
+            match xs
+              case Nil -> 0
+              case _ :: tail -> 1 + generatedListLength tail
+
+        let item = (match (Some 0)
+          case Some payload -> payload
+          case None -> 0)
+
+        generatedListLength [item, (item + 1), 0]) + 0) + 1)]
+      case head :: tail -> head
+      case Nil -> 0
 
 result : Int
 let result = generated_2076

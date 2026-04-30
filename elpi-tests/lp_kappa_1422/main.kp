@@ -1,12 +1,17 @@
 module main
 
-generated_1422 : Int
-let generated_1422 =
-    block
-        let base : (x : Int) = (x = ((((((((if False then 0 else ((if False then 0 else 0) + (0 + 0))) + 0) + 0) + 0) + 0) + 0) + 0) + 0))
-        let extended = base.{ y := ((((((((if False then 0 else ((if False then 0 else 0) + (0 + 0))) + 0) + 0) + 0) + 0) + 0) + 0) + 1) }
+generatedNeed : (@x : Int) -> Int
+let generatedNeed (@x : Int) = x
 
-        (extended.x + extended.y)
+generated_1422 : Int
+let generated_1422 = generatedNeed @((((\(n : Int) -> n) (block
+    generatedSetCount : Set Int -> Int
+    let generatedSetCount values = 2
+
+    let item = 0
+    let values = {|item, (item + 1)|}
+
+    generatedSetCount values)) + 0))
 
 result : Int
 let result = generated_1422
@@ -14,4 +19,4 @@ let result = generated_1422
 --! assertNoErrors
 --! assertType generated_1422 Int
 --! assertType result Int
---! assertDeclKinds signature, let, signature, let
+--! assertDeclKinds signature, let, signature, let, signature, let

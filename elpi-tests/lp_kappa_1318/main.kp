@@ -1,10 +1,46 @@
 module main
 
+type GeneratedTuple = (Int, Int)
+
 generated_1318 : Int
 let generated_1318 =
-    match (((((((((if False then 0 else (if True then 0 else 0)) + 0) + 0) + 0) + 0) + 0) + 0) + 0) == ((((((((if False then 0 else (if True then 0 else 0)) + 0) + 0) + 0) + 0) + 0) + 0) + 0))
-      case True -> ((((((((if False then 0 else (if True then 0 else 0)) + 0) + 0) + 0) + 0) + 0) + 0) + 0)
-      case False -> 0
+    block
+        let pair : GeneratedTuple = (((match [(block
+            generatedSetCount : Set Int -> Int
+            let generatedSetCount values = 2
+
+            let item = 0
+            let values = {|item, (item + 1)|}
+
+            generatedSetCount values), ((block
+            generatedSetCount : Set Int -> Int
+            let generatedSetCount values = 2
+
+            let item = 0
+            let values = {|item, (item + 1)|}
+
+            generatedSetCount values) + 1)]
+          case head :: tail -> head
+          case Nil -> 0) + 0), ((match [(block
+            generatedSetCount : Set Int -> Int
+            let generatedSetCount values = 2
+
+            let item = 0
+            let values = {|item, (item + 1)|}
+
+            generatedSetCount values), ((block
+            generatedSetCount : Set Int -> Int
+            let generatedSetCount values = 2
+
+            let item = 0
+            let values = {|item, (item + 1)|}
+
+            generatedSetCount values) + 1)]
+          case head :: tail -> head
+          case Nil -> 0) + 1))
+        let (left, right) = pair
+
+        (left + right)
 
 result : Int
 let result = generated_1318
@@ -12,4 +48,4 @@ let result = generated_1318
 --! assertNoErrors
 --! assertType generated_1318 Int
 --! assertType result Int
---! assertDeclKinds signature, let, signature, let
+--! assertDeclKinds type, signature, let, signature, let

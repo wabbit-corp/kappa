@@ -1,12 +1,17 @@
 module main
 
-generated_482 : Unit
-let generated_482 = (if True then (if True then (if True then (if True then ((\(u : Unit) -> if True then u else ()) ()) else ()) else ()) else ()) else ())
+generatedEcho : forall (a : Type). (this x : a) -> a
+let generatedEcho @a (this x : a) = x
 
-result : Unit
+generated_482 : Int
+let generated_482 = ((match (0 == 0)
+  case True -> 0
+  case False -> 0) + 0).generatedEcho
+
+result : Int
 let result = generated_482
 
 --! assertNoErrors
---! assertType generated_482 Unit
---! assertType result Unit
---! assertDeclKinds signature, let, signature, let
+--! assertType generated_482 Int
+--! assertType result Int
+--! assertDeclKinds signature, let, signature, let, signature, let

@@ -1,17 +1,12 @@
 module main
 
-generated_907 : Int
-let generated_907 =
-    block
-        rankedHelper : (Int -> Int)
-        let rankedHelper x = x + 1
+generated_907 : (Int -> Int)
+let generated_907 = \(x : Int) -> ((\(x : Int) -> ((\(x : Int) -> ((\(x : Int) -> (((\(x : Int) -> (((\(x : Int) -> x) x) + 0)) x) + 0)) x)) x)) x)
 
-        rankedHelper ((((((((if True then ((0 + 0) + 0) else 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0)
-
-result : Int
+result : (Int -> Int)
 let result = generated_907
 
 --! assertNoErrors
---! assertType generated_907 Int
---! assertType result Int
+--! assertType generated_907 (Int -> Int)
+--! assertType result (Int -> Int)
 --! assertDeclKinds signature, let, signature, let

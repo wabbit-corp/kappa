@@ -1,12 +1,38 @@
 module main
 
-generated_652 : Unit
-let generated_652 = (if True then (if True then (if True then (if False then () else ((\(u : Unit) -> ()) ())) else ()) else ()) else ())
+generated_652 : Int
+let generated_652 =
+    block
+        trait RankedScore a =
+            rank : a -> Int
 
-result : Unit
+        instance RankedScore Int =
+            let rank x = x
+
+        let dict = summon (RankedScore Int)
+
+        dict.rank ((block
+            generatedSetCount : Set Int -> Int
+            let generatedSetCount values = 2
+
+            let item = (block
+                generatedListLength : List Int -> Int
+                let generatedListLength xs decreases structural xs =
+                    match xs
+                      case Nil -> 0
+                      case _ :: tail -> 1 + generatedListLength tail
+
+                let item = 0
+
+                generatedListLength [item, (item + 1), 0])
+            let values = {|item, (item + 1)|}
+
+            generatedSetCount values) + 0)
+
+result : Int
 let result = generated_652
 
 --! assertNoErrors
---! assertType generated_652 Unit
---! assertType result Unit
+--! assertType generated_652 Int
+--! assertType result Int
 --! assertDeclKinds signature, let, signature, let

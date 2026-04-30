@@ -1,15 +1,26 @@
 module main
 
-generated_4162 : IO Int
+generated_4162 : Int
 let generated_4162 =
-    do
-        value <- pure ((((((0 + ((if True then ((if False then 0 else 0) + (0 + 0)) else 0) + 0)) + 0) + 0) + 0) + 0) + 0)
-        pure (value + 2)
+    block
+        trait RankedScore a =
+            rank : a -> Int
 
-result : IO Int
+        instance RankedScore Int =
+            let rank x = x
+
+        let dict = summon (RankedScore Int)
+
+        dict.rank ((match (Some (match (0 == 0)
+          case True -> 0
+          case False -> 0))
+          case Some payload -> payload
+          case None -> 0) + 0)
+
+result : Int
 let result = generated_4162
 
 --! assertNoErrors
---! assertType generated_4162 IO Int
---! assertType result IO Int
+--! assertType generated_4162 Int
+--! assertType result Int
 --! assertDeclKinds signature, let, signature, let

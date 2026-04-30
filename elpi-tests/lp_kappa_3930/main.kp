@@ -1,15 +1,12 @@
 module main
 
-generatedMakeConst : forall (a : Type). a -> Unit -> a
-let generatedMakeConst value = \() -> value
+generated_3930 : Option Int
+let generated_3930 = (if True then (if True then (if True then (if (((if (False || True) then (Some (0 + 0)) else (Some (1 + 1))) ?: 0) == 1) then (Some (((if (False || True) then (Some (0 + 0)) else (Some (1 + 1))) ?: 0) + 0)) else (if (False || True) then (Some (0 + 0)) else (Some (1 + 1)))) else None) else None) else None)
 
-generated_3930 : Int
-let generated_3930 = ((generatedMakeConst ((((((0 + ((0 + (((Some (0 + 0)) ?: 0) + 0)) + 0)) + 0) + 0) + 0) + 0) + 0)) ())
-
-result : Int
+result : Option Int
 let result = generated_3930
 
 --! assertNoErrors
---! assertType generated_3930 Int
---! assertType result Int
---! assertDeclKinds signature, let, signature, let, signature, let
+--! assertType generated_3930 Option Int
+--! assertType result Option Int
+--! assertDeclKinds signature, let, signature, let

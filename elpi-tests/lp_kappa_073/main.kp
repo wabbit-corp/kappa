@@ -1,12 +1,15 @@
 module main
 
-generated_73 : Bool
-let generated_73 = (if True then True else False)
+generatedEcho : forall (a : Type). (this x : a) -> a
+let generatedEcho @a (this x : a) = x
 
-result : Bool
+generated_73 : Option Int
+let generated_73 = (Some (0 + 0))?.generatedEcho
+
+result : Option Int
 let result = generated_73
 
 --! assertNoErrors
---! assertType generated_73 Bool
---! assertType result Bool
---! assertDeclKinds signature, let, signature, let
+--! assertType generated_73 Option Int
+--! assertType result Option Int
+--! assertDeclKinds signature, let, signature, let, signature, let

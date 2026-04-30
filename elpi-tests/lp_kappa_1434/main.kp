@@ -1,12 +1,36 @@
 module main
 
-generated_1434 : Unit
-let generated_1434 = (if True then (if True then (if True then ((\(u : Unit) -> ()) ((\(u : Unit) -> if False then () else u) ())) else ()) else ()) else ())
+generated_1434 : Int
+let generated_1434 =
+    block
+        scoped effect Ask =
+            ask : Unit -> Bool
 
-result : Unit
+        let seed = ((\(n : Int) -> n) (block
+            generatedSetCount : Set Int -> Int
+            let generatedSetCount values = 2
+
+            let item = 0
+            let values = {|item, (item + 1)|}
+
+            generatedSetCount values))
+
+        let comp : Eff <[Ask : Ask]> Int =
+            do
+                let b <- Ask.ask ()
+                if b then seed else (seed + 1)
+
+        let handled : Eff <[ ]> Int =
+            deep handle Ask comp with
+                case return x -> pure x
+                case ask () k -> k True
+
+        runPure handled
+
+result : Int
 let result = generated_1434
 
 --! assertNoErrors
---! assertType generated_1434 Unit
---! assertType result Unit
+--! assertType generated_1434 Int
+--! assertType result Int
 --! assertDeclKinds signature, let, signature, let

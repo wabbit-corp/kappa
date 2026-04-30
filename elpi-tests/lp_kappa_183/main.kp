@@ -1,12 +1,31 @@
 module main
 
-generated_183 : List Int
-let generated_183 = [ for x in [1, 2, 3], yield ((((((((x + 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0) ]
+generated_183 : Int
+let generated_183 =
+    block
+        let pair = (x = ((block
+            generatedSetCount : Set Int -> Int
+            let generatedSetCount values = 2
 
-result : List Int
+            let item = 0
+            let values = {|item, (item + 1)|}
+
+            generatedSetCount values) + 0), y = ((block
+            generatedSetCount : Set Int -> Int
+            let generatedSetCount values = 2
+
+            let item = 0
+            let values = {|item, (item + 1)|}
+
+            generatedSetCount values) + 1))
+        let whole@(x = captured, y = other) = pair
+
+        (whole.x + (captured + other))
+
+result : Int
 let result = generated_183
 
 --! assertNoErrors
---! assertType generated_183 List Int
---! assertType result List Int
+--! assertType generated_183 Int
+--! assertType result Int
 --! assertDeclKinds signature, let, signature, let

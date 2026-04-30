@@ -1,15 +1,24 @@
 module main
 
-generated_3667 : IO Int
-let generated_3667 =
-    do
-        let staged = ((((((0 + ((0 + (((0 + 0) + 0) + 0)) + 0)) + 0) + 0) + 0) + 0) + 0)
-        pure (staged + 1)
+trait GeneratedScore a =
+    score : a -> Int
 
-result : IO Int
+instance GeneratedScore Int =
+    let score x = x
+
+generated_3667 : Int
+let generated_3667 =
+    let
+        dict = summon (GeneratedScore Int)
+in
+        dict.score ((match (Some ((\(n : Int) -> n) 0))
+          case Some payload -> payload
+          case None -> 0) + 0)
+
+result : Int
 let result = generated_3667
 
 --! assertNoErrors
---! assertType generated_3667 IO Int
---! assertType result IO Int
---! assertDeclKinds signature, let, signature, let
+--! assertType generated_3667 Int
+--! assertType result Int
+--! assertDeclKinds trait, instance, signature, let, signature, let

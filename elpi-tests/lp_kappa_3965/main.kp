@@ -1,12 +1,15 @@
 module main
 
-generated_3965 : Set Int
-let generated_3965 = {| for x in [1, 2, 3], let y = x + 1, if y > 0, yield (((((0 + ((if True then x else 0) + 0)) + 0) + 0) + 0) + 0) |}
+generated_3965 : Int
+let generated_3965 =
+    match (Some (((Some (((\(n : Int) -> n) 0) + 1)) ?: (((\(n : Int) -> n) 0) + 2)) + 0))
+      case Some payload -> payload
+      case None -> 0
 
-result : Set Int
+result : Int
 let result = generated_3965
 
 --! assertNoErrors
---! assertType generated_3965 Set Int
---! assertType result Set Int
+--! assertType generated_3965 Int
+--! assertType result Int
 --! assertDeclKinds signature, let, signature, let

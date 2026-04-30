@@ -3,10 +3,24 @@ module main
 generated_4890 : Int
 let generated_4890 =
     block
-        let base : (x : Int) = (x = ((((((0 + (((if True then ((left = (0 + 0), right = 0)).left else 0) + 0) + 0)) + 0) + 0) + 0) + 0) + 0))
-        let extended = base.{ y := ((((((0 + (((if True then ((left = (0 + 0), right = 0)).left else 0) + 0) + 0)) + 0) + 0) + 0) + 0) + 1) }
+        scoped effect Ask =
+            ask : Unit -> Bool
 
-        (extended.x + extended.y)
+        let seed = (match (((Some (0 + 1)) ?: (0 + 2)) == ((Some (0 + 1)) ?: (0 + 2)))
+          case True -> ((Some (0 + 1)) ?: (0 + 2))
+          case False -> 0)
+
+        let comp : Eff <[Ask : Ask]> Int =
+            do
+                let b <- Ask.ask ()
+                if b then seed else (seed + 1)
+
+        let handled : Eff <[ ]> Int =
+            deep handle Ask comp with
+                case return x -> pure x
+                case ask () k -> k True
+
+        runPure handled
 
 result : Int
 let result = generated_4890

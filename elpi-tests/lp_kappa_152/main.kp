@@ -1,10 +1,19 @@
 module main
 
-generatedEcho : forall (a : Type). (this x : a) -> a
-let generatedEcho @a (this x : a) = x
-
 generated_152 : Int
-let generated_152 = (((((((0 + 0) + 0) + 0) + 0) + 0) + 0) + 0).generatedEcho
+let generated_152 =
+    block
+        ranked : Int
+        let ranked = (block
+            generatedSetCount : Set Int -> Int
+            let generatedSetCount values = 2
+
+            let item = 0
+            let values = {|item, (item + 1)|}
+
+            generatedSetCount values)
+
+        (ranked + 0)
 
 result : Int
 let result = generated_152
@@ -12,4 +21,4 @@ let result = generated_152
 --! assertNoErrors
 --! assertType generated_152 Int
 --! assertType result Int
---! assertDeclKinds signature, let, signature, let, signature, let
+--! assertDeclKinds signature, let, signature, let

@@ -8,7 +8,9 @@ generated_4659 : Int
 let generated_4659 =
     match GeneratedRight
       case GeneratedLeft payload -> (payload + 0)
-      case GeneratedRight -> ((((((0 + (((if True then 0 else 0) + 0) + 0)) + 0) + 0) + 0) + 0) + 0)
+      case GeneratedRight -> ((match (Some ((Some (0 + 1)) ?: (0 + 2)))
+        case Some payload -> payload
+        case None -> 0) + 0)
 
 result : Int
 let result = generated_4659

@@ -1,18 +1,20 @@
 module main
 
-generated_3470 : Int
-let generated_3470 =
-    block
-        type RankedAlias = Int
+generated_3470 : Map String Int
+let generated_3470 = { yield "only" : (((Some ((block
+    let pair = (x = 0, y = (0 + 1))
+    let (x = captured, y = other) = pair
 
-        let aliased : RankedAlias = ((((((0 + (((((if True then 0 else 0) + 0) + 0) + 0) + 0)) + 0) + 0) + 0) + 0) + 0)
+    (captured + other)) + 1)) ?: ((block
+    let pair = (x = 0, y = (0 + 1))
+    let (x = captured, y = other) = pair
 
-        (aliased + 1)
+    (captured + other)) + 2)) + 0) }
 
-result : Int
+result : Map String Int
 let result = generated_3470
 
 --! assertNoErrors
---! assertType generated_3470 Int
---! assertType result Int
+--! assertType generated_3470 Map String Int
+--! assertType result Map String Int
 --! assertDeclKinds signature, let, signature, let

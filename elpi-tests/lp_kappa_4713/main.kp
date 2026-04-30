@@ -1,12 +1,21 @@
 module main
 
-generated_4713 : Set Int
-let generated_4713 = {| for x in [1, 2, 3], let y = x + 1, yield (((((0 + (((if True then (0 + (x + 0)) else 0) + 0) + 0)) + 0) + 0) + 0) + 0) |}
+data GeneratedChoice : Type =
+    GeneratedLeft (value : Int)
+    GeneratedRight
 
-result : Set Int
+generated_4713 : Int
+let generated_4713 =
+    match GeneratedRight
+      case GeneratedLeft payload -> (payload + 0)
+      case GeneratedRight -> ((match [((Some (0 + 1)) ?: (0 + 2)), (((Some (0 + 1)) ?: (0 + 2)) + 1)]
+        case head :: tail -> head
+        case Nil -> 0) + 0)
+
+result : Int
 let result = generated_4713
 
 --! assertNoErrors
---! assertType generated_4713 Set Int
---! assertType result Set Int
---! assertDeclKinds signature, let, signature, let
+--! assertType generated_4713 Int
+--! assertType result Int
+--! assertDeclKinds data, signature, let, signature, let

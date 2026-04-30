@@ -3,10 +3,18 @@ module main
 generated_2612 : Int
 let generated_2612 =
     block
-        let base : (x : Int) = (x = (((((((((left = 0, right = (((0 + 0) + 0) + 0))).right + 0) + 0) + 0) + 0) + 0) + 0) + 0))
-        let extended = base.{ y := (((((((((left = 0, right = (((0 + 0) + 0) + 0))).right + 0) + 0) + 0) + 0) + 0) + 0) + 1) }
+        let (captured : Int) = ((block
+            generatedSetCount : Set Int -> Int
+            let generatedSetCount values = 2
 
-        (extended.x + extended.y)
+            let item = (match [0, (0 + 1)]
+              case head :: tail -> head
+              case Nil -> 0)
+            let values = {|item, (item + 1)|}
+
+            generatedSetCount values) + 0)
+
+        captured
 
 result : Int
 let result = generated_2612

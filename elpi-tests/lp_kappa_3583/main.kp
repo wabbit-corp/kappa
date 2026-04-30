@@ -1,12 +1,22 @@
 module main
 
-generated_3583 : List Int
-let generated_3583 = [ for x in [1, 2, 3], yield (((((0 + (((((Some (x + 0)) ?: 0) + 0) + 0) + 0)) + 0) + 0) + 0) + 0) ]
+generatedEcho : forall (a : Type). (this x : a) -> a
+let generatedEcho @a (this x : a) = x
 
-result : List Int
+generated_3583 : Option Int
+let generated_3583 = (Some ((block
+    generatedSetCount : Set Int -> Int
+    let generatedSetCount values = 2
+
+    let item = ((\(n : Int) -> n) 0)
+    let values = {|item, (item + 1)|}
+
+    generatedSetCount values) + 0))?.generatedEcho
+
+result : Option Int
 let result = generated_3583
 
 --! assertNoErrors
---! assertType generated_3583 List Int
---! assertType result List Int
---! assertDeclKinds signature, let, signature, let
+--! assertType generated_3583 Option Int
+--! assertType result Option Int
+--! assertDeclKinds signature, let, signature, let, signature, let

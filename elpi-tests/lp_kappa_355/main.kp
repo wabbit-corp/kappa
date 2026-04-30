@@ -1,17 +1,26 @@
 module main
 
-trait GeneratedScore a =
-    score : a -> Int
-
-instance GeneratedScore Int =
-    let score x = x
-
 generated_355 : Int
 let generated_355 =
-    let
-        dict = summon (GeneratedScore Int)
-in
-        dict.score (((((((((((if True then 0 else 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0)
+    block
+        scoped effect State (s : Type) =
+            get : Unit -> s
+
+        let seed = (match [0, (0 + 1)]
+          case head :: tail -> head
+          case Nil -> 0)
+
+        let comp : Eff <[State : State Int]> Int =
+            do
+                let n <- State.get ()
+                n
+
+        let handled : Eff <[ ]> Int =
+            deep handle State comp with
+                case return x -> pure x
+                case get () k -> k seed
+
+        runPure handled
 
 result : Int
 let result = generated_355
@@ -19,4 +28,4 @@ let result = generated_355
 --! assertNoErrors
 --! assertType generated_355 Int
 --! assertType result Int
---! assertDeclKinds trait, instance, signature, let, signature, let
+--! assertDeclKinds signature, let, signature, let

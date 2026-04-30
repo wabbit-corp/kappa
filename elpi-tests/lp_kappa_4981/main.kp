@@ -1,19 +1,39 @@
 module main
 
-data GeneratedChoice : Type =
-    GeneratedLeft (value : Int)
-    GeneratedRight
+generated_4981 : Set Int
+let generated_4981 = {| yield ((block
+    generatedListLength : List Int -> Int
+    let generatedListLength xs decreases structural xs =
+        match xs
+          case Nil -> 0
+          case _ :: tail -> 1 + generatedListLength tail
 
-generated_4981 : Int
-let generated_4981 =
-    match (GeneratedLeft ((((((0 + (((if False then 0 else 0) + (0 + 0)) + 0)) + 0) + 0) + 0) + 0) + 0))
-      case GeneratedLeft payload -> (payload + 0)
-      case GeneratedRight -> ((((((0 + (((if False then 0 else 0) + (0 + 0)) + 0)) + 0) + 0) + 0) + 0) + 0)
+    let item = (block
+        generatedListLength : List Int -> Int
+        let generatedListLength xs decreases structural xs =
+            match xs
+              case Nil -> 0
+              case _ :: tail -> 1 + generatedListLength tail
 
-result : Int
+        let item = (block
+            generatedListLength : List Int -> Int
+            let generatedListLength xs decreases structural xs =
+                match xs
+                  case Nil -> 0
+                  case _ :: tail -> 1 + generatedListLength tail
+
+            let item = 0
+
+            generatedListLength [item, (item + 1), 0])
+
+        generatedListLength [item, (item + 1), 0])
+
+    generatedListLength [item, (item + 1), 0]) + 0) |}
+
+result : Set Int
 let result = generated_4981
 
 --! assertNoErrors
---! assertType generated_4981 Int
---! assertType result Int
---! assertDeclKinds data, signature, let, signature, let
+--! assertType generated_4981 Set Int
+--! assertType result Set Int
+--! assertDeclKinds signature, let, signature, let

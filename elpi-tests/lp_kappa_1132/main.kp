@@ -1,17 +1,42 @@
 module main
 
-generated_1132 : Int
-let generated_1132 =
-    block
-        ranked : Int
-        let ranked = (((((((if True then ((left = 0, right = (0 + 0))).right else 0) + 0) + 0) + 0) + 0) + 0) + 0)
+type GeneratedPair = (left : Int, right : Int)
 
-        (ranked + 0)
+generated_1132 : GeneratedPair
+let generated_1132 = ((left = (block
+    generatedSetCount : Set Int -> Int
+    let generatedSetCount values = 2
 
-result : Int
+    let item = (block
+        generatedSetCount : Set Int -> Int
+        let generatedSetCount values = 2
+
+        let item = 0
+        let values = {|item, (item + 1)|}
+
+        generatedSetCount values)
+    let values = {|item, (item + 1)|}
+
+    generatedSetCount values), right = 0)).{ right = ((block
+    generatedSetCount : Set Int -> Int
+    let generatedSetCount values = 2
+
+    let item = (block
+        generatedSetCount : Set Int -> Int
+        let generatedSetCount values = 2
+
+        let item = 0
+        let values = {|item, (item + 1)|}
+
+        generatedSetCount values)
+    let values = {|item, (item + 1)|}
+
+    generatedSetCount values) + 1) }
+
+result : GeneratedPair
 let result = generated_1132
 
 --! assertNoErrors
---! assertType generated_1132 Int
---! assertType result Int
---! assertDeclKinds signature, let, signature, let
+--! assertType generated_1132 GeneratedPair
+--! assertType result GeneratedPair
+--! assertDeclKinds type, signature, let, signature, let

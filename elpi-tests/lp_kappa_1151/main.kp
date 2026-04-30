@@ -1,15 +1,34 @@
 module main
 
-generated_1151 : IO Int
+generated_1151 : Int
 let generated_1151 =
-    do
-        let staged = ((((((((if True then ((left = 0, right = (0 + 0))).right else 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0)
-        pure (staged + 1)
+    block
+        data RankedBox : Type =
+            RankedBox (value : Int)
 
-result : IO Int
+        let boxed = RankedBox ((block
+            generatedSetCount : Set Int -> Int
+            let generatedSetCount values = 2
+
+            let item = (block
+                generatedSetCount : Set Int -> Int
+                let generatedSetCount values = 2
+
+                let item = 0
+                let values = {|item, (item + 1)|}
+
+                generatedSetCount values)
+            let values = {|item, (item + 1)|}
+
+            generatedSetCount values) + 0)
+
+        match boxed
+          case RankedBox value -> (value + 1)
+
+result : Int
 let result = generated_1151
 
 --! assertNoErrors
---! assertType generated_1151 IO Int
---! assertType result IO Int
+--! assertType generated_1151 Int
+--! assertType result Int
 --! assertDeclKinds signature, let, signature, let

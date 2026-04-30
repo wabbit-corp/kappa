@@ -1,19 +1,21 @@
 module main
 
-generatedNeed : (@x : Int) -> Int
-let generatedNeed (@x : Int) = x
+generated_930 : List Int
+let generated_930 = [ yield (((\(n : Int) -> n) (block
+    generatedListLength : List Int -> Int
+    let generatedListLength xs decreases structural xs =
+        match xs
+          case Nil -> 0
+          case _ :: tail -> 1 + generatedListLength tail
 
-generated_930 : Int
-let generated_930 =
-    block
-        let (@x : Int) = (((((((if True then (0 + (0 + 0)) else 0) + 0) + 0) + 0) + 0) + 0) + 0)
+    let item = 0
 
-        if True then generatedNeed else 0
+    generatedListLength [item, (item + 1), 0])) + 0) ]
 
-result : Int
+result : List Int
 let result = generated_930
 
 --! assertNoErrors
---! assertType generated_930 Int
---! assertType result Int
---! assertDeclKinds signature, let, signature, let, signature, let
+--! assertType generated_930 List Int
+--! assertType result List Int
+--! assertDeclKinds signature, let, signature, let

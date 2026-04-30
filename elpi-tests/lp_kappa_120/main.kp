@@ -1,14 +1,21 @@
 module main
 
-type GeneratedPair = (left : Int, right : Int)
+generated_120 : List Int
+let generated_120 = [ yield ((block
+    generatedListLength : List Int -> Int
+    let generatedListLength xs decreases structural xs =
+        match xs
+          case Nil -> 0
+          case _ :: tail -> 1 + generatedListLength tail
 
-generated_120 : GeneratedPair
-let generated_120 = ((left = ((((0 + 0) + 0) + 0) + 0), right = 0)).{ right = (((((0 + 0) + 0) + 0) + 0) + 1) }
+    let item = 0
 
-result : GeneratedPair
+    generatedListLength [item, (item + 1), 0]) + 0) ]
+
+result : List Int
 let result = generated_120
 
 --! assertNoErrors
---! assertType generated_120 GeneratedPair
---! assertType result GeneratedPair
---! assertDeclKinds type, signature, let, signature, let
+--! assertType generated_120 List Int
+--! assertType result List Int
+--! assertDeclKinds signature, let, signature, let

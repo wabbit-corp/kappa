@@ -1,12 +1,18 @@
 module main
 
-generated_4277 : Int
-let generated_4277 =
-    block
-        let pair = (x = ((((((0 + ((if True then ((Some (0 + 0)) ?: 0) else 0) + 0)) + 0) + 0) + 0) + 0) + 0), y = ((((((0 + ((if True then ((Some (0 + 0)) ?: 0) else 0) + 0)) + 0) + 0) + 0) + 0) + 1))
-        let (x = captured, y = other) = pair
+generatedEcho : forall (a : Type). (this x : a) -> a
+let generatedEcho @a (this x : a) = x
 
-        (captured + other)
+generated_4277 : Int
+let generated_4277 = ((.generatedEcho) ((block
+    let pair = (x = (match (0 == 0)
+      case True -> 0
+      case False -> 0), y = ((match (0 == 0)
+      case True -> 0
+      case False -> 0) + 1))
+    let (x = captured, y = other) = pair
+
+    (captured + other)) + 0))
 
 result : Int
 let result = generated_4277
@@ -14,4 +20,4 @@ let result = generated_4277
 --! assertNoErrors
 --! assertType generated_4277 Int
 --! assertType result Int
---! assertDeclKinds signature, let, signature, let
+--! assertDeclKinds signature, let, signature, let, signature, let

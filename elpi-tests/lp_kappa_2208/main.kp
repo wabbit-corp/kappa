@@ -1,12 +1,19 @@
 module main
 
-generated_2208 : List Int
-let generated_2208 = [ yield (((((((((if False then 0 else ((Some (0 + 0)) ?: 0)) + (0 + 0)) + 0) + 0) + 0) + 0) + 0) + 0) + 0) ]
+generated_2208 : IO Int
+let generated_2208 =
+    do
+        value <- pure ((match (Some (match (Some 0)
+          case Some payload -> payload
+          case None -> 0))
+          case Some payload -> payload
+          case None -> 0) + 0)
+        pure (value + 2)
 
-result : List Int
+result : IO Int
 let result = generated_2208
 
 --! assertNoErrors
---! assertType generated_2208 List Int
---! assertType result List Int
+--! assertType generated_2208 IO Int
+--! assertType result IO Int
 --! assertDeclKinds signature, let, signature, let

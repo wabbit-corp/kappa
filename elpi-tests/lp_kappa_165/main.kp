@@ -1,15 +1,24 @@
 module main
 
-generated_165 : IO Int
+generated_165 : Int
 let generated_165 =
-    do
-        let staged = (((((((0 + 0) + 0) + 0) + 0) + 0) + 0) + 0)
-        pure (staged + 1)
+    block
+        rankedHelper : (Int -> Int)
+        let rankedHelper x = x + 1
 
-result : IO Int
+        rankedHelper ((block
+            generatedSetCount : Set Int -> Int
+            let generatedSetCount values = 2
+
+            let item = 0
+            let values = {|item, (item + 1)|}
+
+            generatedSetCount values) + 0)
+
+result : Int
 let result = generated_165
 
 --! assertNoErrors
---! assertType generated_165 IO Int
---! assertType result IO Int
+--! assertType generated_165 Int
+--! assertType result Int
 --! assertDeclKinds signature, let, signature, let

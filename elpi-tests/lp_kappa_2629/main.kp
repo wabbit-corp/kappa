@@ -2,10 +2,38 @@ module main
 
 generated_2629 : Int
 let generated_2629 =
-    let
-        ranked : Int = ((((((((left = 0, right = ((0 + (0 + 0)) + 0))).right + 0) + 0) + 0) + 0) + 0) + 0)
-in
-        (ranked + 0)
+    block
+        scoped effect Choice =
+            ω choose : Unit -> Bool
+
+        let c = Choice
+
+        let seed = (block
+            generatedSetCount : Set Int -> Int
+            let generatedSetCount values = 2
+
+            let item = (match [0, (0 + 1)]
+              case head :: tail -> head
+              case Nil -> 0)
+            let values = {|item, (item + 1)|}
+
+            generatedSetCount values)
+
+        let comp : Eff <[Choice : Choice]> Int =
+            do
+                let b <- c.choose ()
+                if b then seed else (seed + 1)
+
+        let handled : Eff <[ ]> Int =
+            deep handle Choice comp with
+                case return x -> pure x
+                case choose () k ->
+                    do
+                        let a <- k True
+                        let b <- k False
+                        pure (a + b)
+
+        runPure handled
 
 result : Int
 let result = generated_2629

@@ -1,15 +1,17 @@
 module main
 
-generated_4854 : Int
+generated_4854 : IO Int
 let generated_4854 =
-    match (((((((0 + (((if True then ((if False then 0 else 0) + (0 + 0)) else 0) + 0) + 0)) + 0) + 0) + 0) + 0) + 0) == ((((((0 + (((if True then ((if False then 0 else 0) + (0 + 0)) else 0) + 0) + 0)) + 0) + 0) + 0) + 0) + 0))
-      case True -> ((((((0 + (((if True then ((if False then 0 else 0) + (0 + 0)) else 0) + 0) + 0)) + 0) + 0) + 0) + 0) + 0)
-      case False -> 0
+    do
+        value <- pure ((match (((Some (0 + 1)) ?: (0 + 2)) == ((Some (0 + 1)) ?: (0 + 2)))
+          case True -> ((Some (0 + 1)) ?: (0 + 2))
+          case False -> 0) + 0)
+        pure (value + 2)
 
-result : Int
+result : IO Int
 let result = generated_4854
 
 --! assertNoErrors
---! assertType generated_4854 Int
---! assertType result Int
+--! assertType generated_4854 IO Int
+--! assertType result IO Int
 --! assertDeclKinds signature, let, signature, let

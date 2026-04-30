@@ -2,10 +2,43 @@ module main
 
 generated_1303 : Int
 let generated_1303 =
-    let
-        ranked : Int = (((((((if False then 0 else (if True then 0 else 0)) + 0) + 0) + 0) + 0) + 0) + 0)
-in
-        (ranked + 0)
+    block
+        let pair = (x = ((match [(block
+            generatedSetCount : Set Int -> Int
+            let generatedSetCount values = 2
+
+            let item = 0
+            let values = {|item, (item + 1)|}
+
+            generatedSetCount values), ((block
+            generatedSetCount : Set Int -> Int
+            let generatedSetCount values = 2
+
+            let item = 0
+            let values = {|item, (item + 1)|}
+
+            generatedSetCount values) + 1)]
+          case head :: tail -> head
+          case Nil -> 0) + 0), y = ((match [(block
+            generatedSetCount : Set Int -> Int
+            let generatedSetCount values = 2
+
+            let item = 0
+            let values = {|item, (item + 1)|}
+
+            generatedSetCount values), ((block
+            generatedSetCount : Set Int -> Int
+            let generatedSetCount values = 2
+
+            let item = 0
+            let values = {|item, (item + 1)|}
+
+            generatedSetCount values) + 1)]
+          case head :: tail -> head
+          case Nil -> 0) + 1))
+        let (x = captured, y = other) = pair
+
+        (captured + other)
 
 result : Int
 let result = generated_1303

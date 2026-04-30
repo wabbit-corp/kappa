@@ -1,12 +1,24 @@
 module main
 
-generated_3116 : Map String Int
-let generated_3116 = { for x in [1, 2, 3], if x > 0, yield "k" : ((((((((Some (((if False then 0 else x) + (0 + 0)) + 0)) ?: 0) + 0) + 0) + 0) + 0) + 0) + 0) }
+generated_3116 : Int
+let generated_3116 =
+    block
+        generatedMapCount : Map String Int -> Int
+        let generatedMapCount values = 1
 
-result : Map String Int
+        let item = (block
+            let pair = (x = 0, y = (0 + 1))
+            let (x = captured, y = other) = pair
+
+            (captured + other))
+        let values = { yield "item" : item }
+
+        generatedMapCount values
+
+result : Int
 let result = generated_3116
 
 --! assertNoErrors
---! assertType generated_3116 Map String Int
---! assertType result Map String Int
+--! assertType generated_3116 Int
+--! assertType result Int
 --! assertDeclKinds signature, let, signature, let

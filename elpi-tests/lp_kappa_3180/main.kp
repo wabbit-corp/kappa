@@ -1,14 +1,21 @@
 module main
 
-type GeneratedPair = (left : Int, right : Int)
+generated_3180 : IO Int
+let generated_3180 =
+    do
+        value <- pure ((match (Some (block
+            let pair = (x = 0, y = (0 + 1))
+            let (x = captured, y = other) = pair
 
-generated_3180 : GeneratedPair
-let generated_3180 = ((left = ((((((((Some (((left = 0, right = (0 + 0))).right + 0)) ?: 0) + 0) + 0) + 0) + 0) + 0) + 0), right = 0)).{ right = (((((((((Some (((left = 0, right = (0 + 0))).right + 0)) ?: 0) + 0) + 0) + 0) + 0) + 0) + 0) + 1) }
+            (captured + other)))
+          case Some payload -> payload
+          case None -> 0) + 0)
+        pure (value + 2)
 
-result : GeneratedPair
+result : IO Int
 let result = generated_3180
 
 --! assertNoErrors
---! assertType generated_3180 GeneratedPair
---! assertType result GeneratedPair
---! assertDeclKinds type, signature, let, signature, let
+--! assertType generated_3180 IO Int
+--! assertType result IO Int
+--! assertDeclKinds signature, let, signature, let

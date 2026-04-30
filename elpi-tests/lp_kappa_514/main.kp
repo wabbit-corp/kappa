@@ -1,12 +1,14 @@
 module main
 
-generated_514 : Int
-let generated_514 = (((((((0 + (0 + 0)) + 0) + 0) + 0) + 0) + 0) + 0)
+generated_514 : List Int
+let generated_514 = [ for x in [1, 2, 3], skip 1, take 2, yield (match (x == x)
+  case True -> x
+  case False -> 0) ]
 
-result : Int
+result : List Int
 let result = generated_514
 
 --! assertNoErrors
---! assertType generated_514 Int
---! assertType result Int
+--! assertType generated_514 List Int
+--! assertType result List Int
 --! assertDeclKinds signature, let, signature, let

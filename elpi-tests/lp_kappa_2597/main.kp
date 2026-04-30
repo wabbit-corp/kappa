@@ -1,12 +1,12 @@
 module main
 
-generated_2597 : List Int
-let generated_2597 = [ for x in [1, 2, 3], let y = x + 1, if y > 0, yield ((((((((left = 0, right = (((x + 0) + 0) + 0))).right + 0) + 0) + 0) + 0) + 0) + 0) ]
+generated_2597 : String
+let generated_2597 = (if (if (if (if (if True then ((True && False) && True) else False) then True else False) then True else False) then True else False) then #"raw lambda-prolog"# else "fallback")
 
-result : List Int
+result : String
 let result = generated_2597
 
 --! assertNoErrors
---! assertType generated_2597 List Int
---! assertType result List Int
+--! assertType generated_2597 String
+--! assertType result String
 --! assertDeclKinds signature, let, signature, let

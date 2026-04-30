@@ -1,10 +1,19 @@
 module main
 
+generatedNeed : (@x : Int) -> Int
+let generatedNeed (@x : Int) = x
+
 generated_2610 : Int
-let generated_2610 =
-    match ((((((((((left = 0, right = (((0 + 0) + 0) + 0))).right + 0) + 0) + 0) + 0) + 0) + 0) + 0) == (((((((((left = 0, right = (((0 + 0) + 0) + 0))).right + 0) + 0) + 0) + 0) + 0) + 0) + 0))
-      case True -> (((((((((left = 0, right = (((0 + 0) + 0) + 0))).right + 0) + 0) + 0) + 0) + 0) + 0) + 0)
-      case False -> 0
+let generated_2610 = generatedNeed @(((block
+    generatedSetCount : Set Int -> Int
+    let generatedSetCount values = 2
+
+    let item = (match [0, (0 + 1)]
+      case head :: tail -> head
+      case Nil -> 0)
+    let values = {|item, (item + 1)|}
+
+    generatedSetCount values) + 0))
 
 result : Int
 let result = generated_2610
@@ -12,4 +21,4 @@ let result = generated_2610
 --! assertNoErrors
 --! assertType generated_2610 Int
 --! assertType result Int
---! assertDeclKinds signature, let, signature, let
+--! assertDeclKinds signature, let, signature, let, signature, let

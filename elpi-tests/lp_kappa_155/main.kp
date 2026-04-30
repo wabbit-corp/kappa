@@ -1,15 +1,19 @@
 module main
 
-generatedResize : (image : Int) -> (width : Int) -> (height : Int) -> Int
-let generatedResize image width height = image + width * 10 + height
+generated_155 : List Int
+let generated_155 = [ for x in [1, 2, 3], if x > 0, yield (block
+    generatedSetCount : Set Int -> Int
+    let generatedSetCount values = 2
 
-generated_155 : Int
-let generated_155 = generatedResize { image = (((((((0 + 0) + 0) + 0) + 0) + 0) + 0) + 0), height = 3, width = 2 }
+    let item = x
+    let values = {|item, (item + 1)|}
 
-result : Int
+    generatedSetCount values) ]
+
+result : List Int
 let result = generated_155
 
 --! assertNoErrors
---! assertType generated_155 Int
---! assertType result Int
---! assertDeclKinds signature, let, signature, let, signature, let
+--! assertType generated_155 List Int
+--! assertType result List Int
+--! assertDeclKinds signature, let, signature, let

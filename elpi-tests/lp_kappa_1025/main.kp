@@ -1,12 +1,33 @@
 module main
 
-generated_1025 : Bool
-let generated_1025 = (if (if (if ((if True then (True && True) else False) && False) then True else False) then True else False) then True else False)
+generatedResize : (image : Int) -> (width : Int) -> (height : Int) -> Int
+let generatedResize image width height = image + width * 10 + height
 
-result : Bool
+generated_1025 : Int
+let generated_1025 = generatedResize { image = (((Some ((block
+    generatedListLength : List Int -> Int
+    let generatedListLength xs decreases structural xs =
+        match xs
+          case Nil -> 0
+          case _ :: tail -> 1 + generatedListLength tail
+
+    let item = 0
+
+    generatedListLength [item, (item + 1), 0]) + 1)) ?: ((block
+    generatedListLength : List Int -> Int
+    let generatedListLength xs decreases structural xs =
+        match xs
+          case Nil -> 0
+          case _ :: tail -> 1 + generatedListLength tail
+
+    let item = 0
+
+    generatedListLength [item, (item + 1), 0]) + 2)) + 0), height = 3, width = 2 }
+
+result : Int
 let result = generated_1025
 
 --! assertNoErrors
---! assertType generated_1025 Bool
---! assertType result Bool
---! assertDeclKinds signature, let, signature, let
+--! assertType generated_1025 Int
+--! assertType result Int
+--! assertDeclKinds signature, let, signature, let, signature, let

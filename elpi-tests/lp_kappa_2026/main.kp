@@ -1,15 +1,26 @@
 module main
 
-generatedMakeConst : forall (a : Type). a -> Unit -> a
-let generatedMakeConst value = \() -> value
+generated_2026 : List Int
+let generated_2026 = [ for x in [1, 2, 3], skip 1, take 2, yield ((Some ((block
+    generatedMapCount : Map String Int -> Int
+    let generatedMapCount values = 1
 
-generated_2026 : Int
-let generated_2026 = ((generatedMakeConst (((((((((if False then 0 else (if False then 0 else 0)) + (0 + 0)) + 0) + 0) + 0) + 0) + 0) + 0) + 0)) ())
+    let item = x
+    let values = { yield "item" : item }
 
-result : Int
+    generatedMapCount values) + 1)) ?: ((block
+    generatedMapCount : Map String Int -> Int
+    let generatedMapCount values = 1
+
+    let item = x
+    let values = { yield "item" : item }
+
+    generatedMapCount values) + 2)) ]
+
+result : List Int
 let result = generated_2026
 
 --! assertNoErrors
---! assertType generated_2026 Int
---! assertType result Int
---! assertDeclKinds signature, let, signature, let, signature, let
+--! assertType generated_2026 List Int
+--! assertType result List Int
+--! assertDeclKinds signature, let, signature, let

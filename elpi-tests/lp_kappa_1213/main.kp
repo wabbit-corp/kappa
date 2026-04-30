@@ -1,12 +1,24 @@
 module main
 
-generated_1213 : Int
-let generated_1213 =
-    block
-        rankedHelper : (Int -> Int)
-        let rankedHelper x = x + 1
+generatedMakeConst : forall (a : Type). a -> Unit -> a
+let generatedMakeConst value = \() -> value
 
-        rankedHelper ((((((((if False then 0 else 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0)
+generated_1213 : Int
+let generated_1213 = ((generatedMakeConst @Int ((block
+    generatedMapCount : Map String Int -> Int
+    let generatedMapCount values = 1
+
+    let item = (block
+        generatedSetCount : Set Int -> Int
+        let generatedSetCount values = 2
+
+        let item = 0
+        let values = {|item, (item + 1)|}
+
+        generatedSetCount values)
+    let values = { yield "item" : item }
+
+    generatedMapCount values) + 0)) ())
 
 result : Int
 let result = generated_1213
@@ -14,4 +26,4 @@ let result = generated_1213
 --! assertNoErrors
 --! assertType generated_1213 Int
 --! assertType result Int
---! assertDeclKinds signature, let, signature, let
+--! assertDeclKinds signature, let, signature, let, signature, let

@@ -1,12 +1,10 @@
 module main
 
-generated_4817 : Int
-let generated_4817 =
-    block
-        rankedHelper : (Int -> Int)
-        let rankedHelper x = x + 1
+generatedEcho : forall (a : Type). (this x : a) -> a
+let generatedEcho @a (this x : a) = x
 
-        rankedHelper ((((((0 + (((if True then ((if True then 0 else 0) + 0) else 0) + 0) + 0)) + 0) + 0) + 0) + 0) + 0)
+generated_4817 : Int
+let generated_4817 = ((.generatedEcho) (((\(n : Int) -> n) ((Some (0 + 1)) ?: (0 + 2))) + 0))
 
 result : Int
 let result = generated_4817
@@ -14,4 +12,4 @@ let result = generated_4817
 --! assertNoErrors
 --! assertType generated_4817 Int
 --! assertType result Int
---! assertDeclKinds signature, let, signature, let
+--! assertDeclKinds signature, let, signature, let, signature, let

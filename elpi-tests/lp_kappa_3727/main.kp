@@ -1,7 +1,9 @@
 module main
 
 generated_3727 : Set Int
-let generated_3727 = {| for x in [1, 2, 3], yield (((((0 + ((0 + ((if True then x else 0) + 0)) + 0)) + 0) + 0) + 0) + 0) |}
+let generated_3727 = {| for x in [1, 2, 3], yield (match [((\(n : Int) -> n) x), (((\(n : Int) -> n) x) + 1)]
+  case head :: tail -> head
+  case Nil -> 0) |}
 
 result : Set Int
 let result = generated_3727

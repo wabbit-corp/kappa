@@ -4,11 +4,16 @@ generatedNeed : (@x : Int) -> Int
 let generatedNeed (@x : Int) = x
 
 generated_4500 : Int
-let generated_4500 =
-    block
-        let (@x : Int) = (((((0 + ((if False then 0 else ((if False then 0 else 0) + (0 + 0))) + 0)) + 0) + 0) + 0) + 0)
+let generated_4500 = generatedNeed @(((block
+    generatedListLength : List Int -> Int
+    let generatedListLength xs decreases structural xs =
+        match xs
+          case Nil -> 0
+          case _ :: tail -> 1 + generatedListLength tail
 
-        if True then generatedNeed else 0
+    let item = ((Some (0 + 1)) ?: (0 + 2))
+
+    generatedListLength [item, (item + 1), 0]) + 0))
 
 result : Int
 let result = generated_4500

@@ -1,12 +1,34 @@
 module main
 
-generated_3298 : Map String Int
-let generated_3298 = { yield "only" : ((((((0 + (((0 + 0) + 0) + 0)) + 0) + 0) + 0) + 0) + 0) }
+generated_3298 : Int
+let generated_3298 =
+    block
+        trait RankedScore a =
+            rank : a -> Int
 
-result : Map String Int
+        instance RankedScore Int =
+            let rank x = x
+
+        let dict = summon (RankedScore Int)
+
+        dict.rank ((block
+            let pair = (x = (block
+                let pair = (x = 0, y = (0 + 1))
+                let (x = captured, y = other) = pair
+
+                (captured + other)), y = ((block
+                let pair = (x = 0, y = (0 + 1))
+                let (x = captured, y = other) = pair
+
+                (captured + other)) + 1))
+            let (x = captured, y = other) = pair
+
+            (captured + other)) + 0)
+
+result : Int
 let result = generated_3298
 
 --! assertNoErrors
---! assertType generated_3298 Map String Int
---! assertType result Map String Int
+--! assertType generated_3298 Int
+--! assertType result Int
 --! assertDeclKinds signature, let, signature, let

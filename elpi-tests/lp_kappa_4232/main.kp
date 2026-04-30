@@ -1,10 +1,17 @@
 module main
 
-generatedEcho : forall (a : Type). (this x : a) -> a
-let generatedEcho @a (this x : a) = x
-
 generated_4232 : Int
-let generated_4232 = ((((((0 + ((if True then ((left = 0, right = (0 + 0))).right else 0) + 0)) + 0) + 0) + 0) + 0) + 0).generatedEcho
+let generated_4232 =
+    block
+        let (captured : Int) = ((match [(match (0 == 0)
+          case True -> 0
+          case False -> 0), ((match (0 == 0)
+          case True -> 0
+          case False -> 0) + 1)]
+          case head :: tail -> head
+          case Nil -> 0) + 0)
+
+        captured
 
 result : Int
 let result = generated_4232
@@ -12,4 +19,4 @@ let result = generated_4232
 --! assertNoErrors
 --! assertType generated_4232 Int
 --! assertType result Int
---! assertDeclKinds signature, let, signature, let, signature, let
+--! assertDeclKinds signature, let, signature, let

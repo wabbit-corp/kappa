@@ -1,17 +1,12 @@
 module main
 
-generated_4953 : Int
-let generated_4953 =
-    block
-        rankedHelper : (Int -> Int)
-        let rankedHelper x = x + 1
+generated_4953 : Bool
+let generated_4953 = (if (if (if ((if ((if True then 1 else 0) == 1) then True else False) && True) then True else False) then True else False) then True else False)
 
-        rankedHelper ((((((0 + (((if True then ((Some (0 + 0)) ?: 0) else 0) + 0) + 0)) + 0) + 0) + 0) + 0) + 0)
-
-result : Int
+result : Bool
 let result = generated_4953
 
 --! assertNoErrors
---! assertType generated_4953 Int
---! assertType result Int
+--! assertType generated_4953 Bool
+--! assertType result Bool
 --! assertDeclKinds signature, let, signature, let

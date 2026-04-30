@@ -1,12 +1,19 @@
 module main
 
-generated_4565 : (Int -> Int)
-let generated_4565 = \(x : Int) -> ((\(x : Int) -> ((\(x : Int) -> ((((if True then \(x : Int) -> if (x == 0) then ((\(x : Int) -> x) x) else x else \(x : Int) -> x)) x) + 0)) x)) x)
+generated_4565 : List Int
+let generated_4565 = [ for x in [1, 2, 3], order by x desc, yield (block
+    generatedSetCount : Set Int -> Int
+    let generatedSetCount values = 2
 
-result : (Int -> Int)
+    let item = ((Some (x + 1)) ?: (x + 2))
+    let values = {|item, (item + 1)|}
+
+    generatedSetCount values) ]
+
+result : List Int
 let result = generated_4565
 
 --! assertNoErrors
---! assertType generated_4565 (Int -> Int)
---! assertType result (Int -> Int)
+--! assertType generated_4565 List Int
+--! assertType result List Int
 --! assertDeclKinds signature, let, signature, let

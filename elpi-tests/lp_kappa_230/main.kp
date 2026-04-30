@@ -1,15 +1,19 @@
 module main
 
-generated_230 : Int
-let generated_230 =
-    match ((((((((((((0 + 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0) == (((((((((((0 + 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0))
-      case True -> (((((((((((0 + 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0)
-      case False -> 0
+generated_230 : Map String Int
+let generated_230 = { yield "only" : ((block
+    generatedMapCount : Map String Int -> Int
+    let generatedMapCount values = 1
 
-result : Int
+    let item = 0
+    let values = { yield "item" : item }
+
+    generatedMapCount values) + 0) }
+
+result : Map String Int
 let result = generated_230
 
 --! assertNoErrors
---! assertType generated_230 Int
---! assertType result Int
+--! assertType generated_230 Map String Int
+--! assertType result Map String Int
 --! assertDeclKinds signature, let, signature, let

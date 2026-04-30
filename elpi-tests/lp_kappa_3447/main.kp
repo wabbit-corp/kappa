@@ -1,12 +1,24 @@
 module main
 
-generated_3447 : List Int
-let generated_3447 = [ for x in [1, 2, 3], yield (((((0 + (((((if True then x else 0) + 0) + 0) + 0) + 0)) + 0) + 0) + 0) + 0) ]
+generated_3447 : Int
+let generated_3447 =
+    let
+        ranked : Int = ((Some ((block
+            let pair = (x = 0, y = (0 + 1))
+            let (x = captured, y = other) = pair
 
-result : List Int
+            (captured + other)) + 1)) ?: ((block
+            let pair = (x = 0, y = (0 + 1))
+            let (x = captured, y = other) = pair
+
+            (captured + other)) + 2))
+in
+        (ranked + 0)
+
+result : Int
 let result = generated_3447
 
 --! assertNoErrors
---! assertType generated_3447 List Int
---! assertType result List Int
+--! assertType generated_3447 Int
+--! assertType result Int
 --! assertDeclKinds signature, let, signature, let

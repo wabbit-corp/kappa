@@ -1,20 +1,35 @@
 module main
 
-generated_819 : Int
+generated_819 : IO Int
 let generated_819 =
-    block
-        data RankedBox : Type =
-            RankedBox (value : Int)
+    do
+        let staged = ((match [(block
+            generatedListLength : List Int -> Int
+            let generatedListLength xs decreases structural xs =
+                match xs
+                  case Nil -> 0
+                  case _ :: tail -> 1 + generatedListLength tail
 
-        let boxed = RankedBox ((((((((0 + (((left = 0, right = (0 + 0))).right + 0)) + 0) + 0) + 0) + 0) + 0) + 0) + 0)
+            let item = 0
 
-        match boxed
-          case RankedBox value -> (value + 1)
+            generatedListLength [item, (item + 1), 0]), ((block
+            generatedListLength : List Int -> Int
+            let generatedListLength xs decreases structural xs =
+                match xs
+                  case Nil -> 0
+                  case _ :: tail -> 1 + generatedListLength tail
 
-result : Int
+            let item = 0
+
+            generatedListLength [item, (item + 1), 0]) + 1)]
+          case head :: tail -> head
+          case Nil -> 0) + 0)
+        pure (staged + 1)
+
+result : IO Int
 let result = generated_819
 
 --! assertNoErrors
---! assertType generated_819 Int
---! assertType result Int
+--! assertType generated_819 IO Int
+--! assertType result IO Int
 --! assertDeclKinds signature, let, signature, let

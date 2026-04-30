@@ -1,12 +1,30 @@
 module main
 
-generated_3093 : Set Int
-let generated_3093 = {| yield (((((((((Some (((if True then 0 else 0) + 0) + 0)) ?: 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0) |}
+data GeneratedChoice : Type =
+    GeneratedLeft (value : Int)
+    GeneratedRight
 
-result : Set Int
+generated_3093 : Int
+let generated_3093 =
+    match GeneratedRight
+      case GeneratedLeft payload -> (payload + 0)
+      case GeneratedRight -> ((block
+          generatedSetCount : Set Int -> Int
+          let generatedSetCount values = 2
+
+          let item = (block
+              let pair = (x = 0, y = (0 + 1))
+              let (x = captured, y = other) = pair
+
+              (captured + other))
+          let values = {|item, (item + 1)|}
+
+          generatedSetCount values) + 0)
+
+result : Int
 let result = generated_3093
 
 --! assertNoErrors
---! assertType generated_3093 Set Int
---! assertType result Set Int
---! assertDeclKinds signature, let, signature, let
+--! assertType generated_3093 Int
+--! assertType result Int
+--! assertDeclKinds data, signature, let, signature, let

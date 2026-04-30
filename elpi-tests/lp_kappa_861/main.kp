@@ -1,11 +1,58 @@
 module main
 
+data GeneratedChoice : Type =
+    GeneratedLeft (value : Int)
+    GeneratedRight
+
 generated_861 : Int
 let generated_861 =
-    let
-        ranked : Int = (((((((if True then 0 else 0) + 0) + 0) + 0) + 0) + 0) + 0)
-in
-        (ranked + 0)
+    match (GeneratedLeft ((block
+        let pair = (x = (block
+            generatedListLength : List Int -> Int
+            let generatedListLength xs decreases structural xs =
+                match xs
+                  case Nil -> 0
+                  case _ :: tail -> 1 + generatedListLength tail
+
+            let item = 0
+
+            generatedListLength [item, (item + 1), 0]), y = ((block
+            generatedListLength : List Int -> Int
+            let generatedListLength xs decreases structural xs =
+                match xs
+                  case Nil -> 0
+                  case _ :: tail -> 1 + generatedListLength tail
+
+            let item = 0
+
+            generatedListLength [item, (item + 1), 0]) + 1))
+        let (x = captured, y = other) = pair
+
+        (captured + other)) + 0))
+      case GeneratedLeft payload -> (payload + 0)
+      case GeneratedRight -> ((block
+          let pair = (x = (block
+              generatedListLength : List Int -> Int
+              let generatedListLength xs decreases structural xs =
+                  match xs
+                    case Nil -> 0
+                    case _ :: tail -> 1 + generatedListLength tail
+
+              let item = 0
+
+              generatedListLength [item, (item + 1), 0]), y = ((block
+              generatedListLength : List Int -> Int
+              let generatedListLength xs decreases structural xs =
+                  match xs
+                    case Nil -> 0
+                    case _ :: tail -> 1 + generatedListLength tail
+
+              let item = 0
+
+              generatedListLength [item, (item + 1), 0]) + 1))
+          let (x = captured, y = other) = pair
+
+          (captured + other)) + 0)
 
 result : Int
 let result = generated_861
@@ -13,4 +60,4 @@ let result = generated_861
 --! assertNoErrors
 --! assertType generated_861 Int
 --! assertType result Int
---! assertDeclKinds signature, let, signature, let
+--! assertDeclKinds data, signature, let, signature, let

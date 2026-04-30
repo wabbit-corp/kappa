@@ -1,12 +1,21 @@
 module main
 
-generated_278 : Unit
-let generated_278 = (if True then (if True then (if True then (if True then ((\(u : Unit) -> u) ()) else ()) else ()) else ()) else ())
+generated_278 : Int
+let generated_278 =
+    block
+        let base : (x : Int) = (x = ((match (Some 0)
+          case Some payload -> payload
+          case None -> 0) + 0))
+        let extended = base.{ y := ((match (Some 0)
+          case Some payload -> payload
+          case None -> 0) + 1) }
 
-result : Unit
+        (extended.x + extended.y)
+
+result : Int
 let result = generated_278
 
 --! assertNoErrors
---! assertType generated_278 Unit
---! assertType result Unit
+--! assertType generated_278 Int
+--! assertType result Int
 --! assertDeclKinds signature, let, signature, let

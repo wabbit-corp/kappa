@@ -3,16 +3,27 @@ module main
 generatedNeed : (@x : Int) -> Int
 let generatedNeed (@x : Int) = x
 
-generated_1152 : IO Int
-let generated_1152 =
-    do
-        let (@x : Int) = ((((((((if True then ((left = 0, right = (0 + 0))).right else 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0)
-        pure generatedNeed
+generated_1152 : Int
+let generated_1152 = generatedNeed @(((block
+    generatedSetCount : Set Int -> Int
+    let generatedSetCount values = 2
 
-result : IO Int
+    let item = (block
+        generatedSetCount : Set Int -> Int
+        let generatedSetCount values = 2
+
+        let item = 0
+        let values = {|item, (item + 1)|}
+
+        generatedSetCount values)
+    let values = {|item, (item + 1)|}
+
+    generatedSetCount values) + 0))
+
+result : Int
 let result = generated_1152
 
 --! assertNoErrors
---! assertType generated_1152 IO Int
---! assertType result IO Int
+--! assertType generated_1152 Int
+--! assertType result Int
 --! assertDeclKinds signature, let, signature, let, signature, let

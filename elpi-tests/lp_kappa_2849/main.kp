@@ -1,17 +1,14 @@
 module main
 
-generated_2849 : Int
-let generated_2849 =
-    block
-        let pair = (x = (((((((((left = 0, right = (((left = 0, right = (0 + 0))).right + 0))).right + 0) + 0) + 0) + 0) + 0) + 0) + 0), y = (((((((((left = 0, right = (((left = 0, right = (0 + 0))).right + 0))).right + 0) + 0) + 0) + 0) + 0) + 0) + 1))
-        let (x = captured, y = other) = pair
+type GeneratedTuple = (Int, Int)
 
-        (captured + other)
+generated_2849 : GeneratedTuple
+let generated_2849 = (if True then (if True then (if True then (if True then (if True then (if (False || True) then (0, (0 + 0)) else ((2 + 2), 2)) else (0, (0 + 0))) else ((1 + 1), 1)) else (0, (0 + 0))) else (0, (0 + 0))) else (0, (0 + 0)))
 
-result : Int
+result : GeneratedTuple
 let result = generated_2849
 
 --! assertNoErrors
---! assertType generated_2849 Int
---! assertType result Int
---! assertDeclKinds signature, let, signature, let
+--! assertType generated_2849 GeneratedTuple
+--! assertType result GeneratedTuple
+--! assertDeclKinds type, signature, let, signature, let

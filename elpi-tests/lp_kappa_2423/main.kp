@@ -1,12 +1,20 @@
 module main
 
-generated_2423 : (Int -> Int)
-let generated_2423 = \(x : Int) -> ((\(x : Int) -> ((\(x : Int) -> (((if (0 == 1) then \(x : Int) -> (0 + x) else (if (0 == 0) then \(x : Int) -> x else \(x : Int) -> (x + 0)))) x)) x)) x)
+generated_2423 : List Int
+let generated_2423 = [ for x in [1, 2, 3], yield (match ((match (Some x)
+  case Some payload -> payload
+  case None -> 0) == (match (Some x)
+  case Some payload -> payload
+  case None -> 0))
+  case True -> (match (Some x)
+    case Some payload -> payload
+    case None -> 0)
+  case False -> 0) ]
 
-result : (Int -> Int)
+result : List Int
 let result = generated_2423
 
 --! assertNoErrors
---! assertType generated_2423 (Int -> Int)
---! assertType result (Int -> Int)
+--! assertType generated_2423 List Int
+--! assertType result List Int
 --! assertDeclKinds signature, let, signature, let

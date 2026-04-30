@@ -1,12 +1,24 @@
 module main
 
-generated_4493 : Bool
-let generated_4493 = (if (if (if ((if False then True else (True || False)) || False) then False else True) then True else False) then True else False)
+generatedEcho : forall (a : Type). (this x : a) -> a
+let generatedEcho @a (this x : a) = x
 
-result : Bool
+generated_4493 : Int
+let generated_4493 = ((.generatedEcho) ((block
+    generatedListLength : List Int -> Int
+    let generatedListLength xs decreases structural xs =
+        match xs
+          case Nil -> 0
+          case _ :: tail -> 1 + generatedListLength tail
+
+    let item = ((Some (0 + 1)) ?: (0 + 2))
+
+    generatedListLength [item, (item + 1), 0]) + 0))
+
+result : Int
 let result = generated_4493
 
 --! assertNoErrors
---! assertType generated_4493 Bool
---! assertType result Bool
---! assertDeclKinds signature, let, signature, let
+--! assertType generated_4493 Int
+--! assertType result Int
+--! assertDeclKinds signature, let, signature, let, signature, let

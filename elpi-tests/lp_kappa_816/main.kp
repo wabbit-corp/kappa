@@ -1,12 +1,75 @@
 module main
 
-generated_816 : Map String Int
-let generated_816 = { yield "only" : ((((((((0 + (((left = 0, right = (0 + 0))).right + 0)) + 0) + 0) + 0) + 0) + 0) + 0) + 0) }
+generated_816 : Int
+let generated_816 =
+    match (((match [(block
+        generatedListLength : List Int -> Int
+        let generatedListLength xs decreases structural xs =
+            match xs
+              case Nil -> 0
+              case _ :: tail -> 1 + generatedListLength tail
 
-result : Map String Int
+        let item = 0
+
+        generatedListLength [item, (item + 1), 0]), ((block
+        generatedListLength : List Int -> Int
+        let generatedListLength xs decreases structural xs =
+            match xs
+              case Nil -> 0
+              case _ :: tail -> 1 + generatedListLength tail
+
+        let item = 0
+
+        generatedListLength [item, (item + 1), 0]) + 1)]
+      case head :: tail -> head
+      case Nil -> 0) + 0) == ((match [(block
+        generatedListLength : List Int -> Int
+        let generatedListLength xs decreases structural xs =
+            match xs
+              case Nil -> 0
+              case _ :: tail -> 1 + generatedListLength tail
+
+        let item = 0
+
+        generatedListLength [item, (item + 1), 0]), ((block
+        generatedListLength : List Int -> Int
+        let generatedListLength xs decreases structural xs =
+            match xs
+              case Nil -> 0
+              case _ :: tail -> 1 + generatedListLength tail
+
+        let item = 0
+
+        generatedListLength [item, (item + 1), 0]) + 1)]
+      case head :: tail -> head
+      case Nil -> 0) + 0))
+      case True -> ((match [(block
+          generatedListLength : List Int -> Int
+          let generatedListLength xs decreases structural xs =
+              match xs
+                case Nil -> 0
+                case _ :: tail -> 1 + generatedListLength tail
+
+          let item = 0
+
+          generatedListLength [item, (item + 1), 0]), ((block
+          generatedListLength : List Int -> Int
+          let generatedListLength xs decreases structural xs =
+              match xs
+                case Nil -> 0
+                case _ :: tail -> 1 + generatedListLength tail
+
+          let item = 0
+
+          generatedListLength [item, (item + 1), 0]) + 1)]
+        case head :: tail -> head
+        case Nil -> 0) + 0)
+      case False -> 0
+
+result : Int
 let result = generated_816
 
 --! assertNoErrors
---! assertType generated_816 Map String Int
---! assertType result Map String Int
+--! assertType generated_816 Int
+--! assertType result Int
 --! assertDeclKinds signature, let, signature, let

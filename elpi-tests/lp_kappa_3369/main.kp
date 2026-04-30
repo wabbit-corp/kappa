@@ -3,13 +3,18 @@ module main
 generated_3369 : Int
 let generated_3369 =
     block
-        data RankedBox : Type =
-            RankedBox (value : Int)
+        let pair = (x = (((\(n : Int) -> n) (block
+            let pair = (x = 0, y = (0 + 1))
+            let (x = captured, y = other) = pair
 
-        let boxed = RankedBox ((((((0 + ((((0 + (0 + 0)) + 0) + 0) + 0)) + 0) + 0) + 0) + 0) + 0)
+            (captured + other))) + 0), y = (((\(n : Int) -> n) (block
+            let pair = (x = 0, y = (0 + 1))
+            let (x = captured, y = other) = pair
 
-        match boxed
-          case RankedBox value -> (value + 1)
+            (captured + other))) + 1))
+        let whole@(x = captured, y = other) = pair
+
+        (whole.x + (captured + other))
 
 result : Int
 let result = generated_3369

@@ -1,12 +1,31 @@
 module main
 
-generated_169 : Set Int
-let generated_169 = {| yield (((((((0 + 0) + 0) + 0) + 0) + 0) + 0) + 0) |}
+generated_169 : Int
+let generated_169 =
+    block
+        let pair = (x = ((block
+            generatedSetCount : Set Int -> Int
+            let generatedSetCount values = 2
 
-result : Set Int
+            let item = 0
+            let values = {|item, (item + 1)|}
+
+            generatedSetCount values) + 0), y = ((block
+            generatedSetCount : Set Int -> Int
+            let generatedSetCount values = 2
+
+            let item = 0
+            let values = {|item, (item + 1)|}
+
+            generatedSetCount values) + 1))
+        let (x = captured, y = other) = pair
+
+        (captured + other)
+
+result : Int
 let result = generated_169
 
 --! assertNoErrors
---! assertType generated_169 Set Int
---! assertType result Set Int
+--! assertType generated_169 Int
+--! assertType result Int
 --! assertDeclKinds signature, let, signature, let

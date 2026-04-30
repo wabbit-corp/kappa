@@ -2,9 +2,16 @@ module main
 
 generated_2576 : Int
 let generated_2576 =
-    match ((((((((((left = 0, right = (0 + 0))).right + 0) + 0) + 0) + 0) + 0) + 0) + 0) == (((((((((left = 0, right = (0 + 0))).right + 0) + 0) + 0) + 0) + 0) + 0) + 0))
-      case True -> (((((((((left = 0, right = (0 + 0))).right + 0) + 0) + 0) + 0) + 0) + 0) + 0)
-      case False -> 0
+    block
+        generatedSetCount : Set Int -> Int
+        let generatedSetCount values = 2
+
+        let item = (match [0, (0 + 1)]
+          case head :: tail -> head
+          case Nil -> 0)
+        let values = {|item, (item + 1)|}
+
+        generatedSetCount values
 
 result : Int
 let result = generated_2576

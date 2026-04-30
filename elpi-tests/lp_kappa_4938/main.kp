@@ -1,12 +1,15 @@
 module main
 
-generated_4938 : Option Int
-let generated_4938 = (if True then (if True then (if False then None else (Some ((if (True && True) then (if False then None else (Some (0 + 0))) else (Some 2)) ?: 0))) else None) else None)
+generated_4938 : Int
+let generated_4938 =
+    match [(((Some (((Some (0 + 1)) ?: (0 + 2)) + 1)) ?: (((Some (0 + 1)) ?: (0 + 2)) + 2)) + 0), ((((Some (((Some (0 + 1)) ?: (0 + 2)) + 1)) ?: (((Some (0 + 1)) ?: (0 + 2)) + 2)) + 0) + 1)]
+      case head :: tail -> head
+      case Nil -> 0
 
-result : Option Int
+result : Int
 let result = generated_4938
 
 --! assertNoErrors
---! assertType generated_4938 Option Int
---! assertType result Option Int
+--! assertType generated_4938 Int
+--! assertType result Int
 --! assertDeclKinds signature, let, signature, let

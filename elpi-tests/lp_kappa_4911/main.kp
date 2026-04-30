@@ -1,17 +1,14 @@
 module main
 
-trait GeneratedScore a =
-    score : a -> Int
-
-instance GeneratedScore Int =
-    let score x = x
+data GeneratedChoice : Type =
+    GeneratedLeft (value : Int)
+    GeneratedRight
 
 generated_4911 : Int
 let generated_4911 =
-    let
-        dict = summon (GeneratedScore Int)
-in
-        dict.score ((((((0 + (((if True then ((left = 0, right = (0 + 0))).right else 0) + 0) + 0)) + 0) + 0) + 0) + 0) + 0)
+    match (GeneratedLeft (((Some (((Some (0 + 1)) ?: (0 + 2)) + 1)) ?: (((Some (0 + 1)) ?: (0 + 2)) + 2)) + 0))
+      case GeneratedLeft payload -> (payload + 0)
+      case GeneratedRight -> (((Some (((Some (0 + 1)) ?: (0 + 2)) + 1)) ?: (((Some (0 + 1)) ?: (0 + 2)) + 2)) + 0)
 
 result : Int
 let result = generated_4911
@@ -19,4 +16,4 @@ let result = generated_4911
 --! assertNoErrors
 --! assertType generated_4911 Int
 --! assertType result Int
---! assertDeclKinds trait, instance, signature, let, signature, let
+--! assertDeclKinds data, signature, let, signature, let

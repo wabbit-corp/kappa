@@ -1,10 +1,28 @@
 module main
 
-generatedEcho : forall (a : Type). (this x : a) -> a
-let generatedEcho @a (this x : a) = x
-
 generated_2343 : Int
-let generated_2343 = ((.generatedEcho) (((((((((left = ((if True then 0 else 0) + 0), right = 0)).left + 0) + 0) + 0) + 0) + 0) + 0) + 0))
+let generated_2343 =
+    block
+        let pair = (x = ((block
+            let pair = (x = (match (Some 0)
+              case Some payload -> payload
+              case None -> 0), y = ((match (Some 0)
+              case Some payload -> payload
+              case None -> 0) + 1))
+            let (x = captured, y = other) = pair
+
+            (captured + other)) + 0), y = ((block
+            let pair = (x = (match (Some 0)
+              case Some payload -> payload
+              case None -> 0), y = ((match (Some 0)
+              case Some payload -> payload
+              case None -> 0) + 1))
+            let (x = captured, y = other) = pair
+
+            (captured + other)) + 1))
+        let whole@(x = captured, y = other) = pair
+
+        (whole.x + (captured + other))
 
 result : Int
 let result = generated_2343
@@ -12,4 +30,4 @@ let result = generated_2343
 --! assertNoErrors
 --! assertType generated_2343 Int
 --! assertType result Int
---! assertDeclKinds signature, let, signature, let, signature, let
+--! assertDeclKinds signature, let, signature, let

@@ -2,12 +2,15 @@ module main
 
 generated_2382 : Int
 let generated_2382 =
-    block
-        type RankedAlias = Int
-
-        let aliased : RankedAlias = (((((((((left = ((if False then 0 else 0) + 0), right = 0)).left + 0) + 0) + 0) + 0) + 0) + 0) + 0)
-
-        (aliased + 1)
+    match ((((\(n : Int) -> n) (match (Some 0)
+      case Some payload -> payload
+      case None -> 0)) + 0) == (((\(n : Int) -> n) (match (Some 0)
+      case Some payload -> payload
+      case None -> 0)) + 0))
+      case True -> (((\(n : Int) -> n) (match (Some 0)
+        case Some payload -> payload
+        case None -> 0)) + 0)
+      case False -> 0
 
 result : Int
 let result = generated_2382

@@ -1,15 +1,12 @@
 module main
 
-generated_94 : Int
-let generated_94 =
-    match ((((0 + 0) + 0) + 0) == (((0 + 0) + 0) + 0))
-      case True -> (((0 + 0) + 0) + 0)
-      case False -> 0
+generated_94 : Unit
+let generated_94 = (if True then () else ())
 
-result : Int
+result : Unit
 let result = generated_94
 
 --! assertNoErrors
---! assertType generated_94 Int
---! assertType result Int
+--! assertType generated_94 Unit
+--! assertType result Unit
 --! assertDeclKinds signature, let, signature, let

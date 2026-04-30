@@ -4,7 +4,15 @@ generated_2798 : Int
 let generated_2798 =
     block
         ranked : Int
-        let ranked = ((((((((left = 0, right = (((left = (0 + 0), right = 0)).left + 0))).right + 0) + 0) + 0) + 0) + 0) + 0)
+        let ranked = (block
+            let pair = (x = (match [0, (0 + 1)]
+              case head :: tail -> head
+              case Nil -> 0), y = ((match [0, (0 + 1)]
+              case head :: tail -> head
+              case Nil -> 0) + 1))
+            let (x = captured, y = other) = pair
+
+            (captured + other))
 
         (ranked + 0)
 

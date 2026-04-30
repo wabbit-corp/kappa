@@ -1,15 +1,28 @@
 module main
 
-generatedResize : (image : Int) -> (width : Int) -> (height : Int) -> Int
-let generatedResize image width height = image + width * 10 + height
+generated_1107 : Map String Int
+let generated_1107 = { for x in [1, 2, 3], yield "k" : (block
+    generatedListLength : List Int -> Int
+    let generatedListLength xs decreases structural xs =
+        match xs
+          case Nil -> 0
+          case _ :: tail -> 1 + generatedListLength tail
 
-generated_1107 : Int
-let generated_1107 = generatedResize { image = ((((((((if True then ((left = (0 + 0), right = 0)).left else 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0), height = 3, width = 2 }
+    let item = (block
+        generatedSetCount : Set Int -> Int
+        let generatedSetCount values = 2
 
-result : Int
+        let item = x
+        let values = {|item, (item + 1)|}
+
+        generatedSetCount values)
+
+    generatedListLength [item, (item + 1), 0]), on conflict keep first }
+
+result : Map String Int
 let result = generated_1107
 
 --! assertNoErrors
---! assertType generated_1107 Int
---! assertType result Int
---! assertDeclKinds signature, let, signature, let, signature, let
+--! assertType generated_1107 Map String Int
+--! assertType result Map String Int
+--! assertDeclKinds signature, let, signature, let

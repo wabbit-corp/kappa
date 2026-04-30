@@ -1,12 +1,53 @@
 module main
 
-generated_1063 : (Int -> Int)
-let generated_1063 = \(x : Int) -> ((\(x : Int) -> ((\(x : Int) -> ((\(x : Int) -> (0 + (((if (0 == 0) then \(x : Int) -> x else \(x : Int) -> (x + 0))) x))) x)) x)) x)
+generated_1063 : Int
+let generated_1063 =
+    block
+        scoped effect Choice =
+            ω choose : Unit -> Bool
 
-result : (Int -> Int)
+        let c = Choice
+
+        let seed = ((Some ((block
+            generatedListLength : List Int -> Int
+            let generatedListLength xs decreases structural xs =
+                match xs
+                  case Nil -> 0
+                  case _ :: tail -> 1 + generatedListLength tail
+
+            let item = 0
+
+            generatedListLength [item, (item + 1), 0]) + 1)) ?: ((block
+            generatedListLength : List Int -> Int
+            let generatedListLength xs decreases structural xs =
+                match xs
+                  case Nil -> 0
+                  case _ :: tail -> 1 + generatedListLength tail
+
+            let item = 0
+
+            generatedListLength [item, (item + 1), 0]) + 2))
+
+        let comp : Eff <[Choice : Choice]> Int =
+            do
+                let b <- c.choose ()
+                if b then seed else (seed + 1)
+
+        let handled : Eff <[ ]> Int =
+            deep handle Choice comp with
+                case return x -> pure x
+                case choose () k ->
+                    do
+                        let a <- k True
+                        let b <- k False
+                        pure (a + b)
+
+        runPure handled
+
+result : Int
 let result = generated_1063
 
 --! assertNoErrors
---! assertType generated_1063 (Int -> Int)
---! assertType result (Int -> Int)
+--! assertType generated_1063 Int
+--! assertType result Int
 --! assertDeclKinds signature, let, signature, let

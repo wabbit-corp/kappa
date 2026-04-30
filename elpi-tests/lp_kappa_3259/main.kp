@@ -1,15 +1,25 @@
 module main
 
-generated_3259 : IO Int
-let generated_3259 =
-    do
-        let staged = ((((((0 + (0 + 0)) + 0) + 0) + 0) + 0) + 0)
-        pure (staged + 1)
+generatedEcho : forall (a : Type). (this x : a) -> a
+let generatedEcho @a (this x : a) = x
 
-result : IO Int
+generated_3259 : Option Int
+let generated_3259 = (Some ((match [(block
+    let pair = (x = 0, y = (0 + 1))
+    let (x = captured, y = other) = pair
+
+    (captured + other)), ((block
+    let pair = (x = 0, y = (0 + 1))
+    let (x = captured, y = other) = pair
+
+    (captured + other)) + 1)]
+  case head :: tail -> head
+  case Nil -> 0) + 0))?.generatedEcho
+
+result : Option Int
 let result = generated_3259
 
 --! assertNoErrors
---! assertType generated_3259 IO Int
---! assertType result IO Int
---! assertDeclKinds signature, let, signature, let
+--! assertType generated_3259 Option Int
+--! assertType result Option Int
+--! assertDeclKinds signature, let, signature, let, signature, let

@@ -1,12 +1,24 @@
 module main
 
-generated_4127 : List Int
-let generated_4127 = [ for x in [1, 2, 3], yield (((((0 + ((if True then ((if True then x else 0) + 0) else 0) + 0)) + 0) + 0) + 0) + 0) ]
+generated_4127 : Int
+let generated_4127 =
+    match (Some ((block
+        generatedMapCount : Map String Int -> Int
+        let generatedMapCount values = 1
 
-result : List Int
+        let item = (match (0 == 0)
+          case True -> 0
+          case False -> 0)
+        let values = { yield "item" : item }
+
+        generatedMapCount values) + 0))
+      case Some payload -> payload
+      case None -> 0
+
+result : Int
 let result = generated_4127
 
 --! assertNoErrors
---! assertType generated_4127 List Int
---! assertType result List Int
+--! assertType generated_4127 Int
+--! assertType result Int
 --! assertDeclKinds signature, let, signature, let

@@ -1,7 +1,9 @@
 module main
 
 generated_353 : List Int
-let generated_353 = [ for x in [1, 2, 3], let y = x + 1, yield ((((((((((if True then x else 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0) ]
+let generated_353 = [ for x in [1, 2, 3], order by x desc, yield (match [x, (x + 1)]
+  case head :: tail -> head
+  case Nil -> 0) ]
 
 result : List Int
 let result = generated_353

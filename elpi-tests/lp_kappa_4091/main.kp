@@ -1,16 +1,14 @@
 module main
 
-generated_4091 : Int
-let generated_4091 =
-    let
-        ranked : Int = (((((0 + ((if True then (if False then 0 else 0) else 0) + 0)) + 0) + 0) + 0) + 0)
-in
-        (ranked + 0)
+type GeneratedTuple = (Int, Int)
 
-result : Int
+generated_4091 : GeneratedTuple
+let generated_4091 = (if True then (if True then (if True then (if (False || True) then (if True then (0, (0 + 0)) else (0, (0 + 0))) else ((2 + 2), 2)) else (0, (0 + 0))) else (0, (0 + 0))) else (0, (0 + 0)))
+
+result : GeneratedTuple
 let result = generated_4091
 
 --! assertNoErrors
---! assertType generated_4091 Int
---! assertType result Int
---! assertDeclKinds signature, let, signature, let
+--! assertType generated_4091 GeneratedTuple
+--! assertType result GeneratedTuple
+--! assertDeclKinds type, signature, let, signature, let

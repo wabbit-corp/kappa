@@ -1,12 +1,12 @@
 module main
 
-generated_2310 : List Int
-let generated_2310 = [ yield (((((((((left = ((0 + (0 + 0)) + 0), right = 0)).left + 0) + 0) + 0) + 0) + 0) + 0) + 0) ]
+generated_2310 : Option Int
+let generated_2310 = (if True then (if True then (if True then (if (((if (False || True) then (Some (0 + 0)) else (Some (1 + 1))) ?: 0) == 1) then None else (if (False || True) then (Some (0 + 0)) else (Some (1 + 1)))) else None) else None) else None)
 
-result : List Int
+result : Option Int
 let result = generated_2310
 
 --! assertNoErrors
---! assertType generated_2310 List Int
---! assertType result List Int
+--! assertType generated_2310 Option Int
+--! assertType result Option Int
 --! assertDeclKinds signature, let, signature, let

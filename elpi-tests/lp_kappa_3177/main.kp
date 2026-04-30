@@ -1,17 +1,17 @@
 module main
 
-trait GeneratedScore a =
-    score : a -> Int
-
-instance GeneratedScore Int =
-    let score x = x
-
 generated_3177 : Int
 let generated_3177 =
     let
-        dict = summon (GeneratedScore Int)
+        ranked : Int = (match (Some (block
+            let pair = (x = 0, y = (0 + 1))
+            let (x = captured, y = other) = pair
+
+            (captured + other)))
+          case Some payload -> payload
+          case None -> 0)
 in
-        dict.score (((((((((Some (((left = 0, right = (0 + 0))).right + 0)) ?: 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0)
+        (ranked + 0)
 
 result : Int
 let result = generated_3177
@@ -19,4 +19,4 @@ let result = generated_3177
 --! assertNoErrors
 --! assertType generated_3177 Int
 --! assertType result Int
---! assertDeclKinds trait, instance, signature, let, signature, let
+--! assertDeclKinds signature, let, signature, let

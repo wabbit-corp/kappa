@@ -1,15 +1,40 @@
 module main
 
-generated_4517 : IO Int
+generated_4517 : Int
 let generated_4517 =
-    do
-        let staged = ((((((0 + ((if False then 0 else ((if False then 0 else 0) + (0 + 0))) + 0)) + 0) + 0) + 0) + 0) + 0)
-        pure (staged + 1)
+    block
+        scoped effect Ask =
+            ask : Unit -> Bool
 
-result : IO Int
+        let pkg = (label = Ask)
+
+        let seed = (block
+            generatedListLength : List Int -> Int
+            let generatedListLength xs decreases structural xs =
+                match xs
+                  case Nil -> 0
+                  case _ :: tail -> 1 + generatedListLength tail
+
+            let item = ((Some (0 + 1)) ?: (0 + 2))
+
+            generatedListLength [item, (item + 1), 0])
+
+        let comp : Eff <[Ask : Ask]> Int =
+            do
+                let b <- pkg.label.ask ()
+                if b then seed else (seed + 1)
+
+        let handled : Eff <[ ]> Int =
+            deep handle pkg.label comp with
+                case return x -> pure x
+                case ask () k -> k True
+
+        runPure handled
+
+result : Int
 let result = generated_4517
 
 --! assertNoErrors
---! assertType generated_4517 IO Int
---! assertType result IO Int
+--! assertType generated_4517 Int
+--! assertType result Int
 --! assertDeclKinds signature, let, signature, let

@@ -1,12 +1,25 @@
 module main
 
-generated_3263 : Set Int
-let generated_3263 = {| yield ((((((0 + (0 + 0)) + 0) + 0) + 0) + 0) + 0) |}
+generated_3263 : Int
+let generated_3263 =
+    match (Some ((match [(block
+        let pair = (x = 0, y = (0 + 1))
+        let (x = captured, y = other) = pair
 
-result : Set Int
+        (captured + other)), ((block
+        let pair = (x = 0, y = (0 + 1))
+        let (x = captured, y = other) = pair
+
+        (captured + other)) + 1)]
+      case head :: tail -> head
+      case Nil -> 0) + 0))
+      case Some payload -> payload
+      case None -> 0
+
+result : Int
 let result = generated_3263
 
 --! assertNoErrors
---! assertType generated_3263 Set Int
---! assertType result Set Int
+--! assertType generated_3263 Int
+--! assertType result Int
 --! assertDeclKinds signature, let, signature, let

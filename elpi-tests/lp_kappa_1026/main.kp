@@ -1,12 +1,33 @@
 module main
 
-generated_1026 : Unit
-let generated_1026 = (if True then (if True then (if True then ((\(u : Unit) -> u) (if (True && True) then () else ())) else ()) else ()) else ())
+generatedMakeConst : forall (a : Type). a -> Unit -> a
+let generatedMakeConst value = \() -> value
 
-result : Unit
+generated_1026 : Int
+let generated_1026 = ((generatedMakeConst (((Some ((block
+    generatedListLength : List Int -> Int
+    let generatedListLength xs decreases structural xs =
+        match xs
+          case Nil -> 0
+          case _ :: tail -> 1 + generatedListLength tail
+
+    let item = 0
+
+    generatedListLength [item, (item + 1), 0]) + 1)) ?: ((block
+    generatedListLength : List Int -> Int
+    let generatedListLength xs decreases structural xs =
+        match xs
+          case Nil -> 0
+          case _ :: tail -> 1 + generatedListLength tail
+
+    let item = 0
+
+    generatedListLength [item, (item + 1), 0]) + 2)) + 0)) ())
+
+result : Int
 let result = generated_1026
 
 --! assertNoErrors
---! assertType generated_1026 Unit
---! assertType result Unit
---! assertDeclKinds signature, let, signature, let
+--! assertType generated_1026 Int
+--! assertType result Int
+--! assertDeclKinds signature, let, signature, let, signature, let

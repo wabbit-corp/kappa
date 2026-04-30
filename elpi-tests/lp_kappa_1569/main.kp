@@ -1,12 +1,33 @@
 module main
 
-generated_1569 : Bool
-let generated_1569 = (if (if (if (if True then ((if True then True else False) && True) else False) then True else False) then True else False) then True else False)
+generated_1569 : Int
+let generated_1569 =
+    block
+        rankedHelper : (Int -> Int)
+        let rankedHelper x = x + 1
 
-result : Bool
+        rankedHelper ((block
+            generatedListLength : List Int -> Int
+            let generatedListLength xs decreases structural xs =
+                match xs
+                  case Nil -> 0
+                  case _ :: tail -> 1 + generatedListLength tail
+
+            let item = (block
+                generatedMapCount : Map String Int -> Int
+                let generatedMapCount values = 1
+
+                let item = 0
+                let values = { yield "item" : item }
+
+                generatedMapCount values)
+
+            generatedListLength [item, (item + 1), 0]) + 0)
+
+result : Int
 let result = generated_1569
 
 --! assertNoErrors
---! assertType generated_1569 Bool
---! assertType result Bool
+--! assertType generated_1569 Int
+--! assertType result Int
 --! assertDeclKinds signature, let, signature, let

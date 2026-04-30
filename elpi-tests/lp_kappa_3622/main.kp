@@ -1,14 +1,29 @@
 module main
 
-type GeneratedPair = (left : Int, right : Int)
+generated_3622 : Int
+let generated_3622 =
+    block
+        trait RankedScore a =
+            rank : a -> Int
 
-generated_3622 : GeneratedPair
-let generated_3622 = ((left = (((((0 + ((0 + (0 + 0)) + 0)) + 0) + 0) + 0) + 0), right = 0)).{ right = ((((((0 + ((0 + (0 + 0)) + 0)) + 0) + 0) + 0) + 0) + 1) }
+        instance RankedScore Int =
+            let rank x = x
 
-result : GeneratedPair
+        let dict = summon (RankedScore Int)
+
+        dict.rank ((block
+            generatedMapCount : Map String Int -> Int
+            let generatedMapCount values = 1
+
+            let item = ((\(n : Int) -> n) 0)
+            let values = { yield "item" : item }
+
+            generatedMapCount values) + 0)
+
+result : Int
 let result = generated_3622
 
 --! assertNoErrors
---! assertType generated_3622 GeneratedPair
---! assertType result GeneratedPair
---! assertDeclKinds type, signature, let, signature, let
+--! assertType generated_3622 Int
+--! assertType result Int
+--! assertDeclKinds signature, let, signature, let

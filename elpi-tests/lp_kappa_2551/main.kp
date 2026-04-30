@@ -1,19 +1,23 @@
 module main
 
-data GeneratedChoice : Type =
-    GeneratedLeft (value : Int)
-    GeneratedRight
+generated_2551 : Set Int
+let generated_2551 = {| yield ((block
+    generatedListLength : List Int -> Int
+    let generatedListLength xs decreases structural xs =
+        match xs
+          case Nil -> 0
+          case _ :: tail -> 1 + generatedListLength tail
 
-generated_2551 : Int
-let generated_2551 =
-    match GeneratedRight
-      case GeneratedLeft payload -> (payload + 0)
-      case GeneratedRight -> (((((((((left = (((Some (0 + 0)) ?: 0) + 0), right = 0)).left + 0) + 0) + 0) + 0) + 0) + 0) + 0)
+    let item = (match [0, (0 + 1)]
+      case head :: tail -> head
+      case Nil -> 0)
 
-result : Int
+    generatedListLength [item, (item + 1), 0]) + 0) |}
+
+result : Set Int
 let result = generated_2551
 
 --! assertNoErrors
---! assertType generated_2551 Int
---! assertType result Int
---! assertDeclKinds data, signature, let, signature, let
+--! assertType generated_2551 Set Int
+--! assertType result Set Int
+--! assertDeclKinds signature, let, signature, let

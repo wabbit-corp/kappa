@@ -2,11 +2,13 @@ module main
 
 generated_2237 : Int
 let generated_2237 =
-    block
-        let pair = (x = (((((((((left = (0 + 0), right = 0)).left + 0) + 0) + 0) + 0) + 0) + 0) + 0), y = (((((((((left = (0 + 0), right = 0)).left + 0) + 0) + 0) + 0) + 0) + 0) + 1))
-        let (x = captured, y = other) = pair
-
-        (captured + other)
+    match (Some ((match (Some (match (Some 0)
+      case Some payload -> payload
+      case None -> 0))
+      case Some payload -> payload
+      case None -> 0) + 0))
+      case Some payload -> payload
+      case None -> 0
 
 result : Int
 let result = generated_2237

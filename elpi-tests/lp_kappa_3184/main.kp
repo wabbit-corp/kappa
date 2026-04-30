@@ -1,12 +1,26 @@
 module main
 
-generated_3184 : Map String Int
-let generated_3184 = { for x in [1, 2, 3], yield "k" : ((((((((Some (((left = 0, right = (x + 0))).right + 0)) ?: 0) + 0) + 0) + 0) + 0) + 0) + 0) }
+type GeneratedPair = (left : Int, right : Int)
 
-result : Map String Int
+generated_3184 : GeneratedPair
+let generated_3184 = ((left = (match (Some (block
+    let pair = (x = 0, y = (0 + 1))
+    let (x = captured, y = other) = pair
+
+    (captured + other)))
+  case Some payload -> payload
+  case None -> 0), right = 0)).{ right = ((match (Some (block
+    let pair = (x = 0, y = (0 + 1))
+    let (x = captured, y = other) = pair
+
+    (captured + other)))
+  case Some payload -> payload
+  case None -> 0) + 1) }
+
+result : GeneratedPair
 let result = generated_3184
 
 --! assertNoErrors
---! assertType generated_3184 Map String Int
---! assertType result Map String Int
---! assertDeclKinds signature, let, signature, let
+--! assertType generated_3184 GeneratedPair
+--! assertType result GeneratedPair
+--! assertDeclKinds type, signature, let, signature, let

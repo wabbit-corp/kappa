@@ -1,12 +1,47 @@
 module main
 
-generated_1331 : Bool
-let generated_1331 = (if (if (if ((True || False) || False) then True else False) then True else False) then True else False)
+generated_1331 : Int
+let generated_1331 =
+    block
+        scoped effect Ask =
+            ask : Unit -> Bool
 
-result : Bool
+        let pkg = (label = Ask)
+
+        let seed = (match [(block
+            generatedSetCount : Set Int -> Int
+            let generatedSetCount values = 2
+
+            let item = 0
+            let values = {|item, (item + 1)|}
+
+            generatedSetCount values), ((block
+            generatedSetCount : Set Int -> Int
+            let generatedSetCount values = 2
+
+            let item = 0
+            let values = {|item, (item + 1)|}
+
+            generatedSetCount values) + 1)]
+          case head :: tail -> head
+          case Nil -> 0)
+
+        let comp : Eff <[Ask : Ask]> Int =
+            do
+                let b <- pkg.label.ask ()
+                if b then seed else (seed + 1)
+
+        let handled : Eff <[ ]> Int =
+            deep handle pkg.label comp with
+                case return x -> pure x
+                case ask () k -> k True
+
+        runPure handled
+
+result : Int
 let result = generated_1331
 
 --! assertNoErrors
---! assertType generated_1331 Bool
---! assertType result Bool
+--! assertType generated_1331 Int
+--! assertType result Int
 --! assertDeclKinds signature, let, signature, let

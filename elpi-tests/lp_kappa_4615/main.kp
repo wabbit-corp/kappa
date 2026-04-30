@@ -1,12 +1,22 @@
 module main
 
-generated_4615 : String
-let generated_4615 = (if (if (if (if (((if True then True else False) && True) || False) then False else True) then True else False) then True else False) then #"raw lambda-prolog"# else "fallback")
+generatedMakeConst : forall (a : Type). a -> Unit -> a
+let generatedMakeConst value = \() -> value
 
-result : String
+generated_4615 : Int
+let generated_4615 = ((generatedMakeConst @Int ((block
+    generatedMapCount : Map String Int -> Int
+    let generatedMapCount values = 1
+
+    let item = ((Some (0 + 1)) ?: (0 + 2))
+    let values = { yield "item" : item }
+
+    generatedMapCount values) + 0)) ())
+
+result : Int
 let result = generated_4615
 
 --! assertNoErrors
---! assertType generated_4615 String
---! assertType result String
---! assertDeclKinds signature, let, signature, let
+--! assertType generated_4615 Int
+--! assertType result Int
+--! assertDeclKinds signature, let, signature, let, signature, let

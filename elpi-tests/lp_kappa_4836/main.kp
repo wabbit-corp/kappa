@@ -1,12 +1,29 @@
 module main
 
-generated_4836 : Option Int
-let generated_4836 = (if True then (if True then (if False then None else (Some ((if (((Some (0 + 0)) ?: 0) == 0) then (Some ((Some (0 + 0)) ?: 0)) else None) ?: 0))) else None) else None)
+generated_4836 : Int
+let generated_4836 =
+    block
+        scoped effect Ask =
+            ask : Unit -> Bool
 
-result : Option Int
+        let seed = ((\(n : Int) -> n) ((Some (0 + 1)) ?: (0 + 2)))
+
+        let comp : Eff <[Ask : Ask]> Int =
+            do
+                let b <- Ask.ask ()
+                if b then seed else (seed + 1)
+
+        let handled : Eff <[ ]> Int =
+            deep handle Ask comp with
+                case return x -> pure x
+                case ask () k -> k True
+
+        runPure handled
+
+result : Int
 let result = generated_4836
 
 --! assertNoErrors
---! assertType generated_4836 Option Int
---! assertType result Option Int
+--! assertType generated_4836 Int
+--! assertType result Int
 --! assertDeclKinds signature, let, signature, let

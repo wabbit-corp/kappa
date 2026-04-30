@@ -1,15 +1,20 @@
 module main
 
-generated_4876 : IO Int
+generated_4876 : Int
 let generated_4876 =
-    do
-        value <- pure ((((((0 + (((if True then ((left = (0 + 0), right = 0)).left else 0) + 0) + 0)) + 0) + 0) + 0) + 0) + 0)
-        pure (value + 2)
+    block
+        type RankedAlias = Int
 
-result : IO Int
+        let aliased : RankedAlias = ((match (((Some (0 + 1)) ?: (0 + 2)) == ((Some (0 + 1)) ?: (0 + 2)))
+          case True -> ((Some (0 + 1)) ?: (0 + 2))
+          case False -> 0) + 0)
+
+        (aliased + 1)
+
+result : Int
 let result = generated_4876
 
 --! assertNoErrors
---! assertType generated_4876 IO Int
---! assertType result IO Int
+--! assertType generated_4876 Int
+--! assertType result Int
 --! assertDeclKinds signature, let, signature, let

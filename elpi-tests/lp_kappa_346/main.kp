@@ -1,12 +1,23 @@
 module main
 
-generated_346 : Unit
-let generated_346 = (if True then (if True then (if True then (if True then (if (True && True) then () else ()) else ()) else ()) else ()) else ())
+type GeneratedTuple = (Int, Int)
 
-result : Unit
+generated_346 : Int
+let generated_346 =
+    block
+        let pair : GeneratedTuple = (((match [0, (0 + 1)]
+          case head :: tail -> head
+          case Nil -> 0) + 0), ((match [0, (0 + 1)]
+          case head :: tail -> head
+          case Nil -> 0) + 1))
+        let (left, right) = pair
+
+        (left + right)
+
+result : Int
 let result = generated_346
 
 --! assertNoErrors
---! assertType generated_346 Unit
---! assertType result Unit
---! assertDeclKinds signature, let, signature, let
+--! assertType generated_346 Int
+--! assertType result Int
+--! assertDeclKinds type, signature, let, signature, let

@@ -1,15 +1,17 @@
 module main
 
+generatedEcho : forall (a : Type). (this x : a) -> a
+let generatedEcho @a (this x : a) = x
+
 generated_173 : Int
-let generated_173 =
-    block
-        data RankedBox : Type =
-            RankedBox (value : Int)
+let generated_173 = ((.generatedEcho) ((block
+    generatedSetCount : Set Int -> Int
+    let generatedSetCount values = 2
 
-        let boxed = RankedBox (((((((0 + 0) + 0) + 0) + 0) + 0) + 0) + 0)
+    let item = 0
+    let values = {|item, (item + 1)|}
 
-        match boxed
-          case RankedBox value -> (value + 1)
+    generatedSetCount values) + 0))
 
 result : Int
 let result = generated_173
@@ -17,4 +19,4 @@ let result = generated_173
 --! assertNoErrors
 --! assertType generated_173 Int
 --! assertType result Int
---! assertDeclKinds signature, let, signature, let
+--! assertDeclKinds signature, let, signature, let, signature, let

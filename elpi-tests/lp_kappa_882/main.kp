@@ -1,12 +1,37 @@
 module main
 
-generated_882 : List Int
-let generated_882 = [ yield ((((((((if True then 0 else 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0) ]
+generatedNeed : (@x : Int) -> Int
+let generatedNeed (@x : Int) = x
 
-result : List Int
+generated_882 : Int
+let generated_882 = generatedNeed @(((block
+    let pair = (x = (block
+        generatedListLength : List Int -> Int
+        let generatedListLength xs decreases structural xs =
+            match xs
+              case Nil -> 0
+              case _ :: tail -> 1 + generatedListLength tail
+
+        let item = 0
+
+        generatedListLength [item, (item + 1), 0]), y = ((block
+        generatedListLength : List Int -> Int
+        let generatedListLength xs decreases structural xs =
+            match xs
+              case Nil -> 0
+              case _ :: tail -> 1 + generatedListLength tail
+
+        let item = 0
+
+        generatedListLength [item, (item + 1), 0]) + 1))
+    let (x = captured, y = other) = pair
+
+    (captured + other)) + 0))
+
+result : Int
 let result = generated_882
 
 --! assertNoErrors
---! assertType generated_882 List Int
---! assertType result List Int
---! assertDeclKinds signature, let, signature, let
+--! assertType generated_882 Int
+--! assertType result Int
+--! assertDeclKinds signature, let, signature, let, signature, let

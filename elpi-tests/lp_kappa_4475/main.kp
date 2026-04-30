@@ -1,12 +1,21 @@
 module main
 
-generated_4475 : Set Int
-let generated_4475 = {| for x in [1, 2, 3], if x > 0, yield (((((0 + ((if False then 0 else ((if True then x else 0) + 0)) + 0)) + 0) + 0) + 0) + 0) |}
+generated_4475 : List Int
+let generated_4475 = [ for x in [1, 2, 3], if x > 0, yield (block
+    generatedListLength : List Int -> Int
+    let generatedListLength xs decreases structural xs =
+        match xs
+          case Nil -> 0
+          case _ :: tail -> 1 + generatedListLength tail
 
-result : Set Int
+    let item = ((Some (x + 1)) ?: (x + 2))
+
+    generatedListLength [item, (item + 1), 0]) ]
+
+result : List Int
 let result = generated_4475
 
 --! assertNoErrors
---! assertType generated_4475 Set Int
---! assertType result Set Int
+--! assertType generated_4475 List Int
+--! assertType result List Int
 --! assertDeclKinds signature, let, signature, let

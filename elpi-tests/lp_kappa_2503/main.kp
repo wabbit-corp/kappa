@@ -1,12 +1,19 @@
 module main
 
-generated_2503 : Set Int
-let generated_2503 = {| for x in [1, 2, 3], yield ((((((((left = (((left = 0, right = (x + 0))).right + 0), right = 0)).left + 0) + 0) + 0) + 0) + 0) + 0) |}
+generatedEcho : forall (a : Type). (this x : a) -> a
+let generatedEcho @a (this x : a) = x
 
-result : Set Int
+generated_2503 : Option Int
+let generated_2503 = (Some (((Some ((match (Some 0)
+  case Some payload -> payload
+  case None -> 0) + 1)) ?: ((match (Some 0)
+  case Some payload -> payload
+  case None -> 0) + 2)) + 0))?.generatedEcho
+
+result : Option Int
 let result = generated_2503
 
 --! assertNoErrors
---! assertType generated_2503 Set Int
---! assertType result Set Int
---! assertDeclKinds signature, let, signature, let
+--! assertType generated_2503 Option Int
+--! assertType result Option Int
+--! assertDeclKinds signature, let, signature, let, signature, let

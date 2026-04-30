@@ -1,12 +1,16 @@
 module main
 
-generated_2215 : Bool
-let generated_2215 = (if (if (if ((if True then 1 else 0) == 1) then True else False) then True else False) then True else False)
+generated_2215 : Set Int
+let generated_2215 = {| for x in [1, 2, 3], yield (match (Some (match (Some x)
+  case Some payload -> payload
+  case None -> 0))
+  case Some payload -> payload
+  case None -> 0) |}
 
-result : Bool
+result : Set Int
 let result = generated_2215
 
 --! assertNoErrors
---! assertType generated_2215 Bool
---! assertType result Bool
+--! assertType generated_2215 Set Int
+--! assertType result Set Int
 --! assertDeclKinds signature, let, signature, let

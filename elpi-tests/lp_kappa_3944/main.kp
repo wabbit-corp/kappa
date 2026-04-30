@@ -1,7 +1,7 @@
 module main
 
 generated_3944 : Map String Int
-let generated_3944 = { yield "only" : ((((((0 + ((0 + (((Some (0 + 0)) ?: 0) + 0)) + 0)) + 0) + 0) + 0) + 0) + 0) }
+let generated_3944 = { for x in [1, 2, 3], yield "k" : ((Some (((\(n : Int) -> n) x) + 1)) ?: (((\(n : Int) -> n) x) + 2)) }
 
 result : Map String Int
 let result = generated_3944

@@ -8,7 +8,14 @@ generated_1905 : Int
 let generated_1905 =
     match GeneratedRight
       case GeneratedLeft payload -> (payload + 0)
-      case GeneratedRight -> (((((((((if False then 0 else 0) + (0 + 0)) + 0) + 0) + 0) + 0) + 0) + 0) + 0)
+      case GeneratedRight -> (((\(n : Int) -> n) (block
+          generatedMapCount : Map String Int -> Int
+          let generatedMapCount values = 1
+
+          let item = 0
+          let values = { yield "item" : item }
+
+          generatedMapCount values)) + 0)
 
 result : Int
 let result = generated_1905

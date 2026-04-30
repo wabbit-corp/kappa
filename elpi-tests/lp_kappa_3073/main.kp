@@ -1,12 +1,33 @@
 module main
 
-generated_3073 : List Int
-let generated_3073 = [ for x in [1, 2, 3], let y = x + 1, yield ((((((((Some (((if True then x else 0) + 0) + 0)) ?: 0) + 0) + 0) + 0) + 0) + 0) + 0) ]
+trait GeneratedScore a =
+    score : a -> Int
 
-result : List Int
+instance GeneratedScore Int =
+    let score x = x
+
+generated_3073 : Int
+let generated_3073 =
+    let
+        dict = summon (GeneratedScore Int)
+in
+        dict.score ((block
+            generatedSetCount : Set Int -> Int
+            let generatedSetCount values = 2
+
+            let item = (block
+                let pair = (x = 0, y = (0 + 1))
+                let (x = captured, y = other) = pair
+
+                (captured + other))
+            let values = {|item, (item + 1)|}
+
+            generatedSetCount values) + 0)
+
+result : Int
 let result = generated_3073
 
 --! assertNoErrors
---! assertType generated_3073 List Int
---! assertType result List Int
---! assertDeclKinds signature, let, signature, let
+--! assertType generated_3073 Int
+--! assertType result Int
+--! assertDeclKinds trait, instance, signature, let, signature, let

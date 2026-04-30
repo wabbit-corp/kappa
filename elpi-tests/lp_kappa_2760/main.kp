@@ -1,12 +1,33 @@
 module main
 
-generated_2760 : Unit
-let generated_2760 = (if True then (if True then (if True then (if (0 == 1) then () else (if (False || True) then () else ())) else ()) else ()) else ())
+generated_2760 : Int
+let generated_2760 =
+    match (((match [(match [0, (0 + 1)]
+      case head :: tail -> head
+      case Nil -> 0), ((match [0, (0 + 1)]
+      case head :: tail -> head
+      case Nil -> 0) + 1)]
+      case head :: tail -> head
+      case Nil -> 0) + 0) == ((match [(match [0, (0 + 1)]
+      case head :: tail -> head
+      case Nil -> 0), ((match [0, (0 + 1)]
+      case head :: tail -> head
+      case Nil -> 0) + 1)]
+      case head :: tail -> head
+      case Nil -> 0) + 0))
+      case True -> ((match [(match [0, (0 + 1)]
+        case head :: tail -> head
+        case Nil -> 0), ((match [0, (0 + 1)]
+        case head :: tail -> head
+        case Nil -> 0) + 1)]
+        case head :: tail -> head
+        case Nil -> 0) + 0)
+      case False -> 0
 
-result : Unit
+result : Int
 let result = generated_2760
 
 --! assertNoErrors
---! assertType generated_2760 Unit
---! assertType result Unit
+--! assertType generated_2760 Int
+--! assertType result Int
 --! assertDeclKinds signature, let, signature, let

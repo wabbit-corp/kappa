@@ -1,12 +1,21 @@
 module main
 
-generated_2660 : Option Int
-let generated_2660 = (if True then (if True then (if True then (if (False || True) then (if (((Some (0 + 0)) ?: 0) == 0) then (Some (0 + 0)) else None) else (Some (1 + 1))) else None) else None) else None)
+generated_2660 : Map String Int
+let generated_2660 = { yield "only" : ((block
+    generatedMapCount : Map String Int -> Int
+    let generatedMapCount values = 1
 
-result : Option Int
+    let item = (match [0, (0 + 1)]
+      case head :: tail -> head
+      case Nil -> 0)
+    let values = { yield "item" : item }
+
+    generatedMapCount values) + 0) }
+
+result : Map String Int
 let result = generated_2660
 
 --! assertNoErrors
---! assertType generated_2660 Option Int
---! assertType result Option Int
+--! assertType generated_2660 Map String Int
+--! assertType result Map String Int
 --! assertDeclKinds signature, let, signature, let

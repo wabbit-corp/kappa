@@ -1,12 +1,26 @@
 module main
 
-generated_1162 : Unit
-let generated_1162 = (if True then (if True then (if True then ((\(u : Unit) -> u) ((\(u : Unit) -> if True then u else ()) ())) else ()) else ()) else ())
+generated_1162 : List Int
+let generated_1162 = [ for x in [1, 2, 3], skip 1, take 2, yield (block
+    generatedSetCount : Set Int -> Int
+    let generatedSetCount values = 2
 
-result : Unit
+    let item = (block
+        generatedSetCount : Set Int -> Int
+        let generatedSetCount values = 2
+
+        let item = x
+        let values = {|item, (item + 1)|}
+
+        generatedSetCount values)
+    let values = {|item, (item + 1)|}
+
+    generatedSetCount values) ]
+
+result : List Int
 let result = generated_1162
 
 --! assertNoErrors
---! assertType generated_1162 Unit
---! assertType result Unit
+--! assertType generated_1162 List Int
+--! assertType result List Int
 --! assertDeclKinds signature, let, signature, let

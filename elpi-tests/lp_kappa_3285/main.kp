@@ -1,12 +1,28 @@
 module main
 
-generated_3285 : Set Int
-let generated_3285 = {| for x in [1, 2, 3], let y = x + 1, if y > 0, yield (((((0 + (((x + 0) + 0) + 0)) + 0) + 0) + 0) + 0) |}
+generated_3285 : Int
+let generated_3285 =
+    let
+        ranked : Int = (block
+            let pair = (x = (block
+                let pair = (x = 0, y = (0 + 1))
+                let (x = captured, y = other) = pair
 
-result : Set Int
+                (captured + other)), y = ((block
+                let pair = (x = 0, y = (0 + 1))
+                let (x = captured, y = other) = pair
+
+                (captured + other)) + 1))
+            let (x = captured, y = other) = pair
+
+            (captured + other))
+in
+        (ranked + 0)
+
+result : Int
 let result = generated_3285
 
 --! assertNoErrors
---! assertType generated_3285 Set Int
---! assertType result Set Int
+--! assertType generated_3285 Int
+--! assertType result Int
 --! assertDeclKinds signature, let, signature, let

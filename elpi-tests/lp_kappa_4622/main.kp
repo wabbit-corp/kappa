@@ -1,12 +1,42 @@
 module main
 
-generated_4622 : List Int
-let generated_4622 = [ yield ((((((0 + ((if False then 0 else ((Some (0 + 0)) ?: 0)) + 0)) + 0) + 0) + 0) + 0) + 0) ]
+generated_4622 : Int
+let generated_4622 =
+    block
+        scoped effect Ask =
+            ask : Unit -> Bool
 
-result : List Int
+        let seed = (block
+            generatedMapCount : Map String Int -> Int
+            let generatedMapCount values = 1
+
+            let item = ((Some (0 + 1)) ?: (0 + 2))
+            let values = { yield "item" : item }
+
+            generatedMapCount values)
+
+        let comp : Eff <[Ask : Ask]> Int =
+            do
+                let b <- Ask.ask ()
+                if b then seed else (seed + 1)
+
+        let rehandle : (1 k : ((1 x : Bool) -> Eff <[Ask : Ask]> Int)) -> Eff <[ ]> Int =
+            \(1 k : ((1 x : Bool) -> Eff <[Ask : Ask]> Int)) ->
+                handle Ask (k True) with
+                    case return y -> pure y
+                    case ask () k2 -> k2 False
+
+        let handled : Eff <[ ]> Int =
+            handle Ask comp with
+                case return y -> pure y
+                case ask () k -> rehandle k
+
+        runPure handled
+
+result : Int
 let result = generated_4622
 
 --! assertNoErrors
---! assertType generated_4622 List Int
---! assertType result List Int
+--! assertType generated_4622 Int
+--! assertType result Int
 --! assertDeclKinds signature, let, signature, let

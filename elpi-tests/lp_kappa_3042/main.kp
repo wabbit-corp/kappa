@@ -1,10 +1,23 @@
 module main
 
-generatedEcho : forall (a : Type). (this x : a) -> a
-let generatedEcho @a (this x : a) = x
+generatedNeed : (@x : Int) -> Int
+let generatedNeed (@x : Int) = x
 
 generated_3042 : Int
-let generated_3042 = (((((((((Some ((if False then 0 else 0) + 0)) ?: 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0).generatedEcho
+let generated_3042 = generatedNeed @(((block
+    generatedListLength : List Int -> Int
+    let generatedListLength xs decreases structural xs =
+        match xs
+          case Nil -> 0
+          case _ :: tail -> 1 + generatedListLength tail
+
+    let item = (block
+        let pair = (x = 0, y = (0 + 1))
+        let (x = captured, y = other) = pair
+
+        (captured + other))
+
+    generatedListLength [item, (item + 1), 0]) + 0))
 
 result : Int
 let result = generated_3042

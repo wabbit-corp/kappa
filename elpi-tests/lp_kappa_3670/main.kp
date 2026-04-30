@@ -1,12 +1,18 @@
 module main
 
-generated_3670 : List Int
-let generated_3670 = [ yield ((((((0 + ((0 + (((0 + 0) + 0) + 0)) + 0)) + 0) + 0) + 0) + 0) + 0) ]
+type GeneratedPair = (left : Int, right : Int)
 
-result : List Int
+generated_3670 : GeneratedPair
+let generated_3670 = ((left = (match (Some ((\(n : Int) -> n) 0))
+  case Some payload -> payload
+  case None -> 0), right = 0)).{ right = ((match (Some ((\(n : Int) -> n) 0))
+  case Some payload -> payload
+  case None -> 0) + 1) }
+
+result : GeneratedPair
 let result = generated_3670
 
 --! assertNoErrors
---! assertType generated_3670 List Int
---! assertType result List Int
---! assertDeclKinds signature, let, signature, let
+--! assertType generated_3670 GeneratedPair
+--! assertType result GeneratedPair
+--! assertDeclKinds type, signature, let, signature, let

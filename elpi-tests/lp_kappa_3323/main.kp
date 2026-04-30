@@ -1,12 +1,24 @@
 module main
 
-generated_3323 : String
-let generated_3323 = (if (if (if (if (if (if True then True else False) then True else False) then False else True) then True else False) then True else False) then #"raw lambda-prolog"# else "fallback")
+generated_3323 : List Int
+let generated_3323 = [ for x in [1, 2, 3], order by x desc, yield (block
+    let pair = (x = (block
+        let pair = (x = x, y = (x + 1))
+        let (x = captured, y = other) = pair
 
-result : String
+        (captured + other)), y = ((block
+        let pair = (x = x, y = (x + 1))
+        let (x = captured, y = other) = pair
+
+        (captured + other)) + 1))
+    let (x = captured, y = other) = pair
+
+    (captured + other)) ]
+
+result : List Int
 let result = generated_3323
 
 --! assertNoErrors
---! assertType generated_3323 String
---! assertType result String
+--! assertType generated_3323 List Int
+--! assertType result List Int
 --! assertDeclKinds signature, let, signature, let

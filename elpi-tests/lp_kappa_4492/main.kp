@@ -1,12 +1,27 @@
 module main
 
-generated_4492 : Int
-let generated_4492 = (((((0 + ((if False then 0 else ((if False then 0 else 0) + (0 + 0))) + 0)) + 0) + 0) + 0) + 0)
+generatedNeed : (@x : Int) -> Int
+let generatedNeed (@x : Int) = x
 
-result : Int
+generated_4492 : IO Int
+let generated_4492 =
+    do
+        let (@x : Int) = ((block
+            generatedListLength : List Int -> Int
+            let generatedListLength xs decreases structural xs =
+                match xs
+                  case Nil -> 0
+                  case _ :: tail -> 1 + generatedListLength tail
+
+            let item = ((Some (0 + 1)) ?: (0 + 2))
+
+            generatedListLength [item, (item + 1), 0]) + 0)
+        pure generatedNeed
+
+result : IO Int
 let result = generated_4492
 
 --! assertNoErrors
---! assertType generated_4492 Int
---! assertType result Int
---! assertDeclKinds signature, let, signature, let
+--! assertType generated_4492 IO Int
+--! assertType result IO Int
+--! assertDeclKinds signature, let, signature, let, signature, let

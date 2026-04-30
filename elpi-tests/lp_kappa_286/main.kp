@@ -1,15 +1,20 @@
 module main
 
-generated_286 : IO Int
+generated_286 : Int
 let generated_286 =
-    do
-        value <- pure ((((((((((if True then 0 else 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0)
-        pure (value + 2)
+    block
+        type RankedAlias = Int
 
-result : IO Int
+        let aliased : RankedAlias = ((match (Some 0)
+          case Some payload -> payload
+          case None -> 0) + 0)
+
+        (aliased + 1)
+
+result : Int
 let result = generated_286
 
 --! assertNoErrors
---! assertType generated_286 IO Int
---! assertType result IO Int
+--! assertType generated_286 Int
+--! assertType result Int
 --! assertDeclKinds signature, let, signature, let

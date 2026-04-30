@@ -1,12 +1,31 @@
 module main
 
-generated_3976 : List Int
-let generated_3976 = [ yield ((((((0 + ((if True then 0 else 0) + 0)) + 0) + 0) + 0) + 0) + 0) ]
+generated_3976 : Int
+let generated_3976 =
+    block
+        scoped effect Ask =
+            ask : Unit -> Bool
 
-result : List Int
+        let l = Ask
+
+        let seed = ((Some (((\(n : Int) -> n) 0) + 1)) ?: (((\(n : Int) -> n) 0) + 2))
+
+        let comp : Eff <[Ask : Ask]> Int =
+            do
+                let b <- l.ask ()
+                if b then seed else (seed + 1)
+
+        let handled : Eff <[ ]> Int =
+            deep handle l comp with
+                case return x -> pure x
+                case ask () k -> k True
+
+        runPure handled
+
+result : Int
 let result = generated_3976
 
 --! assertNoErrors
---! assertType generated_3976 List Int
---! assertType result List Int
+--! assertType generated_3976 Int
+--! assertType result Int
 --! assertDeclKinds signature, let, signature, let

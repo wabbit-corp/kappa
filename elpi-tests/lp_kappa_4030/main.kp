@@ -1,14 +1,42 @@
 module main
 
-type GeneratedPair = (left : Int, right : Int)
+generated_4030 : Int
+let generated_4030 =
+    block
+        scoped effect Ask =
+            ask : Unit -> Bool
 
-generated_4030 : GeneratedPair
-let generated_4030 = ((left = (((((0 + ((if True then (0 + (0 + 0)) else 0) + 0)) + 0) + 0) + 0) + 0), right = 0)).{ right = ((((((0 + ((if True then (0 + (0 + 0)) else 0) + 0)) + 0) + 0) + 0) + 0) + 1) }
+        let l = Ask
 
-result : GeneratedPair
+        let seed = (block
+            generatedListLength : List Int -> Int
+            let generatedListLength xs decreases structural xs =
+                match xs
+                  case Nil -> 0
+                  case _ :: tail -> 1 + generatedListLength tail
+
+            let item = (match (0 == 0)
+              case True -> 0
+              case False -> 0)
+
+            generatedListLength [item, (item + 1), 0])
+
+        let comp : Eff <[Ask : Ask]> Int =
+            do
+                let b <- l.ask ()
+                if b then seed else (seed + 1)
+
+        let handled : Eff <[ ]> Int =
+            deep handle l comp with
+                case return x -> pure x
+                case ask () k -> k True
+
+        runPure handled
+
+result : Int
 let result = generated_4030
 
 --! assertNoErrors
---! assertType generated_4030 GeneratedPair
---! assertType result GeneratedPair
---! assertDeclKinds type, signature, let, signature, let
+--! assertType generated_4030 Int
+--! assertType result Int
+--! assertDeclKinds signature, let, signature, let

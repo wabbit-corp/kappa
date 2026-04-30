@@ -1,12 +1,26 @@
 module main
 
-generated_4021 : (Int -> Int)
-let generated_4021 = \(x : Int) -> ((\(x : Int) -> ((\(x : Int) -> (((\(x : Int) -> (0 + ((\(x : Int) -> (((\(x : Int) -> x) x) + 0)) x))) x) + 0)) x)) x)
+generatedMakeConst : forall (a : Type). a -> Unit -> a
+let generatedMakeConst value = \() -> value
 
-result : (Int -> Int)
+generated_4021 : Int
+let generated_4021 = ((generatedMakeConst @Int ((block
+    generatedListLength : List Int -> Int
+    let generatedListLength xs decreases structural xs =
+        match xs
+          case Nil -> 0
+          case _ :: tail -> 1 + generatedListLength tail
+
+    let item = (match (0 == 0)
+      case True -> 0
+      case False -> 0)
+
+    generatedListLength [item, (item + 1), 0]) + 0)) ())
+
+result : Int
 let result = generated_4021
 
 --! assertNoErrors
---! assertType generated_4021 (Int -> Int)
---! assertType result (Int -> Int)
---! assertDeclKinds signature, let, signature, let
+--! assertType generated_4021 Int
+--! assertType result Int
+--! assertDeclKinds signature, let, signature, let, signature, let

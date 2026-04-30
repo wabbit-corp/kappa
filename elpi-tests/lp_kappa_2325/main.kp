@@ -1,12 +1,25 @@
 module main
 
-generated_2325 : List Int
-let generated_2325 = [ for x in [1, 2, 3], let y = x + 1, if y > 0, yield ((((((((left = ((if True then x else 0) + 0), right = 0)).left + 0) + 0) + 0) + 0) + 0) + 0) ]
+generated_2325 : Int
+let generated_2325 =
+    block
+        rankedHelper : (Int -> Int)
+        let rankedHelper x = x + 1
 
-result : List Int
+        rankedHelper ((block
+            let pair = (x = (match (Some 0)
+              case Some payload -> payload
+              case None -> 0), y = ((match (Some 0)
+              case Some payload -> payload
+              case None -> 0) + 1))
+            let (x = captured, y = other) = pair
+
+            (captured + other)) + 0)
+
+result : Int
 let result = generated_2325
 
 --! assertNoErrors
---! assertType generated_2325 List Int
---! assertType result List Int
+--! assertType generated_2325 Int
+--! assertType result Int
 --! assertDeclKinds signature, let, signature, let

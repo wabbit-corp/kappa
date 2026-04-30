@@ -1,7 +1,16 @@
 module main
 
 generated_276 : Int
-let generated_276 = (((((((((if True then 0 else 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0)
+let generated_276 =
+    match (((match (Some 0)
+      case Some payload -> payload
+      case None -> 0) + 0) == ((match (Some 0)
+      case Some payload -> payload
+      case None -> 0) + 0))
+      case True -> ((match (Some 0)
+        case Some payload -> payload
+        case None -> 0) + 0)
+      case False -> 0
 
 result : Int
 let result = generated_276

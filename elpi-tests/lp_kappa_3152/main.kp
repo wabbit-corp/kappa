@@ -3,15 +3,20 @@ module main
 generated_3152 : Int
 let generated_3152 =
     block
-        trait RankedScore a =
-            rank : a -> Int
+        let (captured : Int) = ((block
+            generatedMapCount : Map String Int -> Int
+            let generatedMapCount values = 1
 
-        instance RankedScore Int =
-            let rank x = x
+            let item = (block
+                let pair = (x = 0, y = (0 + 1))
+                let (x = captured, y = other) = pair
 
-        let dict = summon (RankedScore Int)
+                (captured + other))
+            let values = { yield "item" : item }
 
-        dict.rank (((((((((Some (((left = (0 + 0), right = 0)).left + 0)) ?: 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0)
+            generatedMapCount values) + 0)
+
+        captured
 
 result : Int
 let result = generated_3152

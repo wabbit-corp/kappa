@@ -1,12 +1,12 @@
 module main
 
-generated_4799 : Bool
-let generated_4799 = (if (if (if (if True then ((if True then (True && True) else False) && True) else False) then False else True) then True else False) then True else False)
+generated_4799 : List Int
+let generated_4799 = [ for x in [1, 2, 3], yield ((\(n : Int) -> n) ((Some (x + 1)) ?: (x + 2))) ]
 
-result : Bool
+result : List Int
 let result = generated_4799
 
 --! assertNoErrors
---! assertType generated_4799 Bool
---! assertType result Bool
+--! assertType generated_4799 List Int
+--! assertType result List Int
 --! assertDeclKinds signature, let, signature, let

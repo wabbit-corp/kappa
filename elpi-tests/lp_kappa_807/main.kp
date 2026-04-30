@@ -1,12 +1,59 @@
 module main
 
-generated_807 : String
-let generated_807 = (if (if (if (if (if ((if True then (0 + 1) else 1) == 1) then False else True) then True else False) then True else False) then True else False) then #"raw lambda-prolog"# else "fallback")
+data GeneratedChoice : Type =
+    GeneratedLeft (value : Int)
+    GeneratedRight
 
-result : String
+generated_807 : Int
+let generated_807 =
+    match (GeneratedLeft ((match [(block
+        generatedListLength : List Int -> Int
+        let generatedListLength xs decreases structural xs =
+            match xs
+              case Nil -> 0
+              case _ :: tail -> 1 + generatedListLength tail
+
+        let item = 0
+
+        generatedListLength [item, (item + 1), 0]), ((block
+        generatedListLength : List Int -> Int
+        let generatedListLength xs decreases structural xs =
+            match xs
+              case Nil -> 0
+              case _ :: tail -> 1 + generatedListLength tail
+
+        let item = 0
+
+        generatedListLength [item, (item + 1), 0]) + 1)]
+      case head :: tail -> head
+      case Nil -> 0) + 0))
+      case GeneratedLeft payload -> (payload + 0)
+      case GeneratedRight -> ((match [(block
+          generatedListLength : List Int -> Int
+          let generatedListLength xs decreases structural xs =
+              match xs
+                case Nil -> 0
+                case _ :: tail -> 1 + generatedListLength tail
+
+          let item = 0
+
+          generatedListLength [item, (item + 1), 0]), ((block
+          generatedListLength : List Int -> Int
+          let generatedListLength xs decreases structural xs =
+              match xs
+                case Nil -> 0
+                case _ :: tail -> 1 + generatedListLength tail
+
+          let item = 0
+
+          generatedListLength [item, (item + 1), 0]) + 1)]
+        case head :: tail -> head
+        case Nil -> 0) + 0)
+
+result : Int
 let result = generated_807
 
 --! assertNoErrors
---! assertType generated_807 String
---! assertType result String
---! assertDeclKinds signature, let, signature, let
+--! assertType generated_807 Int
+--! assertType result Int
+--! assertDeclKinds data, signature, let, signature, let

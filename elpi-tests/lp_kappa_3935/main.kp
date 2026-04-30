@@ -1,12 +1,12 @@
 module main
 
-generated_3935 : String
-let generated_3935 = (if (if (if (if (if ((if True then True else False) && True) then False else True) then False else True) then True else False) then True else False) then #"raw lambda-prolog"# else "fallback")
+generated_3935 : List Int
+let generated_3935 = [ for x in [1, 2, 3], yield ((Some (((\(n : Int) -> n) x) + 1)) ?: (((\(n : Int) -> n) x) + 2)) ]
 
-result : String
+result : List Int
 let result = generated_3935
 
 --! assertNoErrors
---! assertType generated_3935 String
---! assertType result String
+--! assertType generated_3935 List Int
+--! assertType result List Int
 --! assertDeclKinds signature, let, signature, let

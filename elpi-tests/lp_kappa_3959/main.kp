@@ -1,17 +1,15 @@
 module main
 
-trait GeneratedScore a =
-    score : a -> Int
-
-instance GeneratedScore Int =
-    let score x = x
-
 generated_3959 : Int
 let generated_3959 =
-    let
-        dict = summon (GeneratedScore Int)
-in
-        dict.score ((((((0 + ((if True then 0 else 0) + 0)) + 0) + 0) + 0) + 0) + 0)
+    block
+        data RankedBox : Type =
+            RankedBox (value : Int)
+
+        let boxed = RankedBox (((Some (((\(n : Int) -> n) 0) + 1)) ?: (((\(n : Int) -> n) 0) + 2)) + 0)
+
+        match boxed
+          case RankedBox value -> (value + 1)
 
 result : Int
 let result = generated_3959
@@ -19,4 +17,4 @@ let result = generated_3959
 --! assertNoErrors
 --! assertType generated_3959 Int
 --! assertType result Int
---! assertDeclKinds trait, instance, signature, let, signature, let
+--! assertDeclKinds signature, let, signature, let

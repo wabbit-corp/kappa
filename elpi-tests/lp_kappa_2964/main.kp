@@ -1,12 +1,19 @@
 module main
 
-generated_2964 : Unit
-let generated_2964 = (if True then (if True then (if True then ((\(u : Unit) -> if True then u else ()) (if False then () else ())) else ()) else ()) else ())
+generated_2964 : IO Int
+let generated_2964 =
+    do
+        value <- pure (((Some ((match [0, (0 + 1)]
+          case head :: tail -> head
+          case Nil -> 0) + 1)) ?: ((match [0, (0 + 1)]
+          case head :: tail -> head
+          case Nil -> 0) + 2)) + 0)
+        pure (value + 2)
 
-result : Unit
+result : IO Int
 let result = generated_2964
 
 --! assertNoErrors
---! assertType generated_2964 Unit
---! assertType result Unit
+--! assertType generated_2964 IO Int
+--! assertType result IO Int
 --! assertDeclKinds signature, let, signature, let

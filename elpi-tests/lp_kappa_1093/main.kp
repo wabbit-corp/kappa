@@ -1,12 +1,28 @@
 module main
 
-generated_1093 : Bool
-let generated_1093 = (if (if (if (((if True then 1 else 0) == 1) && False) then True else False) then True else False) then True else False)
+generated_1093 : Set Int
+let generated_1093 = {| yield ((block
+    generatedListLength : List Int -> Int
+    let generatedListLength xs decreases structural xs =
+        match xs
+          case Nil -> 0
+          case _ :: tail -> 1 + generatedListLength tail
 
-result : Bool
+    let item = (block
+        generatedSetCount : Set Int -> Int
+        let generatedSetCount values = 2
+
+        let item = 0
+        let values = {|item, (item + 1)|}
+
+        generatedSetCount values)
+
+    generatedListLength [item, (item + 1), 0]) + 0) |}
+
+result : Set Int
 let result = generated_1093
 
 --! assertNoErrors
---! assertType generated_1093 Bool
---! assertType result Bool
+--! assertType generated_1093 Set Int
+--! assertType result Set Int
 --! assertDeclKinds signature, let, signature, let

@@ -1,19 +1,23 @@
 module main
 
-generatedNeed : (@x : Int) -> Int
-let generatedNeed (@x : Int) = x
+generated_3106 : List Int
+let generated_3106 = [ for x in [1, 2, 3], skip 1, take 2, yield (block
+    generatedSetCount : Set Int -> Int
+    let generatedSetCount values = 2
 
-generated_3106 : Int
-let generated_3106 =
-    block
-        let (@x : Int) = ((((((((Some (((if False then 0 else 0) + (0 + 0)) + 0)) ?: 0) + 0) + 0) + 0) + 0) + 0) + 0)
+    let item = (block
+        let pair = (x = x, y = (x + 1))
+        let (x = captured, y = other) = pair
 
-        if True then generatedNeed else 0
+        (captured + other))
+    let values = {|item, (item + 1)|}
 
-result : Int
+    generatedSetCount values) ]
+
+result : List Int
 let result = generated_3106
 
 --! assertNoErrors
---! assertType generated_3106 Int
---! assertType result Int
---! assertDeclKinds signature, let, signature, let, signature, let
+--! assertType generated_3106 List Int
+--! assertType result List Int
+--! assertDeclKinds signature, let, signature, let

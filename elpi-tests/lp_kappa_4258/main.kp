@@ -1,12 +1,27 @@
 module main
 
-generated_4258 : Option Int
-let generated_4258 = (if True then (if True then (if False then None else (if (((if (True && True) then (if False then None else (Some (0 + 0))) else (Some 2)) ?: 0) == 0) then (if (True && True) then (if False then None else (Some (0 + 0))) else (Some 2)) else None)) else None) else None)
+generatedNeed : (@x : Int) -> Int
+let generatedNeed (@x : Int) = x
 
-result : Option Int
+generated_4258 : Int
+let generated_4258 =
+    block
+        let (@x : Int) = (block
+            let pair = (x = (match (0 == 0)
+              case True -> 0
+              case False -> 0), y = ((match (0 == 0)
+              case True -> 0
+              case False -> 0) + 1))
+            let (x = captured, y = other) = pair
+
+            (captured + other))
+
+        if True then generatedNeed else 0
+
+result : Int
 let result = generated_4258
 
 --! assertNoErrors
---! assertType generated_4258 Option Int
---! assertType result Option Int
---! assertDeclKinds signature, let, signature, let
+--! assertType generated_4258 Int
+--! assertType result Int
+--! assertDeclKinds signature, let, signature, let, signature, let

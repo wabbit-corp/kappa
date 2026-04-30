@@ -1,7 +1,9 @@
 module main
 
 generated_3740 : Map String Int
-let generated_3740 = { yield "only" : ((((((0 + ((0 + ((if True then 0 else 0) + 0)) + 0)) + 0) + 0) + 0) + 0) + 0) }
+let generated_3740 = { yield "only" : ((match [((\(n : Int) -> n) 0), (((\(n : Int) -> n) 0) + 1)]
+  case head :: tail -> head
+  case Nil -> 0) + 0) }
 
 result : Map String Int
 let result = generated_3740

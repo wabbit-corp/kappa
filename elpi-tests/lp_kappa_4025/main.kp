@@ -1,7 +1,18 @@
 module main
 
 generated_4025 : List Int
-let generated_4025 = [ for x in [1, 2, 3], let y = x + 1, yield (((((0 + ((if True then (0 + (x + 0)) else 0) + 0)) + 0) + 0) + 0) + 0) ]
+let generated_4025 = [ for x in [1, 2, 3], order by x desc, yield (block
+    generatedListLength : List Int -> Int
+    let generatedListLength xs decreases structural xs =
+        match xs
+          case Nil -> 0
+          case _ :: tail -> 1 + generatedListLength tail
+
+    let item = (match (x == x)
+      case True -> x
+      case False -> 0)
+
+    generatedListLength [item, (item + 1), 0]) ]
 
 result : List Int
 let result = generated_4025

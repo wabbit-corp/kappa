@@ -1,10 +1,12 @@
 module main
 
-generatedEcho : forall (a : Type). (this x : a) -> a
-let generatedEcho @a (this x : a) = x
-
 generated_439 : Int
-let generated_439 = ((.generatedEcho) (((((((((((left = (0 + 0), right = 0)).left + 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0))
+let generated_439 =
+    block
+        let pair = (x = (((\(n : Int) -> n) 0) + 0), y = (((\(n : Int) -> n) 0) + 1))
+        let (x = captured, y = other) = pair
+
+        (captured + other)
 
 result : Int
 let result = generated_439
@@ -12,4 +14,4 @@ let result = generated_439
 --! assertNoErrors
 --! assertType generated_439 Int
 --! assertType result Int
---! assertDeclKinds signature, let, signature, let, signature, let
+--! assertDeclKinds signature, let, signature, let

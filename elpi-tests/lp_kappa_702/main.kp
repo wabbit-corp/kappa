@@ -1,12 +1,31 @@
 module main
 
-generated_702 : Map String Int
-let generated_702 = { for x in [1, 2, 3], let y = x + 1, if y > 0, yield (if y > 1 then "hi" else "lo") : (((((((0 + (((if True then x else 0) + 0) + 0)) + 0) + 0) + 0) + 0) + 0) + 0) }
+generatedMakeConst : forall (a : Type). a -> Unit -> a
+let generatedMakeConst value = \() -> value
 
-result : Map String Int
+generated_702 : Int
+let generated_702 = ((generatedMakeConst ((block
+    generatedMapCount : Map String Int -> Int
+    let generatedMapCount values = 1
+
+    let item = (block
+        generatedListLength : List Int -> Int
+        let generatedListLength xs decreases structural xs =
+            match xs
+              case Nil -> 0
+              case _ :: tail -> 1 + generatedListLength tail
+
+        let item = 0
+
+        generatedListLength [item, (item + 1), 0])
+    let values = { yield "item" : item }
+
+    generatedMapCount values) + 0)) ())
+
+result : Int
 let result = generated_702
 
 --! assertNoErrors
---! assertType generated_702 Map String Int
---! assertType result Map String Int
---! assertDeclKinds signature, let, signature, let
+--! assertType generated_702 Int
+--! assertType result Int
+--! assertDeclKinds signature, let, signature, let, signature, let

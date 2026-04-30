@@ -1,18 +1,38 @@
 module main
 
-generatedNeed : (@x : Int) -> Int
-let generatedNeed (@x : Int) = x
-
-generated_948 : IO Int
+generated_948 : Int
 let generated_948 =
-    do
-        let (@x : Int) = ((((((((if True then (0 + (0 + 0)) else 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0)
-        pure generatedNeed
+    block
+        scoped effect Ask =
+            ask : Unit -> Bool
 
-result : IO Int
+        let seed = ((\(n : Int) -> n) (block
+            generatedListLength : List Int -> Int
+            let generatedListLength xs decreases structural xs =
+                match xs
+                  case Nil -> 0
+                  case _ :: tail -> 1 + generatedListLength tail
+
+            let item = 0
+
+            generatedListLength [item, (item + 1), 0]))
+
+        let comp : Eff <[Ask : Ask]> Int =
+            do
+                let b <- Ask.ask ()
+                if b then seed else (seed + 1)
+
+        let handled : Eff <[ ]> Int =
+            deep handle Ask comp with
+                case return x -> pure x
+                case ask () k -> k True
+
+        runPure handled
+
+result : Int
 let result = generated_948
 
 --! assertNoErrors
---! assertType generated_948 IO Int
---! assertType result IO Int
---! assertDeclKinds signature, let, signature, let, signature, let
+--! assertType generated_948 Int
+--! assertType result Int
+--! assertDeclKinds signature, let, signature, let

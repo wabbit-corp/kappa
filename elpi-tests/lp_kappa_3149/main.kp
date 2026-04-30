@@ -1,12 +1,31 @@
 module main
 
-generated_3149 : Set Int
-let generated_3149 = {| for x in [1, 2, 3], let y = x + 1, if y > 0, yield ((((((((Some (((left = (x + 0), right = 0)).left + 0)) ?: 0) + 0) + 0) + 0) + 0) + 0) + 0) |}
+generated_3149 : Int
+let generated_3149 =
+    block
+        data RankedBox : Type =
+            RankedBox (value : Int)
 
-result : Set Int
+        let boxed = RankedBox ((block
+            generatedMapCount : Map String Int -> Int
+            let generatedMapCount values = 1
+
+            let item = (block
+                let pair = (x = 0, y = (0 + 1))
+                let (x = captured, y = other) = pair
+
+                (captured + other))
+            let values = { yield "item" : item }
+
+            generatedMapCount values) + 0)
+
+        match boxed
+          case RankedBox value -> (value + 1)
+
+result : Int
 let result = generated_3149
 
 --! assertNoErrors
---! assertType generated_3149 Set Int
---! assertType result Set Int
+--! assertType generated_3149 Int
+--! assertType result Int
 --! assertDeclKinds signature, let, signature, let

@@ -1,17 +1,14 @@
 module main
 
-generated_4804 : Int
-let generated_4804 =
-    block
-        ranked : Int
-        let ranked = (((((0 + (((if True then ((if True then 0 else 0) + 0) else 0) + 0) + 0)) + 0) + 0) + 0) + 0)
+type GeneratedPair = (left : Int, right : Int)
 
-        (ranked + 0)
+generated_4804 : GeneratedPair
+let generated_4804 = ((left = ((\(n : Int) -> n) ((Some (0 + 1)) ?: (0 + 2))), right = 0)).{ right = (((\(n : Int) -> n) ((Some (0 + 1)) ?: (0 + 2))) + 1) }
 
-result : Int
+result : GeneratedPair
 let result = generated_4804
 
 --! assertNoErrors
---! assertType generated_4804 Int
---! assertType result Int
---! assertDeclKinds signature, let, signature, let
+--! assertType generated_4804 GeneratedPair
+--! assertType result GeneratedPair
+--! assertDeclKinds type, signature, let, signature, let

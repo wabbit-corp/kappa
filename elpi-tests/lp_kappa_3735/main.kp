@@ -3,7 +3,9 @@ module main
 generated_3735 : IO Int
 let generated_3735 =
     do
-        let staged = ((((((0 + ((0 + ((if True then 0 else 0) + 0)) + 0)) + 0) + 0) + 0) + 0) + 0)
+        let staged = ((match [((\(n : Int) -> n) 0), (((\(n : Int) -> n) 0) + 1)]
+          case head :: tail -> head
+          case Nil -> 0) + 0)
         pure (staged + 1)
 
 result : IO Int

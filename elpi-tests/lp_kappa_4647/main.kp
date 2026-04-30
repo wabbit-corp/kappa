@@ -6,7 +6,9 @@ let generated_4647 =
         rankedHelper : (Int -> Int)
         let rankedHelper x = x + 1
 
-        rankedHelper ((((((0 + (((if True then 0 else 0) + 0) + 0)) + 0) + 0) + 0) + 0) + 0)
+        rankedHelper ((match (Some ((Some (0 + 1)) ?: (0 + 2)))
+          case Some payload -> payload
+          case None -> 0) + 0)
 
 result : Int
 let result = generated_4647

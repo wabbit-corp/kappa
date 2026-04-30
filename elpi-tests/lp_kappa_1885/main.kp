@@ -11,7 +11,14 @@ let generated_1885 =
     let
         dict = summon (GeneratedScore Int)
 in
-        dict.score (((((((((if False then 0 else 0) + (0 + 0)) + 0) + 0) + 0) + 0) + 0) + 0) + 0)
+        dict.score (((\(n : Int) -> n) (block
+            generatedMapCount : Map String Int -> Int
+            let generatedMapCount values = 1
+
+            let item = 0
+            let values = { yield "item" : item }
+
+            generatedMapCount values)) + 0)
 
 result : Int
 let result = generated_1885

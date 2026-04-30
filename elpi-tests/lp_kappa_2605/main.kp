@@ -1,7 +1,16 @@
 module main
 
 generated_2605 : Set Int
-let generated_2605 = {| for x in [1, 2, 3], let y = x + 1, if y > 0, yield ((((((((left = 0, right = (((x + 0) + 0) + 0))).right + 0) + 0) + 0) + 0) + 0) + 0) |}
+let generated_2605 = {| yield ((block
+    generatedSetCount : Set Int -> Int
+    let generatedSetCount values = 2
+
+    let item = (match [0, (0 + 1)]
+      case head :: tail -> head
+      case Nil -> 0)
+    let values = {|item, (item + 1)|}
+
+    generatedSetCount values) + 0) |}
 
 result : Set Int
 let result = generated_2605

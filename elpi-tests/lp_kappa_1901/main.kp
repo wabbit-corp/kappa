@@ -4,7 +4,14 @@ generatedEcho : forall (a : Type). (this x : a) -> a
 let generatedEcho @a (this x : a) = x
 
 generated_1901 : Int
-let generated_1901 = ((.generatedEcho) (((((((((if False then 0 else 0) + (0 + 0)) + 0) + 0) + 0) + 0) + 0) + 0) + 0))
+let generated_1901 = ((.generatedEcho) (((\(n : Int) -> n) (block
+    generatedMapCount : Map String Int -> Int
+    let generatedMapCount values = 1
+
+    let item = 0
+    let values = { yield "item" : item }
+
+    generatedMapCount values)) + 0))
 
 result : Int
 let result = generated_1901

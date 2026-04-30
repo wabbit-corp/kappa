@@ -3,10 +3,10 @@ module main
 generated_435 : Int
 let generated_435 =
     block
-        let pair = (x = (((((((((((left = (0 + 0), right = 0)).left + 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0), y = (((((((((((left = (0 + 0), right = 0)).left + 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0) + 1))
-        let (x = captured, y = other) = pair
+        rankedHelper : (Int -> Int)
+        let rankedHelper x = x + 1
 
-        (captured + other)
+        rankedHelper (((\(n : Int) -> n) 0) + 0)
 
 result : Int
 let result = generated_435

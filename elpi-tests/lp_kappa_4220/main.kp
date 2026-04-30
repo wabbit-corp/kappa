@@ -1,7 +1,24 @@
 module main
 
 generated_4220 : Int
-let generated_4220 = (((((0 + ((if True then ((left = 0, right = (0 + 0))).right else 0) + 0)) + 0) + 0) + 0) + 0)
+let generated_4220 =
+    block
+        let base : (x : Int) = (x = ((match [(match (0 == 0)
+          case True -> 0
+          case False -> 0), ((match (0 == 0)
+          case True -> 0
+          case False -> 0) + 1)]
+          case head :: tail -> head
+          case Nil -> 0) + 0))
+        let extended = base.{ y := ((match [(match (0 == 0)
+          case True -> 0
+          case False -> 0), ((match (0 == 0)
+          case True -> 0
+          case False -> 0) + 1)]
+          case head :: tail -> head
+          case Nil -> 0) + 1) }
+
+        (extended.x + extended.y)
 
 result : Int
 let result = generated_4220

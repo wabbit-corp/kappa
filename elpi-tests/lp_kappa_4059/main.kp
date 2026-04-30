@@ -1,12 +1,24 @@
 module main
 
-generated_4059 : List Int
-let generated_4059 = [ for x in [1, 2, 3], if x > 0, yield (((((0 + ((if True then (if True then x else 0) else 0) + 0)) + 0) + 0) + 0) + 0) ]
+generated_4059 : IO Int
+let generated_4059 =
+    do
+        let staged = ((block
+            generatedSetCount : Set Int -> Int
+            let generatedSetCount values = 2
 
-result : List Int
+            let item = (match (0 == 0)
+              case True -> 0
+              case False -> 0)
+            let values = {|item, (item + 1)|}
+
+            generatedSetCount values) + 0)
+        pure (staged + 1)
+
+result : IO Int
 let result = generated_4059
 
 --! assertNoErrors
---! assertType generated_4059 List Int
---! assertType result List Int
+--! assertType generated_4059 IO Int
+--! assertType result IO Int
 --! assertDeclKinds signature, let, signature, let

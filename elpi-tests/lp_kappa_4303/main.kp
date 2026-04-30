@@ -1,10 +1,38 @@
 module main
 
-generatedResize : (image : Int) -> (width : Int) -> (height : Int) -> Int
-let generatedResize image width height = image + width * 10 + height
-
 generated_4303 : Int
-let generated_4303 = generatedResize { image = ((((((0 + ((if False then 0 else 0) + 0)) + 0) + 0) + 0) + 0) + 0), height = 3, width = 2 }
+let generated_4303 =
+    block
+        scoped effect Choice =
+            ω choose : Unit -> Bool
+
+        let c = Choice
+
+        let seed = (block
+            let pair = (x = (match (0 == 0)
+              case True -> 0
+              case False -> 0), y = ((match (0 == 0)
+              case True -> 0
+              case False -> 0) + 1))
+            let (x = captured, y = other) = pair
+
+            (captured + other))
+
+        let comp : Eff <[Choice : Choice]> Int =
+            do
+                let b <- c.choose ()
+                if b then seed else (seed + 1)
+
+        let handled : Eff <[ ]> Int =
+            deep handle Choice comp with
+                case return x -> pure x
+                case choose () k ->
+                    do
+                        let a <- k True
+                        let b <- k False
+                        pure (a + b)
+
+        runPure handled
 
 result : Int
 let result = generated_4303
@@ -12,4 +40,4 @@ let result = generated_4303
 --! assertNoErrors
 --! assertType generated_4303 Int
 --! assertType result Int
---! assertDeclKinds signature, let, signature, let, signature, let
+--! assertDeclKinds signature, let, signature, let

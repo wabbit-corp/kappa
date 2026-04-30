@@ -1,15 +1,23 @@
 module main
 
-generated_2258 : IO Int
+generated_2258 : Int
 let generated_2258 =
-    do
-        value <- pure (((((((((left = (((0 + 0) + 0) + 0), right = 0)).left + 0) + 0) + 0) + 0) + 0) + 0) + 0)
-        pure (value + 2)
+    block
+        ranked : Int
+        let ranked = (match [(match (Some 0)
+          case Some payload -> payload
+          case None -> 0), ((match (Some 0)
+          case Some payload -> payload
+          case None -> 0) + 1)]
+          case head :: tail -> head
+          case Nil -> 0)
 
-result : IO Int
+        (ranked + 0)
+
+result : Int
 let result = generated_2258
 
 --! assertNoErrors
---! assertType generated_2258 IO Int
---! assertType result IO Int
+--! assertType generated_2258 Int
+--! assertType result Int
 --! assertDeclKinds signature, let, signature, let

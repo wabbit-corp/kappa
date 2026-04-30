@@ -1,15 +1,32 @@
 module main
 
-generated_1204 : IO Int
+generated_1204 : Int
 let generated_1204 =
-    do
-        value <- pure ((((((((if False then 0 else 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0)
-        pure (value + 2)
+    block
+        type RankedAlias = Int
 
-result : IO Int
+        let aliased : RankedAlias = ((block
+            generatedMapCount : Map String Int -> Int
+            let generatedMapCount values = 1
+
+            let item = (block
+                generatedSetCount : Set Int -> Int
+                let generatedSetCount values = 2
+
+                let item = 0
+                let values = {|item, (item + 1)|}
+
+                generatedSetCount values)
+            let values = { yield "item" : item }
+
+            generatedMapCount values) + 0)
+
+        (aliased + 1)
+
+result : Int
 let result = generated_1204
 
 --! assertNoErrors
---! assertType generated_1204 IO Int
---! assertType result IO Int
+--! assertType generated_1204 Int
+--! assertType result Int
 --! assertDeclKinds signature, let, signature, let

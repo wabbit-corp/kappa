@@ -1,14 +1,19 @@
 module main
 
-data GeneratedChoice : Type =
-    GeneratedLeft (value : Int)
-    GeneratedRight
+generatedEcho : forall (a : Type). (this x : a) -> a
+let generatedEcho @a (this x : a) = x
 
 generated_4115 : Int
-let generated_4115 =
-    match GeneratedRight
-      case GeneratedLeft payload -> (payload + 0)
-      case GeneratedRight -> ((((((0 + ((if True then (if False then 0 else 0) else 0) + 0)) + 0) + 0) + 0) + 0) + 0)
+let generated_4115 = ((.generatedEcho) ((block
+    generatedMapCount : Map String Int -> Int
+    let generatedMapCount values = 1
+
+    let item = (match (0 == 0)
+      case True -> 0
+      case False -> 0)
+    let values = { yield "item" : item }
+
+    generatedMapCount values) + 0))
 
 result : Int
 let result = generated_4115
@@ -16,4 +21,4 @@ let result = generated_4115
 --! assertNoErrors
 --! assertType generated_4115 Int
 --! assertType result Int
---! assertDeclKinds data, signature, let, signature, let
+--! assertDeclKinds signature, let, signature, let, signature, let

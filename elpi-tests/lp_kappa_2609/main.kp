@@ -1,12 +1,29 @@
 module main
 
-generated_2609 : String
-let generated_2609 = (if (if (if (if ((if (if True then True else False) then (0 + 1) else 1) == 1) then True else False) then True else False) then True else False) then #"raw lambda-prolog"# else "fallback")
+generated_2609 : Int
+let generated_2609 =
+    block
+        data RankedBox : Type =
+            RankedBox (value : Int)
 
-result : String
+        let boxed = RankedBox ((block
+            generatedSetCount : Set Int -> Int
+            let generatedSetCount values = 2
+
+            let item = (match [0, (0 + 1)]
+              case head :: tail -> head
+              case Nil -> 0)
+            let values = {|item, (item + 1)|}
+
+            generatedSetCount values) + 0)
+
+        match boxed
+          case RankedBox value -> (value + 1)
+
+result : Int
 let result = generated_2609
 
 --! assertNoErrors
---! assertType generated_2609 String
---! assertType result String
+--! assertType generated_2609 Int
+--! assertType result Int
 --! assertDeclKinds signature, let, signature, let

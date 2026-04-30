@@ -1,12 +1,18 @@
 module main
 
-generated_442 : Map String Int
-let generated_442 = { yield "only" : (((((((((((left = (0 + 0), right = 0)).left + 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0) }
+generatedNeed : (@x : Int) -> Int
+let generatedNeed (@x : Int) = x
 
-result : Map String Int
+generated_442 : IO Int
+let generated_442 =
+    do
+        let (@x : Int) = (((\(n : Int) -> n) 0) + 0)
+        pure generatedNeed
+
+result : IO Int
 let result = generated_442
 
 --! assertNoErrors
---! assertType generated_442 Map String Int
---! assertType result Map String Int
---! assertDeclKinds signature, let, signature, let
+--! assertType generated_442 IO Int
+--! assertType result IO Int
+--! assertDeclKinds signature, let, signature, let, signature, let

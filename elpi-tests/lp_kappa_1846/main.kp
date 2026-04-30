@@ -1,17 +1,36 @@
 module main
 
-generated_1846 : Int
+generatedNeed : (@x : Int) -> Int
+let generatedNeed (@x : Int) = x
+
+generated_1846 : IO Int
 let generated_1846 =
-    block
-        ranked : Int
-        let ranked = ((((((((if True then ((Some (0 + 0)) ?: 0) else 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0)
+    do
+        let (@x : Int) = ((block
+            let pair = (x = (block
+                generatedMapCount : Map String Int -> Int
+                let generatedMapCount values = 1
 
-        (ranked + 0)
+                let item = 0
+                let values = { yield "item" : item }
 
-result : Int
+                generatedMapCount values), y = ((block
+                generatedMapCount : Map String Int -> Int
+                let generatedMapCount values = 1
+
+                let item = 0
+                let values = { yield "item" : item }
+
+                generatedMapCount values) + 1))
+            let (x = captured, y = other) = pair
+
+            (captured + other)) + 0)
+        pure generatedNeed
+
+result : IO Int
 let result = generated_1846
 
 --! assertNoErrors
---! assertType generated_1846 Int
---! assertType result Int
---! assertDeclKinds signature, let, signature, let
+--! assertType generated_1846 IO Int
+--! assertType result IO Int
+--! assertDeclKinds signature, let, signature, let, signature, let

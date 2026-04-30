@@ -1,17 +1,26 @@
 module main
 
-generated_1217 : Int
-let generated_1217 =
-    block
-        let pair = (x = ((((((((if False then 0 else 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0), y = ((((((((if False then 0 else 0) + 0) + 0) + 0) + 0) + 0) + 0) + 1))
-        let (x = captured, y = other) = pair
+generated_1217 : List Int
+let generated_1217 = [ for x in [1, 2, 3], order by x desc, yield (block
+    generatedMapCount : Map String Int -> Int
+    let generatedMapCount values = 1
 
-        (captured + other)
+    let item = (block
+        generatedSetCount : Set Int -> Int
+        let generatedSetCount values = 2
 
-result : Int
+        let item = x
+        let values = {|item, (item + 1)|}
+
+        generatedSetCount values)
+    let values = { yield "item" : item }
+
+    generatedMapCount values) ]
+
+result : List Int
 let result = generated_1217
 
 --! assertNoErrors
---! assertType generated_1217 Int
---! assertType result Int
+--! assertType generated_1217 List Int
+--! assertType result List Int
 --! assertDeclKinds signature, let, signature, let

@@ -1,12 +1,33 @@
 module main
 
-generated_213 : (Int -> Int)
-let generated_213 = \(x : Int) -> ((\(x : Int) -> ((\(x : Int) -> ((\(x : Int) -> ((\(x : Int) -> ((\(x : Int) -> x) x)) x)) x)) x)) x)
+data GeneratedChoice : Type =
+    GeneratedLeft (value : Int)
+    GeneratedRight
 
-result : (Int -> Int)
+generated_213 : Int
+let generated_213 =
+    match (GeneratedLeft ((block
+        generatedMapCount : Map String Int -> Int
+        let generatedMapCount values = 1
+
+        let item = 0
+        let values = { yield "item" : item }
+
+        generatedMapCount values) + 0))
+      case GeneratedLeft payload -> (payload + 0)
+      case GeneratedRight -> ((block
+          generatedMapCount : Map String Int -> Int
+          let generatedMapCount values = 1
+
+          let item = 0
+          let values = { yield "item" : item }
+
+          generatedMapCount values) + 0)
+
+result : Int
 let result = generated_213
 
 --! assertNoErrors
---! assertType generated_213 (Int -> Int)
---! assertType result (Int -> Int)
---! assertDeclKinds signature, let, signature, let
+--! assertType generated_213 Int
+--! assertType result Int
+--! assertDeclKinds data, signature, let, signature, let

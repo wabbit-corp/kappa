@@ -2,11 +2,25 @@ module main
 
 generated_1319 : Int
 let generated_1319 =
-    block
-        let pair = (x = ((((((((if False then 0 else (if True then 0 else 0)) + 0) + 0) + 0) + 0) + 0) + 0) + 0), y = ((((((((if False then 0 else (if True then 0 else 0)) + 0) + 0) + 0) + 0) + 0) + 0) + 1))
-        let (x = captured, y = other) = pair
+    match (Some ((match [(block
+        generatedSetCount : Set Int -> Int
+        let generatedSetCount values = 2
 
-        (captured + other)
+        let item = 0
+        let values = {|item, (item + 1)|}
+
+        generatedSetCount values), ((block
+        generatedSetCount : Set Int -> Int
+        let generatedSetCount values = 2
+
+        let item = 0
+        let values = {|item, (item + 1)|}
+
+        generatedSetCount values) + 1)]
+      case head :: tail -> head
+      case Nil -> 0) + 0))
+      case Some payload -> payload
+      case None -> 0
 
 result : Int
 let result = generated_1319

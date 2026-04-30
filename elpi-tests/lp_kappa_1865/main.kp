@@ -1,15 +1,30 @@
 module main
 
-generated_1865 : IO Int
-let generated_1865 =
-    do
-        let staged = (((((((((if True then ((Some (0 + 0)) ?: 0) else 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0)
-        pure (staged + 1)
+generated_1865 : List Int
+let generated_1865 = [ for x in [1, 2, 3], order by x desc, yield (block
+    let pair = (x = (block
+        generatedMapCount : Map String Int -> Int
+        let generatedMapCount values = 1
 
-result : IO Int
+        let item = x
+        let values = { yield "item" : item }
+
+        generatedMapCount values), y = ((block
+        generatedMapCount : Map String Int -> Int
+        let generatedMapCount values = 1
+
+        let item = x
+        let values = { yield "item" : item }
+
+        generatedMapCount values) + 1))
+    let (x = captured, y = other) = pair
+
+    (captured + other)) ]
+
+result : List Int
 let result = generated_1865
 
 --! assertNoErrors
---! assertType generated_1865 IO Int
---! assertType result IO Int
+--! assertType generated_1865 List Int
+--! assertType result List Int
 --! assertDeclKinds signature, let, signature, let

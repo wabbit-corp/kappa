@@ -2,12 +2,9 @@ module main
 
 generated_546 : Int
 let generated_546 =
-    block
-        type RankedAlias = Int
-
-        let aliased : RankedAlias = ((((((((0 + (0 + 0)) + 0) + 0) + 0) + 0) + 0) + 0) + 0)
-
-        (aliased + 1)
+    match ((((Some (0 + 1)) ?: (0 + 2)) + 0) == (((Some (0 + 1)) ?: (0 + 2)) + 0))
+      case True -> (((Some (0 + 1)) ?: (0 + 2)) + 0)
+      case False -> 0
 
 result : Int
 let result = generated_546

@@ -1,12 +1,57 @@
 module main
 
-generated_1518 : Map String Int
-let generated_1518 = { for x in [1, 2, 3], let y = x + 1, if y > 0, yield (if y > 1 then "hi" else "lo") : (((((((if False then 0 else ((Some (x + 0)) ?: 0)) + 0) + 0) + 0) + 0) + 0) + 0) }
+generated_1518 : Int
+let generated_1518 =
+    match ((((Some ((block
+        generatedSetCount : Set Int -> Int
+        let generatedSetCount values = 2
 
-result : Map String Int
+        let item = 0
+        let values = {|item, (item + 1)|}
+
+        generatedSetCount values) + 1)) ?: ((block
+        generatedSetCount : Set Int -> Int
+        let generatedSetCount values = 2
+
+        let item = 0
+        let values = {|item, (item + 1)|}
+
+        generatedSetCount values) + 2)) + 0) == (((Some ((block
+        generatedSetCount : Set Int -> Int
+        let generatedSetCount values = 2
+
+        let item = 0
+        let values = {|item, (item + 1)|}
+
+        generatedSetCount values) + 1)) ?: ((block
+        generatedSetCount : Set Int -> Int
+        let generatedSetCount values = 2
+
+        let item = 0
+        let values = {|item, (item + 1)|}
+
+        generatedSetCount values) + 2)) + 0))
+      case True -> (((Some ((block
+          generatedSetCount : Set Int -> Int
+          let generatedSetCount values = 2
+
+          let item = 0
+          let values = {|item, (item + 1)|}
+
+          generatedSetCount values) + 1)) ?: ((block
+          generatedSetCount : Set Int -> Int
+          let generatedSetCount values = 2
+
+          let item = 0
+          let values = {|item, (item + 1)|}
+
+          generatedSetCount values) + 2)) + 0)
+      case False -> 0
+
+result : Int
 let result = generated_1518
 
 --! assertNoErrors
---! assertType generated_1518 Map String Int
---! assertType result Map String Int
+--! assertType generated_1518 Int
+--! assertType result Int
 --! assertDeclKinds signature, let, signature, let

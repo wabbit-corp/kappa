@@ -3,13 +3,37 @@ module main
 generated_955 : Int
 let generated_955 =
     block
-        data RankedBox : Type =
-            RankedBox (value : Int)
+        scoped effect Choice =
+            ω choose : Unit -> Bool
 
-        let boxed = RankedBox ((((((((if True then (0 + (0 + 0)) else 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0)
+        let c = Choice
 
-        match boxed
-          case RankedBox value -> (value + 1)
+        let seed = ((\(n : Int) -> n) (block
+            generatedListLength : List Int -> Int
+            let generatedListLength xs decreases structural xs =
+                match xs
+                  case Nil -> 0
+                  case _ :: tail -> 1 + generatedListLength tail
+
+            let item = 0
+
+            generatedListLength [item, (item + 1), 0]))
+
+        let comp : Eff <[Choice : Choice]> Int =
+            do
+                let b <- c.choose ()
+                if b then seed else (seed + 1)
+
+        let handled : Eff <[ ]> Int =
+            deep handle Choice comp with
+                case return x -> pure x
+                case choose () k ->
+                    do
+                        let a <- k True
+                        let b <- k False
+                        pure (a + b)
+
+        runPure handled
 
 result : Int
 let result = generated_955

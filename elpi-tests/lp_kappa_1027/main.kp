@@ -1,14 +1,30 @@
 module main
 
-type GeneratedTuple = (Int, Int)
+generated_1027 : Set Int
+let generated_1027 = {| for x in [1, 2, 3], if x > 0, yield ((Some ((block
+    generatedListLength : List Int -> Int
+    let generatedListLength xs decreases structural xs =
+        match xs
+          case Nil -> 0
+          case _ :: tail -> 1 + generatedListLength tail
 
-generated_1027 : GeneratedTuple
-let generated_1027 = (if True then (if True then (if True then (if (0 == 0) then (if True then (if True then (0, (0 + 0)) else (0, (0 + 0))) else ((1 + 1), 1)) else ((1 + 1), 1)) else (0, (0 + 0))) else (0, (0 + 0))) else (0, (0 + 0)))
+    let item = x
 
-result : GeneratedTuple
+    generatedListLength [item, (item + 1), 0]) + 1)) ?: ((block
+    generatedListLength : List Int -> Int
+    let generatedListLength xs decreases structural xs =
+        match xs
+          case Nil -> 0
+          case _ :: tail -> 1 + generatedListLength tail
+
+    let item = x
+
+    generatedListLength [item, (item + 1), 0]) + 2)) |}
+
+result : Set Int
 let result = generated_1027
 
 --! assertNoErrors
---! assertType generated_1027 GeneratedTuple
---! assertType result GeneratedTuple
---! assertDeclKinds type, signature, let, signature, let
+--! assertType generated_1027 Set Int
+--! assertType result Set Int
+--! assertDeclKinds signature, let, signature, let

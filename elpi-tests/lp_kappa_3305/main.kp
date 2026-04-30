@@ -1,14 +1,27 @@
 module main
 
-type GeneratedTuple = (Int, Int)
+generatedEcho : forall (a : Type). (this x : a) -> a
+let generatedEcho @a (this x : a) = x
 
-generated_3305 : GeneratedTuple
-let generated_3305 = (if True then (if True then (if False then (0, (0 + 0)) else (if True then (if True then (0, (0 + 0)) else (0, (0 + 0))) else (0, (0 + 0)))) else (0, (0 + 0))) else (0, (0 + 0)))
+generated_3305 : Int
+let generated_3305 = ((.generatedEcho) ((block
+    let pair = (x = (block
+        let pair = (x = 0, y = (0 + 1))
+        let (x = captured, y = other) = pair
 
-result : GeneratedTuple
+        (captured + other)), y = ((block
+        let pair = (x = 0, y = (0 + 1))
+        let (x = captured, y = other) = pair
+
+        (captured + other)) + 1))
+    let (x = captured, y = other) = pair
+
+    (captured + other)) + 0))
+
+result : Int
 let result = generated_3305
 
 --! assertNoErrors
---! assertType generated_3305 GeneratedTuple
---! assertType result GeneratedTuple
---! assertDeclKinds type, signature, let, signature, let
+--! assertType generated_3305 Int
+--! assertType result Int
+--! assertDeclKinds signature, let, signature, let, signature, let

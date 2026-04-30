@@ -3,10 +3,18 @@ module main
 generated_3580 : Int
 let generated_3580 =
     block
-        ranked : Int
-        let ranked = (((((0 + (((((Some (0 + 0)) ?: 0) + 0) + 0) + 0)) + 0) + 0) + 0) + 0)
+        type RankedAlias = Int
 
-        (ranked + 0)
+        let aliased : RankedAlias = ((block
+            generatedSetCount : Set Int -> Int
+            let generatedSetCount values = 2
+
+            let item = ((\(n : Int) -> n) 0)
+            let values = {|item, (item + 1)|}
+
+            generatedSetCount values) + 0)
+
+        (aliased + 1)
 
 result : Int
 let result = generated_3580

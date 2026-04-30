@@ -2,11 +2,42 @@ module main
 
 generated_2544 : Int
 let generated_2544 =
-    block
-        let base : (x : Int) = (x = (((((((((left = (((Some (0 + 0)) ?: 0) + 0), right = 0)).left + 0) + 0) + 0) + 0) + 0) + 0) + 0))
-        let extended = base.{ y := (((((((((left = (((Some (0 + 0)) ?: 0) + 0), right = 0)).left + 0) + 0) + 0) + 0) + 0) + 0) + 1) }
+    match (((block
+        generatedListLength : List Int -> Int
+        let generatedListLength xs decreases structural xs =
+            match xs
+              case Nil -> 0
+              case _ :: tail -> 1 + generatedListLength tail
 
-        (extended.x + extended.y)
+        let item = (match [0, (0 + 1)]
+          case head :: tail -> head
+          case Nil -> 0)
+
+        generatedListLength [item, (item + 1), 0]) + 0) == ((block
+        generatedListLength : List Int -> Int
+        let generatedListLength xs decreases structural xs =
+            match xs
+              case Nil -> 0
+              case _ :: tail -> 1 + generatedListLength tail
+
+        let item = (match [0, (0 + 1)]
+          case head :: tail -> head
+          case Nil -> 0)
+
+        generatedListLength [item, (item + 1), 0]) + 0))
+      case True -> ((block
+          generatedListLength : List Int -> Int
+          let generatedListLength xs decreases structural xs =
+              match xs
+                case Nil -> 0
+                case _ :: tail -> 1 + generatedListLength tail
+
+          let item = (match [0, (0 + 1)]
+            case head :: tail -> head
+            case Nil -> 0)
+
+          generatedListLength [item, (item + 1), 0]) + 0)
+      case False -> 0
 
 result : Int
 let result = generated_2544

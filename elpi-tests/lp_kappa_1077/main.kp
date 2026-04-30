@@ -1,12 +1,46 @@
 module main
 
+data GeneratedChoice : Type =
+    GeneratedLeft (value : Int)
+    GeneratedRight
+
 generated_1077 : Int
 let generated_1077 =
-    block
-        rankedHelper : (Int -> Int)
-        let rankedHelper x = x + 1
+    match (GeneratedLeft ((block
+        generatedListLength : List Int -> Int
+        let generatedListLength xs decreases structural xs =
+            match xs
+              case Nil -> 0
+              case _ :: tail -> 1 + generatedListLength tail
 
-        rankedHelper ((((((((if True then ((if False then 0 else 0) + (0 + 0)) else 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0)
+        let item = (block
+            generatedSetCount : Set Int -> Int
+            let generatedSetCount values = 2
+
+            let item = 0
+            let values = {|item, (item + 1)|}
+
+            generatedSetCount values)
+
+        generatedListLength [item, (item + 1), 0]) + 0))
+      case GeneratedLeft payload -> (payload + 0)
+      case GeneratedRight -> ((block
+          generatedListLength : List Int -> Int
+          let generatedListLength xs decreases structural xs =
+              match xs
+                case Nil -> 0
+                case _ :: tail -> 1 + generatedListLength tail
+
+          let item = (block
+              generatedSetCount : Set Int -> Int
+              let generatedSetCount values = 2
+
+              let item = 0
+              let values = {|item, (item + 1)|}
+
+              generatedSetCount values)
+
+          generatedListLength [item, (item + 1), 0]) + 0)
 
 result : Int
 let result = generated_1077
@@ -14,4 +48,4 @@ let result = generated_1077
 --! assertNoErrors
 --! assertType generated_1077 Int
 --! assertType result Int
---! assertDeclKinds signature, let, signature, let
+--! assertDeclKinds data, signature, let, signature, let

@@ -3,10 +3,20 @@ module main
 generated_776 : Int
 let generated_776 =
     block
-        let base : (x : Int) = (x = ((((((((0 + (((left = (0 + 0), right = 0)).left + 0)) + 0) + 0) + 0) + 0) + 0) + 0) + 0))
-        let extended = base.{ y := ((((((((0 + (((left = (0 + 0), right = 0)).left + 0)) + 0) + 0) + 0) + 0) + 0) + 0) + 1) }
+        let (captured : Int) = ((match (Some (block
+            generatedListLength : List Int -> Int
+            let generatedListLength xs decreases structural xs =
+                match xs
+                  case Nil -> 0
+                  case _ :: tail -> 1 + generatedListLength tail
 
-        (extended.x + extended.y)
+            let item = 0
+
+            generatedListLength [item, (item + 1), 0]))
+          case Some payload -> payload
+          case None -> 0) + 0)
+
+        captured
 
 result : Int
 let result = generated_776

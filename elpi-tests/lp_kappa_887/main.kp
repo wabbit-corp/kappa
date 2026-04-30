@@ -2,14 +2,31 @@ module main
 
 generated_887 : Int
 let generated_887 =
-    block
-        data RankedBox : Type =
-            RankedBox (value : Int)
+    match (Some ((block
+        let pair = (x = (block
+            generatedListLength : List Int -> Int
+            let generatedListLength xs decreases structural xs =
+                match xs
+                  case Nil -> 0
+                  case _ :: tail -> 1 + generatedListLength tail
 
-        let boxed = RankedBox ((((((((if True then 0 else 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0)
+            let item = 0
 
-        match boxed
-          case RankedBox value -> (value + 1)
+            generatedListLength [item, (item + 1), 0]), y = ((block
+            generatedListLength : List Int -> Int
+            let generatedListLength xs decreases structural xs =
+                match xs
+                  case Nil -> 0
+                  case _ :: tail -> 1 + generatedListLength tail
+
+            let item = 0
+
+            generatedListLength [item, (item + 1), 0]) + 1))
+        let (x = captured, y = other) = pair
+
+        (captured + other)) + 0))
+      case Some payload -> payload
+      case None -> 0
 
 result : Int
 let result = generated_887

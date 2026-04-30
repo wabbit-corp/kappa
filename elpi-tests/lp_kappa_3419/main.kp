@@ -1,10 +1,29 @@
 module main
 
-generatedResize : (image : Int) -> (width : Int) -> (height : Int) -> Int
-let generatedResize image width height = image + width * 10 + height
-
 generated_3419 : Int
-let generated_3419 = generatedResize { image = ((((((0 + ((((if False then 0 else 0) + 0) + 0) + 0)) + 0) + 0) + 0) + 0) + 0), height = 3, width = 2 }
+let generated_3419 =
+    block
+        data RankedBox : Type =
+            RankedBox (value : Int)
+
+        let boxed = RankedBox ((match ((block
+            let pair = (x = 0, y = (0 + 1))
+            let (x = captured, y = other) = pair
+
+            (captured + other)) == (block
+            let pair = (x = 0, y = (0 + 1))
+            let (x = captured, y = other) = pair
+
+            (captured + other)))
+          case True -> (block
+              let pair = (x = 0, y = (0 + 1))
+              let (x = captured, y = other) = pair
+
+              (captured + other))
+          case False -> 0) + 0)
+
+        match boxed
+          case RankedBox value -> (value + 1)
 
 result : Int
 let result = generated_3419
@@ -12,4 +31,4 @@ let result = generated_3419
 --! assertNoErrors
 --! assertType generated_3419 Int
 --! assertType result Int
---! assertDeclKinds signature, let, signature, let, signature, let
+--! assertDeclKinds signature, let, signature, let

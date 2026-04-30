@@ -1,15 +1,39 @@
 module main
 
-generated_2545 : IO Int
+generated_2545 : Int
 let generated_2545 =
-    do
-        let staged = (((((((((left = (((Some (0 + 0)) ?: 0) + 0), right = 0)).left + 0) + 0) + 0) + 0) + 0) + 0) + 0)
-        pure (staged + 1)
+    block
+        let pair = (x = ((block
+            generatedListLength : List Int -> Int
+            let generatedListLength xs decreases structural xs =
+                match xs
+                  case Nil -> 0
+                  case _ :: tail -> 1 + generatedListLength tail
 
-result : IO Int
+            let item = (match [0, (0 + 1)]
+              case head :: tail -> head
+              case Nil -> 0)
+
+            generatedListLength [item, (item + 1), 0]) + 0), y = ((block
+            generatedListLength : List Int -> Int
+            let generatedListLength xs decreases structural xs =
+                match xs
+                  case Nil -> 0
+                  case _ :: tail -> 1 + generatedListLength tail
+
+            let item = (match [0, (0 + 1)]
+              case head :: tail -> head
+              case Nil -> 0)
+
+            generatedListLength [item, (item + 1), 0]) + 1))
+        let (x = captured, y = other) = pair
+
+        (captured + other)
+
+result : Int
 let result = generated_2545
 
 --! assertNoErrors
---! assertType generated_2545 IO Int
---! assertType result IO Int
+--! assertType generated_2545 Int
+--! assertType result Int
 --! assertDeclKinds signature, let, signature, let

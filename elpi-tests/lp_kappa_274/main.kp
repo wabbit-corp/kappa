@@ -3,11 +3,17 @@ module main
 generated_274 : Int
 let generated_274 =
     block
-        type RankedAlias = Int
+        trait RankedScore a =
+            rank : a -> Int
 
-        let aliased : RankedAlias = ((((((((((0 + (0 + 0)) + 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0)
+        instance RankedScore Int =
+            let rank x = x
 
-        (aliased + 1)
+        let dict = summon (RankedScore Int)
+
+        dict.rank ((match (Some 0)
+          case Some payload -> payload
+          case None -> 0) + 0)
 
 result : Int
 let result = generated_274

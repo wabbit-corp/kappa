@@ -1,12 +1,45 @@
 module main
 
-generated_1155 : Set Int
-let generated_1155 = {| yield ((((((((if True then ((left = 0, right = (0 + 0))).right else 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0) |}
+generated_1155 : Int
+let generated_1155 =
+    block
+        let pair = (x = ((block
+            generatedSetCount : Set Int -> Int
+            let generatedSetCount values = 2
 
-result : Set Int
+            let item = (block
+                generatedSetCount : Set Int -> Int
+                let generatedSetCount values = 2
+
+                let item = 0
+                let values = {|item, (item + 1)|}
+
+                generatedSetCount values)
+            let values = {|item, (item + 1)|}
+
+            generatedSetCount values) + 0), y = ((block
+            generatedSetCount : Set Int -> Int
+            let generatedSetCount values = 2
+
+            let item = (block
+                generatedSetCount : Set Int -> Int
+                let generatedSetCount values = 2
+
+                let item = 0
+                let values = {|item, (item + 1)|}
+
+                generatedSetCount values)
+            let values = {|item, (item + 1)|}
+
+            generatedSetCount values) + 1))
+        let whole@(x = captured, y = other) = pair
+
+        (whole.x + (captured + other))
+
+result : Int
 let result = generated_1155
 
 --! assertNoErrors
---! assertType generated_1155 Set Int
---! assertType result Set Int
+--! assertType generated_1155 Int
+--! assertType result Int
 --! assertDeclKinds signature, let, signature, let

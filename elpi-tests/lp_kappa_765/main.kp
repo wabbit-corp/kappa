@@ -1,19 +1,26 @@
 module main
 
-data GeneratedChoice : Type =
-    GeneratedLeft (value : Int)
-    GeneratedRight
-
-generated_765 : Int
+generated_765 : IO Int
 let generated_765 =
-    match (GeneratedLeft ((((((((0 + (((left = (0 + 0), right = 0)).left + 0)) + 0) + 0) + 0) + 0) + 0) + 0) + 0))
-      case GeneratedLeft payload -> (payload + 0)
-      case GeneratedRight -> ((((((((0 + (((left = (0 + 0), right = 0)).left + 0)) + 0) + 0) + 0) + 0) + 0) + 0) + 0)
+    do
+        let staged = ((match (Some (block
+            generatedListLength : List Int -> Int
+            let generatedListLength xs decreases structural xs =
+                match xs
+                  case Nil -> 0
+                  case _ :: tail -> 1 + generatedListLength tail
 
-result : Int
+            let item = 0
+
+            generatedListLength [item, (item + 1), 0]))
+          case Some payload -> payload
+          case None -> 0) + 0)
+        pure (staged + 1)
+
+result : IO Int
 let result = generated_765
 
 --! assertNoErrors
---! assertType generated_765 Int
---! assertType result Int
---! assertDeclKinds data, signature, let, signature, let
+--! assertType generated_765 IO Int
+--! assertType result IO Int
+--! assertDeclKinds signature, let, signature, let

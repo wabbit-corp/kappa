@@ -1,12 +1,46 @@
 module main
 
+type GeneratedTuple = (Int, Int)
+
 generated_724 : Int
 let generated_724 =
     block
-        ranked : Int
-        let ranked = (((((((0 + (((if False then 0 else 0) + (0 + 0)) + 0)) + 0) + 0) + 0) + 0) + 0) + 0)
+        let pair : GeneratedTuple = (((block
+            generatedMapCount : Map String Int -> Int
+            let generatedMapCount values = 1
 
-        (ranked + 0)
+            let item = (block
+                generatedListLength : List Int -> Int
+                let generatedListLength xs decreases structural xs =
+                    match xs
+                      case Nil -> 0
+                      case _ :: tail -> 1 + generatedListLength tail
+
+                let item = 0
+
+                generatedListLength [item, (item + 1), 0])
+            let values = { yield "item" : item }
+
+            generatedMapCount values) + 0), ((block
+            generatedMapCount : Map String Int -> Int
+            let generatedMapCount values = 1
+
+            let item = (block
+                generatedListLength : List Int -> Int
+                let generatedListLength xs decreases structural xs =
+                    match xs
+                      case Nil -> 0
+                      case _ :: tail -> 1 + generatedListLength tail
+
+                let item = 0
+
+                generatedListLength [item, (item + 1), 0])
+            let values = { yield "item" : item }
+
+            generatedMapCount values) + 1))
+        let (left, right) = pair
+
+        (left + right)
 
 result : Int
 let result = generated_724
@@ -14,4 +48,4 @@ let result = generated_724
 --! assertNoErrors
 --! assertType generated_724 Int
 --! assertType result Int
---! assertDeclKinds signature, let, signature, let
+--! assertDeclKinds type, signature, let, signature, let

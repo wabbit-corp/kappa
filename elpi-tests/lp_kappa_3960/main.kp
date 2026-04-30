@@ -1,10 +1,10 @@
 module main
 
-generatedEcho : forall (a : Type). (this x : a) -> a
-let generatedEcho @a (this x : a) = x
+generatedNeed : (@x : Int) -> Int
+let generatedNeed (@x : Int) = x
 
 generated_3960 : Int
-let generated_3960 = ((((((0 + ((if True then 0 else 0) + 0)) + 0) + 0) + 0) + 0) + 0).generatedEcho
+let generated_3960 = generatedNeed @((((Some (((\(n : Int) -> n) 0) + 1)) ?: (((\(n : Int) -> n) 0) + 2)) + 0))
 
 result : Int
 let result = generated_3960

@@ -1,14 +1,42 @@
 module main
 
-data GeneratedChoice : Type =
-    GeneratedLeft (value : Int)
-    GeneratedRight
-
 generated_2193 : Int
 let generated_2193 =
-    match (GeneratedLeft (((((((((if False then 0 else ((Some (0 + 0)) ?: 0)) + (0 + 0)) + 0) + 0) + 0) + 0) + 0) + 0) + 0))
-      case GeneratedLeft payload -> (payload + 0)
-      case GeneratedRight -> (((((((((if False then 0 else ((Some (0 + 0)) ?: 0)) + (0 + 0)) + 0) + 0) + 0) + 0) + 0) + 0) + 0)
+    block
+        scoped effect Ask =
+            ask : Unit -> Bool
+
+        scoped effect Other =
+            other : Unit -> Int
+
+        let seed = (block
+            generatedMapCount : Map String Int -> Int
+            let generatedMapCount values = 1
+
+            let item = (match (Some 0)
+              case Some payload -> payload
+              case None -> 0)
+            let values = { yield "item" : item }
+
+            generatedMapCount values)
+
+        let comp : Eff <[Ask : Ask, Other : Other]> Int =
+            do
+                let b <- Ask.ask ()
+                let n <- Other.other ()
+                if b then (n + seed) else seed
+
+        let askHandled : Eff <[Other : Other]> Int =
+            deep handle Ask comp with
+                case return x -> pure x
+                case ask () k -> k True
+
+        let handled : Eff <[ ]> Int =
+            deep handle Other askHandled with
+                case return x -> pure x
+                case other () k -> k 1
+
+        runPure handled
 
 result : Int
 let result = generated_2193
@@ -16,4 +44,4 @@ let result = generated_2193
 --! assertNoErrors
 --! assertType generated_2193 Int
 --! assertType result Int
---! assertDeclKinds data, signature, let, signature, let
+--! assertDeclKinds signature, let, signature, let

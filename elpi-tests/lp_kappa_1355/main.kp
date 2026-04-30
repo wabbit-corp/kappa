@@ -1,15 +1,12 @@
 module main
 
-generated_1355 : IO Int
-let generated_1355 =
-    do
-        let staged = ((((((((if False then 0 else (if False then 0 else 0)) + 0) + 0) + 0) + 0) + 0) + 0) + 0)
-        pure (staged + 1)
+generated_1355 : String
+let generated_1355 = (if (if (if (if (True && False) then True else False) then True else False) then True else False) then #"raw lambda-prolog"# else "fallback")
 
-result : IO Int
+result : String
 let result = generated_1355
 
 --! assertNoErrors
---! assertType generated_1355 IO Int
---! assertType result IO Int
+--! assertType generated_1355 String
+--! assertType result String
 --! assertDeclKinds signature, let, signature, let

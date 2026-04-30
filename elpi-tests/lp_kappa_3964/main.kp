@@ -1,10 +1,14 @@
 module main
 
-generatedMakeConst : forall (a : Type). a -> Unit -> a
-let generatedMakeConst value = \() -> value
+type GeneratedTuple = (Int, Int)
 
 generated_3964 : Int
-let generated_3964 = ((generatedMakeConst ((((((0 + ((if True then 0 else 0) + 0)) + 0) + 0) + 0) + 0) + 0)) ())
+let generated_3964 =
+    block
+        let pair : GeneratedTuple = ((((Some (((\(n : Int) -> n) 0) + 1)) ?: (((\(n : Int) -> n) 0) + 2)) + 0), (((Some (((\(n : Int) -> n) 0) + 1)) ?: (((\(n : Int) -> n) 0) + 2)) + 1))
+        let (left, right) = pair
+
+        (left + right)
 
 result : Int
 let result = generated_3964
@@ -12,4 +16,4 @@ let result = generated_3964
 --! assertNoErrors
 --! assertType generated_3964 Int
 --! assertType result Int
---! assertDeclKinds signature, let, signature, let, signature, let
+--! assertDeclKinds type, signature, let, signature, let

@@ -3,17 +3,30 @@ module main
 generatedNeed : (@x : Int) -> Int
 let generatedNeed (@x : Int) = x
 
-generated_3412 : Int
+generated_3412 : IO Int
 let generated_3412 =
-    block
-        let (@x : Int) = (((((0 + ((((if False then 0 else 0) + 0) + 0) + 0)) + 0) + 0) + 0) + 0)
+    do
+        let (@x : Int) = ((match ((block
+            let pair = (x = 0, y = (0 + 1))
+            let (x = captured, y = other) = pair
 
-        if True then generatedNeed else 0
+            (captured + other)) == (block
+            let pair = (x = 0, y = (0 + 1))
+            let (x = captured, y = other) = pair
 
-result : Int
+            (captured + other)))
+          case True -> (block
+              let pair = (x = 0, y = (0 + 1))
+              let (x = captured, y = other) = pair
+
+              (captured + other))
+          case False -> 0) + 0)
+        pure generatedNeed
+
+result : IO Int
 let result = generated_3412
 
 --! assertNoErrors
---! assertType generated_3412 Int
---! assertType result Int
+--! assertType generated_3412 IO Int
+--! assertType result IO Int
 --! assertDeclKinds signature, let, signature, let, signature, let

@@ -1,12 +1,14 @@
 module main
 
-generated_3443 : (Int -> Int)
-let generated_3443 = \(x : Int) -> ((\(x : Int) -> ((\(x : Int) -> (((\(x : Int) -> (((if False then \(x : Int) -> x else \(x : Int) -> x)) x)) x) + 0)) x)) x)
+type GeneratedTuple = (Int, Int)
 
-result : (Int -> Int)
+generated_3443 : GeneratedTuple
+let generated_3443 = (if True then (if True then (if True then (if (True && True) then (if (True && True) then (if False then (3, (3 + 3)) else (0, (0 + 0))) else (4, (4 + 4))) else ((1 + 1), 1)) else (0, (0 + 0))) else (0, (0 + 0))) else (0, (0 + 0)))
+
+result : GeneratedTuple
 let result = generated_3443
 
 --! assertNoErrors
---! assertType generated_3443 (Int -> Int)
---! assertType result (Int -> Int)
---! assertDeclKinds signature, let, signature, let
+--! assertType generated_3443 GeneratedTuple
+--! assertType result GeneratedTuple
+--! assertDeclKinds type, signature, let, signature, let

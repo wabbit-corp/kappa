@@ -1,15 +1,21 @@
 module main
 
-generated_4706 : IO Int
+generated_4706 : Int
 let generated_4706 =
-    do
-        value <- pure ((((((0 + (((if True then (0 + (0 + 0)) else 0) + 0) + 0)) + 0) + 0) + 0) + 0) + 0)
-        pure (value + 2)
+    block
+        let base : (x : Int) = (x = ((match [((Some (0 + 1)) ?: (0 + 2)), (((Some (0 + 1)) ?: (0 + 2)) + 1)]
+          case head :: tail -> head
+          case Nil -> 0) + 0))
+        let extended = base.{ y := ((match [((Some (0 + 1)) ?: (0 + 2)), (((Some (0 + 1)) ?: (0 + 2)) + 1)]
+          case head :: tail -> head
+          case Nil -> 0) + 1) }
 
-result : IO Int
+        (extended.x + extended.y)
+
+result : Int
 let result = generated_4706
 
 --! assertNoErrors
---! assertType generated_4706 IO Int
---! assertType result IO Int
+--! assertType generated_4706 Int
+--! assertType result Int
 --! assertDeclKinds signature, let, signature, let

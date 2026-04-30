@@ -1,12 +1,21 @@
 module main
 
-generated_1256 : List Int
-let generated_1256 = [ yield ((((((((if False then 0 else ((0 + 0) + 0)) + 0) + 0) + 0) + 0) + 0) + 0) + 0) ]
+generated_1256 : Map String Int
+let generated_1256 = { yield "only" : ((match (Some (block
+    generatedSetCount : Set Int -> Int
+    let generatedSetCount values = 2
 
-result : List Int
+    let item = 0
+    let values = {|item, (item + 1)|}
+
+    generatedSetCount values))
+  case Some payload -> payload
+  case None -> 0) + 0) }
+
+result : Map String Int
 let result = generated_1256
 
 --! assertNoErrors
---! assertType generated_1256 List Int
---! assertType result List Int
+--! assertType generated_1256 Map String Int
+--! assertType result Map String Int
 --! assertDeclKinds signature, let, signature, let

@@ -1,12 +1,32 @@
 module main
 
-generated_1802 : Map String Int
-let generated_1802 = { yield "only" : (((((((((if True then ((left = (0 + 0), right = 0)).left else 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0) }
+generated_1802 : Int
+let generated_1802 =
+    block
+        let (captured : Int) = ((match [(block
+            generatedMapCount : Map String Int -> Int
+            let generatedMapCount values = 1
 
-result : Map String Int
+            let item = 0
+            let values = { yield "item" : item }
+
+            generatedMapCount values), ((block
+            generatedMapCount : Map String Int -> Int
+            let generatedMapCount values = 1
+
+            let item = 0
+            let values = { yield "item" : item }
+
+            generatedMapCount values) + 1)]
+          case head :: tail -> head
+          case Nil -> 0) + 0)
+
+        captured
+
+result : Int
 let result = generated_1802
 
 --! assertNoErrors
---! assertType generated_1802 Map String Int
---! assertType result Map String Int
+--! assertType generated_1802 Int
+--! assertType result Int
 --! assertDeclKinds signature, let, signature, let

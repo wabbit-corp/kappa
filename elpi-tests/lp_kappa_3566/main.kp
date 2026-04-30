@@ -1,18 +1,19 @@
 module main
 
-generatedNeed : (@x : Int) -> Int
-let generatedNeed (@x : Int) = x
+generated_3566 : Map String Int
+let generated_3566 = { for x in [1, 2, 3], let y = x + 1, yield "k" : (block
+    generatedSetCount : Set Int -> Int
+    let generatedSetCount values = 2
 
-generated_3566 : IO Int
-let generated_3566 =
-    do
-        let (@x : Int) = ((((((0 + (((((left = 0, right = (0 + 0))).right + 0) + 0) + 0)) + 0) + 0) + 0) + 0) + 0)
-        pure generatedNeed
+    let item = ((\(n : Int) -> n) x)
+    let values = {|item, (item + 1)|}
 
-result : IO Int
+    generatedSetCount values) }
+
+result : Map String Int
 let result = generated_3566
 
 --! assertNoErrors
---! assertType generated_3566 IO Int
---! assertType result IO Int
---! assertDeclKinds signature, let, signature, let, signature, let
+--! assertType generated_3566 Map String Int
+--! assertType result Map String Int
+--! assertDeclKinds signature, let, signature, let

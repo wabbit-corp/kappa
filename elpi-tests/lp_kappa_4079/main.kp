@@ -1,12 +1,21 @@
 module main
 
-generated_4079 : Set Int
-let generated_4079 = {| yield ((((((0 + ((if True then (if True then 0 else 0) else 0) + 0)) + 0) + 0) + 0) + 0) + 0) |}
+generated_4079 : List Int
+let generated_4079 = [ for x in [1, 2, 3], order by x desc, yield (block
+    generatedSetCount : Set Int -> Int
+    let generatedSetCount values = 2
 
-result : Set Int
+    let item = (match (x == x)
+      case True -> x
+      case False -> 0)
+    let values = {|item, (item + 1)|}
+
+    generatedSetCount values) ]
+
+result : List Int
 let result = generated_4079
 
 --! assertNoErrors
---! assertType generated_4079 Set Int
---! assertType result Set Int
+--! assertType generated_4079 List Int
+--! assertType result List Int
 --! assertDeclKinds signature, let, signature, let

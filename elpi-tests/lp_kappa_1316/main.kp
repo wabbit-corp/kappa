@@ -3,15 +3,25 @@ module main
 generated_1316 : Int
 let generated_1316 =
     block
-        trait RankedScore a =
-            rank : a -> Int
+        let (captured : Int) = ((match [(block
+            generatedSetCount : Set Int -> Int
+            let generatedSetCount values = 2
 
-        instance RankedScore Int =
-            let rank x = x
+            let item = 0
+            let values = {|item, (item + 1)|}
 
-        let dict = summon (RankedScore Int)
+            generatedSetCount values), ((block
+            generatedSetCount : Set Int -> Int
+            let generatedSetCount values = 2
 
-        dict.rank ((((((((if False then 0 else (if True then 0 else 0)) + 0) + 0) + 0) + 0) + 0) + 0) + 0)
+            let item = 0
+            let values = {|item, (item + 1)|}
+
+            generatedSetCount values) + 1)]
+          case head :: tail -> head
+          case Nil -> 0) + 0)
+
+        captured
 
 result : Int
 let result = generated_1316

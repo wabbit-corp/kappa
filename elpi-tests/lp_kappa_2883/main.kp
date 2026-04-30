@@ -3,10 +3,14 @@ module main
 generated_2883 : Int
 let generated_2883 =
     block
-        let pair = (x = (((((((((left = 0, right = (((Some (0 + 0)) ?: 0) + 0))).right + 0) + 0) + 0) + 0) + 0) + 0) + 0), y = (((((((((left = 0, right = (((Some (0 + 0)) ?: 0) + 0))).right + 0) + 0) + 0) + 0) + 0) + 0) + 1))
-        let (x = captured, y = other) = pair
+        let pair = (x = (((\(n : Int) -> n) (match [0, (0 + 1)]
+          case head :: tail -> head
+          case Nil -> 0)) + 0), y = (((\(n : Int) -> n) (match [0, (0 + 1)]
+          case head :: tail -> head
+          case Nil -> 0)) + 1))
+        let whole@(x = captured, y = other) = pair
 
-        (captured + other)
+        (whole.x + (captured + other))
 
 result : Int
 let result = generated_2883

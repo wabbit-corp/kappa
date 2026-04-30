@@ -1,15 +1,20 @@
 module main
 
-generated_4279 : IO Int
-let generated_4279 =
-    do
-        let staged = ((((((0 + ((if True then ((Some (0 + 0)) ?: 0) else 0) + 0)) + 0) + 0) + 0) + 0) + 0)
-        pure (staged + 1)
+generated_4279 : Set Int
+let generated_4279 = {| yield ((block
+    let pair = (x = (match (0 == 0)
+      case True -> 0
+      case False -> 0), y = ((match (0 == 0)
+      case True -> 0
+      case False -> 0) + 1))
+    let (x = captured, y = other) = pair
 
-result : IO Int
+    (captured + other)) + 0) |}
+
+result : Set Int
 let result = generated_4279
 
 --! assertNoErrors
---! assertType generated_4279 IO Int
---! assertType result IO Int
+--! assertType generated_4279 Set Int
+--! assertType result Set Int
 --! assertDeclKinds signature, let, signature, let

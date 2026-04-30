@@ -1,12 +1,12 @@
 module main
 
-generated_2469 : Set Int
-let generated_2469 = {| for x in [1, 2, 3], let y = x + 1, if y > 0, yield ((((((((left = (((left = (x + 0), right = 0)).left + 0), right = 0)).left + 0) + 0) + 0) + 0) + 0) + 0) |}
+generated_2469 : Bool
+let generated_2469 = (if (if (if (if True then ((if True then True else False) && True) else False) then True else False) then True else False) then True else False)
 
-result : Set Int
+result : Bool
 let result = generated_2469
 
 --! assertNoErrors
---! assertType generated_2469 Set Int
---! assertType result Set Int
+--! assertType generated_2469 Bool
+--! assertType result Bool
 --! assertDeclKinds signature, let, signature, let

@@ -1,17 +1,12 @@
 module main
 
-generated_554 : Int
-let generated_554 =
-    block
-        ranked : Int
-        let ranked = (((((((0 + (((0 + 0) + 0) + 0)) + 0) + 0) + 0) + 0) + 0) + 0)
+generated_554 : Map String Int
+let generated_554 = { yield "only" : (((Some (0 + 1)) ?: (0 + 2)) + 0) }
 
-        (ranked + 0)
-
-result : Int
+result : Map String Int
 let result = generated_554
 
 --! assertNoErrors
---! assertType generated_554 Int
---! assertType result Int
+--! assertType generated_554 Map String Int
+--! assertType result Map String Int
 --! assertDeclKinds signature, let, signature, let

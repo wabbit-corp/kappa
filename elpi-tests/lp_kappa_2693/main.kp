@@ -1,14 +1,16 @@
 module main
 
-type GeneratedTuple = (Int, Int)
+generated_2693 : List Int
+let generated_2693 = [ for x in [1, 2, 3], let y = x + 1, yield (match (Some (match [x, (x + 1)]
+  case head :: tail -> head
+  case Nil -> 0))
+  case Some payload -> payload
+  case None -> 0) ]
 
-generated_2693 : GeneratedTuple
-let generated_2693 = (if True then (if True then (if True then (if (False || True) then (if (0 == 1) then (1, (1 + (1 + 1))) else (0, (0 + 0))) else ((2 + 2), 2)) else (0, (0 + 0))) else (0, (0 + 0))) else (0, (0 + 0)))
-
-result : GeneratedTuple
+result : List Int
 let result = generated_2693
 
 --! assertNoErrors
---! assertType generated_2693 GeneratedTuple
---! assertType result GeneratedTuple
---! assertDeclKinds type, signature, let, signature, let
+--! assertType generated_2693 List Int
+--! assertType result List Int
+--! assertDeclKinds signature, let, signature, let

@@ -1,12 +1,41 @@
 module main
 
-generated_856 : Unit
-let generated_856 = (if True then (if True then (if True then ((\(u : Unit) -> u) ()) else ()) else ()) else ())
+generatedNeed : (@x : Int) -> Int
+let generatedNeed (@x : Int) = x
 
-result : Unit
+generated_856 : Int
+let generated_856 =
+    block
+        let (@x : Int) = (block
+            let pair = (x = (block
+                generatedListLength : List Int -> Int
+                let generatedListLength xs decreases structural xs =
+                    match xs
+                      case Nil -> 0
+                      case _ :: tail -> 1 + generatedListLength tail
+
+                let item = 0
+
+                generatedListLength [item, (item + 1), 0]), y = ((block
+                generatedListLength : List Int -> Int
+                let generatedListLength xs decreases structural xs =
+                    match xs
+                      case Nil -> 0
+                      case _ :: tail -> 1 + generatedListLength tail
+
+                let item = 0
+
+                generatedListLength [item, (item + 1), 0]) + 1))
+            let (x = captured, y = other) = pair
+
+            (captured + other))
+
+        if True then generatedNeed else 0
+
+result : Int
 let result = generated_856
 
 --! assertNoErrors
---! assertType generated_856 Unit
---! assertType result Unit
---! assertDeclKinds signature, let, signature, let
+--! assertType generated_856 Int
+--! assertType result Int
+--! assertDeclKinds signature, let, signature, let, signature, let

@@ -1,18 +1,34 @@
 module main
 
-generatedNeed : (@x : Int) -> Int
-let generatedNeed (@x : Int) = x
-
-generated_1798 : IO Int
+generated_1798 : Int
 let generated_1798 =
-    do
-        let (@x : Int) = (((((((((if True then ((left = (0 + 0), right = 0)).left else 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0)
-        pure generatedNeed
+    block
+        type RankedAlias = Int
 
-result : IO Int
+        let aliased : RankedAlias = ((match [(block
+            generatedMapCount : Map String Int -> Int
+            let generatedMapCount values = 1
+
+            let item = 0
+            let values = { yield "item" : item }
+
+            generatedMapCount values), ((block
+            generatedMapCount : Map String Int -> Int
+            let generatedMapCount values = 1
+
+            let item = 0
+            let values = { yield "item" : item }
+
+            generatedMapCount values) + 1)]
+          case head :: tail -> head
+          case Nil -> 0) + 0)
+
+        (aliased + 1)
+
+result : Int
 let result = generated_1798
 
 --! assertNoErrors
---! assertType generated_1798 IO Int
---! assertType result IO Int
---! assertDeclKinds signature, let, signature, let, signature, let
+--! assertType generated_1798 Int
+--! assertType result Int
+--! assertDeclKinds signature, let, signature, let

@@ -3,10 +3,36 @@ module main
 generated_2029 : Int
 let generated_2029 =
     block
-        rankedHelper : (Int -> Int)
-        let rankedHelper x = x + 1
+        scoped effect State (s : Type) =
+            get : Unit -> s
 
-        rankedHelper (((((((((if False then 0 else (if False then 0 else 0)) + (0 + 0)) + 0) + 0) + 0) + 0) + 0) + 0) + 0)
+        let seed = ((Some ((block
+            generatedMapCount : Map String Int -> Int
+            let generatedMapCount values = 1
+
+            let item = 0
+            let values = { yield "item" : item }
+
+            generatedMapCount values) + 1)) ?: ((block
+            generatedMapCount : Map String Int -> Int
+            let generatedMapCount values = 1
+
+            let item = 0
+            let values = { yield "item" : item }
+
+            generatedMapCount values) + 2))
+
+        let comp : Eff <[State : State Int]> Int =
+            do
+                let n <- State.get ()
+                n
+
+        let handled : Eff <[ ]> Int =
+            deep handle State comp with
+                case return x -> pure x
+                case get () k -> k seed
+
+        runPure handled
 
 result : Int
 let result = generated_2029

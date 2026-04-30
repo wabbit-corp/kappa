@@ -1,14 +1,23 @@
 module main
 
-generatedNeed : (@x : Int) -> Int
-let generatedNeed (@x : Int) = x
-
 generated_2528 : Int
 let generated_2528 =
     block
-        let (@x : Int) = ((((((((left = (((Some (0 + 0)) ?: 0) + 0), right = 0)).left + 0) + 0) + 0) + 0) + 0) + 0)
+        ranked : Int
+        let ranked = (block
+            generatedListLength : List Int -> Int
+            let generatedListLength xs decreases structural xs =
+                match xs
+                  case Nil -> 0
+                  case _ :: tail -> 1 + generatedListLength tail
 
-        if True then generatedNeed else 0
+            let item = (match [0, (0 + 1)]
+              case head :: tail -> head
+              case Nil -> 0)
+
+            generatedListLength [item, (item + 1), 0])
+
+        (ranked + 0)
 
 result : Int
 let result = generated_2528
@@ -16,4 +25,4 @@ let result = generated_2528
 --! assertNoErrors
 --! assertType generated_2528 Int
 --! assertType result Int
---! assertDeclKinds signature, let, signature, let, signature, let
+--! assertDeclKinds signature, let, signature, let

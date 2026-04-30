@@ -1,14 +1,51 @@
 module main
 
-type GeneratedTuple = (Int, Int)
+generated_1333 : Int
+let generated_1333 =
+    block
+        scoped effect Choice =
+            ω choose : Unit -> Bool
 
-generated_1333 : GeneratedTuple
-let generated_1333 = (if True then (if True then (if True then (if (0 == 1) then (1, (1 + (1 + 1))) else (if (0 == 1) then (1, (1 + (1 + 1))) else (0, (0 + 0)))) else (0, (0 + 0))) else (0, (0 + 0))) else (0, (0 + 0)))
+        let c = Choice
 
-result : GeneratedTuple
+        let seed = (match [(block
+            generatedSetCount : Set Int -> Int
+            let generatedSetCount values = 2
+
+            let item = 0
+            let values = {|item, (item + 1)|}
+
+            generatedSetCount values), ((block
+            generatedSetCount : Set Int -> Int
+            let generatedSetCount values = 2
+
+            let item = 0
+            let values = {|item, (item + 1)|}
+
+            generatedSetCount values) + 1)]
+          case head :: tail -> head
+          case Nil -> 0)
+
+        let comp : Eff <[Choice : Choice]> Int =
+            do
+                let b <- c.choose ()
+                if b then seed else (seed + 1)
+
+        let handled : Eff <[ ]> Int =
+            deep handle Choice comp with
+                case return x -> pure x
+                case choose () k ->
+                    do
+                        let a <- k True
+                        let b <- k False
+                        pure (a + b)
+
+        runPure handled
+
+result : Int
 let result = generated_1333
 
 --! assertNoErrors
---! assertType generated_1333 GeneratedTuple
---! assertType result GeneratedTuple
---! assertDeclKinds type, signature, let, signature, let
+--! assertType generated_1333 Int
+--! assertType result Int
+--! assertDeclKinds signature, let, signature, let

@@ -3,15 +3,25 @@ module main
 generated_1690 : Int
 let generated_1690 =
     block
-        trait RankedScore a =
-            rank : a -> Int
+        type RankedAlias = Int
 
-        instance RankedScore Int =
-            let rank x = x
+        let aliased : RankedAlias = ((block
+            generatedMapCount : Map String Int -> Int
+            let generatedMapCount values = 1
 
-        let dict = summon (RankedScore Int)
+            let item = (block
+                generatedMapCount : Map String Int -> Int
+                let generatedMapCount values = 1
 
-        dict.rank (((((((((if True then (if False then 0 else 0) else 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0)
+                let item = 0
+                let values = { yield "item" : item }
+
+                generatedMapCount values)
+            let values = { yield "item" : item }
+
+            generatedMapCount values) + 0)
+
+        (aliased + 1)
 
 result : Int
 let result = generated_1690

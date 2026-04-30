@@ -3,13 +3,10 @@ module main
 generated_547 : Int
 let generated_547 =
     block
-        data RankedBox : Type =
-            RankedBox (value : Int)
+        let pair = (x = (((Some (0 + 1)) ?: (0 + 2)) + 0), y = (((Some (0 + 1)) ?: (0 + 2)) + 1))
+        let (x = captured, y = other) = pair
 
-        let boxed = RankedBox ((((((((0 + (0 + 0)) + 0) + 0) + 0) + 0) + 0) + 0) + 0)
-
-        match boxed
-          case RankedBox value -> (value + 1)
+        (captured + other)
 
 result : Int
 let result = generated_547

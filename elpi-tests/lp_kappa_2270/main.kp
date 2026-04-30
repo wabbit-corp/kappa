@@ -1,15 +1,18 @@
 module main
 
-generated_2270 : Int
-let generated_2270 =
-    match ((((((((((left = (((0 + 0) + 0) + 0), right = 0)).left + 0) + 0) + 0) + 0) + 0) + 0) + 0) == (((((((((left = (((0 + 0) + 0) + 0), right = 0)).left + 0) + 0) + 0) + 0) + 0) + 0) + 0))
-      case True -> (((((((((left = (((0 + 0) + 0) + 0), right = 0)).left + 0) + 0) + 0) + 0) + 0) + 0) + 0)
-      case False -> 0
+generated_2270 : Map String Int
+let generated_2270 = { for x in [1, 2, 3], let y = x + 1, yield "k" : (match [(match (Some x)
+  case Some payload -> payload
+  case None -> 0), ((match (Some x)
+  case Some payload -> payload
+  case None -> 0) + 1)]
+  case head :: tail -> head
+  case Nil -> 0) }
 
-result : Int
+result : Map String Int
 let result = generated_2270
 
 --! assertNoErrors
---! assertType generated_2270 Int
---! assertType result Int
+--! assertType generated_2270 Map String Int
+--! assertType result Map String Int
 --! assertDeclKinds signature, let, signature, let

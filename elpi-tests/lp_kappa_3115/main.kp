@@ -1,12 +1,46 @@
 module main
 
-generated_3115 : Set Int
-let generated_3115 = {| for x in [1, 2, 3], if x > 0, yield ((((((((Some (((if False then 0 else x) + (0 + 0)) + 0)) ?: 0) + 0) + 0) + 0) + 0) + 0) + 0) |}
+generated_3115 : Int
+let generated_3115 =
+    block
+        scoped effect Choice =
+            ω choose : Unit -> Bool
 
-result : Set Int
+        let c = Choice
+
+        let seed = (block
+            generatedSetCount : Set Int -> Int
+            let generatedSetCount values = 2
+
+            let item = (block
+                let pair = (x = 0, y = (0 + 1))
+                let (x = captured, y = other) = pair
+
+                (captured + other))
+            let values = {|item, (item + 1)|}
+
+            generatedSetCount values)
+
+        let comp : Eff <[Choice : Choice]> Int =
+            do
+                let b <- c.choose ()
+                if b then seed else (seed + 1)
+
+        let handled : Eff <[ ]> Int =
+            deep handle Choice comp with
+                case return x -> pure x
+                case choose () k ->
+                    do
+                        let a <- k True
+                        let b <- k False
+                        pure (a + b)
+
+        runPure handled
+
+result : Int
 let result = generated_3115
 
 --! assertNoErrors
---! assertType generated_3115 Set Int
---! assertType result Set Int
+--! assertType generated_3115 Int
+--! assertType result Int
 --! assertDeclKinds signature, let, signature, let

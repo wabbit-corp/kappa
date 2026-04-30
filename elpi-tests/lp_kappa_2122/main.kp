@@ -1,15 +1,27 @@
 module main
 
-generated_2122 : IO Int
+generated_2122 : Int
 let generated_2122 =
-    do
-        value <- pure (((((((((if False then 0 else ((left = (0 + 0), right = 0)).left) + (0 + 0)) + 0) + 0) + 0) + 0) + 0) + 0) + 0)
-        pure (value + 2)
+    block
+        type RankedAlias = Int
 
-result : IO Int
+        let aliased : RankedAlias = ((block
+            generatedSetCount : Set Int -> Int
+            let generatedSetCount values = 2
+
+            let item = (match (Some 0)
+              case Some payload -> payload
+              case None -> 0)
+            let values = {|item, (item + 1)|}
+
+            generatedSetCount values) + 0)
+
+        (aliased + 1)
+
+result : Int
 let result = generated_2122
 
 --! assertNoErrors
---! assertType generated_2122 IO Int
---! assertType result IO Int
+--! assertType generated_2122 Int
+--! assertType result Int
 --! assertDeclKinds signature, let, signature, let

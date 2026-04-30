@@ -1,12 +1,26 @@
 module main
 
-generated_1591 : Int
-let generated_1591 =
-    block
-        let pair = (x = (((((((((if True then ((0 + 0) + 0) else 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0), y = (((((((((if True then ((0 + 0) + 0) else 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0) + 1))
-        let (x = captured, y = other) = pair
+generatedMakeConst : forall (a : Type). a -> Unit -> a
+let generatedMakeConst value = \() -> value
 
-        (captured + other)
+generated_1591 : Int
+let generated_1591 = ((generatedMakeConst @Int ((block
+    generatedListLength : List Int -> Int
+    let generatedListLength xs decreases structural xs =
+        match xs
+          case Nil -> 0
+          case _ :: tail -> 1 + generatedListLength tail
+
+    let item = (block
+        generatedMapCount : Map String Int -> Int
+        let generatedMapCount values = 1
+
+        let item = 0
+        let values = { yield "item" : item }
+
+        generatedMapCount values)
+
+    generatedListLength [item, (item + 1), 0]) + 0)) ())
 
 result : Int
 let result = generated_1591
@@ -14,4 +28,4 @@ let result = generated_1591
 --! assertNoErrors
 --! assertType generated_1591 Int
 --! assertType result Int
---! assertDeclKinds signature, let, signature, let
+--! assertDeclKinds signature, let, signature, let, signature, let

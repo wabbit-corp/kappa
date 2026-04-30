@@ -1,7 +1,16 @@
 module main
 
 generated_2108 : Map String Int
-let generated_2108 = { yield "only" : (((((((((if False then 0 else ((if False then 0 else 0) + (0 + 0))) + (0 + 0)) + 0) + 0) + 0) + 0) + 0) + 0) + 0) }
+let generated_2108 = { for x in [1, 2, 3], if x > 0, yield "k" : (block
+    generatedSetCount : Set Int -> Int
+    let generatedSetCount values = 2
+
+    let item = (match (Some x)
+      case Some payload -> payload
+      case None -> 0)
+    let values = {|item, (item + 1)|}
+
+    generatedSetCount values) }
 
 result : Map String Int
 let result = generated_2108

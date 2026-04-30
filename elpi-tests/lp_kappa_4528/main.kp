@@ -1,12 +1,26 @@
 module main
 
-generated_4528 : Unit
-let generated_4528 = (if True then (if True then (if False then () else ((\(u : Unit) -> ()) ((\(u : Unit) -> if False then () else u) ()))) else ()) else ())
+generatedNeed : (@x : Int) -> Int
+let generatedNeed (@x : Int) = x
 
-result : Unit
+generated_4528 : Int
+let generated_4528 =
+    block
+        let (@x : Int) = (block
+            generatedSetCount : Set Int -> Int
+            let generatedSetCount values = 2
+
+            let item = ((Some (0 + 1)) ?: (0 + 2))
+            let values = {|item, (item + 1)|}
+
+            generatedSetCount values)
+
+        if True then generatedNeed else 0
+
+result : Int
 let result = generated_4528
 
 --! assertNoErrors
---! assertType generated_4528 Unit
---! assertType result Unit
---! assertDeclKinds signature, let, signature, let
+--! assertType generated_4528 Int
+--! assertType result Int
+--! assertDeclKinds signature, let, signature, let, signature, let

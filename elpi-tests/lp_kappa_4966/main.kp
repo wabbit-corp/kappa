@@ -1,18 +1,68 @@
 module main
 
-generated_4966 : Int
-let generated_4966 =
-    block
-        type RankedAlias = Int
+type GeneratedPair = (left : Int, right : Int)
 
-        let aliased : RankedAlias = ((((((0 + (((if True then ((Some (0 + 0)) ?: 0) else 0) + 0) + 0)) + 0) + 0) + 0) + 0) + 0)
+generated_4966 : GeneratedPair
+let generated_4966 = ((left = (block
+    generatedListLength : List Int -> Int
+    let generatedListLength xs decreases structural xs =
+        match xs
+          case Nil -> 0
+          case _ :: tail -> 1 + generatedListLength tail
 
-        (aliased + 1)
+    let item = (block
+        generatedListLength : List Int -> Int
+        let generatedListLength xs decreases structural xs =
+            match xs
+              case Nil -> 0
+              case _ :: tail -> 1 + generatedListLength tail
 
-result : Int
+        let item = (block
+            generatedListLength : List Int -> Int
+            let generatedListLength xs decreases structural xs =
+                match xs
+                  case Nil -> 0
+                  case _ :: tail -> 1 + generatedListLength tail
+
+            let item = 0
+
+            generatedListLength [item, (item + 1), 0])
+
+        generatedListLength [item, (item + 1), 0])
+
+    generatedListLength [item, (item + 1), 0]), right = 0)).{ right = ((block
+    generatedListLength : List Int -> Int
+    let generatedListLength xs decreases structural xs =
+        match xs
+          case Nil -> 0
+          case _ :: tail -> 1 + generatedListLength tail
+
+    let item = (block
+        generatedListLength : List Int -> Int
+        let generatedListLength xs decreases structural xs =
+            match xs
+              case Nil -> 0
+              case _ :: tail -> 1 + generatedListLength tail
+
+        let item = (block
+            generatedListLength : List Int -> Int
+            let generatedListLength xs decreases structural xs =
+                match xs
+                  case Nil -> 0
+                  case _ :: tail -> 1 + generatedListLength tail
+
+            let item = 0
+
+            generatedListLength [item, (item + 1), 0])
+
+        generatedListLength [item, (item + 1), 0])
+
+    generatedListLength [item, (item + 1), 0]) + 1) }
+
+result : GeneratedPair
 let result = generated_4966
 
 --! assertNoErrors
---! assertType generated_4966 Int
---! assertType result Int
---! assertDeclKinds signature, let, signature, let
+--! assertType generated_4966 GeneratedPair
+--! assertType result GeneratedPair
+--! assertDeclKinds type, signature, let, signature, let

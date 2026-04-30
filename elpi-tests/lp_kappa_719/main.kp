@@ -1,12 +1,36 @@
 module main
 
-generated_719 : Bool
-let generated_719 = (if (if (if (if (if False then True else (True || False)) then False else True) then True else False) then True else False) then True else False)
+generated_719 : Int
+let generated_719 =
+    block
+        data RankedBox : Type =
+            RankedBox (value : Int)
 
-result : Bool
+        let boxed = RankedBox ((block
+            generatedMapCount : Map String Int -> Int
+            let generatedMapCount values = 1
+
+            let item = (block
+                generatedListLength : List Int -> Int
+                let generatedListLength xs decreases structural xs =
+                    match xs
+                      case Nil -> 0
+                      case _ :: tail -> 1 + generatedListLength tail
+
+                let item = 0
+
+                generatedListLength [item, (item + 1), 0])
+            let values = { yield "item" : item }
+
+            generatedMapCount values) + 0)
+
+        match boxed
+          case RankedBox value -> (value + 1)
+
+result : Int
 let result = generated_719
 
 --! assertNoErrors
---! assertType generated_719 Bool
---! assertType result Bool
+--! assertType generated_719 Int
+--! assertType result Int
 --! assertDeclKinds signature, let, signature, let

@@ -1,12 +1,12 @@
 module main
 
-generated_1301 : (Int -> Int)
-let generated_1301 = \(x : Int) -> ((\(x : Int) -> ((\(x : Int) -> (((if True then \(x : Int) -> (0 + ((\(x : Int) -> x) x)) else \(x : Int) -> x)) x)) x)) x)
+generated_1301 : String
+let generated_1301 = (if (if (if (if (if ((if True then True else False) && True) then False else True) then True else False) then True else False) then True else False) then #"raw lambda-prolog"# else "fallback")
 
-result : (Int -> Int)
+result : String
 let result = generated_1301
 
 --! assertNoErrors
---! assertType generated_1301 (Int -> Int)
---! assertType result (Int -> Int)
+--! assertType generated_1301 String
+--! assertType result String
 --! assertDeclKinds signature, let, signature, let

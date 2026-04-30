@@ -1,12 +1,27 @@
 module main
 
-generated_179 : (Int -> Int)
-let generated_179 = \(x : Int) -> ((\(x : Int) -> ((\(x : Int) -> ((\(x : Int) -> ((\(x : Int) -> x) x)) x)) x)) x)
+generated_179 : Int
+let generated_179 =
+    block
+        data RankedBox : Type =
+            RankedBox (value : Int)
 
-result : (Int -> Int)
+        let boxed = RankedBox ((block
+            generatedSetCount : Set Int -> Int
+            let generatedSetCount values = 2
+
+            let item = 0
+            let values = {|item, (item + 1)|}
+
+            generatedSetCount values) + 0)
+
+        match boxed
+          case RankedBox value -> (value + 1)
+
+result : Int
 let result = generated_179
 
 --! assertNoErrors
---! assertType generated_179 (Int -> Int)
---! assertType result (Int -> Int)
+--! assertType generated_179 Int
+--! assertType result Int
 --! assertDeclKinds signature, let, signature, let

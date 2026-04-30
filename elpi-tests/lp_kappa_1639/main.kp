@@ -1,14 +1,29 @@
 module main
 
-type GeneratedTuple = (Int, Int)
+generatedEcho : forall (a : Type). (this x : a) -> a
+let generatedEcho @a (this x : a) = x
 
-generated_1639 : GeneratedTuple
-let generated_1639 = (if True then (if True then (if True then (if True then (if True then (if (0 == 0) then (0, (0 + 0)) else ((1 + 1), 1)) else (0, (0 + 0))) else ((1 + 1), 1)) else (0, (0 + 0))) else (0, (0 + 0))) else (0, (0 + 0)))
+generated_1639 : Option Int
+let generated_1639 = (Some ((block
+    generatedSetCount : Set Int -> Int
+    let generatedSetCount values = 2
 
-result : GeneratedTuple
+    let item = (block
+        generatedMapCount : Map String Int -> Int
+        let generatedMapCount values = 1
+
+        let item = 0
+        let values = { yield "item" : item }
+
+        generatedMapCount values)
+    let values = {|item, (item + 1)|}
+
+    generatedSetCount values) + 0))?.generatedEcho
+
+result : Option Int
 let result = generated_1639
 
 --! assertNoErrors
---! assertType generated_1639 GeneratedTuple
---! assertType result GeneratedTuple
---! assertDeclKinds type, signature, let, signature, let
+--! assertType generated_1639 Option Int
+--! assertType result Option Int
+--! assertDeclKinds signature, let, signature, let, signature, let

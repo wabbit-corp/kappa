@@ -3,10 +3,14 @@ module main
 generated_368 : Int
 let generated_368 =
     block
-        let base : (x : Int) = (x = (((((((((((if True then 0 else 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0))
-        let extended = base.{ y := (((((((((((if True then 0 else 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0) + 1) }
+        ranked : Int
+        let ranked = (block
+            let pair = (x = 0, y = (0 + 1))
+            let (x = captured, y = other) = pair
 
-        (extended.x + extended.y)
+            (captured + other))
+
+        (ranked + 0)
 
 result : Int
 let result = generated_368

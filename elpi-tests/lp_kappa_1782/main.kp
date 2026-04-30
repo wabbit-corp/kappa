@@ -1,15 +1,31 @@
 module main
 
-generated_1782 : IO Int
-let generated_1782 =
-    do
-        value <- pure (((((((((if True then ((left = (0 + 0), right = 0)).left else 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0)
-        pure (value + 2)
+generatedMakeConst : forall (a : Type). a -> Unit -> a
+let generatedMakeConst value = \() -> value
 
-result : IO Int
+generated_1782 : Int
+let generated_1782 = ((generatedMakeConst ((match [(block
+    generatedMapCount : Map String Int -> Int
+    let generatedMapCount values = 1
+
+    let item = 0
+    let values = { yield "item" : item }
+
+    generatedMapCount values), ((block
+    generatedMapCount : Map String Int -> Int
+    let generatedMapCount values = 1
+
+    let item = 0
+    let values = { yield "item" : item }
+
+    generatedMapCount values) + 1)]
+  case head :: tail -> head
+  case Nil -> 0) + 0)) ())
+
+result : Int
 let result = generated_1782
 
 --! assertNoErrors
---! assertType generated_1782 IO Int
---! assertType result IO Int
---! assertDeclKinds signature, let, signature, let
+--! assertType generated_1782 Int
+--! assertType result Int
+--! assertDeclKinds signature, let, signature, let, signature, let

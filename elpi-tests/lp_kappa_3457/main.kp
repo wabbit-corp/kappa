@@ -1,17 +1,20 @@
 module main
 
-generated_3457 : Int
-let generated_3457 =
-    block
-        rankedHelper : (Int -> Int)
-        let rankedHelper x = x + 1
+generated_3457 : Set Int
+let generated_3457 = {| for x in [1, 2, 3], let y = x + 1, if y > 0, yield ((Some ((block
+    let pair = (x = x, y = (x + 1))
+    let (x = captured, y = other) = pair
 
-        rankedHelper ((((((0 + (((((if True then 0 else 0) + 0) + 0) + 0) + 0)) + 0) + 0) + 0) + 0) + 0)
+    (captured + other)) + 1)) ?: ((block
+    let pair = (x = x, y = (x + 1))
+    let (x = captured, y = other) = pair
 
-result : Int
+    (captured + other)) + 2)) |}
+
+result : Set Int
 let result = generated_3457
 
 --! assertNoErrors
---! assertType generated_3457 Int
---! assertType result Int
+--! assertType generated_3457 Set Int
+--! assertType result Set Int
 --! assertDeclKinds signature, let, signature, let

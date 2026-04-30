@@ -2,9 +2,29 @@ module main
 
 generated_2168 : Int
 let generated_2168 =
-    match ((((((((((if False then 0 else ((left = 0, right = (0 + 0))).right) + (0 + 0)) + 0) + 0) + 0) + 0) + 0) + 0) + 0) == (((((((((if False then 0 else ((left = 0, right = (0 + 0))).right) + (0 + 0)) + 0) + 0) + 0) + 0) + 0) + 0) + 0))
-      case True -> (((((((((if False then 0 else ((left = 0, right = (0 + 0))).right) + (0 + 0)) + 0) + 0) + 0) + 0) + 0) + 0) + 0)
-      case False -> 0
+    block
+        let base : (x : Int) = (x = ((block
+            generatedMapCount : Map String Int -> Int
+            let generatedMapCount values = 1
+
+            let item = (match (Some 0)
+              case Some payload -> payload
+              case None -> 0)
+            let values = { yield "item" : item }
+
+            generatedMapCount values) + 0))
+        let extended = base.{ y := ((block
+            generatedMapCount : Map String Int -> Int
+            let generatedMapCount values = 1
+
+            let item = (match (Some 0)
+              case Some payload -> payload
+              case None -> 0)
+            let values = { yield "item" : item }
+
+            generatedMapCount values) + 1) }
+
+        (extended.x + extended.y)
 
 result : Int
 let result = generated_2168

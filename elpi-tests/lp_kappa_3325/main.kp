@@ -3,10 +3,34 @@ module main
 generated_3325 : Int
 let generated_3325 =
     block
-        let pair = (x = ((((((0 + (((((0 + 0) + 0) + 0) + 0) + 0)) + 0) + 0) + 0) + 0) + 0), y = ((((((0 + (((((0 + 0) + 0) + 0) + 0) + 0)) + 0) + 0) + 0) + 0) + 1))
-        let (x = captured, y = other) = pair
+        scoped effect State (s : Type) =
+            get : Unit -> s
 
-        (captured + other)
+        let seed = (block
+            let pair = (x = (block
+                let pair = (x = 0, y = (0 + 1))
+                let (x = captured, y = other) = pair
+
+                (captured + other)), y = ((block
+                let pair = (x = 0, y = (0 + 1))
+                let (x = captured, y = other) = pair
+
+                (captured + other)) + 1))
+            let (x = captured, y = other) = pair
+
+            (captured + other))
+
+        let comp : Eff <[State : State Int]> Int =
+            do
+                let n <- State.get ()
+                n
+
+        let handled : Eff <[ ]> Int =
+            deep handle State comp with
+                case return x -> pure x
+                case get () k -> k seed
+
+        runPure handled
 
 result : Int
 let result = generated_3325

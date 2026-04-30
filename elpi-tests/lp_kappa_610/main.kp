@@ -1,12 +1,36 @@
 module main
 
-generated_610 : List Int
-let generated_610 = [ yield ((((((((0 + ((0 + (0 + 0)) + 0)) + 0) + 0) + 0) + 0) + 0) + 0) + 0) ]
+generated_610 : Int
+let generated_610 =
+    block
+        type RankedAlias = Int
 
-result : List Int
+        let aliased : RankedAlias = ((block
+            generatedListLength : List Int -> Int
+            let generatedListLength xs decreases structural xs =
+                match xs
+                  case Nil -> 0
+                  case _ :: tail -> 1 + generatedListLength tail
+
+            let item = (block
+                generatedListLength : List Int -> Int
+                let generatedListLength xs decreases structural xs =
+                    match xs
+                      case Nil -> 0
+                      case _ :: tail -> 1 + generatedListLength tail
+
+                let item = 0
+
+                generatedListLength [item, (item + 1), 0])
+
+            generatedListLength [item, (item + 1), 0]) + 0)
+
+        (aliased + 1)
+
+result : Int
 let result = generated_610
 
 --! assertNoErrors
---! assertType generated_610 List Int
---! assertType result List Int
+--! assertType generated_610 Int
+--! assertType result Int
 --! assertDeclKinds signature, let, signature, let

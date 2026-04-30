@@ -1,15 +1,20 @@
 module main
 
-generatedMakeConst : forall (a : Type). a -> Unit -> a
-let generatedMakeConst value = \() -> value
+generatedNeed : (@x : Int) -> Int
+let generatedNeed (@x : Int) = x
 
-generated_496 : Int
-let generated_496 = ((generatedMakeConst (((((((((((Some (0 + 0)) ?: 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0)) ())
+generated_496 : IO Int
+let generated_496 =
+    do
+        let (@x : Int) = ((match (0 == 0)
+          case True -> 0
+          case False -> 0) + 0)
+        pure generatedNeed
 
-result : Int
+result : IO Int
 let result = generated_496
 
 --! assertNoErrors
---! assertType generated_496 Int
---! assertType result Int
+--! assertType generated_496 IO Int
+--! assertType result IO Int
 --! assertDeclKinds signature, let, signature, let, signature, let

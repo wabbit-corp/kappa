@@ -1,15 +1,34 @@
 module main
 
-generated_876 : Int
-let generated_876 =
-    match (((((((((if True then 0 else 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0) == ((((((((if True then 0 else 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0))
-      case True -> ((((((((if True then 0 else 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0)
-      case False -> 0
+generated_876 : List Int
+let generated_876 = [ yield ((block
+    let pair = (x = (block
+        generatedListLength : List Int -> Int
+        let generatedListLength xs decreases structural xs =
+            match xs
+              case Nil -> 0
+              case _ :: tail -> 1 + generatedListLength tail
 
-result : Int
+        let item = 0
+
+        generatedListLength [item, (item + 1), 0]), y = ((block
+        generatedListLength : List Int -> Int
+        let generatedListLength xs decreases structural xs =
+            match xs
+              case Nil -> 0
+              case _ :: tail -> 1 + generatedListLength tail
+
+        let item = 0
+
+        generatedListLength [item, (item + 1), 0]) + 1))
+    let (x = captured, y = other) = pair
+
+    (captured + other)) + 0) ]
+
+result : List Int
 let result = generated_876
 
 --! assertNoErrors
---! assertType generated_876 Int
---! assertType result Int
+--! assertType generated_876 List Int
+--! assertType result List Int
 --! assertDeclKinds signature, let, signature, let

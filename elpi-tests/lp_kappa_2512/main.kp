@@ -1,18 +1,16 @@
 module main
 
-generatedNeed : (@x : Int) -> Int
-let generatedNeed (@x : Int) = x
+generated_2512 : List Int
+let generated_2512 = [ for x in [1, 2, 3], skip 1, take 2, yield ((Some ((match (Some x)
+  case Some payload -> payload
+  case None -> 0) + 1)) ?: ((match (Some x)
+  case Some payload -> payload
+  case None -> 0) + 2)) ]
 
-generated_2512 : IO Int
-let generated_2512 =
-    do
-        let (@x : Int) = (((((((((left = (((left = 0, right = (0 + 0))).right + 0), right = 0)).left + 0) + 0) + 0) + 0) + 0) + 0) + 0)
-        pure generatedNeed
-
-result : IO Int
+result : List Int
 let result = generated_2512
 
 --! assertNoErrors
---! assertType generated_2512 IO Int
---! assertType result IO Int
---! assertDeclKinds signature, let, signature, let, signature, let
+--! assertType generated_2512 List Int
+--! assertType result List Int
+--! assertDeclKinds signature, let, signature, let

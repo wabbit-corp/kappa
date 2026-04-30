@@ -1,12 +1,40 @@
 module main
 
-generated_4085 : Bool
-let generated_4085 = (if (if (if ((True || False) && False) then False else True) then True else False) then True else False)
+generated_4085 : Int
+let generated_4085 =
+    block
+        scoped effect Ask =
+            ask : Unit -> Bool
 
-result : Bool
+        let pkg = (label = Ask)
+
+        let seed = (block
+            generatedSetCount : Set Int -> Int
+            let generatedSetCount values = 2
+
+            let item = (match (0 == 0)
+              case True -> 0
+              case False -> 0)
+            let values = {|item, (item + 1)|}
+
+            generatedSetCount values)
+
+        let comp : Eff <[Ask : Ask]> Int =
+            do
+                let b <- pkg.label.ask ()
+                if b then seed else (seed + 1)
+
+        let handled : Eff <[ ]> Int =
+            deep handle pkg.label comp with
+                case return x -> pure x
+                case ask () k -> k True
+
+        runPure handled
+
+result : Int
 let result = generated_4085
 
 --! assertNoErrors
---! assertType generated_4085 Bool
---! assertType result Bool
+--! assertType generated_4085 Int
+--! assertType result Int
 --! assertDeclKinds signature, let, signature, let

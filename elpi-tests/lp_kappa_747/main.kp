@@ -1,12 +1,27 @@
 module main
 
-generated_747 : Set Int
-let generated_747 = {| yield ((((((((0 + (((if False then 0 else 0) + (0 + 0)) + 0)) + 0) + 0) + 0) + 0) + 0) + 0) + 0) |}
+generated_747 : Int
+let generated_747 =
+    let
+        ranked : Int = (match (Some (block
+            generatedListLength : List Int -> Int
+            let generatedListLength xs decreases structural xs =
+                match xs
+                  case Nil -> 0
+                  case _ :: tail -> 1 + generatedListLength tail
 
-result : Set Int
+            let item = 0
+
+            generatedListLength [item, (item + 1), 0]))
+          case Some payload -> payload
+          case None -> 0)
+in
+        (ranked + 0)
+
+result : Int
 let result = generated_747
 
 --! assertNoErrors
---! assertType generated_747 Set Int
---! assertType result Set Int
+--! assertType generated_747 Int
+--! assertType result Int
 --! assertDeclKinds signature, let, signature, let

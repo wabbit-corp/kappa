@@ -1,15 +1,36 @@
 module main
 
-generatedMakeConst : forall (a : Type). a -> Unit -> a
-let generatedMakeConst value = \() -> value
+type GeneratedPair = (left : Int, right : Int)
 
-generated_2536 : Int
-let generated_2536 = ((generatedMakeConst (((((((((left = (((Some (0 + 0)) ?: 0) + 0), right = 0)).left + 0) + 0) + 0) + 0) + 0) + 0) + 0)) ())
+generated_2536 : GeneratedPair
+let generated_2536 = ((left = (block
+    generatedListLength : List Int -> Int
+    let generatedListLength xs decreases structural xs =
+        match xs
+          case Nil -> 0
+          case _ :: tail -> 1 + generatedListLength tail
 
-result : Int
+    let item = (match [0, (0 + 1)]
+      case head :: tail -> head
+      case Nil -> 0)
+
+    generatedListLength [item, (item + 1), 0]), right = 0)).{ right = ((block
+    generatedListLength : List Int -> Int
+    let generatedListLength xs decreases structural xs =
+        match xs
+          case Nil -> 0
+          case _ :: tail -> 1 + generatedListLength tail
+
+    let item = (match [0, (0 + 1)]
+      case head :: tail -> head
+      case Nil -> 0)
+
+    generatedListLength [item, (item + 1), 0]) + 1) }
+
+result : GeneratedPair
 let result = generated_2536
 
 --! assertNoErrors
---! assertType generated_2536 Int
---! assertType result Int
---! assertDeclKinds signature, let, signature, let, signature, let
+--! assertType generated_2536 GeneratedPair
+--! assertType result GeneratedPair
+--! assertDeclKinds type, signature, let, signature, let

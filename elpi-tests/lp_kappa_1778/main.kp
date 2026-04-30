@@ -1,12 +1,26 @@
 module main
 
-generated_1778 : Int
-let generated_1778 =
-    block
-        ranked : Int
-        let ranked = ((((((((if True then ((left = (0 + 0), right = 0)).left else 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0)
+generatedEcho : forall (a : Type). (this x : a) -> a
+let generatedEcho @a (this x : a) = x
 
-        (ranked + 0)
+generated_1778 : Int
+let generated_1778 = ((match [(block
+    generatedMapCount : Map String Int -> Int
+    let generatedMapCount values = 1
+
+    let item = 0
+    let values = { yield "item" : item }
+
+    generatedMapCount values), ((block
+    generatedMapCount : Map String Int -> Int
+    let generatedMapCount values = 1
+
+    let item = 0
+    let values = { yield "item" : item }
+
+    generatedMapCount values) + 1)]
+  case head :: tail -> head
+  case Nil -> 0) + 0).generatedEcho
 
 result : Int
 let result = generated_1778
@@ -14,4 +28,4 @@ let result = generated_1778
 --! assertNoErrors
 --! assertType generated_1778 Int
 --! assertType result Int
---! assertDeclKinds signature, let, signature, let
+--! assertDeclKinds signature, let, signature, let, signature, let

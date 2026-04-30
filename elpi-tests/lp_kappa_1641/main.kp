@@ -1,12 +1,45 @@
 module main
 
-generated_1641 : (Int -> Int)
-let generated_1641 = \(x : Int) -> ((\(x : Int) -> ((\(x : Int) -> (((if False then \(x : Int) -> x else \(x : Int) -> (0 + ((\(x : Int) -> x) x)))) x)) x)) x)
+generated_1641 : Int
+let generated_1641 =
+    block
+        let pair = (x = ((block
+            generatedSetCount : Set Int -> Int
+            let generatedSetCount values = 2
 
-result : (Int -> Int)
+            let item = (block
+                generatedMapCount : Map String Int -> Int
+                let generatedMapCount values = 1
+
+                let item = 0
+                let values = { yield "item" : item }
+
+                generatedMapCount values)
+            let values = {|item, (item + 1)|}
+
+            generatedSetCount values) + 0), y = ((block
+            generatedSetCount : Set Int -> Int
+            let generatedSetCount values = 2
+
+            let item = (block
+                generatedMapCount : Map String Int -> Int
+                let generatedMapCount values = 1
+
+                let item = 0
+                let values = { yield "item" : item }
+
+                generatedMapCount values)
+            let values = {|item, (item + 1)|}
+
+            generatedSetCount values) + 1))
+        let whole@(x = captured, y = other) = pair
+
+        (whole.x + (captured + other))
+
+result : Int
 let result = generated_1641
 
 --! assertNoErrors
---! assertType generated_1641 (Int -> Int)
---! assertType result (Int -> Int)
+--! assertType generated_1641 Int
+--! assertType result Int
 --! assertDeclKinds signature, let, signature, let

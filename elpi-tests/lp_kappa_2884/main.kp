@@ -1,12 +1,18 @@
 module main
 
+type GeneratedTuple = (Int, Int)
+
 generated_2884 : Int
 let generated_2884 =
     block
-        let base : (x : Int) = (x = (((((((((left = 0, right = (((Some (0 + 0)) ?: 0) + 0))).right + 0) + 0) + 0) + 0) + 0) + 0) + 0))
-        let extended = base.{ y := (((((((((left = 0, right = (((Some (0 + 0)) ?: 0) + 0))).right + 0) + 0) + 0) + 0) + 0) + 0) + 1) }
+        let pair : GeneratedTuple = ((((\(n : Int) -> n) (match [0, (0 + 1)]
+          case head :: tail -> head
+          case Nil -> 0)) + 0), (((\(n : Int) -> n) (match [0, (0 + 1)]
+          case head :: tail -> head
+          case Nil -> 0)) + 1))
+        let (left, right) = pair
 
-        (extended.x + extended.y)
+        (left + right)
 
 result : Int
 let result = generated_2884
@@ -14,4 +20,4 @@ let result = generated_2884
 --! assertNoErrors
 --! assertType generated_2884 Int
 --! assertType result Int
---! assertDeclKinds signature, let, signature, let
+--! assertDeclKinds type, signature, let, signature, let

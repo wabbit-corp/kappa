@@ -1,12 +1,19 @@
 module main
 
-generated_3647 : (Int -> Int)
-let generated_3647 = \(x : Int) -> ((\(x : Int) -> ((\(x : Int) -> (((\(x : Int) -> (((\(x : Int) -> ((\(x : Int) -> x) x)) x) + 0)) x) + 0)) x)) x)
+generated_3647 : List Int
+let generated_3647 = [ for x in [1, 2, 3], order by x desc, yield (block
+    generatedMapCount : Map String Int -> Int
+    let generatedMapCount values = 1
 
-result : (Int -> Int)
+    let item = ((\(n : Int) -> n) x)
+    let values = { yield "item" : item }
+
+    generatedMapCount values) ]
+
+result : List Int
 let result = generated_3647
 
 --! assertNoErrors
---! assertType generated_3647 (Int -> Int)
---! assertType result (Int -> Int)
+--! assertType generated_3647 List Int
+--! assertType result List Int
 --! assertDeclKinds signature, let, signature, let

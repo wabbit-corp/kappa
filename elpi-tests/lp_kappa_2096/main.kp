@@ -1,12 +1,26 @@
 module main
 
-generated_2096 : Map String Int
-let generated_2096 = { for x in [1, 2, 3], yield "k" : ((((((((if False then 0 else ((if False then 0 else x) + (0 + 0))) + (0 + 0)) + 0) + 0) + 0) + 0) + 0) + 0) }
+generated_2096 : Int
+let generated_2096 =
+    block
+        ranked : Int
+        let ranked = (block
+            generatedSetCount : Set Int -> Int
+            let generatedSetCount values = 2
 
-result : Map String Int
+            let item = (match (Some 0)
+              case Some payload -> payload
+              case None -> 0)
+            let values = {|item, (item + 1)|}
+
+            generatedSetCount values)
+
+        (ranked + 0)
+
+result : Int
 let result = generated_2096
 
 --! assertNoErrors
---! assertType generated_2096 Map String Int
---! assertType result Map String Int
+--! assertType generated_2096 Int
+--! assertType result Int
 --! assertDeclKinds signature, let, signature, let

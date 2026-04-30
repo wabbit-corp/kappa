@@ -1,10 +1,36 @@
 module main
 
-generatedResize : (image : Int) -> (width : Int) -> (height : Int) -> Int
-let generatedResize image width height = image + width * 10 + height
+data GeneratedChoice : Type =
+    GeneratedLeft (value : Int)
+    GeneratedRight
 
 generated_2535 : Int
-let generated_2535 = generatedResize { image = (((((((((left = (((Some (0 + 0)) ?: 0) + 0), right = 0)).left + 0) + 0) + 0) + 0) + 0) + 0) + 0), height = 3, width = 2 }
+let generated_2535 =
+    match (GeneratedLeft ((block
+        generatedListLength : List Int -> Int
+        let generatedListLength xs decreases structural xs =
+            match xs
+              case Nil -> 0
+              case _ :: tail -> 1 + generatedListLength tail
+
+        let item = (match [0, (0 + 1)]
+          case head :: tail -> head
+          case Nil -> 0)
+
+        generatedListLength [item, (item + 1), 0]) + 0))
+      case GeneratedLeft payload -> (payload + 0)
+      case GeneratedRight -> ((block
+          generatedListLength : List Int -> Int
+          let generatedListLength xs decreases structural xs =
+              match xs
+                case Nil -> 0
+                case _ :: tail -> 1 + generatedListLength tail
+
+          let item = (match [0, (0 + 1)]
+            case head :: tail -> head
+            case Nil -> 0)
+
+          generatedListLength [item, (item + 1), 0]) + 0)
 
 result : Int
 let result = generated_2535
@@ -12,4 +38,4 @@ let result = generated_2535
 --! assertNoErrors
 --! assertType generated_2535 Int
 --! assertType result Int
---! assertDeclKinds signature, let, signature, let, signature, let
+--! assertDeclKinds data, signature, let, signature, let

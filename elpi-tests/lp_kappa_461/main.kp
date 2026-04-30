@@ -1,15 +1,12 @@
 module main
 
-generatedResize : (image : Int) -> (width : Int) -> (height : Int) -> Int
-let generatedResize image width height = image + width * 10 + height
+generated_461 : List Int
+let generated_461 = [ for x in [1, 2, 3], order by x desc, yield ((\(n : Int) -> n) x) ]
 
-generated_461 : Int
-let generated_461 = generatedResize { image = (((((((((((left = 0, right = (0 + 0))).right + 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0), height = 3, width = 2 }
-
-result : Int
+result : List Int
 let result = generated_461
 
 --! assertNoErrors
---! assertType generated_461 Int
---! assertType result Int
---! assertDeclKinds signature, let, signature, let, signature, let
+--! assertType generated_461 List Int
+--! assertType result List Int
+--! assertDeclKinds signature, let, signature, let

@@ -1,10 +1,12 @@
 module main
 
-generatedEcho : forall (a : Type). (this x : a) -> a
-let generatedEcho @a (this x : a) = x
+generatedResize : (image : Int) -> (width : Int) -> (height : Int) -> Int
+let generatedResize image width height = image + width * 10 + height
 
 generated_269 : Int
-let generated_269 = ((.generatedEcho) ((((((((((0 + (0 + 0)) + 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0))
+let generated_269 = generatedResize { image = ((match (Some 0)
+  case Some payload -> payload
+  case None -> 0) + 0), height = 3, width = 2 }
 
 result : Int
 let result = generated_269

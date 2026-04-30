@@ -1,12 +1,31 @@
 module main
 
-generated_2155 : List Int
-let generated_2155 = [ for x in [1, 2, 3], if x > 0, yield ((((((((if False then 0 else ((left = 0, right = (x + 0))).right) + (0 + 0)) + 0) + 0) + 0) + 0) + 0) + 0) ]
+trait GeneratedScore a =
+    score : a -> Int
 
-result : List Int
+instance GeneratedScore Int =
+    let score x = x
+
+generated_2155 : Int
+let generated_2155 =
+    let
+        dict = summon (GeneratedScore Int)
+in
+        dict.score ((block
+            generatedMapCount : Map String Int -> Int
+            let generatedMapCount values = 1
+
+            let item = (match (Some 0)
+              case Some payload -> payload
+              case None -> 0)
+            let values = { yield "item" : item }
+
+            generatedMapCount values) + 0)
+
+result : Int
 let result = generated_2155
 
 --! assertNoErrors
---! assertType generated_2155 List Int
---! assertType result List Int
---! assertDeclKinds signature, let, signature, let
+--! assertType generated_2155 Int
+--! assertType result Int
+--! assertDeclKinds trait, instance, signature, let, signature, let

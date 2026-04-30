@@ -1,14 +1,24 @@
 module main
 
-type GeneratedPair = (left : Int, right : Int)
+generatedMakeConst : forall (a : Type). a -> Unit -> a
+let generatedMakeConst value = \() -> value
 
-generated_1242 : GeneratedPair
-let generated_1242 = ((left = (((((((if False then 0 else ((0 + 0) + 0)) + 0) + 0) + 0) + 0) + 0) + 0), right = 0)).{ right = ((((((((if False then 0 else ((0 + 0) + 0)) + 0) + 0) + 0) + 0) + 0) + 0) + 1) }
+generated_1242 : Int
+let generated_1242 = ((generatedMakeConst ((match (Some (block
+    generatedSetCount : Set Int -> Int
+    let generatedSetCount values = 2
 
-result : GeneratedPair
+    let item = 0
+    let values = {|item, (item + 1)|}
+
+    generatedSetCount values))
+  case Some payload -> payload
+  case None -> 0) + 0)) ())
+
+result : Int
 let result = generated_1242
 
 --! assertNoErrors
---! assertType generated_1242 GeneratedPair
---! assertType result GeneratedPair
---! assertDeclKinds type, signature, let, signature, let
+--! assertType generated_1242 Int
+--! assertType result Int
+--! assertDeclKinds signature, let, signature, let, signature, let

@@ -1,15 +1,38 @@
 module main
 
-generated_4570 : IO Int
+generated_4570 : Int
 let generated_4570 =
-    do
-        value <- pure ((((((0 + ((if False then 0 else ((left = 0, right = (0 + 0))).right) + 0)) + 0) + 0) + 0) + 0) + 0)
-        pure (value + 2)
+    block
+        scoped effect Ask =
+            ask : Unit -> Bool
 
-result : IO Int
+        let l = Ask
+
+        let seed = (block
+            generatedSetCount : Set Int -> Int
+            let generatedSetCount values = 2
+
+            let item = ((Some (0 + 1)) ?: (0 + 2))
+            let values = {|item, (item + 1)|}
+
+            generatedSetCount values)
+
+        let comp : Eff <[Ask : Ask]> Int =
+            do
+                let b <- l.ask ()
+                if b then seed else (seed + 1)
+
+        let handled : Eff <[ ]> Int =
+            deep handle l comp with
+                case return x -> pure x
+                case ask () k -> k True
+
+        runPure handled
+
+result : Int
 let result = generated_4570
 
 --! assertNoErrors
---! assertType generated_4570 IO Int
---! assertType result IO Int
+--! assertType generated_4570 Int
+--! assertType result Int
 --! assertDeclKinds signature, let, signature, let

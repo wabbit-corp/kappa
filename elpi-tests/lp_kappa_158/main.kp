@@ -1,12 +1,22 @@
 module main
 
-generated_158 : Map String Int
-let generated_158 = { for x in [1, 2, 3], let y = x + 1, if y > 0, yield (if y > 1 then "hi" else "lo") : ((((((x + 0) + 0) + 0) + 0) + 0) + 0) }
+generatedEcho : forall (a : Type). (this x : a) -> a
+let generatedEcho @a (this x : a) = x
 
-result : Map String Int
+generated_158 : Int
+let generated_158 = ((block
+    generatedSetCount : Set Int -> Int
+    let generatedSetCount values = 2
+
+    let item = 0
+    let values = {|item, (item + 1)|}
+
+    generatedSetCount values) + 0).generatedEcho
+
+result : Int
 let result = generated_158
 
 --! assertNoErrors
---! assertType generated_158 Map String Int
---! assertType result Map String Int
---! assertDeclKinds signature, let, signature, let
+--! assertType generated_158 Int
+--! assertType result Int
+--! assertDeclKinds signature, let, signature, let, signature, let

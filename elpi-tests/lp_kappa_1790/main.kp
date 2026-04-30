@@ -1,12 +1,49 @@
 module main
 
-generated_1790 : Map String Int
-let generated_1790 = { for x in [1, 2, 3], let y = x + 1, if y > 0, yield (if y > 1 then "hi" else "lo") : ((((((((if True then ((left = (x + 0), right = 0)).left else 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0) }
+generated_1790 : Int
+let generated_1790 =
+    block
+        let base : (x : Int) = (x = ((match [(block
+            generatedMapCount : Map String Int -> Int
+            let generatedMapCount values = 1
 
-result : Map String Int
+            let item = 0
+            let values = { yield "item" : item }
+
+            generatedMapCount values), ((block
+            generatedMapCount : Map String Int -> Int
+            let generatedMapCount values = 1
+
+            let item = 0
+            let values = { yield "item" : item }
+
+            generatedMapCount values) + 1)]
+          case head :: tail -> head
+          case Nil -> 0) + 0))
+        let extended = base.{ y := ((match [(block
+            generatedMapCount : Map String Int -> Int
+            let generatedMapCount values = 1
+
+            let item = 0
+            let values = { yield "item" : item }
+
+            generatedMapCount values), ((block
+            generatedMapCount : Map String Int -> Int
+            let generatedMapCount values = 1
+
+            let item = 0
+            let values = { yield "item" : item }
+
+            generatedMapCount values) + 1)]
+          case head :: tail -> head
+          case Nil -> 0) + 1) }
+
+        (extended.x + extended.y)
+
+result : Int
 let result = generated_1790
 
 --! assertNoErrors
---! assertType generated_1790 Map String Int
---! assertType result Map String Int
+--! assertType generated_1790 Int
+--! assertType result Int
 --! assertDeclKinds signature, let, signature, let

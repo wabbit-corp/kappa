@@ -1,12 +1,49 @@
 module main
 
-generated_3434 : Map String Int
-let generated_3434 = { yield "only" : ((((((0 + ((((if False then 0 else 0) + 0) + 0) + 0)) + 0) + 0) + 0) + 0) + 0) }
+generated_3434 : Int
+let generated_3434 =
+    block
+        scoped effect Ask =
+            ask : Unit -> Bool
 
-result : Map String Int
+        let seed = (match ((block
+            let pair = (x = 0, y = (0 + 1))
+            let (x = captured, y = other) = pair
+
+            (captured + other)) == (block
+            let pair = (x = 0, y = (0 + 1))
+            let (x = captured, y = other) = pair
+
+            (captured + other)))
+          case True -> (block
+              let pair = (x = 0, y = (0 + 1))
+              let (x = captured, y = other) = pair
+
+              (captured + other))
+          case False -> 0)
+
+        let comp : Eff <[Ask : Ask]> Int =
+            do
+                let b <- Ask.ask ()
+                if b then seed else (seed + 1)
+
+        let rehandle : (1 k : ((1 x : Bool) -> Eff <[Ask : Ask]> Int)) -> Eff <[ ]> Int =
+            \(1 k : ((1 x : Bool) -> Eff <[Ask : Ask]> Int)) ->
+                handle Ask (k True) with
+                    case return y -> pure y
+                    case ask () k2 -> k2 False
+
+        let handled : Eff <[ ]> Int =
+            handle Ask comp with
+                case return y -> pure y
+                case ask () k -> rehandle k
+
+        runPure handled
+
+result : Int
 let result = generated_3434
 
 --! assertNoErrors
---! assertType generated_3434 Map String Int
---! assertType result Map String Int
+--! assertType generated_3434 Int
+--! assertType result Int
 --! assertDeclKinds signature, let, signature, let

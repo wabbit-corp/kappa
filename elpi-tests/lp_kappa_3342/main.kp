@@ -1,17 +1,19 @@
 module main
 
-generated_3342 : Int
+generated_3342 : IO Int
 let generated_3342 =
-    block
-        ranked : Int
-        let ranked = (((((0 + ((((0 + (0 + 0)) + 0) + 0) + 0)) + 0) + 0) + 0) + 0)
+    do
+        value <- pure (((\(n : Int) -> n) (block
+            let pair = (x = 0, y = (0 + 1))
+            let (x = captured, y = other) = pair
 
-        (ranked + 0)
+            (captured + other))) + 0)
+        pure (value + 2)
 
-result : Int
+result : IO Int
 let result = generated_3342
 
 --! assertNoErrors
---! assertType generated_3342 Int
---! assertType result Int
+--! assertType generated_3342 IO Int
+--! assertType result IO Int
 --! assertDeclKinds signature, let, signature, let

@@ -1,12 +1,18 @@
 module main
 
-generated_3850 : Option Int
-let generated_3850 = (if True then (if True then (if False then None else (if False then None else (if (((Some (0 + 0)) ?: 0) == 1) then (Some (((Some (0 + 0)) ?: 0) + 0)) else (Some (0 + 0))))) else None) else None)
+generated_3850 : Int
+let generated_3850 =
+    block
+        type RankedAlias = Int
 
-result : Option Int
+        let aliased : RankedAlias = (((\(n : Int) -> n) ((\(n : Int) -> n) 0)) + 0)
+
+        (aliased + 1)
+
+result : Int
 let result = generated_3850
 
 --! assertNoErrors
---! assertType generated_3850 Option Int
---! assertType result Option Int
+--! assertType generated_3850 Int
+--! assertType result Int
 --! assertDeclKinds signature, let, signature, let

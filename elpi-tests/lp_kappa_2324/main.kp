@@ -1,19 +1,20 @@
 module main
 
-generatedNeed : (@x : Int) -> Int
-let generatedNeed (@x : Int) = x
+generated_2324 : Map String Int
+let generated_2324 = { for x in [1, 2, 3], if x > 0, yield "k" : (block
+    let pair = (x = (match (Some x)
+      case Some payload -> payload
+      case None -> 0), y = ((match (Some x)
+      case Some payload -> payload
+      case None -> 0) + 1))
+    let (x = captured, y = other) = pair
 
-generated_2324 : Int
-let generated_2324 =
-    block
-        let (@x : Int) = ((((((((left = ((if True then 0 else 0) + 0), right = 0)).left + 0) + 0) + 0) + 0) + 0) + 0)
+    (captured + other)) }
 
-        if True then generatedNeed else 0
-
-result : Int
+result : Map String Int
 let result = generated_2324
 
 --! assertNoErrors
---! assertType generated_2324 Int
---! assertType result Int
---! assertDeclKinds signature, let, signature, let, signature, let
+--! assertType generated_2324 Map String Int
+--! assertType result Map String Int
+--! assertDeclKinds signature, let, signature, let

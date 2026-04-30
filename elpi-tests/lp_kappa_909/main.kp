@@ -1,12 +1,25 @@
 module main
 
-generated_909 : String
-let generated_909 = (if (if (if (if ((if True then True else False) && False) then True else False) then True else False) then True else False) then #"raw lambda-prolog"# else "fallback")
+generated_909 : Int
+let generated_909 =
+    let
+        ranked : Int = ((\(n : Int) -> n) (block
+            generatedListLength : List Int -> Int
+            let generatedListLength xs decreases structural xs =
+                match xs
+                  case Nil -> 0
+                  case _ :: tail -> 1 + generatedListLength tail
 
-result : String
+            let item = 0
+
+            generatedListLength [item, (item + 1), 0]))
+in
+        (ranked + 0)
+
+result : Int
 let result = generated_909
 
 --! assertNoErrors
---! assertType generated_909 String
---! assertType result String
+--! assertType generated_909 Int
+--! assertType result Int
 --! assertDeclKinds signature, let, signature, let

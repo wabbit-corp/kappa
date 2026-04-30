@@ -3,10 +3,15 @@ module main
 generated_2986 : Int
 let generated_2986 =
     block
-        let base : (x : Int) = (x = (((((((((Some ((0 + (0 + 0)) + 0)) ?: 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0))
-        let extended = base.{ y := (((((((((Some ((0 + (0 + 0)) + 0)) ?: 0) + 0) + 0) + 0) + 0) + 0) + 0) + 1) }
+        type RankedAlias = Int
 
-        (extended.x + extended.y)
+        let aliased : RankedAlias = (((Some ((match [0, (0 + 1)]
+          case head :: tail -> head
+          case Nil -> 0) + 1)) ?: ((match [0, (0 + 1)]
+          case head :: tail -> head
+          case Nil -> 0) + 2)) + 0)
+
+        (aliased + 1)
 
 result : Int
 let result = generated_2986

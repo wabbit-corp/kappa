@@ -1,15 +1,23 @@
 module main
 
-generated_3584 : IO Int
+generated_3584 : Int
 let generated_3584 =
-    do
-        value <- pure ((((((0 + (((((Some (0 + 0)) ?: 0) + 0) + 0) + 0)) + 0) + 0) + 0) + 0) + 0)
-        pure (value + 2)
+    block
+        let (captured : Int) = ((block
+            generatedSetCount : Set Int -> Int
+            let generatedSetCount values = 2
 
-result : IO Int
+            let item = ((\(n : Int) -> n) 0)
+            let values = {|item, (item + 1)|}
+
+            generatedSetCount values) + 0)
+
+        captured
+
+result : Int
 let result = generated_3584
 
 --! assertNoErrors
---! assertType generated_3584 IO Int
---! assertType result IO Int
+--! assertType generated_3584 Int
+--! assertType result Int
 --! assertDeclKinds signature, let, signature, let

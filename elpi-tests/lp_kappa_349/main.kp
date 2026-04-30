@@ -1,12 +1,17 @@
 module main
 
-generated_349 : (Int -> Int)
-let generated_349 = \(x : Int) -> ((\(x : Int) -> ((\(x : Int) -> ((\(x : Int) -> (((if False then \(x : Int) -> x else \(x : Int) -> x)) x)) x)) x)) x)
+generatedMakeConst : forall (a : Type). a -> Unit -> a
+let generatedMakeConst value = \() -> value
 
-result : (Int -> Int)
+generated_349 : Int
+let generated_349 = ((generatedMakeConst @Int ((match [0, (0 + 1)]
+  case head :: tail -> head
+  case Nil -> 0) + 0)) ())
+
+result : Int
 let result = generated_349
 
 --! assertNoErrors
---! assertType generated_349 (Int -> Int)
---! assertType result (Int -> Int)
---! assertDeclKinds signature, let, signature, let
+--! assertType generated_349 Int
+--! assertType result Int
+--! assertDeclKinds signature, let, signature, let, signature, let

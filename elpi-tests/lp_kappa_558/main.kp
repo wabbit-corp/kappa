@@ -1,15 +1,15 @@
 module main
 
-generated_558 : IO Int
-let generated_558 =
-    do
-        value <- pure ((((((((0 + (((0 + 0) + 0) + 0)) + 0) + 0) + 0) + 0) + 0) + 0) + 0)
-        pure (value + 2)
+generatedNeed : (@x : Int) -> Int
+let generatedNeed (@x : Int) = x
 
-result : IO Int
+generated_558 : Int
+let generated_558 = generatedNeed @((((Some (0 + 1)) ?: (0 + 2)) + 0))
+
+result : Int
 let result = generated_558
 
 --! assertNoErrors
---! assertType generated_558 IO Int
---! assertType result IO Int
---! assertDeclKinds signature, let, signature, let
+--! assertType generated_558 Int
+--! assertType result Int
+--! assertDeclKinds signature, let, signature, let, signature, let

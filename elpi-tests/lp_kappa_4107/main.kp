@@ -3,10 +3,19 @@ module main
 generated_4107 : Int
 let generated_4107 =
     block
-        let pair = (x = ((((((0 + ((if True then (if False then 0 else 0) else 0) + 0)) + 0) + 0) + 0) + 0) + 0), y = ((((((0 + ((if True then (if False then 0 else 0) else 0) + 0)) + 0) + 0) + 0) + 0) + 1))
-        let (x = captured, y = other) = pair
+        rankedHelper : (Int -> Int)
+        let rankedHelper x = x + 1
 
-        (captured + other)
+        rankedHelper ((block
+            generatedMapCount : Map String Int -> Int
+            let generatedMapCount values = 1
+
+            let item = (match (0 == 0)
+              case True -> 0
+              case False -> 0)
+            let values = { yield "item" : item }
+
+            generatedMapCount values) + 0)
 
 result : Int
 let result = generated_4107

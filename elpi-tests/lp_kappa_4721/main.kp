@@ -1,15 +1,17 @@
 module main
 
-generated_4721 : IO Int
+generated_4721 : Int
 let generated_4721 =
-    do
-        let staged = ((((((0 + (((if True then (0 + (0 + 0)) else 0) + 0) + 0)) + 0) + 0) + 0) + 0) + 0)
-        pure (staged + 1)
+    match (Some ((match [((Some (0 + 1)) ?: (0 + 2)), (((Some (0 + 1)) ?: (0 + 2)) + 1)]
+      case head :: tail -> head
+      case Nil -> 0) + 0))
+      case Some payload -> payload
+      case None -> 0
 
-result : IO Int
+result : Int
 let result = generated_4721
 
 --! assertNoErrors
---! assertType generated_4721 IO Int
---! assertType result IO Int
+--! assertType generated_4721 Int
+--! assertType result Int
 --! assertDeclKinds signature, let, signature, let

@@ -1,12 +1,45 @@
 module main
 
-generated_1462 : Map String Int
-let generated_1462 = { yield "only" : ((((((((if False then 0 else ((left = (0 + 0), right = 0)).left) + 0) + 0) + 0) + 0) + 0) + 0) + 0) }
+generated_1462 : Int
+let generated_1462 =
+    block
+        trait RankedScore a =
+            rank : a -> Int
 
-result : Map String Int
+        instance RankedScore Int =
+            let rank x = x
+
+        let dict = summon (RankedScore Int)
+
+        dict.rank ((match ((block
+            generatedSetCount : Set Int -> Int
+            let generatedSetCount values = 2
+
+            let item = 0
+            let values = {|item, (item + 1)|}
+
+            generatedSetCount values) == (block
+            generatedSetCount : Set Int -> Int
+            let generatedSetCount values = 2
+
+            let item = 0
+            let values = {|item, (item + 1)|}
+
+            generatedSetCount values))
+          case True -> (block
+              generatedSetCount : Set Int -> Int
+              let generatedSetCount values = 2
+
+              let item = 0
+              let values = {|item, (item + 1)|}
+
+              generatedSetCount values)
+          case False -> 0) + 0)
+
+result : Int
 let result = generated_1462
 
 --! assertNoErrors
---! assertType generated_1462 Map String Int
---! assertType result Map String Int
+--! assertType generated_1462 Int
+--! assertType result Int
 --! assertDeclKinds signature, let, signature, let

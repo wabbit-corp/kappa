@@ -3,11 +3,45 @@ module main
 generated_1974 : Int
 let generated_1974 =
     block
-        type RankedAlias = Int
+        scoped effect Ask =
+            ask : Unit -> Bool
 
-        let aliased : RankedAlias = (((((((((if False then 0 else (0 + (0 + 0))) + (0 + 0)) + 0) + 0) + 0) + 0) + 0) + 0) + 0)
+        let seed = (match ((block
+            generatedMapCount : Map String Int -> Int
+            let generatedMapCount values = 1
 
-        (aliased + 1)
+            let item = 0
+            let values = { yield "item" : item }
+
+            generatedMapCount values) == (block
+            generatedMapCount : Map String Int -> Int
+            let generatedMapCount values = 1
+
+            let item = 0
+            let values = { yield "item" : item }
+
+            generatedMapCount values))
+          case True -> (block
+              generatedMapCount : Map String Int -> Int
+              let generatedMapCount values = 1
+
+              let item = 0
+              let values = { yield "item" : item }
+
+              generatedMapCount values)
+          case False -> 0)
+
+        let comp : Eff <[Ask : Ask]> Int =
+            do
+                let b <- Ask.ask ()
+                if b then seed else (seed + 1)
+
+        let handled : Eff <[ ]> Int =
+            deep handle Ask comp with
+                case return x -> pure x
+                case ask () k -> k True
+
+        runPure handled
 
 result : Int
 let result = generated_1974

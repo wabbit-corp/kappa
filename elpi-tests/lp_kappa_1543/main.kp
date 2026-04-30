@@ -1,12 +1,43 @@
 module main
 
-generated_1543 : List Int
-let generated_1543 = [ for x in [1, 2, 3], yield ((((((((if True then x else 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0) ]
+generated_1543 : Int
+let generated_1543 =
+    block
+        scoped effect State (s : Type) =
+            get : Unit -> s
 
-result : List Int
+        let seed = ((Some ((block
+            generatedSetCount : Set Int -> Int
+            let generatedSetCount values = 2
+
+            let item = 0
+            let values = {|item, (item + 1)|}
+
+            generatedSetCount values) + 1)) ?: ((block
+            generatedSetCount : Set Int -> Int
+            let generatedSetCount values = 2
+
+            let item = 0
+            let values = {|item, (item + 1)|}
+
+            generatedSetCount values) + 2))
+
+        let comp : Eff <[State : State Int]> Int =
+            do
+                let n <- State.get ()
+                n
+
+        let handled : Eff <[ ]> Int =
+            deep handle State comp with
+                case return x -> pure x
+                case get () k -> k seed
+
+        runPure handled
+
+result : Int
 let result = generated_1543
 
 --! assertNoErrors
---! assertType generated_1543 List Int
---! assertType result List Int
+--! assertType generated_1543 Int
+--! assertType result Int
 --! assertDeclKinds signature, let, signature, let

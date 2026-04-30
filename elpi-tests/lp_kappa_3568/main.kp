@@ -1,12 +1,29 @@
 module main
 
-generated_3568 : List Int
-let generated_3568 = [ yield ((((((0 + (((((left = 0, right = (0 + 0))).right + 0) + 0) + 0)) + 0) + 0) + 0) + 0) + 0) ]
+generated_3568 : Int
+let generated_3568 =
+    block
+        trait RankedScore a =
+            rank : a -> Int
 
-result : List Int
+        instance RankedScore Int =
+            let rank x = x
+
+        let dict = summon (RankedScore Int)
+
+        dict.rank ((block
+            generatedSetCount : Set Int -> Int
+            let generatedSetCount values = 2
+
+            let item = ((\(n : Int) -> n) 0)
+            let values = {|item, (item + 1)|}
+
+            generatedSetCount values) + 0)
+
+result : Int
 let result = generated_3568
 
 --! assertNoErrors
---! assertType generated_3568 List Int
---! assertType result List Int
+--! assertType generated_3568 Int
+--! assertType result Int
 --! assertDeclKinds signature, let, signature, let

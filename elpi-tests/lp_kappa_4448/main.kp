@@ -3,10 +3,13 @@ module main
 generated_4448 : Int
 let generated_4448 =
     block
-        let base : (x : Int) = (x = ((((((0 + ((if False then 0 else (if False then 0 else 0)) + 0)) + 0) + 0) + 0) + 0) + 0))
-        let extended = base.{ y := ((((((0 + ((if False then 0 else (if False then 0 else 0)) + 0)) + 0) + 0) + 0) + 0) + 1) }
+        let (captured : Int) = (((Some ((match (0 == 0)
+          case True -> 0
+          case False -> 0) + 1)) ?: ((match (0 == 0)
+          case True -> 0
+          case False -> 0) + 2)) + 0)
 
-        (extended.x + extended.y)
+        captured
 
 result : Int
 let result = generated_4448

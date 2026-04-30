@@ -1,12 +1,35 @@
 module main
 
-generated_1774 : Unit
-let generated_1774 = (if True then (if True then (if True then (if (True && True) then ((\(u : Unit) -> if False then () else u) ()) else ()) else ()) else ()) else ())
+generatedNeed : (@x : Int) -> Int
+let generatedNeed (@x : Int) = x
 
-result : Unit
+generated_1774 : Int
+let generated_1774 =
+    block
+        let (@x : Int) = (match [(block
+            generatedMapCount : Map String Int -> Int
+            let generatedMapCount values = 1
+
+            let item = 0
+            let values = { yield "item" : item }
+
+            generatedMapCount values), ((block
+            generatedMapCount : Map String Int -> Int
+            let generatedMapCount values = 1
+
+            let item = 0
+            let values = { yield "item" : item }
+
+            generatedMapCount values) + 1)]
+          case head :: tail -> head
+          case Nil -> 0)
+
+        if True then generatedNeed else 0
+
+result : Int
 let result = generated_1774
 
 --! assertNoErrors
---! assertType generated_1774 Unit
---! assertType result Unit
---! assertDeclKinds signature, let, signature, let
+--! assertType generated_1774 Int
+--! assertType result Int
+--! assertDeclKinds signature, let, signature, let, signature, let

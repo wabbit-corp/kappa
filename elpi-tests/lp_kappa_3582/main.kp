@@ -4,11 +4,14 @@ generatedNeed : (@x : Int) -> Int
 let generatedNeed (@x : Int) = x
 
 generated_3582 : Int
-let generated_3582 =
-    block
-        let (@x : Int) = (((((0 + (((((Some (0 + 0)) ?: 0) + 0) + 0) + 0)) + 0) + 0) + 0) + 0)
+let generated_3582 = generatedNeed @(((block
+    generatedSetCount : Set Int -> Int
+    let generatedSetCount values = 2
 
-        if True then generatedNeed else 0
+    let item = ((\(n : Int) -> n) 0)
+    let values = {|item, (item + 1)|}
+
+    generatedSetCount values) + 0))
 
 result : Int
 let result = generated_3582

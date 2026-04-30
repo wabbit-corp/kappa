@@ -1,7 +1,12 @@
 module main
 
 generated_548 : Int
-let generated_548 = (((((((0 + (((0 + 0) + 0) + 0)) + 0) + 0) + 0) + 0) + 0) + 0)
+let generated_548 =
+    block
+        let base : (x : Int) = (x = (((Some (0 + 1)) ?: (0 + 2)) + 0))
+        let extended = base.{ y := (((Some (0 + 1)) ?: (0 + 2)) + 1) }
+
+        (extended.x + extended.y)
 
 result : Int
 let result = generated_548

@@ -1,16 +1,30 @@
 module main
 
-generated_623 : Int
-let generated_623 =
-    let
-        ranked : Int = (((((((0 + ((if True then 0 else 0) + 0)) + 0) + 0) + 0) + 0) + 0) + 0)
-in
-        (ranked + 0)
+generated_623 : List Int
+let generated_623 = [ for x in [1, 2, 3], order by x desc, yield (block
+    generatedListLength : List Int -> Int
+    let generatedListLength xs decreases structural xs =
+        match xs
+          case Nil -> 0
+          case _ :: tail -> 1 + generatedListLength tail
 
-result : Int
+    let item = (block
+        generatedListLength : List Int -> Int
+        let generatedListLength xs decreases structural xs =
+            match xs
+              case Nil -> 0
+              case _ :: tail -> 1 + generatedListLength tail
+
+        let item = x
+
+        generatedListLength [item, (item + 1), 0])
+
+    generatedListLength [item, (item + 1), 0]) ]
+
+result : List Int
 let result = generated_623
 
 --! assertNoErrors
---! assertType generated_623 Int
---! assertType result Int
+--! assertType generated_623 List Int
+--! assertType result List Int
 --! assertDeclKinds signature, let, signature, let

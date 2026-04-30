@@ -1,12 +1,23 @@
 module main
 
-generated_2726 : Unit
-let generated_2726 = (if True then (if True then (if True then (if (0 == 1) then () else (if (True && True) then () else ())) else ()) else ()) else ())
+generatedUseWidth : (width : Int) -> Int
+let generatedUseWidth width = width
 
-result : Unit
+generated_2726 : Int
+let generated_2726 =
+    block
+        let width = ((match (Some (match [0, (0 + 1)]
+          case head :: tail -> head
+          case Nil -> 0))
+          case Some payload -> payload
+          case None -> 0) + 0)
+
+        generatedUseWidth { width }
+
+result : Int
 let result = generated_2726
 
 --! assertNoErrors
---! assertType generated_2726 Unit
---! assertType result Unit
---! assertDeclKinds signature, let, signature, let
+--! assertType generated_2726 Int
+--! assertType result Int
+--! assertDeclKinds signature, let, signature, let, signature, let

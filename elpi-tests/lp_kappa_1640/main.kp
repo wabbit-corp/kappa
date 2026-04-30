@@ -1,12 +1,30 @@
 module main
 
-generated_1640 : Option Int
-let generated_1640 = (if True then (if True then (if True then (Some ((if (((Some (0 + 0)) ?: 0) == 0) then (Some (0 + 0)) else None) ?: 0)) else None) else None) else None)
+generated_1640 : Int
+let generated_1640 =
+    block
+        let (captured : Int) = ((block
+            generatedSetCount : Set Int -> Int
+            let generatedSetCount values = 2
 
-result : Option Int
+            let item = (block
+                generatedMapCount : Map String Int -> Int
+                let generatedMapCount values = 1
+
+                let item = 0
+                let values = { yield "item" : item }
+
+                generatedMapCount values)
+            let values = {|item, (item + 1)|}
+
+            generatedSetCount values) + 0)
+
+        captured
+
+result : Int
 let result = generated_1640
 
 --! assertNoErrors
---! assertType generated_1640 Option Int
---! assertType result Option Int
+--! assertType generated_1640 Int
+--! assertType result Int
 --! assertDeclKinds signature, let, signature, let

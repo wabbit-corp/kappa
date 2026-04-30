@@ -1,12 +1,29 @@
 module main
 
-generated_1280 : Map String Int
-let generated_1280 = { for x in [1, 2, 3], yield "k" : (((((((if False then 0 else (0 + (x + 0))) + 0) + 0) + 0) + 0) + 0) + 0) }
+generated_1280 : Int
+let generated_1280 =
+    match [(block
+        generatedSetCount : Set Int -> Int
+        let generatedSetCount values = 2
 
-result : Map String Int
+        let item = 0
+        let values = {|item, (item + 1)|}
+
+        generatedSetCount values), ((block
+        generatedSetCount : Set Int -> Int
+        let generatedSetCount values = 2
+
+        let item = 0
+        let values = {|item, (item + 1)|}
+
+        generatedSetCount values) + 1)]
+      case head :: tail -> head
+      case Nil -> 0
+
+result : Int
 let result = generated_1280
 
 --! assertNoErrors
---! assertType generated_1280 Map String Int
---! assertType result Map String Int
+--! assertType generated_1280 Int
+--! assertType result Int
 --! assertDeclKinds signature, let, signature, let

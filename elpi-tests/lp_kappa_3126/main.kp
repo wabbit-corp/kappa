@@ -1,12 +1,26 @@
 module main
 
-generated_3126 : List Int
-let generated_3126 = [ yield (((((((((Some (((if False then 0 else 0) + (0 + 0)) + 0)) ?: 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0) ]
+generated_3126 : IO Int
+let generated_3126 =
+    do
+        value <- pure ((block
+            generatedMapCount : Map String Int -> Int
+            let generatedMapCount values = 1
 
-result : List Int
+            let item = (block
+                let pair = (x = 0, y = (0 + 1))
+                let (x = captured, y = other) = pair
+
+                (captured + other))
+            let values = { yield "item" : item }
+
+            generatedMapCount values) + 0)
+        pure (value + 2)
+
+result : IO Int
 let result = generated_3126
 
 --! assertNoErrors
---! assertType generated_3126 List Int
---! assertType result List Int
+--! assertType generated_3126 IO Int
+--! assertType result IO Int
 --! assertDeclKinds signature, let, signature, let

@@ -1,12 +1,22 @@
 module main
 
-generated_4426 : Unit
-let generated_4426 = (if True then (if True then (if False then () else ((\(u : Unit) -> ()) ((\(u : Unit) -> ()) ()))) else ()) else ())
+type GeneratedPair = (left : Int, right : Int)
 
-result : Unit
+generated_4426 : GeneratedPair
+let generated_4426 = ((left = ((Some ((match (0 == 0)
+  case True -> 0
+  case False -> 0) + 1)) ?: ((match (0 == 0)
+  case True -> 0
+  case False -> 0) + 2)), right = 0)).{ right = (((Some ((match (0 == 0)
+  case True -> 0
+  case False -> 0) + 1)) ?: ((match (0 == 0)
+  case True -> 0
+  case False -> 0) + 2)) + 1) }
+
+result : GeneratedPair
 let result = generated_4426
 
 --! assertNoErrors
---! assertType generated_4426 Unit
---! assertType result Unit
---! assertDeclKinds signature, let, signature, let
+--! assertType generated_4426 GeneratedPair
+--! assertType result GeneratedPair
+--! assertDeclKinds type, signature, let, signature, let

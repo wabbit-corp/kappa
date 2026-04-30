@@ -3,11 +3,28 @@ module main
 generated_2518 : Int
 let generated_2518 =
     block
-        type RankedAlias = Int
+        scoped effect Ask =
+            ask : Unit -> Bool
 
-        let aliased : RankedAlias = (((((((((left = (((left = 0, right = (0 + 0))).right + 0), right = 0)).left + 0) + 0) + 0) + 0) + 0) + 0) + 0)
+        let l = Ask
 
-        (aliased + 1)
+        let seed = ((Some ((match (Some 0)
+          case Some payload -> payload
+          case None -> 0) + 1)) ?: ((match (Some 0)
+          case Some payload -> payload
+          case None -> 0) + 2))
+
+        let comp : Eff <[Ask : Ask]> Int =
+            do
+                let b <- l.ask ()
+                if b then seed else (seed + 1)
+
+        let handled : Eff <[ ]> Int =
+            deep handle l comp with
+                case return x -> pure x
+                case ask () k -> k True
+
+        runPure handled
 
 result : Int
 let result = generated_2518

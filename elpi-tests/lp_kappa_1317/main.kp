@@ -1,12 +1,49 @@
 module main
 
-generated_1317 : String
-let generated_1317 = (if (if (if (if ((True && False) || False) then True else False) then True else False) then True else False) then #"raw lambda-prolog"# else "fallback")
+generated_1317 : Int
+let generated_1317 =
+    block
+        let pair = (x = ((match [(block
+            generatedSetCount : Set Int -> Int
+            let generatedSetCount values = 2
 
-result : String
+            let item = 0
+            let values = {|item, (item + 1)|}
+
+            generatedSetCount values), ((block
+            generatedSetCount : Set Int -> Int
+            let generatedSetCount values = 2
+
+            let item = 0
+            let values = {|item, (item + 1)|}
+
+            generatedSetCount values) + 1)]
+          case head :: tail -> head
+          case Nil -> 0) + 0), y = ((match [(block
+            generatedSetCount : Set Int -> Int
+            let generatedSetCount values = 2
+
+            let item = 0
+            let values = {|item, (item + 1)|}
+
+            generatedSetCount values), ((block
+            generatedSetCount : Set Int -> Int
+            let generatedSetCount values = 2
+
+            let item = 0
+            let values = {|item, (item + 1)|}
+
+            generatedSetCount values) + 1)]
+          case head :: tail -> head
+          case Nil -> 0) + 1))
+        let whole@(x = captured, y = other) = pair
+
+        (whole.x + (captured + other))
+
+result : Int
 let result = generated_1317
 
 --! assertNoErrors
---! assertType generated_1317 String
---! assertType result String
+--! assertType generated_1317 Int
+--! assertType result Int
 --! assertDeclKinds signature, let, signature, let

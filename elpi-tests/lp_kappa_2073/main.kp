@@ -1,12 +1,39 @@
 module main
 
-generated_2073 : Set Int
-let generated_2073 = {| yield (((((((((if False then 0 else ((if True then 0 else 0) + 0)) + (0 + 0)) + 0) + 0) + 0) + 0) + 0) + 0) + 0) |}
+generated_2073 : Int
+let generated_2073 =
+    block
+        let pair = (x = ((block
+            generatedListLength : List Int -> Int
+            let generatedListLength xs decreases structural xs =
+                match xs
+                  case Nil -> 0
+                  case _ :: tail -> 1 + generatedListLength tail
 
-result : Set Int
+            let item = (match (Some 0)
+              case Some payload -> payload
+              case None -> 0)
+
+            generatedListLength [item, (item + 1), 0]) + 0), y = ((block
+            generatedListLength : List Int -> Int
+            let generatedListLength xs decreases structural xs =
+                match xs
+                  case Nil -> 0
+                  case _ :: tail -> 1 + generatedListLength tail
+
+            let item = (match (Some 0)
+              case Some payload -> payload
+              case None -> 0)
+
+            generatedListLength [item, (item + 1), 0]) + 1))
+        let whole@(x = captured, y = other) = pair
+
+        (whole.x + (captured + other))
+
+result : Int
 let result = generated_2073
 
 --! assertNoErrors
---! assertType generated_2073 Set Int
---! assertType result Set Int
+--! assertType generated_2073 Int
+--! assertType result Int
 --! assertDeclKinds signature, let, signature, let

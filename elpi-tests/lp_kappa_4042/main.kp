@@ -3,16 +3,26 @@ module main
 generatedNeed : (@x : Int) -> Int
 let generatedNeed (@x : Int) = x
 
-generated_4042 : IO Int
+generated_4042 : Int
 let generated_4042 =
-    do
-        let (@x : Int) = ((((((0 + ((if True then (0 + (0 + 0)) else 0) + 0)) + 0) + 0) + 0) + 0) + 0)
-        pure generatedNeed
+    block
+        let (@x : Int) = (block
+            generatedSetCount : Set Int -> Int
+            let generatedSetCount values = 2
 
-result : IO Int
+            let item = (match (0 == 0)
+              case True -> 0
+              case False -> 0)
+            let values = {|item, (item + 1)|}
+
+            generatedSetCount values)
+
+        if True then generatedNeed else 0
+
+result : Int
 let result = generated_4042
 
 --! assertNoErrors
---! assertType generated_4042 IO Int
---! assertType result IO Int
+--! assertType generated_4042 Int
+--! assertType result Int
 --! assertDeclKinds signature, let, signature, let, signature, let

@@ -2,8 +2,14 @@ module main
 
 generated_3732 : Int
 let generated_3732 =
-    match (((((((0 + ((0 + ((if True then 0 else 0) + 0)) + 0)) + 0) + 0) + 0) + 0) + 0) == ((((((0 + ((0 + ((if True then 0 else 0) + 0)) + 0)) + 0) + 0) + 0) + 0) + 0))
-      case True -> ((((((0 + ((0 + ((if True then 0 else 0) + 0)) + 0)) + 0) + 0) + 0) + 0) + 0)
+    match (((match [((\(n : Int) -> n) 0), (((\(n : Int) -> n) 0) + 1)]
+      case head :: tail -> head
+      case Nil -> 0) + 0) == ((match [((\(n : Int) -> n) 0), (((\(n : Int) -> n) 0) + 1)]
+      case head :: tail -> head
+      case Nil -> 0) + 0))
+      case True -> ((match [((\(n : Int) -> n) 0), (((\(n : Int) -> n) 0) + 1)]
+        case head :: tail -> head
+        case Nil -> 0) + 0)
       case False -> 0
 
 result : Int

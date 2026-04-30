@@ -1,22 +1,25 @@
 module main
 
-generated_4546 : Int
+generatedNeed : (@x : Int) -> Int
+let generatedNeed (@x : Int) = x
+
+generated_4546 : IO Int
 let generated_4546 =
-    block
-        trait RankedScore a =
-            rank : a -> Int
+    do
+        let (@x : Int) = ((block
+            generatedSetCount : Set Int -> Int
+            let generatedSetCount values = 2
 
-        instance RankedScore Int =
-            let rank x = x
+            let item = ((Some (0 + 1)) ?: (0 + 2))
+            let values = {|item, (item + 1)|}
 
-        let dict = summon (RankedScore Int)
+            generatedSetCount values) + 0)
+        pure generatedNeed
 
-        dict.rank ((((((0 + ((if False then 0 else ((left = (0 + 0), right = 0)).left) + 0)) + 0) + 0) + 0) + 0) + 0)
-
-result : Int
+result : IO Int
 let result = generated_4546
 
 --! assertNoErrors
---! assertType generated_4546 Int
---! assertType result Int
---! assertDeclKinds signature, let, signature, let
+--! assertType generated_4546 IO Int
+--! assertType result IO Int
+--! assertDeclKinds signature, let, signature, let, signature, let

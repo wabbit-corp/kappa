@@ -1,12 +1,69 @@
 module main
 
-generated_600 : Map String Int
-let generated_600 = { for x in [1, 2, 3], yield "k" : (((((((0 + ((0 + (x + 0)) + 0)) + 0) + 0) + 0) + 0) + 0) + 0) }
+generated_600 : Int
+let generated_600 =
+    match (((block
+        generatedListLength : List Int -> Int
+        let generatedListLength xs decreases structural xs =
+            match xs
+              case Nil -> 0
+              case _ :: tail -> 1 + generatedListLength tail
 
-result : Map String Int
+        let item = (block
+            generatedListLength : List Int -> Int
+            let generatedListLength xs decreases structural xs =
+                match xs
+                  case Nil -> 0
+                  case _ :: tail -> 1 + generatedListLength tail
+
+            let item = 0
+
+            generatedListLength [item, (item + 1), 0])
+
+        generatedListLength [item, (item + 1), 0]) + 0) == ((block
+        generatedListLength : List Int -> Int
+        let generatedListLength xs decreases structural xs =
+            match xs
+              case Nil -> 0
+              case _ :: tail -> 1 + generatedListLength tail
+
+        let item = (block
+            generatedListLength : List Int -> Int
+            let generatedListLength xs decreases structural xs =
+                match xs
+                  case Nil -> 0
+                  case _ :: tail -> 1 + generatedListLength tail
+
+            let item = 0
+
+            generatedListLength [item, (item + 1), 0])
+
+        generatedListLength [item, (item + 1), 0]) + 0))
+      case True -> ((block
+          generatedListLength : List Int -> Int
+          let generatedListLength xs decreases structural xs =
+              match xs
+                case Nil -> 0
+                case _ :: tail -> 1 + generatedListLength tail
+
+          let item = (block
+              generatedListLength : List Int -> Int
+              let generatedListLength xs decreases structural xs =
+                  match xs
+                    case Nil -> 0
+                    case _ :: tail -> 1 + generatedListLength tail
+
+              let item = 0
+
+              generatedListLength [item, (item + 1), 0])
+
+          generatedListLength [item, (item + 1), 0]) + 0)
+      case False -> 0
+
+result : Int
 let result = generated_600
 
 --! assertNoErrors
---! assertType generated_600 Map String Int
---! assertType result Map String Int
+--! assertType generated_600 Int
+--! assertType result Int
 --! assertDeclKinds signature, let, signature, let

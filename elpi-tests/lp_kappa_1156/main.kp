@@ -1,12 +1,47 @@
 module main
 
-generated_1156 : Map String Int
-let generated_1156 = { yield "only" : ((((((((if True then ((left = 0, right = (0 + 0))).right else 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0) }
+type GeneratedTuple = (Int, Int)
 
-result : Map String Int
+generated_1156 : Int
+let generated_1156 =
+    block
+        let pair : GeneratedTuple = (((block
+            generatedSetCount : Set Int -> Int
+            let generatedSetCount values = 2
+
+            let item = (block
+                generatedSetCount : Set Int -> Int
+                let generatedSetCount values = 2
+
+                let item = 0
+                let values = {|item, (item + 1)|}
+
+                generatedSetCount values)
+            let values = {|item, (item + 1)|}
+
+            generatedSetCount values) + 0), ((block
+            generatedSetCount : Set Int -> Int
+            let generatedSetCount values = 2
+
+            let item = (block
+                generatedSetCount : Set Int -> Int
+                let generatedSetCount values = 2
+
+                let item = 0
+                let values = {|item, (item + 1)|}
+
+                generatedSetCount values)
+            let values = {|item, (item + 1)|}
+
+            generatedSetCount values) + 1))
+        let (left, right) = pair
+
+        (left + right)
+
+result : Int
 let result = generated_1156
 
 --! assertNoErrors
---! assertType generated_1156 Map String Int
---! assertType result Map String Int
---! assertDeclKinds signature, let, signature, let
+--! assertType generated_1156 Int
+--! assertType result Int
+--! assertDeclKinds type, signature, let, signature, let

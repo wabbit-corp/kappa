@@ -1,19 +1,14 @@
 module main
 
-data GeneratedChoice : Type =
-    GeneratedLeft (value : Int)
-    GeneratedRight
+generated_2891 : List Int
+let generated_2891 = [ for x in [1, 2, 3], order by x desc, yield ((\(n : Int) -> n) (match [x, (x + 1)]
+  case head :: tail -> head
+  case Nil -> 0)) ]
 
-generated_2891 : Int
-let generated_2891 =
-    match GeneratedRight
-      case GeneratedLeft payload -> (payload + 0)
-      case GeneratedRight -> (((((((((left = 0, right = (((Some (0 + 0)) ?: 0) + 0))).right + 0) + 0) + 0) + 0) + 0) + 0) + 0)
-
-result : Int
+result : List Int
 let result = generated_2891
 
 --! assertNoErrors
---! assertType generated_2891 Int
---! assertType result Int
---! assertDeclKinds data, signature, let, signature, let
+--! assertType generated_2891 List Int
+--! assertType result List Int
+--! assertDeclKinds signature, let, signature, let

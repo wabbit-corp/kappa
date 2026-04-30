@@ -1,14 +1,36 @@
 module main
 
-generatedNeed : (@x : Int) -> Int
-let generatedNeed (@x : Int) = x
-
 generated_1474 : Int
 let generated_1474 =
     block
-        let (@x : Int) = (((((((if False then 0 else ((left = 0, right = (0 + 0))).right) + 0) + 0) + 0) + 0) + 0) + 0)
+        type RankedAlias = Int
 
-        if True then generatedNeed else 0
+        let aliased : RankedAlias = ((match ((block
+            generatedSetCount : Set Int -> Int
+            let generatedSetCount values = 2
+
+            let item = 0
+            let values = {|item, (item + 1)|}
+
+            generatedSetCount values) == (block
+            generatedSetCount : Set Int -> Int
+            let generatedSetCount values = 2
+
+            let item = 0
+            let values = {|item, (item + 1)|}
+
+            generatedSetCount values))
+          case True -> (block
+              generatedSetCount : Set Int -> Int
+              let generatedSetCount values = 2
+
+              let item = 0
+              let values = {|item, (item + 1)|}
+
+              generatedSetCount values)
+          case False -> 0) + 0)
+
+        (aliased + 1)
 
 result : Int
 let result = generated_1474
@@ -16,4 +38,4 @@ let result = generated_1474
 --! assertNoErrors
 --! assertType generated_1474 Int
 --! assertType result Int
---! assertDeclKinds signature, let, signature, let, signature, let
+--! assertDeclKinds signature, let, signature, let

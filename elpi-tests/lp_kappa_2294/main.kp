@@ -1,10 +1,20 @@
 module main
 
-generatedEcho : forall (a : Type). (this x : a) -> a
-let generatedEcho @a (this x : a) = x
+generatedUseWidth : (width : Int) -> Int
+let generatedUseWidth width = width
 
 generated_2294 : Int
-let generated_2294 = (((((((((left = ((0 + (0 + 0)) + 0), right = 0)).left + 0) + 0) + 0) + 0) + 0) + 0) + 0).generatedEcho
+let generated_2294 =
+    block
+        let width = ((match [(match (Some 0)
+          case Some payload -> payload
+          case None -> 0), ((match (Some 0)
+          case Some payload -> payload
+          case None -> 0) + 1)]
+          case head :: tail -> head
+          case Nil -> 0) + 0)
+
+        generatedUseWidth { width }
 
 result : Int
 let result = generated_2294

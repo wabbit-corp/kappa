@@ -1,12 +1,14 @@
 module main
 
-generated_515 : Bool
-let generated_515 = (if (if (if (if True then False else True) then True else False) then True else False) then True else False)
+generated_515 : List Int
+let generated_515 = [ for x in [1, 2, 3], order by x desc, yield (match (x == x)
+  case True -> x
+  case False -> 0) ]
 
-result : Bool
+result : List Int
 let result = generated_515
 
 --! assertNoErrors
---! assertType generated_515 Bool
---! assertType result Bool
+--! assertType generated_515 List Int
+--! assertType result List Int
 --! assertDeclKinds signature, let, signature, let

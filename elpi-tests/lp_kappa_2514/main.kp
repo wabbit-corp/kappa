@@ -1,12 +1,33 @@
 module main
 
-generated_2514 : List Int
-let generated_2514 = [ yield (((((((((left = (((left = 0, right = (0 + 0))).right + 0), right = 0)).left + 0) + 0) + 0) + 0) + 0) + 0) + 0) ]
+generated_2514 : Int
+let generated_2514 =
+    block
+        scoped effect Ask =
+            ask : Unit -> Bool
 
-result : List Int
+        let seed = ((Some ((match (Some 0)
+          case Some payload -> payload
+          case None -> 0) + 1)) ?: ((match (Some 0)
+          case Some payload -> payload
+          case None -> 0) + 2))
+
+        let comp : Eff <[Ask : Ask]> Int =
+            do
+                let b <- Ask.ask ()
+                if b then seed else (seed + 1)
+
+        let handled : Eff <[ ]> Int =
+            deep handle Ask comp with
+                case return x -> pure x
+                case ask () k -> k True
+
+        runPure handled
+
+result : Int
 let result = generated_2514
 
 --! assertNoErrors
---! assertType generated_2514 List Int
---! assertType result List Int
+--! assertType generated_2514 Int
+--! assertType result Int
 --! assertDeclKinds signature, let, signature, let

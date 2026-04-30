@@ -1,12 +1,42 @@
 module main
 
-generated_1484 : Map String Int
-let generated_1484 = { for x in [1, 2, 3], if x > 0, yield "k" : (((((((if False then 0 else ((left = 0, right = (x + 0))).right) + 0) + 0) + 0) + 0) + 0) + 0) }
+generatedUseWidth : (width : Int) -> Int
+let generatedUseWidth width = width
 
-result : Map String Int
+generated_1484 : Int
+let generated_1484 =
+    block
+        let width = ((match ((block
+            generatedSetCount : Set Int -> Int
+            let generatedSetCount values = 2
+
+            let item = 0
+            let values = {|item, (item + 1)|}
+
+            generatedSetCount values) == (block
+            generatedSetCount : Set Int -> Int
+            let generatedSetCount values = 2
+
+            let item = 0
+            let values = {|item, (item + 1)|}
+
+            generatedSetCount values))
+          case True -> (block
+              generatedSetCount : Set Int -> Int
+              let generatedSetCount values = 2
+
+              let item = 0
+              let values = {|item, (item + 1)|}
+
+              generatedSetCount values)
+          case False -> 0) + 0)
+
+        generatedUseWidth { width }
+
+result : Int
 let result = generated_1484
 
 --! assertNoErrors
---! assertType generated_1484 Map String Int
---! assertType result Map String Int
---! assertDeclKinds signature, let, signature, let
+--! assertType generated_1484 Int
+--! assertType result Int
+--! assertDeclKinds signature, let, signature, let, signature, let

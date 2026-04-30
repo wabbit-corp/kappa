@@ -1,12 +1,26 @@
 module main
 
-generated_3404 : Int
-let generated_3404 = (((((0 + ((((if False then 0 else 0) + 0) + 0) + 0)) + 0) + 0) + 0) + 0)
+generated_3404 : Map String Int
+let generated_3404 = { for x in [1, 2, 3], if x > 0, yield "k" : (match ((block
+    let pair = (x = x, y = (x + 1))
+    let (x = captured, y = other) = pair
 
-result : Int
+    (captured + other)) == (block
+    let pair = (x = x, y = (x + 1))
+    let (x = captured, y = other) = pair
+
+    (captured + other)))
+  case True -> (block
+      let pair = (x = x, y = (x + 1))
+      let (x = captured, y = other) = pair
+
+      (captured + other))
+  case False -> 0) }
+
+result : Map String Int
 let result = generated_3404
 
 --! assertNoErrors
---! assertType generated_3404 Int
---! assertType result Int
+--! assertType generated_3404 Map String Int
+--! assertType result Map String Int
 --! assertDeclKinds signature, let, signature, let

@@ -1,11 +1,28 @@
 module main
 
+data GeneratedChoice : Type =
+    GeneratedLeft (value : Int)
+    GeneratedRight
+
 generated_4533 : Int
 let generated_4533 =
-    let
-        ranked : Int = (((((0 + ((if False then 0 else ((left = (0 + 0), right = 0)).left) + 0)) + 0) + 0) + 0) + 0)
-in
-        (ranked + 0)
+    match (GeneratedLeft ((block
+        generatedSetCount : Set Int -> Int
+        let generatedSetCount values = 2
+
+        let item = ((Some (0 + 1)) ?: (0 + 2))
+        let values = {|item, (item + 1)|}
+
+        generatedSetCount values) + 0))
+      case GeneratedLeft payload -> (payload + 0)
+      case GeneratedRight -> ((block
+          generatedSetCount : Set Int -> Int
+          let generatedSetCount values = 2
+
+          let item = ((Some (0 + 1)) ?: (0 + 2))
+          let values = {|item, (item + 1)|}
+
+          generatedSetCount values) + 0)
 
 result : Int
 let result = generated_4533
@@ -13,4 +30,4 @@ let result = generated_4533
 --! assertNoErrors
 --! assertType generated_4533 Int
 --! assertType result Int
---! assertDeclKinds signature, let, signature, let
+--! assertDeclKinds data, signature, let, signature, let

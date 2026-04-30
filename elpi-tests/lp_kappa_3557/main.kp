@@ -1,12 +1,19 @@
 module main
 
-generated_3557 : Set Int
-let generated_3557 = {| for x in [1, 2, 3], let y = x + 1, if y > 0, yield (((((0 + (((((left = 0, right = (x + 0))).right + 0) + 0) + 0)) + 0) + 0) + 0) + 0) |}
+generated_3557 : List Int
+let generated_3557 = [ for x in [1, 2, 3], let y = x + 1, yield (block
+    generatedSetCount : Set Int -> Int
+    let generatedSetCount values = 2
 
-result : Set Int
+    let item = ((\(n : Int) -> n) x)
+    let values = {|item, (item + 1)|}
+
+    generatedSetCount values) ]
+
+result : List Int
 let result = generated_3557
 
 --! assertNoErrors
---! assertType generated_3557 Set Int
---! assertType result Set Int
+--! assertType generated_3557 List Int
+--! assertType result List Int
 --! assertDeclKinds signature, let, signature, let

@@ -2,10 +2,20 @@ module main
 
 generated_3513 : Int
 let generated_3513 =
-    let
-        ranked : Int = (((((0 + (((((left = (0 + 0), right = 0)).left + 0) + 0) + 0)) + 0) + 0) + 0) + 0)
-in
-        (ranked + 0)
+    block
+        rankedHelper : (Int -> Int)
+        let rankedHelper x = x + 1
+
+        rankedHelper ((block
+            generatedListLength : List Int -> Int
+            let generatedListLength xs decreases structural xs =
+                match xs
+                  case Nil -> 0
+                  case _ :: tail -> 1 + generatedListLength tail
+
+            let item = ((\(n : Int) -> n) 0)
+
+            generatedListLength [item, (item + 1), 0]) + 0)
 
 result : Int
 let result = generated_3513

@@ -3,10 +3,14 @@ module main
 generated_2306 : Int
 let generated_2306 =
     block
-        let base : (x : Int) = (x = (((((((((left = ((0 + (0 + 0)) + 0), right = 0)).left + 0) + 0) + 0) + 0) + 0) + 0) + 0))
-        let extended = base.{ y := (((((((((left = ((0 + (0 + 0)) + 0), right = 0)).left + 0) + 0) + 0) + 0) + 0) + 0) + 1) }
+        let pair = (x = (match (Some 0)
+          case Some payload -> payload
+          case None -> 0), y = ((match (Some 0)
+          case Some payload -> payload
+          case None -> 0) + 1))
+        let (x = captured, y = other) = pair
 
-        (extended.x + extended.y)
+        (captured + other)
 
 result : Int
 let result = generated_2306

@@ -3,10 +3,30 @@ module main
 generated_2947 : Int
 let generated_2947 =
     block
-        rankedHelper : (Int -> Int)
-        let rankedHelper x = x + 1
+        scoped effect State (s : Type) =
+            get : Unit -> s
 
-        rankedHelper (((((((((Some (((0 + 0) + 0) + 0)) ?: 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0)
+        let seed = (match ((match [0, (0 + 1)]
+          case head :: tail -> head
+          case Nil -> 0) == (match [0, (0 + 1)]
+          case head :: tail -> head
+          case Nil -> 0))
+          case True -> (match [0, (0 + 1)]
+            case head :: tail -> head
+            case Nil -> 0)
+          case False -> 0)
+
+        let comp : Eff <[State : State Int]> Int =
+            do
+                let n <- State.get ()
+                n
+
+        let handled : Eff <[ ]> Int =
+            deep handle State comp with
+                case return x -> pure x
+                case get () k -> k seed
+
+        runPure handled
 
 result : Int
 let result = generated_2947

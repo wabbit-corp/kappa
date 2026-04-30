@@ -1,18 +1,31 @@
 module main
 
-generatedNeed : (@x : Int) -> Int
-let generatedNeed (@x : Int) = x
-
-generated_574 : IO Int
+generated_574 : Int
 let generated_574 =
-    do
-        let (@x : Int) = ((((((((0 + (((0 + 0) + 0) + 0)) + 0) + 0) + 0) + 0) + 0) + 0) + 0)
-        pure generatedNeed
+    block
+        scoped effect Ask =
+            ask : Unit -> Bool
 
-result : IO Int
+        let l = Ask
+
+        let seed = ((Some (0 + 1)) ?: (0 + 2))
+
+        let comp : Eff <[Ask : Ask]> Int =
+            do
+                let b <- l.ask ()
+                if b then seed else (seed + 1)
+
+        let handled : Eff <[ ]> Int =
+            deep handle l comp with
+                case return x -> pure x
+                case ask () k -> k True
+
+        runPure handled
+
+result : Int
 let result = generated_574
 
 --! assertNoErrors
---! assertType generated_574 IO Int
---! assertType result IO Int
---! assertDeclKinds signature, let, signature, let, signature, let
+--! assertType generated_574 Int
+--! assertType result Int
+--! assertDeclKinds signature, let, signature, let

@@ -1,17 +1,25 @@
 module main
 
-generated_3036 : Int
-let generated_3036 =
-    block
-        ranked : Int
-        let ranked = ((((((((Some ((if False then 0 else 0) + 0)) ?: 0) + 0) + 0) + 0) + 0) + 0) + 0)
+generated_3036 : List Int
+let generated_3036 = [ yield ((block
+    generatedListLength : List Int -> Int
+    let generatedListLength xs decreases structural xs =
+        match xs
+          case Nil -> 0
+          case _ :: tail -> 1 + generatedListLength tail
 
-        (ranked + 0)
+    let item = (block
+        let pair = (x = 0, y = (0 + 1))
+        let (x = captured, y = other) = pair
 
-result : Int
+        (captured + other))
+
+    generatedListLength [item, (item + 1), 0]) + 0) ]
+
+result : List Int
 let result = generated_3036
 
 --! assertNoErrors
---! assertType generated_3036 Int
---! assertType result Int
+--! assertType generated_3036 List Int
+--! assertType result List Int
 --! assertDeclKinds signature, let, signature, let

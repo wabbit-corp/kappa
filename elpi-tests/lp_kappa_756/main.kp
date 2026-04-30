@@ -1,12 +1,26 @@
 module main
 
-generated_756 : Option Int
-let generated_756 = (if True then (if True then (if True then (if False then None else (if (((Some (0 + 0)) ?: 0) == 1) then (Some (((Some (0 + 0)) ?: 0) + 0)) else (Some (0 + 0)))) else None) else None) else None)
+generatedMakeConst : forall (a : Type). a -> Unit -> a
+let generatedMakeConst value = \() -> value
 
-result : Option Int
+generated_756 : Int
+let generated_756 = ((generatedMakeConst ((match (Some (block
+    generatedListLength : List Int -> Int
+    let generatedListLength xs decreases structural xs =
+        match xs
+          case Nil -> 0
+          case _ :: tail -> 1 + generatedListLength tail
+
+    let item = 0
+
+    generatedListLength [item, (item + 1), 0]))
+  case Some payload -> payload
+  case None -> 0) + 0)) ())
+
+result : Int
 let result = generated_756
 
 --! assertNoErrors
---! assertType generated_756 Option Int
---! assertType result Option Int
---! assertDeclKinds signature, let, signature, let
+--! assertType generated_756 Int
+--! assertType result Int
+--! assertDeclKinds signature, let, signature, let, signature, let

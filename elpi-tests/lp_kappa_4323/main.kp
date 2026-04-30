@@ -1,12 +1,19 @@
 module main
 
-generated_4323 : Bool
-let generated_4323 = (if (if (if ((if True then True else False) || False) then False else True) then True else False) then True else False)
+generated_4323 : Int
+let generated_4323 =
+    block
+        rankedHelper : (Int -> Int)
+        let rankedHelper x = x + 1
 
-result : Bool
+        rankedHelper (((\(n : Int) -> n) (match (0 == 0)
+          case True -> 0
+          case False -> 0)) + 0)
+
+result : Int
 let result = generated_4323
 
 --! assertNoErrors
---! assertType generated_4323 Bool
---! assertType result Bool
+--! assertType generated_4323 Int
+--! assertType result Int
 --! assertDeclKinds signature, let, signature, let

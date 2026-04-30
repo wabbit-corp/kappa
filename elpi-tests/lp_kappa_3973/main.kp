@@ -1,15 +1,29 @@
 module main
 
-generated_3973 : IO Int
+generated_3973 : Int
 let generated_3973 =
-    do
-        let staged = ((((((0 + ((if True then 0 else 0) + 0)) + 0) + 0) + 0) + 0) + 0)
-        pure (staged + 1)
+    block
+        scoped effect State (s : Type) =
+            get : Unit -> s
 
-result : IO Int
+        let seed = ((Some (((\(n : Int) -> n) 0) + 1)) ?: (((\(n : Int) -> n) 0) + 2))
+
+        let comp : Eff <[State : State Int]> Int =
+            do
+                let n <- State.get ()
+                n
+
+        let handled : Eff <[ ]> Int =
+            deep handle State comp with
+                case return x -> pure x
+                case get () k -> k seed
+
+        runPure handled
+
+result : Int
 let result = generated_3973
 
 --! assertNoErrors
---! assertType generated_3973 IO Int
---! assertType result IO Int
+--! assertType generated_3973 Int
+--! assertType result Int
 --! assertDeclKinds signature, let, signature, let

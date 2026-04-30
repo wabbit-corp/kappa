@@ -1,18 +1,20 @@
 module main
 
-generatedNeed : (@x : Int) -> Int
-let generatedNeed (@x : Int) = x
-
-generated_4178 : IO Int
+generated_4178 : Int
 let generated_4178 =
-    do
-        let (@x : Int) = ((((((0 + ((if True then ((if False then 0 else 0) + (0 + 0)) else 0) + 0)) + 0) + 0) + 0) + 0) + 0)
-        pure generatedNeed
+    block
+        let (captured : Int) = ((match (Some (match (0 == 0)
+          case True -> 0
+          case False -> 0))
+          case Some payload -> payload
+          case None -> 0) + 0)
 
-result : IO Int
+        captured
+
+result : Int
 let result = generated_4178
 
 --! assertNoErrors
---! assertType generated_4178 IO Int
---! assertType result IO Int
---! assertDeclKinds signature, let, signature, let, signature, let
+--! assertType generated_4178 Int
+--! assertType result Int
+--! assertDeclKinds signature, let, signature, let

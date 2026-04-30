@@ -1,12 +1,35 @@
 module main
 
-generated_1487 : String
-let generated_1487 = (if (if (if (if (((if True then (0 + 1) else 1) == 1) || False) then True else False) then True else False) then True else False) then #"raw lambda-prolog"# else "fallback")
+generated_1487 : List Int
+let generated_1487 = [ for x in [1, 2, 3], order by x desc, yield (match ((block
+    generatedSetCount : Set Int -> Int
+    let generatedSetCount values = 2
 
-result : String
+    let item = x
+    let values = {|item, (item + 1)|}
+
+    generatedSetCount values) == (block
+    generatedSetCount : Set Int -> Int
+    let generatedSetCount values = 2
+
+    let item = x
+    let values = {|item, (item + 1)|}
+
+    generatedSetCount values))
+  case True -> (block
+      generatedSetCount : Set Int -> Int
+      let generatedSetCount values = 2
+
+      let item = x
+      let values = {|item, (item + 1)|}
+
+      generatedSetCount values)
+  case False -> 0) ]
+
+result : List Int
 let result = generated_1487
 
 --! assertNoErrors
---! assertType generated_1487 String
---! assertType result String
+--! assertType generated_1487 List Int
+--! assertType result List Int
 --! assertDeclKinds signature, let, signature, let

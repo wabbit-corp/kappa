@@ -2,10 +2,29 @@ module main
 
 generated_4125 : Int
 let generated_4125 =
-    let
-        ranked : Int = (((((0 + ((if True then ((if True then 0 else 0) + 0) else 0) + 0)) + 0) + 0) + 0) + 0)
-in
-        (ranked + 0)
+    block
+        let pair = (x = ((block
+            generatedMapCount : Map String Int -> Int
+            let generatedMapCount values = 1
+
+            let item = (match (0 == 0)
+              case True -> 0
+              case False -> 0)
+            let values = { yield "item" : item }
+
+            generatedMapCount values) + 0), y = ((block
+            generatedMapCount : Map String Int -> Int
+            let generatedMapCount values = 1
+
+            let item = (match (0 == 0)
+              case True -> 0
+              case False -> 0)
+            let values = { yield "item" : item }
+
+            generatedMapCount values) + 1))
+        let whole@(x = captured, y = other) = pair
+
+        (whole.x + (captured + other))
 
 result : Int
 let result = generated_4125

@@ -1,12 +1,24 @@
 module main
 
-generated_1739 : Bool
-let generated_1739 = (if (if (if (if True then ((if False then True else (True || False)) && True) else False) then True else False) then True else False) then True else False)
+generatedEcho : forall (a : Type). (this x : a) -> a
+let generatedEcho @a (this x : a) = x
 
-result : Bool
+generated_1739 : Int
+let generated_1739 = ((.generatedEcho) ((match (Some (block
+    generatedMapCount : Map String Int -> Int
+    let generatedMapCount values = 1
+
+    let item = 0
+    let values = { yield "item" : item }
+
+    generatedMapCount values))
+  case Some payload -> payload
+  case None -> 0) + 0))
+
+result : Int
 let result = generated_1739
 
 --! assertNoErrors
---! assertType generated_1739 Bool
---! assertType result Bool
---! assertDeclKinds signature, let, signature, let
+--! assertType generated_1739 Int
+--! assertType result Int
+--! assertDeclKinds signature, let, signature, let, signature, let

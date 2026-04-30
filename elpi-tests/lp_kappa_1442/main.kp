@@ -1,15 +1,36 @@
 module main
 
-generated_1442 : IO Int
+generated_1442 : Int
 let generated_1442 =
-    do
-        value <- pure ((((((((if False then 0 else ((left = (0 + 0), right = 0)).left) + 0) + 0) + 0) + 0) + 0) + 0) + 0)
-        pure (value + 2)
+    match ((block
+        generatedSetCount : Set Int -> Int
+        let generatedSetCount values = 2
 
-result : IO Int
+        let item = 0
+        let values = {|item, (item + 1)|}
+
+        generatedSetCount values) == (block
+        generatedSetCount : Set Int -> Int
+        let generatedSetCount values = 2
+
+        let item = 0
+        let values = {|item, (item + 1)|}
+
+        generatedSetCount values))
+      case True -> (block
+          generatedSetCount : Set Int -> Int
+          let generatedSetCount values = 2
+
+          let item = 0
+          let values = {|item, (item + 1)|}
+
+          generatedSetCount values)
+      case False -> 0
+
+result : Int
 let result = generated_1442
 
 --! assertNoErrors
---! assertType generated_1442 IO Int
---! assertType result IO Int
+--! assertType generated_1442 Int
+--! assertType result Int
 --! assertDeclKinds signature, let, signature, let

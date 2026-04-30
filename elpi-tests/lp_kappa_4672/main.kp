@@ -1,15 +1,14 @@
 module main
 
-generated_4672 : IO Int
-let generated_4672 =
-    do
-        value <- pure ((((((0 + (((if True then ((0 + 0) + 0) else 0) + 0) + 0)) + 0) + 0) + 0) + 0) + 0)
-        pure (value + 2)
+generated_4672 : List Int
+let generated_4672 = [ for x in [1, 2, 3], skip 1, take 2, yield (match (Some ((Some (x + 1)) ?: (x + 2)))
+  case Some payload -> payload
+  case None -> 0) ]
 
-result : IO Int
+result : List Int
 let result = generated_4672
 
 --! assertNoErrors
---! assertType generated_4672 IO Int
---! assertType result IO Int
+--! assertType generated_4672 List Int
+--! assertType result List Int
 --! assertDeclKinds signature, let, signature, let

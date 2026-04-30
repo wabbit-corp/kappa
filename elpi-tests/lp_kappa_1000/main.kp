@@ -1,15 +1,41 @@
 module main
 
-generated_1000 : IO Int
-let generated_1000 =
-    do
-        value <- pure ((((((((if True then (if False then 0 else 0) else 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0)
-        pure (value + 2)
+generated_1000 : List Int
+let generated_1000 = [ for x in [1, 2, 3], skip 1, take 2, yield (match ((block
+    generatedListLength : List Int -> Int
+    let generatedListLength xs decreases structural xs =
+        match xs
+          case Nil -> 0
+          case _ :: tail -> 1 + generatedListLength tail
 
-result : IO Int
+    let item = x
+
+    generatedListLength [item, (item + 1), 0]) == (block
+    generatedListLength : List Int -> Int
+    let generatedListLength xs decreases structural xs =
+        match xs
+          case Nil -> 0
+          case _ :: tail -> 1 + generatedListLength tail
+
+    let item = x
+
+    generatedListLength [item, (item + 1), 0]))
+  case True -> (block
+      generatedListLength : List Int -> Int
+      let generatedListLength xs decreases structural xs =
+          match xs
+            case Nil -> 0
+            case _ :: tail -> 1 + generatedListLength tail
+
+      let item = x
+
+      generatedListLength [item, (item + 1), 0])
+  case False -> 0) ]
+
+result : List Int
 let result = generated_1000
 
 --! assertNoErrors
---! assertType generated_1000 IO Int
---! assertType result IO Int
+--! assertType generated_1000 List Int
+--! assertType result List Int
 --! assertDeclKinds signature, let, signature, let

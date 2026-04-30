@@ -1,17 +1,30 @@
 module main
 
-trait GeneratedScore a =
-    score : a -> Int
-
-instance GeneratedScore Int =
-    let score x = x
-
 generated_2667 : Int
 let generated_2667 =
-    let
-        dict = summon (GeneratedScore Int)
-in
-        dict.score (((((((((left = 0, right = ((if True then 0 else 0) + 0))).right + 0) + 0) + 0) + 0) + 0) + 0) + 0)
+    block
+        let pair = (x = ((block
+            generatedMapCount : Map String Int -> Int
+            let generatedMapCount values = 1
+
+            let item = (match [0, (0 + 1)]
+              case head :: tail -> head
+              case Nil -> 0)
+            let values = { yield "item" : item }
+
+            generatedMapCount values) + 0), y = ((block
+            generatedMapCount : Map String Int -> Int
+            let generatedMapCount values = 1
+
+            let item = (match [0, (0 + 1)]
+              case head :: tail -> head
+              case Nil -> 0)
+            let values = { yield "item" : item }
+
+            generatedMapCount values) + 1))
+        let whole@(x = captured, y = other) = pair
+
+        (whole.x + (captured + other))
 
 result : Int
 let result = generated_2667
@@ -19,4 +32,4 @@ let result = generated_2667
 --! assertNoErrors
 --! assertType generated_2667 Int
 --! assertType result Int
---! assertDeclKinds trait, instance, signature, let, signature, let
+--! assertDeclKinds signature, let, signature, let

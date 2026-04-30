@@ -1,17 +1,12 @@
 module main
 
-generated_2543 : Int
-let generated_2543 =
-    block
-        let pair = (x = (((((((((left = (((Some (0 + 0)) ?: 0) + 0), right = 0)).left + 0) + 0) + 0) + 0) + 0) + 0) + 0), y = (((((((((left = (((Some (0 + 0)) ?: 0) + 0), right = 0)).left + 0) + 0) + 0) + 0) + 0) + 0) + 1))
-        let (x = captured, y = other) = pair
+generated_2543 : String
+let generated_2543 = (if (if (if (if (if True then ((if True then False else True) && True) else False) then True else False) then True else False) then True else False) then #"raw lambda-prolog"# else "fallback")
 
-        (captured + other)
-
-result : Int
+result : String
 let result = generated_2543
 
 --! assertNoErrors
---! assertType generated_2543 Int
---! assertType result Int
+--! assertType generated_2543 String
+--! assertType result String
 --! assertDeclKinds signature, let, signature, let

@@ -1,15 +1,12 @@
 module main
 
-generated_1012 : Int
-let generated_1012 =
-    match (((((((((if True then (if False then 0 else 0) else 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0) == ((((((((if True then (if False then 0 else 0) else 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0))
-      case True -> ((((((((if True then (if False then 0 else 0) else 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0)
-      case False -> 0
+generated_1012 : Unit
+let generated_1012 = (if True then (if True then (if True then (if False then () else ((\(u : Unit) -> ()) ())) else ()) else ()) else ())
 
-result : Int
+result : Unit
 let result = generated_1012
 
 --! assertNoErrors
---! assertType generated_1012 Int
---! assertType result Int
+--! assertType generated_1012 Unit
+--! assertType result Unit
 --! assertDeclKinds signature, let, signature, let

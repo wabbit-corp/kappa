@@ -2,12 +2,17 @@ module main
 
 generated_2994 : Int
 let generated_2994 =
-    block
-        type RankedAlias = Int
-
-        let aliased : RankedAlias = (((((((((Some ((0 + (0 + 0)) + 0)) ?: 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0)
-
-        (aliased + 1)
+    match [(((Some ((match [0, (0 + 1)]
+      case head :: tail -> head
+      case Nil -> 0) + 1)) ?: ((match [0, (0 + 1)]
+      case head :: tail -> head
+      case Nil -> 0) + 2)) + 0), ((((Some ((match [0, (0 + 1)]
+      case head :: tail -> head
+      case Nil -> 0) + 1)) ?: ((match [0, (0 + 1)]
+      case head :: tail -> head
+      case Nil -> 0) + 2)) + 0) + 1)]
+      case head :: tail -> head
+      case Nil -> 0
 
 result : Int
 let result = generated_2994

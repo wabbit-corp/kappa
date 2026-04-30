@@ -1,15 +1,28 @@
 module main
 
-generated_3562 : Int
-let generated_3562 =
-    match (((((((0 + (((((left = 0, right = (0 + 0))).right + 0) + 0) + 0)) + 0) + 0) + 0) + 0) + 0) == ((((((0 + (((((left = 0, right = (0 + 0))).right + 0) + 0) + 0)) + 0) + 0) + 0) + 0) + 0))
-      case True -> ((((((0 + (((((left = 0, right = (0 + 0))).right + 0) + 0) + 0)) + 0) + 0) + 0) + 0) + 0)
-      case False -> 0
+type GeneratedPair = (left : Int, right : Int)
 
-result : Int
+generated_3562 : GeneratedPair
+let generated_3562 = ((left = (block
+    generatedSetCount : Set Int -> Int
+    let generatedSetCount values = 2
+
+    let item = ((\(n : Int) -> n) 0)
+    let values = {|item, (item + 1)|}
+
+    generatedSetCount values), right = 0)).{ right = ((block
+    generatedSetCount : Set Int -> Int
+    let generatedSetCount values = 2
+
+    let item = ((\(n : Int) -> n) 0)
+    let values = {|item, (item + 1)|}
+
+    generatedSetCount values) + 1) }
+
+result : GeneratedPair
 let result = generated_3562
 
 --! assertNoErrors
---! assertType generated_3562 Int
---! assertType result Int
---! assertDeclKinds signature, let, signature, let
+--! assertType generated_3562 GeneratedPair
+--! assertType result GeneratedPair
+--! assertDeclKinds type, signature, let, signature, let

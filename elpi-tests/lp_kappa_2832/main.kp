@@ -2,11 +2,25 @@ module main
 
 generated_2832 : Int
 let generated_2832 =
-    block
-        ranked : Int
-        let ranked = ((((((((left = 0, right = (((left = 0, right = (0 + 0))).right + 0))).right + 0) + 0) + 0) + 0) + 0) + 0)
+    match [((block
+        let pair = (x = (match [0, (0 + 1)]
+          case head :: tail -> head
+          case Nil -> 0), y = ((match [0, (0 + 1)]
+          case head :: tail -> head
+          case Nil -> 0) + 1))
+        let (x = captured, y = other) = pair
 
-        (ranked + 0)
+        (captured + other)) + 0), (((block
+        let pair = (x = (match [0, (0 + 1)]
+          case head :: tail -> head
+          case Nil -> 0), y = ((match [0, (0 + 1)]
+          case head :: tail -> head
+          case Nil -> 0) + 1))
+        let (x = captured, y = other) = pair
+
+        (captured + other)) + 0) + 1)]
+      case head :: tail -> head
+      case Nil -> 0
 
 result : Int
 let result = generated_2832

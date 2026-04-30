@@ -1,12 +1,18 @@
 module main
 
-generated_2340 : Int
-let generated_2340 =
-    block
-        let base : (x : Int) = (x = (((((((((left = ((if True then 0 else 0) + 0), right = 0)).left + 0) + 0) + 0) + 0) + 0) + 0) + 0))
-        let extended = base.{ y := (((((((((left = ((if True then 0 else 0) + 0), right = 0)).left + 0) + 0) + 0) + 0) + 0) + 0) + 1) }
+generatedNeed : (@x : Int) -> Int
+let generatedNeed (@x : Int) = x
 
-        (extended.x + extended.y)
+generated_2340 : Int
+let generated_2340 = generatedNeed @(((block
+    let pair = (x = (match (Some 0)
+      case Some payload -> payload
+      case None -> 0), y = ((match (Some 0)
+      case Some payload -> payload
+      case None -> 0) + 1))
+    let (x = captured, y = other) = pair
+
+    (captured + other)) + 0))
 
 result : Int
 let result = generated_2340
@@ -14,4 +20,4 @@ let result = generated_2340
 --! assertNoErrors
 --! assertType generated_2340 Int
 --! assertType result Int
---! assertDeclKinds signature, let, signature, let
+--! assertDeclKinds signature, let, signature, let, signature, let

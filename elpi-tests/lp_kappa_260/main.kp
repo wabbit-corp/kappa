@@ -1,12 +1,19 @@
 module main
 
-generated_260 : Map String Int
-let generated_260 = { for x in [1, 2, 3], if x > 0, yield "k" : (((((((((0 + (x + 0)) + 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0) }
+generated_260 : Int
+let generated_260 =
+    block
+        ranked : Int
+        let ranked = (match (Some 0)
+          case Some payload -> payload
+          case None -> 0)
 
-result : Map String Int
+        (ranked + 0)
+
+result : Int
 let result = generated_260
 
 --! assertNoErrors
---! assertType generated_260 Map String Int
---! assertType result Map String Int
+--! assertType generated_260 Int
+--! assertType result Int
 --! assertDeclKinds signature, let, signature, let

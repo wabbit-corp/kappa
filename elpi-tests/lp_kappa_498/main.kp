@@ -1,12 +1,14 @@
 module main
 
-generated_498 : Map String Int
-let generated_498 = { for x in [1, 2, 3], let y = x + 1, yield "k" : ((((((((((Some (x + 0)) ?: 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0) }
+generated_498 : List Int
+let generated_498 = [ yield ((match (0 == 0)
+  case True -> 0
+  case False -> 0) + 0) ]
 
-result : Map String Int
+result : List Int
 let result = generated_498
 
 --! assertNoErrors
---! assertType generated_498 Map String Int
---! assertType result Map String Int
+--! assertType generated_498 List Int
+--! assertType result List Int
 --! assertDeclKinds signature, let, signature, let

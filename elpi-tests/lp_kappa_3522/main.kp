@@ -1,15 +1,21 @@
 module main
 
-generatedMakeConst : forall (a : Type). a -> Unit -> a
-let generatedMakeConst value = \() -> value
+generated_3522 : List Int
+let generated_3522 = [ yield ((block
+    generatedListLength : List Int -> Int
+    let generatedListLength xs decreases structural xs =
+        match xs
+          case Nil -> 0
+          case _ :: tail -> 1 + generatedListLength tail
 
-generated_3522 : Int
-let generated_3522 = ((generatedMakeConst ((((((0 + (((((left = (0 + 0), right = 0)).left + 0) + 0) + 0)) + 0) + 0) + 0) + 0) + 0)) ())
+    let item = ((\(n : Int) -> n) 0)
 
-result : Int
+    generatedListLength [item, (item + 1), 0]) + 0) ]
+
+result : List Int
 let result = generated_3522
 
 --! assertNoErrors
---! assertType generated_3522 Int
---! assertType result Int
---! assertDeclKinds signature, let, signature, let, signature, let
+--! assertType generated_3522 List Int
+--! assertType result List Int
+--! assertDeclKinds signature, let, signature, let

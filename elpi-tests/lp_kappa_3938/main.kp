@@ -1,12 +1,10 @@
 module main
 
-generated_3938 : Int
-let generated_3938 =
-    block
-        let base : (x : Int) = (x = ((((((0 + ((0 + (((Some (0 + 0)) ?: 0) + 0)) + 0)) + 0) + 0) + 0) + 0) + 0))
-        let extended = base.{ y := ((((((0 + ((0 + (((Some (0 + 0)) ?: 0) + 0)) + 0)) + 0) + 0) + 0) + 0) + 1) }
+generatedEcho : forall (a : Type). (this x : a) -> a
+let generatedEcho @a (this x : a) = x
 
-        (extended.x + extended.y)
+generated_3938 : Int
+let generated_3938 = (((Some (((\(n : Int) -> n) 0) + 1)) ?: (((\(n : Int) -> n) 0) + 2)) + 0).generatedEcho
 
 result : Int
 let result = generated_3938
@@ -14,4 +12,4 @@ let result = generated_3938
 --! assertNoErrors
 --! assertType generated_3938 Int
 --! assertType result Int
---! assertDeclKinds signature, let, signature, let
+--! assertDeclKinds signature, let, signature, let, signature, let

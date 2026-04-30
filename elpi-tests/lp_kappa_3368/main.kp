@@ -3,11 +3,13 @@ module main
 generated_3368 : Int
 let generated_3368 =
     block
-        type RankedAlias = Int
+        let (captured : Int) = (((\(n : Int) -> n) (block
+            let pair = (x = 0, y = (0 + 1))
+            let (x = captured, y = other) = pair
 
-        let aliased : RankedAlias = ((((((0 + ((((0 + (0 + 0)) + 0) + 0) + 0)) + 0) + 0) + 0) + 0) + 0)
+            (captured + other))) + 0)
 
-        (aliased + 1)
+        captured
 
 result : Int
 let result = generated_3368

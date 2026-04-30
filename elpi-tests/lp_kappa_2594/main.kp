@@ -1,17 +1,21 @@
 module main
 
-generated_2594 : Int
-let generated_2594 =
-    block
-        ranked : Int
-        let ranked = ((((((((left = 0, right = (((0 + 0) + 0) + 0))).right + 0) + 0) + 0) + 0) + 0) + 0)
+generated_2594 : Map String Int
+let generated_2594 = { for x in [1, 2, 3], let y = x + 1, if y > 0, yield (if y > 1 then "hi" else "lo") : (block
+    generatedSetCount : Set Int -> Int
+    let generatedSetCount values = 2
 
-        (ranked + 0)
+    let item = (match [x, (x + 1)]
+      case head :: tail -> head
+      case Nil -> 0)
+    let values = {|item, (item + 1)|}
 
-result : Int
+    generatedSetCount values) }
+
+result : Map String Int
 let result = generated_2594
 
 --! assertNoErrors
---! assertType generated_2594 Int
---! assertType result Int
+--! assertType generated_2594 Map String Int
+--! assertType result Map String Int
 --! assertDeclKinds signature, let, signature, let

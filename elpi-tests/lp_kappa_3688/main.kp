@@ -1,10 +1,15 @@
 module main
 
-generatedEcho : forall (a : Type). (this x : a) -> a
-let generatedEcho @a (this x : a) = x
-
 generated_3688 : Int
-let generated_3688 = ((((((0 + ((0 + ((0 + (0 + 0)) + 0)) + 0)) + 0) + 0) + 0) + 0) + 0).generatedEcho
+let generated_3688 =
+    block
+        type RankedAlias = Int
+
+        let aliased : RankedAlias = ((match (Some ((\(n : Int) -> n) 0))
+          case Some payload -> payload
+          case None -> 0) + 0)
+
+        (aliased + 1)
 
 result : Int
 let result = generated_3688
@@ -12,4 +17,4 @@ let result = generated_3688
 --! assertNoErrors
 --! assertType generated_3688 Int
 --! assertType result Int
---! assertDeclKinds signature, let, signature, let, signature, let
+--! assertDeclKinds signature, let, signature, let

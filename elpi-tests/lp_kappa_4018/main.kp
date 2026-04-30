@@ -1,12 +1,41 @@
 module main
 
-generated_4018 : Unit
-let generated_4018 = (if True then (if True then (if False then () else ((\(u : Unit) -> u) (if False then () else ()))) else ()) else ())
+type GeneratedTuple = (Int, Int)
 
-result : Unit
+generated_4018 : Int
+let generated_4018 =
+    block
+        let pair : GeneratedTuple = (((block
+            generatedListLength : List Int -> Int
+            let generatedListLength xs decreases structural xs =
+                match xs
+                  case Nil -> 0
+                  case _ :: tail -> 1 + generatedListLength tail
+
+            let item = (match (0 == 0)
+              case True -> 0
+              case False -> 0)
+
+            generatedListLength [item, (item + 1), 0]) + 0), ((block
+            generatedListLength : List Int -> Int
+            let generatedListLength xs decreases structural xs =
+                match xs
+                  case Nil -> 0
+                  case _ :: tail -> 1 + generatedListLength tail
+
+            let item = (match (0 == 0)
+              case True -> 0
+              case False -> 0)
+
+            generatedListLength [item, (item + 1), 0]) + 1))
+        let (left, right) = pair
+
+        (left + right)
+
+result : Int
 let result = generated_4018
 
 --! assertNoErrors
---! assertType generated_4018 Unit
---! assertType result Unit
---! assertDeclKinds signature, let, signature, let
+--! assertType generated_4018 Int
+--! assertType result Int
+--! assertDeclKinds type, signature, let, signature, let

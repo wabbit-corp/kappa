@@ -1,12 +1,38 @@
 module main
 
-generated_3867 : String
-let generated_3867 = (if (if (if (if (if ((if True then 1 else 0) == 1) then False else True) then False else True) then True else False) then True else False) then #"raw lambda-prolog"# else "fallback")
+generated_3867 : Int
+let generated_3867 =
+    block
+        scoped effect Ask =
+            ask : Unit -> Bool
 
-result : String
+        scoped effect Other =
+            other : Unit -> Int
+
+        let seed = ((\(n : Int) -> n) ((\(n : Int) -> n) 0))
+
+        let comp : Eff <[Ask : Ask, Other : Other]> Int =
+            do
+                let b <- Ask.ask ()
+                let n <- Other.other ()
+                if b then (n + seed) else seed
+
+        let askHandled : Eff <[Other : Other]> Int =
+            deep handle Ask comp with
+                case return x -> pure x
+                case ask () k -> k True
+
+        let handled : Eff <[ ]> Int =
+            deep handle Other askHandled with
+                case return x -> pure x
+                case other () k -> k 1
+
+        runPure handled
+
+result : Int
 let result = generated_3867
 
 --! assertNoErrors
---! assertType generated_3867 String
---! assertType result String
+--! assertType generated_3867 Int
+--! assertType result Int
 --! assertDeclKinds signature, let, signature, let

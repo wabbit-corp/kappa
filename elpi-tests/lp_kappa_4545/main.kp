@@ -1,17 +1,22 @@
 module main
 
-generated_4545 : Int
+generated_4545 : IO Int
 let generated_4545 =
-    block
-        rankedHelper : (Int -> Int)
-        let rankedHelper x = x + 1
+    do
+        let staged = ((block
+            generatedSetCount : Set Int -> Int
+            let generatedSetCount values = 2
 
-        rankedHelper ((((((0 + ((if False then 0 else ((left = (0 + 0), right = 0)).left) + 0)) + 0) + 0) + 0) + 0) + 0)
+            let item = ((Some (0 + 1)) ?: (0 + 2))
+            let values = {|item, (item + 1)|}
 
-result : Int
+            generatedSetCount values) + 0)
+        pure (staged + 1)
+
+result : IO Int
 let result = generated_4545
 
 --! assertNoErrors
---! assertType generated_4545 Int
---! assertType result Int
+--! assertType generated_4545 IO Int
+--! assertType result IO Int
 --! assertDeclKinds signature, let, signature, let

@@ -1,12 +1,35 @@
 module main
 
-generated_2167 : String
-let generated_2167 = (if (if (if (if (if False then True else (((if True then (0 + 1) else 1) == 1) || False)) then True else False) then True else False) then True else False) then #"raw lambda-prolog"# else "fallback")
+generated_2167 : Int
+let generated_2167 =
+    block
+        let pair = (x = ((block
+            generatedMapCount : Map String Int -> Int
+            let generatedMapCount values = 1
 
-result : String
+            let item = (match (Some 0)
+              case Some payload -> payload
+              case None -> 0)
+            let values = { yield "item" : item }
+
+            generatedMapCount values) + 0), y = ((block
+            generatedMapCount : Map String Int -> Int
+            let generatedMapCount values = 1
+
+            let item = (match (Some 0)
+              case Some payload -> payload
+              case None -> 0)
+            let values = { yield "item" : item }
+
+            generatedMapCount values) + 1))
+        let (x = captured, y = other) = pair
+
+        (captured + other)
+
+result : Int
 let result = generated_2167
 
 --! assertNoErrors
---! assertType generated_2167 String
---! assertType result String
+--! assertType generated_2167 Int
+--! assertType result Int
 --! assertDeclKinds signature, let, signature, let

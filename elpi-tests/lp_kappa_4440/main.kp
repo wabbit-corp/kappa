@@ -1,15 +1,16 @@
 module main
 
-generatedMakeConst : forall (a : Type). a -> Unit -> a
-let generatedMakeConst value = \() -> value
+generated_4440 : List Int
+let generated_4440 = [ yield (((Some ((match (0 == 0)
+  case True -> 0
+  case False -> 0) + 1)) ?: ((match (0 == 0)
+  case True -> 0
+  case False -> 0) + 2)) + 0) ]
 
-generated_4440 : Int
-let generated_4440 = ((generatedMakeConst ((((((0 + ((if False then 0 else (if False then 0 else 0)) + 0)) + 0) + 0) + 0) + 0) + 0)) ())
-
-result : Int
+result : List Int
 let result = generated_4440
 
 --! assertNoErrors
---! assertType generated_4440 Int
---! assertType result Int
---! assertDeclKinds signature, let, signature, let, signature, let
+--! assertType generated_4440 List Int
+--! assertType result List Int
+--! assertDeclKinds signature, let, signature, let

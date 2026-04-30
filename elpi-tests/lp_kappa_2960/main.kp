@@ -3,11 +3,14 @@ module main
 generated_2960 : Int
 let generated_2960 =
     block
-        type RankedAlias = Int
+        ranked : Int
+        let ranked = ((Some ((match [0, (0 + 1)]
+          case head :: tail -> head
+          case Nil -> 0) + 1)) ?: ((match [0, (0 + 1)]
+          case head :: tail -> head
+          case Nil -> 0) + 2))
 
-        let aliased : RankedAlias = (((((((((Some (((0 + 0) + 0) + 0)) ?: 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0)
-
-        (aliased + 1)
+        (ranked + 0)
 
 result : Int
 let result = generated_2960

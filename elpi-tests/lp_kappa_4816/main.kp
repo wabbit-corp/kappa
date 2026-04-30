@@ -1,12 +1,18 @@
 module main
 
-generated_4816 : Map String Int
-let generated_4816 = { for x in [1, 2, 3], yield "k" : (((((0 + (((if True then ((if True then x else 0) + 0) else 0) + 0) + 0)) + 0) + 0) + 0) + 0) }
+generatedNeed : (@x : Int) -> Int
+let generatedNeed (@x : Int) = x
 
-result : Map String Int
+generated_4816 : IO Int
+let generated_4816 =
+    do
+        let (@x : Int) = (((\(n : Int) -> n) ((Some (0 + 1)) ?: (0 + 2))) + 0)
+        pure generatedNeed
+
+result : IO Int
 let result = generated_4816
 
 --! assertNoErrors
---! assertType generated_4816 Map String Int
---! assertType result Map String Int
---! assertDeclKinds signature, let, signature, let
+--! assertType generated_4816 IO Int
+--! assertType result IO Int
+--! assertDeclKinds signature, let, signature, let, signature, let

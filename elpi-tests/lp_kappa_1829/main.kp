@@ -1,17 +1,30 @@
 module main
 
-generated_1829 : Int
-let generated_1829 =
-    block
-        let pair = (x = (((((((((if True then ((left = 0, right = (0 + 0))).right else 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0), y = (((((((((if True then ((left = 0, right = (0 + 0))).right else 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0) + 1))
-        let (x = captured, y = other) = pair
+generated_1829 : List Int
+let generated_1829 = [ for x in [1, 2, 3], let y = x + 1, yield (block
+    let pair = (x = (block
+        generatedMapCount : Map String Int -> Int
+        let generatedMapCount values = 1
 
-        (captured + other)
+        let item = x
+        let values = { yield "item" : item }
 
-result : Int
+        generatedMapCount values), y = ((block
+        generatedMapCount : Map String Int -> Int
+        let generatedMapCount values = 1
+
+        let item = x
+        let values = { yield "item" : item }
+
+        generatedMapCount values) + 1))
+    let (x = captured, y = other) = pair
+
+    (captured + other)) ]
+
+result : List Int
 let result = generated_1829
 
 --! assertNoErrors
---! assertType generated_1829 Int
---! assertType result Int
+--! assertType generated_1829 List Int
+--! assertType result List Int
 --! assertDeclKinds signature, let, signature, let

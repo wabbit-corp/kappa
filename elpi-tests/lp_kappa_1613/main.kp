@@ -1,22 +1,26 @@
 module main
 
-trait GeneratedScore a =
-    score : a -> Int
+generated_1613 : List Int
+let generated_1613 = [ for x in [1, 2, 3], let y = x + 1, yield (block
+    generatedSetCount : Set Int -> Int
+    let generatedSetCount values = 2
 
-instance GeneratedScore Int =
-    let score x = x
+    let item = (block
+        generatedMapCount : Map String Int -> Int
+        let generatedMapCount values = 1
 
-generated_1613 : Int
-let generated_1613 =
-    let
-        dict = summon (GeneratedScore Int)
-in
-        dict.score (((((((((if True then (0 + (0 + 0)) else 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0)
+        let item = x
+        let values = { yield "item" : item }
 
-result : Int
+        generatedMapCount values)
+    let values = {|item, (item + 1)|}
+
+    generatedSetCount values) ]
+
+result : List Int
 let result = generated_1613
 
 --! assertNoErrors
---! assertType generated_1613 Int
---! assertType result Int
---! assertDeclKinds trait, instance, signature, let, signature, let
+--! assertType generated_1613 List Int
+--! assertType result List Int
+--! assertDeclKinds signature, let, signature, let

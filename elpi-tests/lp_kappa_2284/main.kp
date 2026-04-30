@@ -1,12 +1,24 @@
 module main
 
-generated_2284 : Unit
-let generated_2284 = (if True then (if True then (if True then ((\(u : Unit) -> if False then () else u) (if False then () else ())) else ()) else ()) else ())
+generated_2284 : Int
+let generated_2284 =
+    block
+        type RankedAlias = Int
 
-result : Unit
+        let aliased : RankedAlias = ((match [(match (Some 0)
+          case Some payload -> payload
+          case None -> 0), ((match (Some 0)
+          case Some payload -> payload
+          case None -> 0) + 1)]
+          case head :: tail -> head
+          case Nil -> 0) + 0)
+
+        (aliased + 1)
+
+result : Int
 let result = generated_2284
 
 --! assertNoErrors
---! assertType generated_2284 Unit
---! assertType result Unit
+--! assertType generated_2284 Int
+--! assertType result Int
 --! assertDeclKinds signature, let, signature, let

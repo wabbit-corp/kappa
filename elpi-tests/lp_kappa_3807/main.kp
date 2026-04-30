@@ -1,12 +1,16 @@
 module main
 
-generated_3807 : Set Int
-let generated_3807 = {| yield ((((((0 + ((0 + (((if True then 0 else 0) + 0) + 0)) + 0)) + 0) + 0) + 0) + 0) + 0) |}
+generated_3807 : Map String Int
+let generated_3807 = { for x in [1, 2, 3], yield "k" : (block
+    let pair = (x = ((\(n : Int) -> n) x), y = (((\(n : Int) -> n) x) + 1))
+    let (x = captured, y = other) = pair
 
-result : Set Int
+    (captured + other)), on conflict keep first }
+
+result : Map String Int
 let result = generated_3807
 
 --! assertNoErrors
---! assertType generated_3807 Set Int
---! assertType result Set Int
+--! assertType generated_3807 Map String Int
+--! assertType result Map String Int
 --! assertDeclKinds signature, let, signature, let

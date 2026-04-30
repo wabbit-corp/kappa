@@ -1,12 +1,12 @@
 module main
 
-generated_81 : List Int
-let generated_81 = [ for x in [1, 2, 3], let y = x + 1, yield ((x + 0) + 0) ]
+generated_81 : Map String Int
+let generated_81 = { for x in [1, 2, 3], yield "k" : x, on conflict keep first }
 
-result : List Int
+result : Map String Int
 let result = generated_81
 
 --! assertNoErrors
---! assertType generated_81 List Int
---! assertType result List Int
+--! assertType generated_81 Map String Int
+--! assertType result Map String Int
 --! assertDeclKinds signature, let, signature, let

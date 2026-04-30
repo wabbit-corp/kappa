@@ -1,12 +1,28 @@
 module main
 
-generated_1810 : Option Int
-let generated_1810 = (if True then (if True then (if True then (Some ((if (False || True) then (Some (0 + 0)) else (Some (1 + 1))) ?: 0)) else None) else None) else None)
+generated_1810 : List Int
+let generated_1810 = [ for x in [1, 2, 3], skip 1, take 2, yield (match [(block
+    generatedMapCount : Map String Int -> Int
+    let generatedMapCount values = 1
 
-result : Option Int
+    let item = x
+    let values = { yield "item" : item }
+
+    generatedMapCount values), ((block
+    generatedMapCount : Map String Int -> Int
+    let generatedMapCount values = 1
+
+    let item = x
+    let values = { yield "item" : item }
+
+    generatedMapCount values) + 1)]
+  case head :: tail -> head
+  case Nil -> 0) ]
+
+result : List Int
 let result = generated_1810
 
 --! assertNoErrors
---! assertType generated_1810 Option Int
---! assertType result Option Int
+--! assertType generated_1810 List Int
+--! assertType result List Int
 --! assertDeclKinds signature, let, signature, let

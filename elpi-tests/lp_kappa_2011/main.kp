@@ -1,12 +1,26 @@
 module main
 
-generated_2011 : Bool
-let generated_2011 = (if (if (if (if False then True else ((True || False) || False)) then True else False) then True else False) then True else False)
+generated_2011 : Set Int
+let generated_2011 = {| yield (((Some ((block
+    generatedMapCount : Map String Int -> Int
+    let generatedMapCount values = 1
 
-result : Bool
+    let item = 0
+    let values = { yield "item" : item }
+
+    generatedMapCount values) + 1)) ?: ((block
+    generatedMapCount : Map String Int -> Int
+    let generatedMapCount values = 1
+
+    let item = 0
+    let values = { yield "item" : item }
+
+    generatedMapCount values) + 2)) + 0) |}
+
+result : Set Int
 let result = generated_2011
 
 --! assertNoErrors
---! assertType generated_2011 Bool
---! assertType result Bool
+--! assertType generated_2011 Set Int
+--! assertType result Set Int
 --! assertDeclKinds signature, let, signature, let

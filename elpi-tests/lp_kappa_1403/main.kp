@@ -1,12 +1,22 @@
 module main
 
-generated_1403 : (Int -> Int)
-let generated_1403 = \(x : Int) -> ((\(x : Int) -> ((\(x : Int) -> (((if True then (if (0 == 0) then \(x : Int) -> x else \(x : Int) -> (x + 0)) else \(x : Int) -> x)) x)) x)) x)
+generatedResize : (image : Int) -> (width : Int) -> (height : Int) -> Int
+let generatedResize image width height = image + width * 10 + height
 
-result : (Int -> Int)
+generated_1403 : Int
+let generated_1403 = generatedResize { image = (((\(n : Int) -> n) (block
+    generatedSetCount : Set Int -> Int
+    let generatedSetCount values = 2
+
+    let item = 0
+    let values = {|item, (item + 1)|}
+
+    generatedSetCount values)) + 0), height = 3, width = 2 }
+
+result : Int
 let result = generated_1403
 
 --! assertNoErrors
---! assertType generated_1403 (Int -> Int)
---! assertType result (Int -> Int)
---! assertDeclKinds signature, let, signature, let
+--! assertType generated_1403 Int
+--! assertType result Int
+--! assertDeclKinds signature, let, signature, let, signature, let

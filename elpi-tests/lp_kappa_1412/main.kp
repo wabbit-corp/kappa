@@ -1,14 +1,31 @@
 module main
 
-type GeneratedPair = (left : Int, right : Int)
+generated_1412 : Int
+let generated_1412 =
+    block
+        let base : (x : Int) = (x = (((\(n : Int) -> n) (block
+            generatedSetCount : Set Int -> Int
+            let generatedSetCount values = 2
 
-generated_1412 : GeneratedPair
-let generated_1412 = ((left = (((((((if False then 0 else ((if False then 0 else 0) + (0 + 0))) + 0) + 0) + 0) + 0) + 0) + 0), right = 0)).{ right = ((((((((if False then 0 else ((if False then 0 else 0) + (0 + 0))) + 0) + 0) + 0) + 0) + 0) + 0) + 1) }
+            let item = 0
+            let values = {|item, (item + 1)|}
 
-result : GeneratedPair
+            generatedSetCount values)) + 0))
+        let extended = base.{ y := (((\(n : Int) -> n) (block
+            generatedSetCount : Set Int -> Int
+            let generatedSetCount values = 2
+
+            let item = 0
+            let values = {|item, (item + 1)|}
+
+            generatedSetCount values)) + 1) }
+
+        (extended.x + extended.y)
+
+result : Int
 let result = generated_1412
 
 --! assertNoErrors
---! assertType generated_1412 GeneratedPair
---! assertType result GeneratedPair
---! assertDeclKinds type, signature, let, signature, let
+--! assertType generated_1412 Int
+--! assertType result Int
+--! assertDeclKinds signature, let, signature, let

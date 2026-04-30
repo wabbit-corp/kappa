@@ -1,15 +1,50 @@
 module main
 
+data GeneratedChoice : Type =
+    GeneratedLeft (value : Int)
+    GeneratedRight
+
 generated_1023 : Int
 let generated_1023 =
-    block
-        data RankedBox : Type =
-            RankedBox (value : Int)
+    match (GeneratedLeft (((Some ((block
+        generatedListLength : List Int -> Int
+        let generatedListLength xs decreases structural xs =
+            match xs
+              case Nil -> 0
+              case _ :: tail -> 1 + generatedListLength tail
 
-        let boxed = RankedBox ((((((((if True then (if False then 0 else 0) else 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0)
+        let item = 0
 
-        match boxed
-          case RankedBox value -> (value + 1)
+        generatedListLength [item, (item + 1), 0]) + 1)) ?: ((block
+        generatedListLength : List Int -> Int
+        let generatedListLength xs decreases structural xs =
+            match xs
+              case Nil -> 0
+              case _ :: tail -> 1 + generatedListLength tail
+
+        let item = 0
+
+        generatedListLength [item, (item + 1), 0]) + 2)) + 0))
+      case GeneratedLeft payload -> (payload + 0)
+      case GeneratedRight -> (((Some ((block
+          generatedListLength : List Int -> Int
+          let generatedListLength xs decreases structural xs =
+              match xs
+                case Nil -> 0
+                case _ :: tail -> 1 + generatedListLength tail
+
+          let item = 0
+
+          generatedListLength [item, (item + 1), 0]) + 1)) ?: ((block
+          generatedListLength : List Int -> Int
+          let generatedListLength xs decreases structural xs =
+              match xs
+                case Nil -> 0
+                case _ :: tail -> 1 + generatedListLength tail
+
+          let item = 0
+
+          generatedListLength [item, (item + 1), 0]) + 2)) + 0)
 
 result : Int
 let result = generated_1023
@@ -17,4 +52,4 @@ let result = generated_1023
 --! assertNoErrors
 --! assertType generated_1023 Int
 --! assertType result Int
---! assertDeclKinds signature, let, signature, let
+--! assertDeclKinds data, signature, let, signature, let

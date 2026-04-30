@@ -2,9 +2,45 @@ module main
 
 generated_1386 : Int
 let generated_1386 =
-    match (((((((((if False then 0 else ((if True then 0 else 0) + 0)) + 0) + 0) + 0) + 0) + 0) + 0) + 0) == ((((((((if False then 0 else ((if True then 0 else 0) + 0)) + 0) + 0) + 0) + 0) + 0) + 0) + 0))
-      case True -> ((((((((if False then 0 else ((if True then 0 else 0) + 0)) + 0) + 0) + 0) + 0) + 0) + 0) + 0)
-      case False -> 0
+    block
+        scoped effect Choice =
+            ω choose : Unit -> Bool
+
+        let seed = (block
+            let pair = (x = (block
+                generatedSetCount : Set Int -> Int
+                let generatedSetCount values = 2
+
+                let item = 0
+                let values = {|item, (item + 1)|}
+
+                generatedSetCount values), y = ((block
+                generatedSetCount : Set Int -> Int
+                let generatedSetCount values = 2
+
+                let item = 0
+                let values = {|item, (item + 1)|}
+
+                generatedSetCount values) + 1))
+            let (x = captured, y = other) = pair
+
+            (captured + other))
+
+        let comp : Eff <[Choice : Choice]> Int =
+            do
+                let b <- Choice.choose ()
+                if b then seed else (seed + 1)
+
+        let handled : Eff <[ ]> Int =
+            deep handle Choice comp with
+                case return x -> pure x
+                case choose () k ->
+                    do
+                        let a <- k True
+                        let b <- k False
+                        pure (a + b)
+
+        runPure handled
 
 result : Int
 let result = generated_1386

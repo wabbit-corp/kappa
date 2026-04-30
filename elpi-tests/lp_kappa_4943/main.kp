@@ -1,7 +1,7 @@
 module main
 
 generated_4943 : List Int
-let generated_4943 = [ for x in [1, 2, 3], yield (((((0 + (((if True then ((Some (x + 0)) ?: 0) else 0) + 0) + 0)) + 0) + 0) + 0) + 0) ]
+let generated_4943 = [ for x in [1, 2, 3], order by x desc, yield ((Some (((Some (x + 1)) ?: (x + 2)) + 1)) ?: (((Some (x + 1)) ?: (x + 2)) + 2)) ]
 
 result : List Int
 let result = generated_4943

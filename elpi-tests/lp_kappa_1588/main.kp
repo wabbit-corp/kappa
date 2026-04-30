@@ -1,17 +1,46 @@
 module main
 
+type GeneratedTuple = (Int, Int)
+
 generated_1588 : Int
 let generated_1588 =
     block
-        trait RankedScore a =
-            rank : a -> Int
+        let pair : GeneratedTuple = (((block
+            generatedListLength : List Int -> Int
+            let generatedListLength xs decreases structural xs =
+                match xs
+                  case Nil -> 0
+                  case _ :: tail -> 1 + generatedListLength tail
 
-        instance RankedScore Int =
-            let rank x = x
+            let item = (block
+                generatedMapCount : Map String Int -> Int
+                let generatedMapCount values = 1
 
-        let dict = summon (RankedScore Int)
+                let item = 0
+                let values = { yield "item" : item }
 
-        dict.rank (((((((((if True then ((0 + 0) + 0) else 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0)
+                generatedMapCount values)
+
+            generatedListLength [item, (item + 1), 0]) + 0), ((block
+            generatedListLength : List Int -> Int
+            let generatedListLength xs decreases structural xs =
+                match xs
+                  case Nil -> 0
+                  case _ :: tail -> 1 + generatedListLength tail
+
+            let item = (block
+                generatedMapCount : Map String Int -> Int
+                let generatedMapCount values = 1
+
+                let item = 0
+                let values = { yield "item" : item }
+
+                generatedMapCount values)
+
+            generatedListLength [item, (item + 1), 0]) + 1))
+        let (left, right) = pair
+
+        (left + right)
 
 result : Int
 let result = generated_1588
@@ -19,4 +48,4 @@ let result = generated_1588
 --! assertNoErrors
 --! assertType generated_1588 Int
 --! assertType result Int
---! assertDeclKinds signature, let, signature, let
+--! assertDeclKinds type, signature, let, signature, let

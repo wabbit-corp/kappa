@@ -1,22 +1,19 @@
 module main
 
-trait GeneratedScore a =
-    score : a -> Int
+generated_1919 : List Int
+let generated_1919 = [ for x in [1, 2, 3], order by x desc, yield ((\(n : Int) -> n) (block
+    generatedMapCount : Map String Int -> Int
+    let generatedMapCount values = 1
 
-instance GeneratedScore Int =
-    let score x = x
+    let item = x
+    let values = { yield "item" : item }
 
-generated_1919 : Int
-let generated_1919 =
-    let
-        dict = summon (GeneratedScore Int)
-in
-        dict.score (((((((((if False then 0 else ((0 + 0) + 0)) + (0 + 0)) + 0) + 0) + 0) + 0) + 0) + 0) + 0)
+    generatedMapCount values)) ]
 
-result : Int
+result : List Int
 let result = generated_1919
 
 --! assertNoErrors
---! assertType generated_1919 Int
---! assertType result Int
---! assertDeclKinds trait, instance, signature, let, signature, let
+--! assertType generated_1919 List Int
+--! assertType result List Int
+--! assertDeclKinds signature, let, signature, let

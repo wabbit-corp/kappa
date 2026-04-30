@@ -1,22 +1,26 @@
 module main
 
-trait GeneratedScore a =
-    score : a -> Int
+generated_3415 : Set Int
+let generated_3415 = {| yield ((match ((block
+    let pair = (x = 0, y = (0 + 1))
+    let (x = captured, y = other) = pair
 
-instance GeneratedScore Int =
-    let score x = x
+    (captured + other)) == (block
+    let pair = (x = 0, y = (0 + 1))
+    let (x = captured, y = other) = pair
 
-generated_3415 : Int
-let generated_3415 =
-    let
-        dict = summon (GeneratedScore Int)
-in
-        dict.score ((((((0 + ((((if False then 0 else 0) + 0) + 0) + 0)) + 0) + 0) + 0) + 0) + 0)
+    (captured + other)))
+  case True -> (block
+      let pair = (x = 0, y = (0 + 1))
+      let (x = captured, y = other) = pair
 
-result : Int
+      (captured + other))
+  case False -> 0) + 0) |}
+
+result : Set Int
 let result = generated_3415
 
 --! assertNoErrors
---! assertType generated_3415 Int
---! assertType result Int
---! assertDeclKinds trait, instance, signature, let, signature, let
+--! assertType generated_3415 Set Int
+--! assertType result Set Int
+--! assertDeclKinds signature, let, signature, let

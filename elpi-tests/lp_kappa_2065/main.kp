@@ -1,12 +1,23 @@
 module main
 
-generated_2065 : String
-let generated_2065 = (if (if (if (if (if False then True else ((if True then (True && True) else False) || False)) then True else False) then True else False) then True else False) then #"raw lambda-prolog"# else "fallback")
+generated_2065 : Set Int
+let generated_2065 = {| yield ((block
+    generatedListLength : List Int -> Int
+    let generatedListLength xs decreases structural xs =
+        match xs
+          case Nil -> 0
+          case _ :: tail -> 1 + generatedListLength tail
 
-result : String
+    let item = (match (Some 0)
+      case Some payload -> payload
+      case None -> 0)
+
+    generatedListLength [item, (item + 1), 0]) + 0) |}
+
+result : Set Int
 let result = generated_2065
 
 --! assertNoErrors
---! assertType generated_2065 String
---! assertType result String
+--! assertType generated_2065 Set Int
+--! assertType result Set Int
 --! assertDeclKinds signature, let, signature, let

@@ -1,12 +1,17 @@
 module main
 
-generated_485 : (Int -> Int)
-let generated_485 = \(x : Int) -> ((\(x : Int) -> ((\(x : Int) -> ((\(x : Int) -> ((\(x : Int) -> if (x == 0) then x else ((\(x : Int) -> x) x)) x)) x)) x)) x)
+generatedResize : (image : Int) -> (width : Int) -> (height : Int) -> Int
+let generatedResize image width height = image + width * 10 + height
 
-result : (Int -> Int)
+generated_485 : Int
+let generated_485 = generatedResize { image = ((match (0 == 0)
+  case True -> 0
+  case False -> 0) + 0), height = 3, width = 2 }
+
+result : Int
 let result = generated_485
 
 --! assertNoErrors
---! assertType generated_485 (Int -> Int)
---! assertType result (Int -> Int)
---! assertDeclKinds signature, let, signature, let
+--! assertType generated_485 Int
+--! assertType result Int
+--! assertDeclKinds signature, let, signature, let, signature, let

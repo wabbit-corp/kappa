@@ -1,12 +1,41 @@
 module main
 
-generated_1960 : Map String Int
-let generated_1960 = { for x in [1, 2, 3], yield "k" : ((((((((if False then 0 else (0 + (x + 0))) + (0 + 0)) + 0) + 0) + 0) + 0) + 0) + 0) }
+generated_1960 : Int
+let generated_1960 =
+    block
+        type RankedAlias = Int
 
-result : Map String Int
+        let aliased : RankedAlias = ((match ((block
+            generatedMapCount : Map String Int -> Int
+            let generatedMapCount values = 1
+
+            let item = 0
+            let values = { yield "item" : item }
+
+            generatedMapCount values) == (block
+            generatedMapCount : Map String Int -> Int
+            let generatedMapCount values = 1
+
+            let item = 0
+            let values = { yield "item" : item }
+
+            generatedMapCount values))
+          case True -> (block
+              generatedMapCount : Map String Int -> Int
+              let generatedMapCount values = 1
+
+              let item = 0
+              let values = { yield "item" : item }
+
+              generatedMapCount values)
+          case False -> 0) + 0)
+
+        (aliased + 1)
+
+result : Int
 let result = generated_1960
 
 --! assertNoErrors
---! assertType generated_1960 Map String Int
---! assertType result Map String Int
+--! assertType generated_1960 Int
+--! assertType result Int
 --! assertDeclKinds signature, let, signature, let

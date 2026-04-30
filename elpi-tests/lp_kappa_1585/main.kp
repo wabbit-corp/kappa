@@ -1,12 +1,31 @@
 module main
 
-generated_1585 : Set Int
-let generated_1585 = {| for x in [1, 2, 3], let y = x + 1, yield ((((((((if True then ((x + 0) + 0) else 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0) |}
+generatedEcho : forall (a : Type). (this x : a) -> a
+let generatedEcho @a (this x : a) = x
 
-result : Set Int
+generated_1585 : Option Int
+let generated_1585 = (Some ((block
+    generatedListLength : List Int -> Int
+    let generatedListLength xs decreases structural xs =
+        match xs
+          case Nil -> 0
+          case _ :: tail -> 1 + generatedListLength tail
+
+    let item = (block
+        generatedMapCount : Map String Int -> Int
+        let generatedMapCount values = 1
+
+        let item = 0
+        let values = { yield "item" : item }
+
+        generatedMapCount values)
+
+    generatedListLength [item, (item + 1), 0]) + 0))?.generatedEcho
+
+result : Option Int
 let result = generated_1585
 
 --! assertNoErrors
---! assertType generated_1585 Set Int
---! assertType result Set Int
---! assertDeclKinds signature, let, signature, let
+--! assertType generated_1585 Option Int
+--! assertType result Option Int
+--! assertDeclKinds signature, let, signature, let, signature, let

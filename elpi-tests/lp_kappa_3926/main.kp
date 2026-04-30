@@ -1,10 +1,7 @@
 module main
 
-generatedEcho : forall (a : Type). (this x : a) -> a
-let generatedEcho @a (this x : a) = x
-
 generated_3926 : Int
-let generated_3926 = ((((((0 + ((0 + (((Some (0 + 0)) ?: 0) + 0)) + 0)) + 0) + 0) + 0) + 0) + 0).generatedEcho
+let generated_3926 = ((Some (((\(n : Int) -> n) 0) + 1)) ?: (((\(n : Int) -> n) 0) + 2))
 
 result : Int
 let result = generated_3926
@@ -12,4 +9,4 @@ let result = generated_3926
 --! assertNoErrors
 --! assertType generated_3926 Int
 --! assertType result Int
---! assertDeclKinds signature, let, signature, let, signature, let
+--! assertDeclKinds signature, let, signature, let

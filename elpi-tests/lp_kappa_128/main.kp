@@ -2,9 +2,19 @@ module main
 
 generated_128 : Int
 let generated_128 =
-    match ((((((0 + 0) + 0) + 0) + 0) + 0) == (((((0 + 0) + 0) + 0) + 0) + 0))
-      case True -> (((((0 + 0) + 0) + 0) + 0) + 0)
-      case False -> 0
+    block
+        let (captured : Int) = ((block
+            generatedListLength : List Int -> Int
+            let generatedListLength xs decreases structural xs =
+                match xs
+                  case Nil -> 0
+                  case _ :: tail -> 1 + generatedListLength tail
+
+            let item = 0
+
+            generatedListLength [item, (item + 1), 0]) + 0)
+
+        captured
 
 result : Int
 let result = generated_128

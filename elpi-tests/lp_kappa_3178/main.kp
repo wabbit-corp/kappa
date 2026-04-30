@@ -1,10 +1,20 @@
 module main
 
-generatedEcho : forall (a : Type). (this x : a) -> a
-let generatedEcho @a (this x : a) = x
+generatedNeed : (@x : Int) -> Int
+let generatedNeed (@x : Int) = x
 
 generated_3178 : Int
-let generated_3178 = (((((((((Some (((left = 0, right = (0 + 0))).right + 0)) ?: 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0).generatedEcho
+let generated_3178 =
+    block
+        let (@x : Int) = (match (Some (block
+            let pair = (x = 0, y = (0 + 1))
+            let (x = captured, y = other) = pair
+
+            (captured + other)))
+          case Some payload -> payload
+          case None -> 0)
+
+        if True then generatedNeed else 0
 
 result : Int
 let result = generated_3178

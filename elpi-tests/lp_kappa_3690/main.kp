@@ -1,14 +1,17 @@
 module main
 
-type GeneratedPair = (left : Int, right : Int)
+generatedNeed : (@x : Int) -> Int
+let generatedNeed (@x : Int) = x
 
-generated_3690 : GeneratedPair
-let generated_3690 = ((left = (((((0 + ((0 + ((0 + (0 + 0)) + 0)) + 0)) + 0) + 0) + 0) + 0), right = 0)).{ right = ((((((0 + ((0 + ((0 + (0 + 0)) + 0)) + 0)) + 0) + 0) + 0) + 0) + 1) }
+generated_3690 : Int
+let generated_3690 = generatedNeed @(((match (Some ((\(n : Int) -> n) 0))
+  case Some payload -> payload
+  case None -> 0) + 0))
 
-result : GeneratedPair
+result : Int
 let result = generated_3690
 
 --! assertNoErrors
---! assertType generated_3690 GeneratedPair
---! assertType result GeneratedPair
---! assertDeclKinds type, signature, let, signature, let
+--! assertType generated_3690 Int
+--! assertType result Int
+--! assertDeclKinds signature, let, signature, let, signature, let

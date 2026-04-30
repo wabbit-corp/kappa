@@ -1,15 +1,20 @@
 module main
 
-generated_2205 : IO Int
+generated_2205 : Int
 let generated_2205 =
-    do
-        let staged = (((((((((if False then 0 else ((Some (0 + 0)) ?: 0)) + (0 + 0)) + 0) + 0) + 0) + 0) + 0) + 0) + 0)
-        pure (staged + 1)
+    let
+        ranked : Int = (match (Some (match (Some 0)
+          case Some payload -> payload
+          case None -> 0))
+          case Some payload -> payload
+          case None -> 0)
+in
+        (ranked + 0)
 
-result : IO Int
+result : Int
 let result = generated_2205
 
 --! assertNoErrors
---! assertType generated_2205 IO Int
---! assertType result IO Int
+--! assertType generated_2205 Int
+--! assertType result Int
 --! assertDeclKinds signature, let, signature, let

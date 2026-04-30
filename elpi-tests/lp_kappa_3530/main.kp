@@ -3,10 +3,18 @@ module main
 generated_3530 : Int
 let generated_3530 =
     block
-        let base : (x : Int) = (x = ((((((0 + (((((left = (0 + 0), right = 0)).left + 0) + 0) + 0)) + 0) + 0) + 0) + 0) + 0))
-        let extended = base.{ y := ((((((0 + (((((left = (0 + 0), right = 0)).left + 0) + 0) + 0)) + 0) + 0) + 0) + 0) + 1) }
+        let (captured : Int) = ((block
+            generatedListLength : List Int -> Int
+            let generatedListLength xs decreases structural xs =
+                match xs
+                  case Nil -> 0
+                  case _ :: tail -> 1 + generatedListLength tail
 
-        (extended.x + extended.y)
+            let item = ((\(n : Int) -> n) 0)
+
+            generatedListLength [item, (item + 1), 0]) + 0)
+
+        captured
 
 result : Int
 let result = generated_3530

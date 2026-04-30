@@ -1,17 +1,34 @@
 module main
 
-generated_878 : Int
-let generated_878 =
-    block
-        let base : (x : Int) = (x = ((((((((if True then 0 else 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0))
-        let extended = base.{ y := ((((((((if True then 0 else 0) + 0) + 0) + 0) + 0) + 0) + 0) + 1) }
+generated_878 : Map String Int
+let generated_878 = { yield "only" : ((block
+    let pair = (x = (block
+        generatedListLength : List Int -> Int
+        let generatedListLength xs decreases structural xs =
+            match xs
+              case Nil -> 0
+              case _ :: tail -> 1 + generatedListLength tail
 
-        (extended.x + extended.y)
+        let item = 0
 
-result : Int
+        generatedListLength [item, (item + 1), 0]), y = ((block
+        generatedListLength : List Int -> Int
+        let generatedListLength xs decreases structural xs =
+            match xs
+              case Nil -> 0
+              case _ :: tail -> 1 + generatedListLength tail
+
+        let item = 0
+
+        generatedListLength [item, (item + 1), 0]) + 1))
+    let (x = captured, y = other) = pair
+
+    (captured + other)) + 0) }
+
+result : Map String Int
 let result = generated_878
 
 --! assertNoErrors
---! assertType generated_878 Int
---! assertType result Int
+--! assertType generated_878 Map String Int
+--! assertType result Map String Int
 --! assertDeclKinds signature, let, signature, let

@@ -1,17 +1,12 @@
 module main
 
-generated_2254 : Int
-let generated_2254 =
-    block
-        ranked : Int
-        let ranked = ((((((((left = (((0 + 0) + 0) + 0), right = 0)).left + 0) + 0) + 0) + 0) + 0) + 0)
+generated_2254 : Unit
+let generated_2254 = (if True then (if True then (if True then ((\(u : Unit) -> ()) ((\(u : Unit) -> if False then () else u) ())) else ()) else ()) else ())
 
-        (ranked + 0)
-
-result : Int
+result : Unit
 let result = generated_2254
 
 --! assertNoErrors
---! assertType generated_2254 Int
---! assertType result Int
+--! assertType generated_2254 Unit
+--! assertType result Unit
 --! assertDeclKinds signature, let, signature, let

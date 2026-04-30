@@ -1,12 +1,49 @@
 module main
 
-generated_1789 : Set Int
-let generated_1789 = {| for x in [1, 2, 3], let y = x + 1, if y > 0, yield ((((((((if True then ((left = (x + 0), right = 0)).left else 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0) |}
+generated_1789 : Int
+let generated_1789 =
+    block
+        let pair = (x = ((match [(block
+            generatedMapCount : Map String Int -> Int
+            let generatedMapCount values = 1
 
-result : Set Int
+            let item = 0
+            let values = { yield "item" : item }
+
+            generatedMapCount values), ((block
+            generatedMapCount : Map String Int -> Int
+            let generatedMapCount values = 1
+
+            let item = 0
+            let values = { yield "item" : item }
+
+            generatedMapCount values) + 1)]
+          case head :: tail -> head
+          case Nil -> 0) + 0), y = ((match [(block
+            generatedMapCount : Map String Int -> Int
+            let generatedMapCount values = 1
+
+            let item = 0
+            let values = { yield "item" : item }
+
+            generatedMapCount values), ((block
+            generatedMapCount : Map String Int -> Int
+            let generatedMapCount values = 1
+
+            let item = 0
+            let values = { yield "item" : item }
+
+            generatedMapCount values) + 1)]
+          case head :: tail -> head
+          case Nil -> 0) + 1))
+        let (x = captured, y = other) = pair
+
+        (captured + other)
+
+result : Int
 let result = generated_1789
 
 --! assertNoErrors
---! assertType generated_1789 Set Int
---! assertType result Set Int
+--! assertType generated_1789 Int
+--! assertType result Int
 --! assertDeclKinds signature, let, signature, let

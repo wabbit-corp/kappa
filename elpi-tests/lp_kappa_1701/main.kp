@@ -1,19 +1,26 @@
 module main
 
-data GeneratedChoice : Type =
-    GeneratedLeft (value : Int)
-    GeneratedRight
+generated_1701 : Map String Int
+let generated_1701 = { for x in [1, 2, 3], yield "k" : (block
+    generatedMapCount : Map String Int -> Int
+    let generatedMapCount values = 1
 
-generated_1701 : Int
-let generated_1701 =
-    match GeneratedRight
-      case GeneratedLeft payload -> (payload + 0)
-      case GeneratedRight -> (((((((((if True then (if False then 0 else 0) else 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0)
+    let item = (block
+        generatedMapCount : Map String Int -> Int
+        let generatedMapCount values = 1
 
-result : Int
+        let item = x
+        let values = { yield "item" : item }
+
+        generatedMapCount values)
+    let values = { yield "item" : item }
+
+    generatedMapCount values), on conflict keep first }
+
+result : Map String Int
 let result = generated_1701
 
 --! assertNoErrors
---! assertType generated_1701 Int
---! assertType result Int
---! assertDeclKinds data, signature, let, signature, let
+--! assertType generated_1701 Map String Int
+--! assertType result Map String Int
+--! assertDeclKinds signature, let, signature, let

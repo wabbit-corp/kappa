@@ -1,12 +1,26 @@
 module main
 
-generated_2218 : Option Int
-let generated_2218 = (if True then (if True then (if True then (if (((Some (0 + 0)) ?: 0) == 1) then (Some (((Some (0 + 0)) ?: 0) + 0)) else (Some (0 + 0))) else None) else None) else None)
+generated_2218 : Int
+let generated_2218 =
+    block
+        trait RankedScore a =
+            rank : a -> Int
 
-result : Option Int
+        instance RankedScore Int =
+            let rank x = x
+
+        let dict = summon (RankedScore Int)
+
+        dict.rank ((match (Some (match (Some 0)
+          case Some payload -> payload
+          case None -> 0))
+          case Some payload -> payload
+          case None -> 0) + 0)
+
+result : Int
 let result = generated_2218
 
 --! assertNoErrors
---! assertType generated_2218 Option Int
---! assertType result Option Int
+--! assertType generated_2218 Int
+--! assertType result Int
 --! assertDeclKinds signature, let, signature, let

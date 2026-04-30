@@ -1,12 +1,21 @@
 module main
 
-generated_285 : List Int
-let generated_285 = [ for x in [1, 2, 3], let y = x + 1, if y > 0, yield (((((((((if True then x else 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0) ]
+data GeneratedChoice : Type =
+    GeneratedLeft (value : Int)
+    GeneratedRight
 
-result : List Int
+generated_285 : Int
+let generated_285 =
+    match GeneratedRight
+      case GeneratedLeft payload -> (payload + 0)
+      case GeneratedRight -> ((match (Some 0)
+        case Some payload -> payload
+        case None -> 0) + 0)
+
+result : Int
 let result = generated_285
 
 --! assertNoErrors
---! assertType generated_285 List Int
---! assertType result List Int
---! assertDeclKinds signature, let, signature, let
+--! assertType generated_285 Int
+--! assertType result Int
+--! assertDeclKinds data, signature, let, signature, let

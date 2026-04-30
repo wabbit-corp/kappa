@@ -1,15 +1,33 @@
 module main
 
-generated_1083 : IO Int
+generated_1083 : Int
 let generated_1083 =
-    do
-        let staged = ((((((((if True then ((if False then 0 else 0) + (0 + 0)) else 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0)
-        pure (staged + 1)
+    block
+        rankedHelper : (Int -> Int)
+        let rankedHelper x = x + 1
 
-result : IO Int
+        rankedHelper ((block
+            generatedListLength : List Int -> Int
+            let generatedListLength xs decreases structural xs =
+                match xs
+                  case Nil -> 0
+                  case _ :: tail -> 1 + generatedListLength tail
+
+            let item = (block
+                generatedSetCount : Set Int -> Int
+                let generatedSetCount values = 2
+
+                let item = 0
+                let values = {|item, (item + 1)|}
+
+                generatedSetCount values)
+
+            generatedListLength [item, (item + 1), 0]) + 0)
+
+result : Int
 let result = generated_1083
 
 --! assertNoErrors
---! assertType generated_1083 IO Int
---! assertType result IO Int
+--! assertType generated_1083 Int
+--! assertType result Int
 --! assertDeclKinds signature, let, signature, let

@@ -1,7 +1,9 @@
 module main
 
 generated_4658 : Map String Int
-let generated_4658 = { yield "only" : ((((((0 + (((if True then 0 else 0) + 0) + 0)) + 0) + 0) + 0) + 0) + 0) }
+let generated_4658 = { yield "only" : ((match (Some ((Some (0 + 1)) ?: (0 + 2)))
+  case Some payload -> payload
+  case None -> 0) + 0) }
 
 result : Map String Int
 let result = generated_4658

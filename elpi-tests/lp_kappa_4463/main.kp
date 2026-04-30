@@ -1,12 +1,35 @@
 module main
 
-generated_4463 : (Int -> Int)
-let generated_4463 = \(x : Int) -> ((\(x : Int) -> ((\(x : Int) -> ((((if True then (if False then \(x : Int) -> x else \(x : Int) -> x) else \(x : Int) -> x)) x) + 0)) x)) x)
+generated_4463 : Int
+let generated_4463 =
+    block
+        scoped effect Ask =
+            ask : Unit -> Bool
 
-result : (Int -> Int)
+        let pkg = (label = Ask)
+
+        let seed = ((Some ((match (0 == 0)
+          case True -> 0
+          case False -> 0) + 1)) ?: ((match (0 == 0)
+          case True -> 0
+          case False -> 0) + 2))
+
+        let comp : Eff <[Ask : Ask]> Int =
+            do
+                let b <- pkg.label.ask ()
+                if b then seed else (seed + 1)
+
+        let handled : Eff <[ ]> Int =
+            deep handle pkg.label comp with
+                case return x -> pure x
+                case ask () k -> k True
+
+        runPure handled
+
+result : Int
 let result = generated_4463
 
 --! assertNoErrors
---! assertType generated_4463 (Int -> Int)
---! assertType result (Int -> Int)
+--! assertType generated_4463 Int
+--! assertType result Int
 --! assertDeclKinds signature, let, signature, let

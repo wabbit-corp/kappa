@@ -1,17 +1,36 @@
 module main
 
-generated_2050 : Int
-let generated_2050 =
-    block
-        ranked : Int
-        let ranked = ((((((((if False then 0 else ((if True then 0 else 0) + 0)) + (0 + 0)) + 0) + 0) + 0) + 0) + 0) + 0)
+type GeneratedPair = (left : Int, right : Int)
 
-        (ranked + 0)
+generated_2050 : GeneratedPair
+let generated_2050 = ((left = (block
+    generatedListLength : List Int -> Int
+    let generatedListLength xs decreases structural xs =
+        match xs
+          case Nil -> 0
+          case _ :: tail -> 1 + generatedListLength tail
 
-result : Int
+    let item = (match (Some 0)
+      case Some payload -> payload
+      case None -> 0)
+
+    generatedListLength [item, (item + 1), 0]), right = 0)).{ right = ((block
+    generatedListLength : List Int -> Int
+    let generatedListLength xs decreases structural xs =
+        match xs
+          case Nil -> 0
+          case _ :: tail -> 1 + generatedListLength tail
+
+    let item = (match (Some 0)
+      case Some payload -> payload
+      case None -> 0)
+
+    generatedListLength [item, (item + 1), 0]) + 1) }
+
+result : GeneratedPair
 let result = generated_2050
 
 --! assertNoErrors
---! assertType generated_2050 Int
---! assertType result Int
---! assertDeclKinds signature, let, signature, let
+--! assertType generated_2050 GeneratedPair
+--! assertType result GeneratedPair
+--! assertDeclKinds type, signature, let, signature, let

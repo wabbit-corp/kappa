@@ -1,12 +1,29 @@
 module main
 
-generated_2062 : Map String Int
-let generated_2062 = { for x in [1, 2, 3], let y = x + 1, if y > 0, yield (if y > 1 then "hi" else "lo") : ((((((((if False then 0 else ((if True then x else 0) + 0)) + (0 + 0)) + 0) + 0) + 0) + 0) + 0) + 0) }
+generatedNeed : (@x : Int) -> Int
+let generatedNeed (@x : Int) = x
 
-result : Map String Int
+generated_2062 : IO Int
+let generated_2062 =
+    do
+        let (@x : Int) = ((block
+            generatedListLength : List Int -> Int
+            let generatedListLength xs decreases structural xs =
+                match xs
+                  case Nil -> 0
+                  case _ :: tail -> 1 + generatedListLength tail
+
+            let item = (match (Some 0)
+              case Some payload -> payload
+              case None -> 0)
+
+            generatedListLength [item, (item + 1), 0]) + 0)
+        pure generatedNeed
+
+result : IO Int
 let result = generated_2062
 
 --! assertNoErrors
---! assertType generated_2062 Map String Int
---! assertType result Map String Int
---! assertDeclKinds signature, let, signature, let
+--! assertType generated_2062 IO Int
+--! assertType result IO Int
+--! assertDeclKinds signature, let, signature, let, signature, let

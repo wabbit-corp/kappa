@@ -1,12 +1,21 @@
 module main
 
+data GeneratedChoice : Type =
+    GeneratedLeft (value : Int)
+    GeneratedRight
+
 generated_231 : Int
 let generated_231 =
-    block
-        let pair = (x = (((((((((((0 + 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0), y = (((((((((((0 + 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0) + 1))
-        let (x = captured, y = other) = pair
+    match GeneratedRight
+      case GeneratedLeft payload -> (payload + 0)
+      case GeneratedRight -> ((block
+          generatedMapCount : Map String Int -> Int
+          let generatedMapCount values = 1
 
-        (captured + other)
+          let item = 0
+          let values = { yield "item" : item }
+
+          generatedMapCount values) + 0)
 
 result : Int
 let result = generated_231
@@ -14,4 +23,4 @@ let result = generated_231
 --! assertNoErrors
 --! assertType generated_231 Int
 --! assertType result Int
---! assertDeclKinds signature, let, signature, let
+--! assertDeclKinds data, signature, let, signature, let

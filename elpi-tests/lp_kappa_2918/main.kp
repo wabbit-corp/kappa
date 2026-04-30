@@ -1,17 +1,20 @@
 module main
 
-generated_2918 : Int
-let generated_2918 =
-    block
-        let base : (x : Int) = (x = (((((((((Some (0 + 0)) ?: 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0))
-        let extended = base.{ y := (((((((((Some (0 + 0)) ?: 0) + 0) + 0) + 0) + 0) + 0) + 0) + 1) }
+generated_2918 : Map String Int
+let generated_2918 = { for x in [1, 2, 3], let y = x + 1, yield "k" : (match ((match [x, (x + 1)]
+  case head :: tail -> head
+  case Nil -> 0) == (match [x, (x + 1)]
+  case head :: tail -> head
+  case Nil -> 0))
+  case True -> (match [x, (x + 1)]
+    case head :: tail -> head
+    case Nil -> 0)
+  case False -> 0) }
 
-        (extended.x + extended.y)
-
-result : Int
+result : Map String Int
 let result = generated_2918
 
 --! assertNoErrors
---! assertType generated_2918 Int
---! assertType result Int
+--! assertType generated_2918 Map String Int
+--! assertType result Map String Int
 --! assertDeclKinds signature, let, signature, let

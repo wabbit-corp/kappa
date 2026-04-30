@@ -1,12 +1,31 @@
 module main
 
-generated_1664 : List Int
-let generated_1664 = [ yield (((((((((if True then (if True then 0 else 0) else 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0) ]
+generated_1664 : Int
+let generated_1664 =
+    block
+        ranked : Int
+        let ranked = (block
+            generatedMapCount : Map String Int -> Int
+            let generatedMapCount values = 1
 
-result : List Int
+            let item = (block
+                generatedMapCount : Map String Int -> Int
+                let generatedMapCount values = 1
+
+                let item = 0
+                let values = { yield "item" : item }
+
+                generatedMapCount values)
+            let values = { yield "item" : item }
+
+            generatedMapCount values)
+
+        (ranked + 0)
+
+result : Int
 let result = generated_1664
 
 --! assertNoErrors
---! assertType generated_1664 List Int
---! assertType result List Int
+--! assertType generated_1664 Int
+--! assertType result Int
 --! assertDeclKinds signature, let, signature, let

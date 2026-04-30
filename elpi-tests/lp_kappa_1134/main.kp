@@ -1,14 +1,24 @@
 module main
 
-generatedNeed : (@x : Int) -> Int
-let generatedNeed (@x : Int) = x
+generatedMakeConst : forall (a : Type). a -> Unit -> a
+let generatedMakeConst value = \() -> value
 
 generated_1134 : Int
-let generated_1134 =
-    block
-        let (@x : Int) = (((((((if True then ((left = 0, right = (0 + 0))).right else 0) + 0) + 0) + 0) + 0) + 0) + 0)
+let generated_1134 = ((generatedMakeConst ((block
+    generatedSetCount : Set Int -> Int
+    let generatedSetCount values = 2
 
-        if True then generatedNeed else 0
+    let item = (block
+        generatedSetCount : Set Int -> Int
+        let generatedSetCount values = 2
+
+        let item = 0
+        let values = {|item, (item + 1)|}
+
+        generatedSetCount values)
+    let values = {|item, (item + 1)|}
+
+    generatedSetCount values) + 0)) ())
 
 result : Int
 let result = generated_1134

@@ -1,12 +1,45 @@
 module main
 
-generated_2006 : Map String Int
-let generated_2006 = { yield "only" : (((((((((if False then 0 else (if True then 0 else 0)) + (0 + 0)) + 0) + 0) + 0) + 0) + 0) + 0) + 0) }
+generated_2006 : Int
+let generated_2006 =
+    block
+        let base : (x : Int) = (x = (((Some ((block
+            generatedMapCount : Map String Int -> Int
+            let generatedMapCount values = 1
 
-result : Map String Int
+            let item = 0
+            let values = { yield "item" : item }
+
+            generatedMapCount values) + 1)) ?: ((block
+            generatedMapCount : Map String Int -> Int
+            let generatedMapCount values = 1
+
+            let item = 0
+            let values = { yield "item" : item }
+
+            generatedMapCount values) + 2)) + 0))
+        let extended = base.{ y := (((Some ((block
+            generatedMapCount : Map String Int -> Int
+            let generatedMapCount values = 1
+
+            let item = 0
+            let values = { yield "item" : item }
+
+            generatedMapCount values) + 1)) ?: ((block
+            generatedMapCount : Map String Int -> Int
+            let generatedMapCount values = 1
+
+            let item = 0
+            let values = { yield "item" : item }
+
+            generatedMapCount values) + 2)) + 1) }
+
+        (extended.x + extended.y)
+
+result : Int
 let result = generated_2006
 
 --! assertNoErrors
---! assertType generated_2006 Map String Int
---! assertType result Map String Int
+--! assertType generated_2006 Int
+--! assertType result Int
 --! assertDeclKinds signature, let, signature, let

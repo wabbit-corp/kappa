@@ -1,12 +1,14 @@
 module main
 
-generated_203 : Set Int
-let generated_203 = {| yield (((((((((0 + 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0) |}
+type GeneratedTuple = (Int, Int)
 
-result : Set Int
+generated_203 : GeneratedTuple
+let generated_203 = (if True then (if True then (if True then (0, (0 + 0)) else (0, (0 + 0))) else (0, (0 + 0))) else (0, (0 + 0)))
+
+result : GeneratedTuple
 let result = generated_203
 
 --! assertNoErrors
---! assertType generated_203 Set Int
---! assertType result Set Int
---! assertDeclKinds signature, let, signature, let
+--! assertType generated_203 GeneratedTuple
+--! assertType result GeneratedTuple
+--! assertDeclKinds type, signature, let, signature, let

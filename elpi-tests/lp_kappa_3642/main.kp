@@ -1,7 +1,24 @@
 module main
 
 generated_3642 : Int
-let generated_3642 = (((((0 + ((0 + (((0 + 0) + 0) + 0)) + 0)) + 0) + 0) + 0) + 0)
+let generated_3642 =
+    match [((block
+        generatedMapCount : Map String Int -> Int
+        let generatedMapCount values = 1
+
+        let item = ((\(n : Int) -> n) 0)
+        let values = { yield "item" : item }
+
+        generatedMapCount values) + 0), (((block
+        generatedMapCount : Map String Int -> Int
+        let generatedMapCount values = 1
+
+        let item = ((\(n : Int) -> n) 0)
+        let values = { yield "item" : item }
+
+        generatedMapCount values) + 0) + 1)]
+      case head :: tail -> head
+      case Nil -> 0
 
 result : Int
 let result = generated_3642

@@ -1,12 +1,19 @@
 module main
 
-generated_294 : Map String Int
-let generated_294 = { for x in [1, 2, 3], let y = x + 1, if y > 0, yield (if y > 1 then "hi" else "lo") : (((((((((if True then x else 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0) }
+generated_294 : Int
+let generated_294 =
+    match [((match (Some 0)
+      case Some payload -> payload
+      case None -> 0) + 0), (((match (Some 0)
+      case Some payload -> payload
+      case None -> 0) + 0) + 1)]
+      case head :: tail -> head
+      case Nil -> 0
 
-result : Map String Int
+result : Int
 let result = generated_294
 
 --! assertNoErrors
---! assertType generated_294 Map String Int
---! assertType result Map String Int
+--! assertType generated_294 Int
+--! assertType result Int
 --! assertDeclKinds signature, let, signature, let

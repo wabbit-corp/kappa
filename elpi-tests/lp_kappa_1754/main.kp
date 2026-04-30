@@ -1,10 +1,23 @@
 module main
 
-generatedMakeConst : forall (a : Type). a -> Unit -> a
-let generatedMakeConst value = \() -> value
+generatedUseWidth : (width : Int) -> Int
+let generatedUseWidth width = width
 
 generated_1754 : Int
-let generated_1754 = ((generatedMakeConst (((((((((if True then ((if False then 0 else 0) + (0 + 0)) else 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0)) ())
+let generated_1754 =
+    block
+        let width = ((match (Some (block
+            generatedMapCount : Map String Int -> Int
+            let generatedMapCount values = 1
+
+            let item = 0
+            let values = { yield "item" : item }
+
+            generatedMapCount values))
+          case Some payload -> payload
+          case None -> 0) + 0)
+
+        generatedUseWidth { width }
 
 result : Int
 let result = generated_1754

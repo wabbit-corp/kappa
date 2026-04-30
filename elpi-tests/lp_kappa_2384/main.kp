@@ -1,7 +1,16 @@
 module main
 
 generated_2384 : Int
-let generated_2384 = ((((((((left = (((if True then 0 else 0) + 0) + 0), right = 0)).left + 0) + 0) + 0) + 0) + 0) + 0)
+let generated_2384 =
+    block
+        let base : (x : Int) = (x = (((\(n : Int) -> n) (match (Some 0)
+          case Some payload -> payload
+          case None -> 0)) + 0))
+        let extended = base.{ y := (((\(n : Int) -> n) (match (Some 0)
+          case Some payload -> payload
+          case None -> 0)) + 1) }
+
+        (extended.x + extended.y)
 
 result : Int
 let result = generated_2384

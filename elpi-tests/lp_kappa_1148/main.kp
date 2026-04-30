@@ -1,15 +1,26 @@
 module main
 
-generated_1148 : Int
-let generated_1148 =
-    match (((((((((if True then ((left = 0, right = (0 + 0))).right else 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0) == ((((((((if True then ((left = 0, right = (0 + 0))).right else 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0))
-      case True -> ((((((((if True then ((left = 0, right = (0 + 0))).right else 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0)
-      case False -> 0
+generated_1148 : Map String Int
+let generated_1148 = { yield "only" : ((block
+    generatedSetCount : Set Int -> Int
+    let generatedSetCount values = 2
 
-result : Int
+    let item = (block
+        generatedSetCount : Set Int -> Int
+        let generatedSetCount values = 2
+
+        let item = 0
+        let values = {|item, (item + 1)|}
+
+        generatedSetCount values)
+    let values = {|item, (item + 1)|}
+
+    generatedSetCount values) + 0) }
+
+result : Map String Int
 let result = generated_1148
 
 --! assertNoErrors
---! assertType generated_1148 Int
---! assertType result Int
+--! assertType generated_1148 Map String Int
+--! assertType result Map String Int
 --! assertDeclKinds signature, let, signature, let

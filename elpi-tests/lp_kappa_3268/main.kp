@@ -1,12 +1,22 @@
 module main
 
-generated_3268 : Int
-let generated_3268 = (((((0 + (((0 + 0) + 0) + 0)) + 0) + 0) + 0) + 0)
+generated_3268 : List Int
+let generated_3268 = [ for x in [1, 2, 3], skip 1, take 2, yield (match [(block
+    let pair = (x = x, y = (x + 1))
+    let (x = captured, y = other) = pair
 
-result : Int
+    (captured + other)), ((block
+    let pair = (x = x, y = (x + 1))
+    let (x = captured, y = other) = pair
+
+    (captured + other)) + 1)]
+  case head :: tail -> head
+  case Nil -> 0) ]
+
+result : List Int
 let result = generated_3268
 
 --! assertNoErrors
---! assertType generated_3268 Int
---! assertType result Int
+--! assertType generated_3268 List Int
+--! assertType result List Int
 --! assertDeclKinds signature, let, signature, let

@@ -1,15 +1,30 @@
 module main
 
-generated_607 : IO Int
-let generated_607 =
-    do
-        let staged = ((((((((0 + ((0 + (0 + 0)) + 0)) + 0) + 0) + 0) + 0) + 0) + 0) + 0)
-        pure (staged + 1)
+generated_607 : Set Int
+let generated_607 = {| yield ((block
+    generatedListLength : List Int -> Int
+    let generatedListLength xs decreases structural xs =
+        match xs
+          case Nil -> 0
+          case _ :: tail -> 1 + generatedListLength tail
 
-result : IO Int
+    let item = (block
+        generatedListLength : List Int -> Int
+        let generatedListLength xs decreases structural xs =
+            match xs
+              case Nil -> 0
+              case _ :: tail -> 1 + generatedListLength tail
+
+        let item = 0
+
+        generatedListLength [item, (item + 1), 0])
+
+    generatedListLength [item, (item + 1), 0]) + 0) |}
+
+result : Set Int
 let result = generated_607
 
 --! assertNoErrors
---! assertType generated_607 IO Int
---! assertType result IO Int
+--! assertType generated_607 Set Int
+--! assertType result Set Int
 --! assertDeclKinds signature, let, signature, let

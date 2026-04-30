@@ -1,15 +1,18 @@
 module main
 
-generated_3188 : Int
-let generated_3188 =
-    match ((((((((((Some (((left = 0, right = (0 + 0))).right + 0)) ?: 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0) == (((((((((Some (((left = 0, right = (0 + 0))).right + 0)) ?: 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0))
-      case True -> (((((((((Some (((left = 0, right = (0 + 0))).right + 0)) ?: 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0)
-      case False -> 0
+generated_3188 : Map String Int
+let generated_3188 = { for x in [1, 2, 3], if x > 0, yield "k" : (match (Some (block
+    let pair = (x = x, y = (x + 1))
+    let (x = captured, y = other) = pair
 
-result : Int
+    (captured + other)))
+  case Some payload -> payload
+  case None -> 0) }
+
+result : Map String Int
 let result = generated_3188
 
 --! assertNoErrors
---! assertType generated_3188 Int
---! assertType result Int
+--! assertType generated_3188 Map String Int
+--! assertType result Map String Int
 --! assertDeclKinds signature, let, signature, let

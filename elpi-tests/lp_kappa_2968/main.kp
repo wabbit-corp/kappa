@@ -1,17 +1,22 @@
 module main
 
-generated_2968 : Int
-let generated_2968 =
-    block
-        ranked : Int
-        let ranked = ((((((((Some ((0 + (0 + 0)) + 0)) ?: 0) + 0) + 0) + 0) + 0) + 0) + 0)
+type GeneratedPair = (left : Int, right : Int)
 
-        (ranked + 0)
+generated_2968 : GeneratedPair
+let generated_2968 = ((left = ((Some ((match [0, (0 + 1)]
+  case head :: tail -> head
+  case Nil -> 0) + 1)) ?: ((match [0, (0 + 1)]
+  case head :: tail -> head
+  case Nil -> 0) + 2)), right = 0)).{ right = (((Some ((match [0, (0 + 1)]
+  case head :: tail -> head
+  case Nil -> 0) + 1)) ?: ((match [0, (0 + 1)]
+  case head :: tail -> head
+  case Nil -> 0) + 2)) + 1) }
 
-result : Int
+result : GeneratedPair
 let result = generated_2968
 
 --! assertNoErrors
---! assertType generated_2968 Int
---! assertType result Int
---! assertDeclKinds signature, let, signature, let
+--! assertType generated_2968 GeneratedPair
+--! assertType result GeneratedPair
+--! assertDeclKinds type, signature, let, signature, let

@@ -1,12 +1,37 @@
 module main
 
-generated_620 : Option Int
-let generated_620 = (if True then (if True then (if True then (if False then None else (if (((Some (0 + 0)) ?: 0) == 0) then (Some (0 + 0)) else None)) else None) else None) else None)
+generatedUseWidth : (width : Int) -> Int
+let generatedUseWidth width = width
 
-result : Option Int
+generated_620 : Int
+let generated_620 =
+    block
+        let width = ((block
+            generatedListLength : List Int -> Int
+            let generatedListLength xs decreases structural xs =
+                match xs
+                  case Nil -> 0
+                  case _ :: tail -> 1 + generatedListLength tail
+
+            let item = (block
+                generatedListLength : List Int -> Int
+                let generatedListLength xs decreases structural xs =
+                    match xs
+                      case Nil -> 0
+                      case _ :: tail -> 1 + generatedListLength tail
+
+                let item = 0
+
+                generatedListLength [item, (item + 1), 0])
+
+            generatedListLength [item, (item + 1), 0]) + 0)
+
+        generatedUseWidth { width }
+
+result : Int
 let result = generated_620
 
 --! assertNoErrors
---! assertType generated_620 Option Int
---! assertType result Option Int
---! assertDeclKinds signature, let, signature, let
+--! assertType generated_620 Int
+--! assertType result Int
+--! assertDeclKinds signature, let, signature, let, signature, let

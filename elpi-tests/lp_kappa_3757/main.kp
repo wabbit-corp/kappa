@@ -1,14 +1,26 @@
 module main
 
-data GeneratedChoice : Type =
-    GeneratedLeft (value : Int)
-    GeneratedRight
-
 generated_3757 : Int
 let generated_3757 =
-    match (GeneratedLeft ((((((0 + ((0 + ((if False then 0 else 0) + 0)) + 0)) + 0) + 0) + 0) + 0) + 0))
-      case GeneratedLeft payload -> (payload + 0)
-      case GeneratedRight -> ((((((0 + ((0 + ((if False then 0 else 0) + 0)) + 0)) + 0) + 0) + 0) + 0) + 0)
+    block
+        scoped effect State (s : Type) =
+            get : Unit -> s
+
+        let seed = (match [((\(n : Int) -> n) 0), (((\(n : Int) -> n) 0) + 1)]
+          case head :: tail -> head
+          case Nil -> 0)
+
+        let comp : Eff <[State : State Int]> Int =
+            do
+                let n <- State.get ()
+                n
+
+        let handled : Eff <[ ]> Int =
+            deep handle State comp with
+                case return x -> pure x
+                case get () k -> k seed
+
+        runPure handled
 
 result : Int
 let result = generated_3757
@@ -16,4 +28,4 @@ let result = generated_3757
 --! assertNoErrors
 --! assertType generated_3757 Int
 --! assertType result Int
---! assertDeclKinds data, signature, let, signature, let
+--! assertDeclKinds signature, let, signature, let

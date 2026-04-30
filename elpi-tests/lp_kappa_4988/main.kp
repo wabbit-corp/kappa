@@ -3,15 +3,36 @@ module main
 generated_4988 : Int
 let generated_4988 =
     block
-        trait RankedScore a =
-            rank : a -> Int
+        let (captured : Int) = ((block
+            generatedListLength : List Int -> Int
+            let generatedListLength xs decreases structural xs =
+                match xs
+                  case Nil -> 0
+                  case _ :: tail -> 1 + generatedListLength tail
 
-        instance RankedScore Int =
-            let rank x = x
+            let item = (block
+                generatedListLength : List Int -> Int
+                let generatedListLength xs decreases structural xs =
+                    match xs
+                      case Nil -> 0
+                      case _ :: tail -> 1 + generatedListLength tail
 
-        let dict = summon (RankedScore Int)
+                let item = (block
+                    generatedListLength : List Int -> Int
+                    let generatedListLength xs decreases structural xs =
+                        match xs
+                          case Nil -> 0
+                          case _ :: tail -> 1 + generatedListLength tail
 
-        dict.rank ((((((0 + (((if False then 0 else 0) + (0 + 0)) + 0)) + 0) + 0) + 0) + 0) + 0)
+                    let item = 0
+
+                    generatedListLength [item, (item + 1), 0])
+
+                generatedListLength [item, (item + 1), 0])
+
+            generatedListLength [item, (item + 1), 0]) + 0)
+
+        captured
 
 result : Int
 let result = generated_4988

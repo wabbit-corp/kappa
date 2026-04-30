@@ -1,15 +1,14 @@
 module main
 
-generated_3754 : IO Int
-let generated_3754 =
-    do
-        value <- pure ((((((0 + ((0 + ((if False then 0 else 0) + 0)) + 0)) + 0) + 0) + 0) + 0) + 0)
-        pure (value + 2)
+generated_3754 : List Int
+let generated_3754 = [ for x in [1, 2, 3], skip 1, take 2, yield (match [((\(n : Int) -> n) x), (((\(n : Int) -> n) x) + 1)]
+  case head :: tail -> head
+  case Nil -> 0) ]
 
-result : IO Int
+result : List Int
 let result = generated_3754
 
 --! assertNoErrors
---! assertType generated_3754 IO Int
---! assertType result IO Int
+--! assertType generated_3754 List Int
+--! assertType result List Int
 --! assertDeclKinds signature, let, signature, let

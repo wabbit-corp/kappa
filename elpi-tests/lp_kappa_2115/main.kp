@@ -1,14 +1,24 @@
 module main
 
-type GeneratedTuple = (Int, Int)
+generated_2115 : IO Int
+let generated_2115 =
+    do
+        let staged = ((block
+            generatedSetCount : Set Int -> Int
+            let generatedSetCount values = 2
 
-generated_2115 : GeneratedTuple
-let generated_2115 = (if True then (if True then (if True then (if (True && True) then (if (False || True) then (1, (1 + (1 + 1))) else (0, (0 + 0))) else ((1 + 1), 1)) else (0, (0 + 0))) else (0, (0 + 0))) else (0, (0 + 0)))
+            let item = (match (Some 0)
+              case Some payload -> payload
+              case None -> 0)
+            let values = {|item, (item + 1)|}
 
-result : GeneratedTuple
+            generatedSetCount values) + 0)
+        pure (staged + 1)
+
+result : IO Int
 let result = generated_2115
 
 --! assertNoErrors
---! assertType generated_2115 GeneratedTuple
---! assertType result GeneratedTuple
---! assertDeclKinds type, signature, let, signature, let
+--! assertType generated_2115 IO Int
+--! assertType result IO Int
+--! assertDeclKinds signature, let, signature, let

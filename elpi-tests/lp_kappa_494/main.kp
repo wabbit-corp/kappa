@@ -1,14 +1,21 @@
 module main
 
-type GeneratedPair = (left : Int, right : Int)
+generated_494 : Int
+let generated_494 =
+    block
+        let base : (x : Int) = (x = ((match (0 == 0)
+          case True -> 0
+          case False -> 0) + 0))
+        let extended = base.{ y := ((match (0 == 0)
+          case True -> 0
+          case False -> 0) + 1) }
 
-generated_494 : GeneratedPair
-let generated_494 = ((left = ((((((((((Some (0 + 0)) ?: 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0), right = 0)).{ right = (((((((((((Some (0 + 0)) ?: 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0) + 1) }
+        (extended.x + extended.y)
 
-result : GeneratedPair
+result : Int
 let result = generated_494
 
 --! assertNoErrors
---! assertType generated_494 GeneratedPair
---! assertType result GeneratedPair
---! assertDeclKinds type, signature, let, signature, let
+--! assertType generated_494 Int
+--! assertType result Int
+--! assertDeclKinds signature, let, signature, let

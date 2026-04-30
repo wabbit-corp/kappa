@@ -1,18 +1,18 @@
 module main
 
-generatedNeed : (@x : Int) -> Int
-let generatedNeed (@x : Int) = x
+type GeneratedPair = (left : Int, right : Int)
 
-generated_4858 : IO Int
-let generated_4858 =
-    do
-        let (@x : Int) = ((((((0 + (((if True then ((if False then 0 else 0) + (0 + 0)) else 0) + 0) + 0)) + 0) + 0) + 0) + 0) + 0)
-        pure generatedNeed
+generated_4858 : GeneratedPair
+let generated_4858 = ((left = (match (((Some (0 + 1)) ?: (0 + 2)) == ((Some (0 + 1)) ?: (0 + 2)))
+  case True -> ((Some (0 + 1)) ?: (0 + 2))
+  case False -> 0), right = 0)).{ right = ((match (((Some (0 + 1)) ?: (0 + 2)) == ((Some (0 + 1)) ?: (0 + 2)))
+  case True -> ((Some (0 + 1)) ?: (0 + 2))
+  case False -> 0) + 1) }
 
-result : IO Int
+result : GeneratedPair
 let result = generated_4858
 
 --! assertNoErrors
---! assertType generated_4858 IO Int
---! assertType result IO Int
---! assertDeclKinds signature, let, signature, let, signature, let
+--! assertType generated_4858 GeneratedPair
+--! assertType result GeneratedPair
+--! assertDeclKinds type, signature, let, signature, let

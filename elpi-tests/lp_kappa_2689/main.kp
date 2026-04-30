@@ -1,20 +1,12 @@
 module main
 
-generated_2689 : Int
-let generated_2689 =
-    block
-        data RankedBox : Type =
-            RankedBox (value : Int)
+generated_2689 : (Int -> Int)
+let generated_2689 = \(x : Int) -> ((\(x : Int) -> ((\(x : Int) -> (((if False then \(x : Int) -> x else (if False then \(x : Int) -> x else \(x : Int) -> x))) x)) x)) x)
 
-        let boxed = RankedBox (((((((((left = 0, right = ((if True then 0 else 0) + 0))).right + 0) + 0) + 0) + 0) + 0) + 0) + 0)
-
-        match boxed
-          case RankedBox value -> (value + 1)
-
-result : Int
+result : (Int -> Int)
 let result = generated_2689
 
 --! assertNoErrors
---! assertType generated_2689 Int
---! assertType result Int
+--! assertType generated_2689 (Int -> Int)
+--! assertType result (Int -> Int)
 --! assertDeclKinds signature, let, signature, let

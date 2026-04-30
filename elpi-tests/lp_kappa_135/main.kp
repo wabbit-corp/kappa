@@ -1,12 +1,21 @@
 module main
 
-generated_135 : Set Int
-let generated_135 = {| yield (((((0 + 0) + 0) + 0) + 0) + 0) |}
+generated_135 : Map String Int
+let generated_135 = { for x in [1, 2, 3], yield "k" : (block
+    generatedListLength : List Int -> Int
+    let generatedListLength xs decreases structural xs =
+        match xs
+          case Nil -> 0
+          case _ :: tail -> 1 + generatedListLength tail
 
-result : Set Int
+    let item = x
+
+    generatedListLength [item, (item + 1), 0]), on conflict keep first }
+
+result : Map String Int
 let result = generated_135
 
 --! assertNoErrors
---! assertType generated_135 Set Int
---! assertType result Set Int
+--! assertType generated_135 Map String Int
+--! assertType result Map String Int
 --! assertDeclKinds signature, let, signature, let

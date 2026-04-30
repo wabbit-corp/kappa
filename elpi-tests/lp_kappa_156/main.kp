@@ -1,15 +1,22 @@
 module main
 
-generatedMakeConst : forall (a : Type). a -> Unit -> a
-let generatedMakeConst value = \() -> value
+generated_156 : IO Int
+let generated_156 =
+    do
+        value <- pure ((block
+            generatedSetCount : Set Int -> Int
+            let generatedSetCount values = 2
 
-generated_156 : Int
-let generated_156 = ((generatedMakeConst (((((((0 + 0) + 0) + 0) + 0) + 0) + 0) + 0)) ())
+            let item = 0
+            let values = {|item, (item + 1)|}
 
-result : Int
+            generatedSetCount values) + 0)
+        pure (value + 2)
+
+result : IO Int
 let result = generated_156
 
 --! assertNoErrors
---! assertType generated_156 Int
---! assertType result Int
---! assertDeclKinds signature, let, signature, let, signature, let
+--! assertType generated_156 IO Int
+--! assertType result IO Int
+--! assertDeclKinds signature, let, signature, let

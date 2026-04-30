@@ -1,12 +1,17 @@
 module main
 
-generated_3672 : Map String Int
-let generated_3672 = { yield "only" : ((((((0 + ((0 + (((0 + 0) + 0) + 0)) + 0)) + 0) + 0) + 0) + 0) + 0) }
+generatedMakeConst : forall (a : Type). a -> Unit -> a
+let generatedMakeConst value = \() -> value
 
-result : Map String Int
+generated_3672 : Int
+let generated_3672 = ((generatedMakeConst ((match (Some ((\(n : Int) -> n) 0))
+  case Some payload -> payload
+  case None -> 0) + 0)) ())
+
+result : Int
 let result = generated_3672
 
 --! assertNoErrors
---! assertType generated_3672 Map String Int
---! assertType result Map String Int
---! assertDeclKinds signature, let, signature, let
+--! assertType generated_3672 Int
+--! assertType result Int
+--! assertDeclKinds signature, let, signature, let, signature, let

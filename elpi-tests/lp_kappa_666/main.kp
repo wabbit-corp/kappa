@@ -1,10 +1,26 @@
 module main
 
-generatedMakeConst : forall (a : Type). a -> Unit -> a
-let generatedMakeConst value = \() -> value
+generatedNeed : (@x : Int) -> Int
+let generatedNeed (@x : Int) = x
 
 generated_666 : Int
-let generated_666 = ((generatedMakeConst ((((((((0 + ((if False then 0 else 0) + 0)) + 0) + 0) + 0) + 0) + 0) + 0) + 0)) ())
+let generated_666 = generatedNeed @(((block
+    generatedSetCount : Set Int -> Int
+    let generatedSetCount values = 2
+
+    let item = (block
+        generatedListLength : List Int -> Int
+        let generatedListLength xs decreases structural xs =
+            match xs
+              case Nil -> 0
+              case _ :: tail -> 1 + generatedListLength tail
+
+        let item = 0
+
+        generatedListLength [item, (item + 1), 0])
+    let values = {|item, (item + 1)|}
+
+    generatedSetCount values) + 0))
 
 result : Int
 let result = generated_666

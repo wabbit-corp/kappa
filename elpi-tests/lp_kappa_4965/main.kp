@@ -6,9 +6,63 @@ data GeneratedChoice : Type =
 
 generated_4965 : Int
 let generated_4965 =
-    match GeneratedRight
+    match (GeneratedLeft ((block
+        generatedListLength : List Int -> Int
+        let generatedListLength xs decreases structural xs =
+            match xs
+              case Nil -> 0
+              case _ :: tail -> 1 + generatedListLength tail
+
+        let item = (block
+            generatedListLength : List Int -> Int
+            let generatedListLength xs decreases structural xs =
+                match xs
+                  case Nil -> 0
+                  case _ :: tail -> 1 + generatedListLength tail
+
+            let item = (block
+                generatedListLength : List Int -> Int
+                let generatedListLength xs decreases structural xs =
+                    match xs
+                      case Nil -> 0
+                      case _ :: tail -> 1 + generatedListLength tail
+
+                let item = 0
+
+                generatedListLength [item, (item + 1), 0])
+
+            generatedListLength [item, (item + 1), 0])
+
+        generatedListLength [item, (item + 1), 0]) + 0))
       case GeneratedLeft payload -> (payload + 0)
-      case GeneratedRight -> ((((((0 + (((if True then ((Some (0 + 0)) ?: 0) else 0) + 0) + 0)) + 0) + 0) + 0) + 0) + 0)
+      case GeneratedRight -> ((block
+          generatedListLength : List Int -> Int
+          let generatedListLength xs decreases structural xs =
+              match xs
+                case Nil -> 0
+                case _ :: tail -> 1 + generatedListLength tail
+
+          let item = (block
+              generatedListLength : List Int -> Int
+              let generatedListLength xs decreases structural xs =
+                  match xs
+                    case Nil -> 0
+                    case _ :: tail -> 1 + generatedListLength tail
+
+              let item = (block
+                  generatedListLength : List Int -> Int
+                  let generatedListLength xs decreases structural xs =
+                      match xs
+                        case Nil -> 0
+                        case _ :: tail -> 1 + generatedListLength tail
+
+                  let item = 0
+
+                  generatedListLength [item, (item + 1), 0])
+
+              generatedListLength [item, (item + 1), 0])
+
+          generatedListLength [item, (item + 1), 0]) + 0)
 
 result : Int
 let result = generated_4965

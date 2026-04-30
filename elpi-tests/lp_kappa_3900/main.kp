@@ -1,22 +1,14 @@
 module main
 
-generated_3900 : Int
-let generated_3900 =
-    block
-        trait RankedScore a =
-            rank : a -> Int
+generated_3900 : List Int
+let generated_3900 = [ yield ((match (((\(n : Int) -> n) 0) == ((\(n : Int) -> n) 0))
+  case True -> ((\(n : Int) -> n) 0)
+  case False -> 0) + 0) ]
 
-        instance RankedScore Int =
-            let rank x = x
-
-        let dict = summon (RankedScore Int)
-
-        dict.rank ((((((0 + ((0 + (((left = 0, right = (0 + 0))).right + 0)) + 0)) + 0) + 0) + 0) + 0) + 0)
-
-result : Int
+result : List Int
 let result = generated_3900
 
 --! assertNoErrors
---! assertType generated_3900 Int
---! assertType result Int
+--! assertType generated_3900 List Int
+--! assertType result List Int
 --! assertDeclKinds signature, let, signature, let

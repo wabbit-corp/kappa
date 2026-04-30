@@ -1,12 +1,36 @@
 module main
 
-generated_168 : List Int
-let generated_168 = [ yield (((((((0 + 0) + 0) + 0) + 0) + 0) + 0) + 0) ]
+generated_168 : Int
+let generated_168 =
+    match (((block
+        generatedSetCount : Set Int -> Int
+        let generatedSetCount values = 2
 
-result : List Int
+        let item = 0
+        let values = {|item, (item + 1)|}
+
+        generatedSetCount values) + 0) == ((block
+        generatedSetCount : Set Int -> Int
+        let generatedSetCount values = 2
+
+        let item = 0
+        let values = {|item, (item + 1)|}
+
+        generatedSetCount values) + 0))
+      case True -> ((block
+          generatedSetCount : Set Int -> Int
+          let generatedSetCount values = 2
+
+          let item = 0
+          let values = {|item, (item + 1)|}
+
+          generatedSetCount values) + 0)
+      case False -> 0
+
+result : Int
 let result = generated_168
 
 --! assertNoErrors
---! assertType generated_168 List Int
---! assertType result List Int
+--! assertType generated_168 Int
+--! assertType result Int
 --! assertDeclKinds signature, let, signature, let

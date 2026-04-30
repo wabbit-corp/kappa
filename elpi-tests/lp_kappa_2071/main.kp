@@ -3,13 +3,24 @@ module main
 generatedEcho : forall (a : Type). (this x : a) -> a
 let generatedEcho @a (this x : a) = x
 
-generated_2071 : Int
-let generated_2071 = ((.generatedEcho) (((((((((if False then 0 else ((if True then 0 else 0) + 0)) + (0 + 0)) + 0) + 0) + 0) + 0) + 0) + 0) + 0))
+generated_2071 : Option Int
+let generated_2071 = (Some ((block
+    generatedListLength : List Int -> Int
+    let generatedListLength xs decreases structural xs =
+        match xs
+          case Nil -> 0
+          case _ :: tail -> 1 + generatedListLength tail
 
-result : Int
+    let item = (match (Some 0)
+      case Some payload -> payload
+      case None -> 0)
+
+    generatedListLength [item, (item + 1), 0]) + 0))?.generatedEcho
+
+result : Option Int
 let result = generated_2071
 
 --! assertNoErrors
---! assertType generated_2071 Int
---! assertType result Int
+--! assertType generated_2071 Option Int
+--! assertType result Option Int
 --! assertDeclKinds signature, let, signature, let, signature, let

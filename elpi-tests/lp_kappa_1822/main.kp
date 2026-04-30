@@ -1,15 +1,12 @@
 module main
 
-generatedMakeConst : forall (a : Type). a -> Unit -> a
-let generatedMakeConst value = \() -> value
+generated_1822 : Unit
+let generated_1822 = (if True then (if True then (if True then ((\(u : Unit) -> u) ((\(u : Unit) -> if True then u else ()) ())) else ()) else ()) else ())
 
-generated_1822 : Int
-let generated_1822 = ((generatedMakeConst (((((((((if True then ((left = 0, right = (0 + 0))).right else 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0)) ())
-
-result : Int
+result : Unit
 let result = generated_1822
 
 --! assertNoErrors
---! assertType generated_1822 Int
---! assertType result Int
---! assertDeclKinds signature, let, signature, let, signature, let
+--! assertType generated_1822 Unit
+--! assertType result Unit
+--! assertDeclKinds signature, let, signature, let

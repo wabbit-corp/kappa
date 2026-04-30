@@ -1,12 +1,43 @@
 module main
 
-generated_3032 : Unit
-let generated_3032 = (if True then (if True then (if True then ((\(u : Unit) -> if True then u else ()) ((\(u : Unit) -> ()) ())) else ()) else ()) else ())
+generated_3032 : Int
+let generated_3032 =
+    block
+        let base : (x : Int) = (x = ((block
+            generatedListLength : List Int -> Int
+            let generatedListLength xs decreases structural xs =
+                match xs
+                  case Nil -> 0
+                  case _ :: tail -> 1 + generatedListLength tail
 
-result : Unit
+            let item = (block
+                let pair = (x = 0, y = (0 + 1))
+                let (x = captured, y = other) = pair
+
+                (captured + other))
+
+            generatedListLength [item, (item + 1), 0]) + 0))
+        let extended = base.{ y := ((block
+            generatedListLength : List Int -> Int
+            let generatedListLength xs decreases structural xs =
+                match xs
+                  case Nil -> 0
+                  case _ :: tail -> 1 + generatedListLength tail
+
+            let item = (block
+                let pair = (x = 0, y = (0 + 1))
+                let (x = captured, y = other) = pair
+
+                (captured + other))
+
+            generatedListLength [item, (item + 1), 0]) + 1) }
+
+        (extended.x + extended.y)
+
+result : Int
 let result = generated_3032
 
 --! assertNoErrors
---! assertType generated_3032 Unit
---! assertType result Unit
+--! assertType generated_3032 Int
+--! assertType result Int
 --! assertDeclKinds signature, let, signature, let

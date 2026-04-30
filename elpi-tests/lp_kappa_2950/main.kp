@@ -2,9 +2,33 @@ module main
 
 generated_2950 : Int
 let generated_2950 =
-    match ((((((((((Some (((0 + 0) + 0) + 0)) ?: 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0) == (((((((((Some (((0 + 0) + 0) + 0)) ?: 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0))
-      case True -> (((((((((Some (((0 + 0) + 0) + 0)) ?: 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0)
-      case False -> 0
+    block
+        scoped effect Ask =
+            ask : Unit -> Bool
+
+        let l = Ask
+
+        let seed = (match ((match [0, (0 + 1)]
+          case head :: tail -> head
+          case Nil -> 0) == (match [0, (0 + 1)]
+          case head :: tail -> head
+          case Nil -> 0))
+          case True -> (match [0, (0 + 1)]
+            case head :: tail -> head
+            case Nil -> 0)
+          case False -> 0)
+
+        let comp : Eff <[Ask : Ask]> Int =
+            do
+                let b <- l.ask ()
+                if b then seed else (seed + 1)
+
+        let handled : Eff <[ ]> Int =
+            deep handle l comp with
+                case return x -> pure x
+                case ask () k -> k True
+
+        runPure handled
 
 result : Int
 let result = generated_2950

@@ -1,12 +1,31 @@
 module main
 
-generated_3626 : Map String Int
-let generated_3626 = { for x in [1, 2, 3], let y = x + 1, yield "k" : (((((0 + ((0 + (x + 0)) + 0)) + 0) + 0) + 0) + 0) }
+generated_3626 : Int
+let generated_3626 =
+    block
+        let base : (x : Int) = (x = ((block
+            generatedMapCount : Map String Int -> Int
+            let generatedMapCount values = 1
 
-result : Map String Int
+            let item = ((\(n : Int) -> n) 0)
+            let values = { yield "item" : item }
+
+            generatedMapCount values) + 0))
+        let extended = base.{ y := ((block
+            generatedMapCount : Map String Int -> Int
+            let generatedMapCount values = 1
+
+            let item = ((\(n : Int) -> n) 0)
+            let values = { yield "item" : item }
+
+            generatedMapCount values) + 1) }
+
+        (extended.x + extended.y)
+
+result : Int
 let result = generated_3626
 
 --! assertNoErrors
---! assertType generated_3626 Map String Int
---! assertType result Map String Int
+--! assertType generated_3626 Int
+--! assertType result Int
 --! assertDeclKinds signature, let, signature, let

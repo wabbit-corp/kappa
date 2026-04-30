@@ -1,12 +1,40 @@
 module main
 
-generated_2083 : (Int -> Int)
-let generated_2083 = \(x : Int) -> ((\(x : Int) -> ((\(x : Int) -> (((if (0 == 0) then (if (0 == 0) then \(x : Int) -> x else \(x : Int) -> (x + 0)) else \(x : Int) -> (x + 0))) x)) x)) x)
+generated_2083 : Int
+let generated_2083 =
+    block
+        scoped effect State (s : Type) =
+            get : Unit -> s
 
-result : (Int -> Int)
+        let seed = (block
+            generatedListLength : List Int -> Int
+            let generatedListLength xs decreases structural xs =
+                match xs
+                  case Nil -> 0
+                  case _ :: tail -> 1 + generatedListLength tail
+
+            let item = (match (Some 0)
+              case Some payload -> payload
+              case None -> 0)
+
+            generatedListLength [item, (item + 1), 0])
+
+        let comp : Eff <[State : State Int]> Int =
+            do
+                let n <- State.get ()
+                n
+
+        let handled : Eff <[ ]> Int =
+            deep handle State comp with
+                case return x -> pure x
+                case get () k -> k seed
+
+        runPure handled
+
+result : Int
 let result = generated_2083
 
 --! assertNoErrors
---! assertType generated_2083 (Int -> Int)
---! assertType result (Int -> Int)
+--! assertType generated_2083 Int
+--! assertType result Int
 --! assertDeclKinds signature, let, signature, let

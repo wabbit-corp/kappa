@@ -1,10 +1,12 @@
 module main
 
-generatedResize : (image : Int) -> (width : Int) -> (height : Int) -> Int
-let generatedResize image width height = image + width * 10 + height
-
 generated_4813 : Int
-let generated_4813 = generatedResize { image = ((((((0 + (((if True then ((if True then 0 else 0) + 0) else 0) + 0) + 0)) + 0) + 0) + 0) + 0) + 0), height = 3, width = 2 }
+let generated_4813 =
+    block
+        let pair = (x = (((\(n : Int) -> n) ((Some (0 + 1)) ?: (0 + 2))) + 0), y = (((\(n : Int) -> n) ((Some (0 + 1)) ?: (0 + 2))) + 1))
+        let (x = captured, y = other) = pair
+
+        (captured + other)
 
 result : Int
 let result = generated_4813
@@ -12,4 +14,4 @@ let result = generated_4813
 --! assertNoErrors
 --! assertType generated_4813 Int
 --! assertType result Int
---! assertDeclKinds signature, let, signature, let, signature, let
+--! assertDeclKinds signature, let, signature, let

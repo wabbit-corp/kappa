@@ -2,11 +2,12 @@ module main
 
 generated_261 : Int
 let generated_261 =
-    block
-        rankedHelper : (Int -> Int)
-        let rankedHelper x = x + 1
-
-        rankedHelper ((((((((((0 + (0 + 0)) + 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0)
+    let
+        ranked : Int = (match (Some 0)
+          case Some payload -> payload
+          case None -> 0)
+in
+        (ranked + 0)
 
 result : Int
 let result = generated_261

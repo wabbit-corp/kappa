@@ -1,14 +1,47 @@
 module main
 
-type GeneratedTuple = (Int, Int)
+generated_2625 : Int
+let generated_2625 =
+    block
+        scoped effect Ask =
+            ask : Unit -> Bool
 
-generated_2625 : GeneratedTuple
-let generated_2625 = (if True then (if True then (if True then (if (False || True) then (if False then (0, (0 + 0)) else (0, (0 + 0))) else ((2 + 2), 2)) else (0, (0 + 0))) else (0, (0 + 0))) else (0, (0 + 0)))
+        scoped effect Other =
+            other : Unit -> Int
 
-result : GeneratedTuple
+        let seed = (block
+            generatedSetCount : Set Int -> Int
+            let generatedSetCount values = 2
+
+            let item = (match [0, (0 + 1)]
+              case head :: tail -> head
+              case Nil -> 0)
+            let values = {|item, (item + 1)|}
+
+            generatedSetCount values)
+
+        let comp : Eff <[Ask : Ask, Other : Other]> Int =
+            do
+                let b <- Ask.ask ()
+                let n <- Other.other ()
+                if b then (n + seed) else seed
+
+        let askHandled : Eff <[Other : Other]> Int =
+            deep handle Ask comp with
+                case return x -> pure x
+                case ask () k -> k True
+
+        let handled : Eff <[ ]> Int =
+            deep handle Other askHandled with
+                case return x -> pure x
+                case other () k -> k 1
+
+        runPure handled
+
+result : Int
 let result = generated_2625
 
 --! assertNoErrors
---! assertType generated_2625 GeneratedTuple
---! assertType result GeneratedTuple
---! assertDeclKinds type, signature, let, signature, let
+--! assertType generated_2625 Int
+--! assertType result Int
+--! assertDeclKinds signature, let, signature, let

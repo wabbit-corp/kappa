@@ -1,15 +1,27 @@
 module main
 
-generated_3482 : IO Int
-let generated_3482 =
-    do
-        value <- pure ((((((0 + (((((if False then 0 else 0) + (0 + 0)) + 0) + 0) + 0)) + 0) + 0) + 0) + 0) + 0)
-        pure (value + 2)
+generatedUseWidth : (width : Int) -> Int
+let generatedUseWidth width = width
 
-result : IO Int
+generated_3482 : Int
+let generated_3482 =
+    block
+        let width = (((Some ((block
+            let pair = (x = 0, y = (0 + 1))
+            let (x = captured, y = other) = pair
+
+            (captured + other)) + 1)) ?: ((block
+            let pair = (x = 0, y = (0 + 1))
+            let (x = captured, y = other) = pair
+
+            (captured + other)) + 2)) + 0)
+
+        generatedUseWidth { width }
+
+result : Int
 let result = generated_3482
 
 --! assertNoErrors
---! assertType generated_3482 IO Int
---! assertType result IO Int
---! assertDeclKinds signature, let, signature, let
+--! assertType generated_3482 Int
+--! assertType result Int
+--! assertDeclKinds signature, let, signature, let, signature, let

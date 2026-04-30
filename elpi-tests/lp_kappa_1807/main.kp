@@ -1,12 +1,31 @@
 module main
 
-generated_1807 : Bool
-let generated_1807 = (if (if (if (if True then (((if True then (0 + 1) else 1) == 1) && True) else False) then True else False) then True else False) then True else False)
+generatedMakeConst : forall (a : Type). a -> Unit -> a
+let generatedMakeConst value = \() -> value
 
-result : Bool
+generated_1807 : Int
+let generated_1807 = ((generatedMakeConst @Int ((match [(block
+    generatedMapCount : Map String Int -> Int
+    let generatedMapCount values = 1
+
+    let item = 0
+    let values = { yield "item" : item }
+
+    generatedMapCount values), ((block
+    generatedMapCount : Map String Int -> Int
+    let generatedMapCount values = 1
+
+    let item = 0
+    let values = { yield "item" : item }
+
+    generatedMapCount values) + 1)]
+  case head :: tail -> head
+  case Nil -> 0) + 0)) ())
+
+result : Int
 let result = generated_1807
 
 --! assertNoErrors
---! assertType generated_1807 Bool
---! assertType result Bool
---! assertDeclKinds signature, let, signature, let
+--! assertType generated_1807 Int
+--! assertType result Int
+--! assertDeclKinds signature, let, signature, let, signature, let

@@ -1,12 +1,27 @@
 module main
 
-generated_124 : Map String Int
-let generated_124 = { for x in [1, 2, 3], if x > 0, yield "k" : ((((x + 0) + 0) + 0) + 0) }
+generated_124 : Int
+let generated_124 =
+    block
+        type RankedAlias = Int
 
-result : Map String Int
+        let aliased : RankedAlias = ((block
+            generatedListLength : List Int -> Int
+            let generatedListLength xs decreases structural xs =
+                match xs
+                  case Nil -> 0
+                  case _ :: tail -> 1 + generatedListLength tail
+
+            let item = 0
+
+            generatedListLength [item, (item + 1), 0]) + 0)
+
+        (aliased + 1)
+
+result : Int
 let result = generated_124
 
 --! assertNoErrors
---! assertType generated_124 Map String Int
---! assertType result Map String Int
+--! assertType generated_124 Int
+--! assertType result Int
 --! assertDeclKinds signature, let, signature, let

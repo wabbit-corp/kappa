@@ -1,22 +1,35 @@
 module main
 
-generated_1486 : Int
-let generated_1486 =
-    block
-        trait RankedScore a =
-            rank : a -> Int
+generated_1486 : List Int
+let generated_1486 = [ for x in [1, 2, 3], skip 1, take 2, yield (match ((block
+    generatedSetCount : Set Int -> Int
+    let generatedSetCount values = 2
 
-        instance RankedScore Int =
-            let rank x = x
+    let item = x
+    let values = {|item, (item + 1)|}
 
-        let dict = summon (RankedScore Int)
+    generatedSetCount values) == (block
+    generatedSetCount : Set Int -> Int
+    let generatedSetCount values = 2
 
-        dict.rank ((((((((if False then 0 else ((left = 0, right = (0 + 0))).right) + 0) + 0) + 0) + 0) + 0) + 0) + 0)
+    let item = x
+    let values = {|item, (item + 1)|}
 
-result : Int
+    generatedSetCount values))
+  case True -> (block
+      generatedSetCount : Set Int -> Int
+      let generatedSetCount values = 2
+
+      let item = x
+      let values = {|item, (item + 1)|}
+
+      generatedSetCount values)
+  case False -> 0) ]
+
+result : List Int
 let result = generated_1486
 
 --! assertNoErrors
---! assertType generated_1486 Int
---! assertType result Int
+--! assertType generated_1486 List Int
+--! assertType result List Int
 --! assertDeclKinds signature, let, signature, let

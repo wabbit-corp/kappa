@@ -1,15 +1,17 @@
 module main
 
-generated_505 : IO Int
-let generated_505 =
-    do
-        let staged = (((((((((((Some (0 + 0)) ?: 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0)
-        pure (staged + 1)
+generatedEcho : forall (a : Type). (this x : a) -> a
+let generatedEcho @a (this x : a) = x
 
-result : IO Int
+generated_505 : Option Int
+let generated_505 = (Some ((match (0 == 0)
+  case True -> 0
+  case False -> 0) + 0))?.generatedEcho
+
+result : Option Int
 let result = generated_505
 
 --! assertNoErrors
---! assertType generated_505 IO Int
---! assertType result IO Int
---! assertDeclKinds signature, let, signature, let
+--! assertType generated_505 Option Int
+--! assertType result Option Int
+--! assertDeclKinds signature, let, signature, let, signature, let

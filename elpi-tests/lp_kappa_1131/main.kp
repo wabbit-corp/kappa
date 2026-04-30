@@ -1,12 +1,47 @@
 module main
 
-generated_1131 : (Int -> Int)
-let generated_1131 = \(x : Int) -> ((\(x : Int) -> ((\(x : Int) -> ((\(x : Int) -> (0 + ((\(x : Int) -> if (x == 0) then ((\(x : Int) -> x) x) else x) x))) x)) x)) x)
+data GeneratedChoice : Type =
+    GeneratedLeft (value : Int)
+    GeneratedRight
 
-result : (Int -> Int)
+generated_1131 : Int
+let generated_1131 =
+    match (GeneratedLeft ((block
+        generatedSetCount : Set Int -> Int
+        let generatedSetCount values = 2
+
+        let item = (block
+            generatedSetCount : Set Int -> Int
+            let generatedSetCount values = 2
+
+            let item = 0
+            let values = {|item, (item + 1)|}
+
+            generatedSetCount values)
+        let values = {|item, (item + 1)|}
+
+        generatedSetCount values) + 0))
+      case GeneratedLeft payload -> (payload + 0)
+      case GeneratedRight -> ((block
+          generatedSetCount : Set Int -> Int
+          let generatedSetCount values = 2
+
+          let item = (block
+              generatedSetCount : Set Int -> Int
+              let generatedSetCount values = 2
+
+              let item = 0
+              let values = {|item, (item + 1)|}
+
+              generatedSetCount values)
+          let values = {|item, (item + 1)|}
+
+          generatedSetCount values) + 0)
+
+result : Int
 let result = generated_1131
 
 --! assertNoErrors
---! assertType generated_1131 (Int -> Int)
---! assertType result (Int -> Int)
---! assertDeclKinds signature, let, signature, let
+--! assertType generated_1131 Int
+--! assertType result Int
+--! assertDeclKinds data, signature, let, signature, let

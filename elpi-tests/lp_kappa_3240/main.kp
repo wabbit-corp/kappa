@@ -1,12 +1,20 @@
 module main
 
-generated_3240 : Int
-let generated_3240 =
-    block
-        ranked : Int
-        let ranked = (((((0 + (0 + 0)) + 0) + 0) + 0) + 0)
+generatedMakeConst : forall (a : Type). a -> Unit -> a
+let generatedMakeConst value = \() -> value
 
-        (ranked + 0)
+generated_3240 : Int
+let generated_3240 = ((generatedMakeConst ((match [(block
+    let pair = (x = 0, y = (0 + 1))
+    let (x = captured, y = other) = pair
+
+    (captured + other)), ((block
+    let pair = (x = 0, y = (0 + 1))
+    let (x = captured, y = other) = pair
+
+    (captured + other)) + 1)]
+  case head :: tail -> head
+  case Nil -> 0) + 0)) ())
 
 result : Int
 let result = generated_3240
@@ -14,4 +22,4 @@ let result = generated_3240
 --! assertNoErrors
 --! assertType generated_3240 Int
 --! assertType result Int
---! assertDeclKinds signature, let, signature, let
+--! assertDeclKinds signature, let, signature, let, signature, let

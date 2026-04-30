@@ -1,15 +1,24 @@
 module main
 
-generated_2100 : Int
+generated_2100 : IO Int
 let generated_2100 =
-    match ((((((((((if False then 0 else ((if False then 0 else 0) + (0 + 0))) + (0 + 0)) + 0) + 0) + 0) + 0) + 0) + 0) + 0) == (((((((((if False then 0 else ((if False then 0 else 0) + (0 + 0))) + (0 + 0)) + 0) + 0) + 0) + 0) + 0) + 0) + 0))
-      case True -> (((((((((if False then 0 else ((if False then 0 else 0) + (0 + 0))) + (0 + 0)) + 0) + 0) + 0) + 0) + 0) + 0) + 0)
-      case False -> 0
+    do
+        value <- pure ((block
+            generatedSetCount : Set Int -> Int
+            let generatedSetCount values = 2
 
-result : Int
+            let item = (match (Some 0)
+              case Some payload -> payload
+              case None -> 0)
+            let values = {|item, (item + 1)|}
+
+            generatedSetCount values) + 0)
+        pure (value + 2)
+
+result : IO Int
 let result = generated_2100
 
 --! assertNoErrors
---! assertType generated_2100 Int
---! assertType result Int
+--! assertType generated_2100 IO Int
+--! assertType result IO Int
 --! assertDeclKinds signature, let, signature, let

@@ -2,11 +2,20 @@ module main
 
 generated_3155 : Int
 let generated_3155 =
-    block
-        let pair = (x = (((((((((Some (((left = (0 + 0), right = 0)).left + 0)) ?: 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0), y = (((((((((Some (((left = (0 + 0), right = 0)).left + 0)) ?: 0) + 0) + 0) + 0) + 0) + 0) + 0) + 1))
-        let (x = captured, y = other) = pair
+    match (Some ((block
+        generatedMapCount : Map String Int -> Int
+        let generatedMapCount values = 1
 
-        (captured + other)
+        let item = (block
+            let pair = (x = 0, y = (0 + 1))
+            let (x = captured, y = other) = pair
+
+            (captured + other))
+        let values = { yield "item" : item }
+
+        generatedMapCount values) + 0))
+      case Some payload -> payload
+      case None -> 0
 
 result : Int
 let result = generated_3155

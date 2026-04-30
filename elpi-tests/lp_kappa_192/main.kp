@@ -1,12 +1,36 @@
 module main
 
-generated_192 : Map String Int
-let generated_192 = { for x in [1, 2, 3], yield "k" : ((((((((x + 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0) }
+generated_192 : Int
+let generated_192 =
+    block
+        scoped effect Ask =
+            ask : Unit -> Bool
 
-result : Map String Int
+        let seed = (block
+            generatedSetCount : Set Int -> Int
+            let generatedSetCount values = 2
+
+            let item = 0
+            let values = {|item, (item + 1)|}
+
+            generatedSetCount values)
+
+        let comp : Eff <[Ask : Ask]> Int =
+            do
+                let b <- Ask.ask ()
+                if b then seed else (seed + 1)
+
+        let handled : Eff <[ ]> Int =
+            deep handle Ask comp with
+                case return x -> pure x
+                case ask () k -> k True
+
+        runPure handled
+
+result : Int
 let result = generated_192
 
 --! assertNoErrors
---! assertType generated_192 Map String Int
---! assertType result Map String Int
+--! assertType generated_192 Int
+--! assertType result Int
 --! assertDeclKinds signature, let, signature, let

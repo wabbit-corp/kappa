@@ -1,12 +1,28 @@
 module main
 
+generatedUseWidth : (width : Int) -> Int
+let generatedUseWidth width = width
+
 generated_3428 : Int
 let generated_3428 =
     block
-        let base : (x : Int) = (x = ((((((0 + ((((if False then 0 else 0) + 0) + 0) + 0)) + 0) + 0) + 0) + 0) + 0))
-        let extended = base.{ y := ((((((0 + ((((if False then 0 else 0) + 0) + 0) + 0)) + 0) + 0) + 0) + 0) + 1) }
+        let width = ((match ((block
+            let pair = (x = 0, y = (0 + 1))
+            let (x = captured, y = other) = pair
 
-        (extended.x + extended.y)
+            (captured + other)) == (block
+            let pair = (x = 0, y = (0 + 1))
+            let (x = captured, y = other) = pair
+
+            (captured + other)))
+          case True -> (block
+              let pair = (x = 0, y = (0 + 1))
+              let (x = captured, y = other) = pair
+
+              (captured + other))
+          case False -> 0) + 0)
+
+        generatedUseWidth { width }
 
 result : Int
 let result = generated_3428
@@ -14,4 +30,4 @@ let result = generated_3428
 --! assertNoErrors
 --! assertType generated_3428 Int
 --! assertType result Int
---! assertDeclKinds signature, let, signature, let
+--! assertDeclKinds signature, let, signature, let, signature, let

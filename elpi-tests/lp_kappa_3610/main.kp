@@ -1,12 +1,26 @@
 module main
 
-generated_3610 : Unit
-let generated_3610 = (if True then (if True then (if False then () else (if False then () else ())) else ()) else ())
+generatedNeed : (@x : Int) -> Int
+let generatedNeed (@x : Int) = x
 
-result : Unit
+generated_3610 : Int
+let generated_3610 =
+    block
+        let (@x : Int) = (block
+            generatedMapCount : Map String Int -> Int
+            let generatedMapCount values = 1
+
+            let item = ((\(n : Int) -> n) 0)
+            let values = { yield "item" : item }
+
+            generatedMapCount values)
+
+        if True then generatedNeed else 0
+
+result : Int
 let result = generated_3610
 
 --! assertNoErrors
---! assertType generated_3610 Unit
---! assertType result Unit
---! assertDeclKinds signature, let, signature, let
+--! assertType generated_3610 Int
+--! assertType result Int
+--! assertDeclKinds signature, let, signature, let, signature, let

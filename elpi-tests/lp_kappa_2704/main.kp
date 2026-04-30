@@ -1,14 +1,26 @@
 module main
 
-type GeneratedPair = (left : Int, right : Int)
+generated_2704 : Int
+let generated_2704 =
+    block
+        trait RankedScore a =
+            rank : a -> Int
 
-generated_2704 : GeneratedPair
-let generated_2704 = ((left = ((((((((left = 0, right = ((if False then 0 else 0) + 0))).right + 0) + 0) + 0) + 0) + 0) + 0), right = 0)).{ right = (((((((((left = 0, right = ((if False then 0 else 0) + 0))).right + 0) + 0) + 0) + 0) + 0) + 0) + 1) }
+        instance RankedScore Int =
+            let rank x = x
 
-result : GeneratedPair
+        let dict = summon (RankedScore Int)
+
+        dict.rank ((match (Some (match [0, (0 + 1)]
+          case head :: tail -> head
+          case Nil -> 0))
+          case Some payload -> payload
+          case None -> 0) + 0)
+
+result : Int
 let result = generated_2704
 
 --! assertNoErrors
---! assertType generated_2704 GeneratedPair
---! assertType result GeneratedPair
---! assertDeclKinds type, signature, let, signature, let
+--! assertType generated_2704 Int
+--! assertType result Int
+--! assertDeclKinds signature, let, signature, let

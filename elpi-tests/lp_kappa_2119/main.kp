@@ -1,16 +1,21 @@
 module main
 
-generated_2119 : Int
-let generated_2119 =
-    let
-        ranked : Int = ((((((((if False then 0 else ((left = (0 + 0), right = 0)).left) + (0 + 0)) + 0) + 0) + 0) + 0) + 0) + 0)
-in
-        (ranked + 0)
+generated_2119 : Set Int
+let generated_2119 = {| yield ((block
+    generatedSetCount : Set Int -> Int
+    let generatedSetCount values = 2
 
-result : Int
+    let item = (match (Some 0)
+      case Some payload -> payload
+      case None -> 0)
+    let values = {|item, (item + 1)|}
+
+    generatedSetCount values) + 0) |}
+
+result : Set Int
 let result = generated_2119
 
 --! assertNoErrors
---! assertType generated_2119 Int
---! assertType result Int
+--! assertType generated_2119 Set Int
+--! assertType result Set Int
 --! assertDeclKinds signature, let, signature, let

@@ -1,12 +1,26 @@
 module main
 
-generated_2549 : Set Int
-let generated_2549 = {| yield (((((((((left = (((Some (0 + 0)) ?: 0) + 0), right = 0)).left + 0) + 0) + 0) + 0) + 0) + 0) + 0) |}
+generatedEcho : forall (a : Type). (this x : a) -> a
+let generatedEcho @a (this x : a) = x
 
-result : Set Int
+generated_2549 : Int
+let generated_2549 = ((.generatedEcho) ((block
+    generatedListLength : List Int -> Int
+    let generatedListLength xs decreases structural xs =
+        match xs
+          case Nil -> 0
+          case _ :: tail -> 1 + generatedListLength tail
+
+    let item = (match [0, (0 + 1)]
+      case head :: tail -> head
+      case Nil -> 0)
+
+    generatedListLength [item, (item + 1), 0]) + 0))
+
+result : Int
 let result = generated_2549
 
 --! assertNoErrors
---! assertType generated_2549 Set Int
---! assertType result Set Int
---! assertDeclKinds signature, let, signature, let
+--! assertType generated_2549 Int
+--! assertType result Int
+--! assertDeclKinds signature, let, signature, let, signature, let

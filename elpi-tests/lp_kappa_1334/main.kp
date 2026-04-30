@@ -1,12 +1,31 @@
 module main
 
-generated_1334 : Option Int
-let generated_1334 = (if True then (if True then (if True then (if (((if (((Some (0 + 0)) ?: 0) == 1) then None else (Some (0 + 0))) ?: 0) == 1) then None else (if (((Some (0 + 0)) ?: 0) == 1) then None else (Some (0 + 0)))) else None) else None) else None)
+generated_1334 : Int
+let generated_1334 =
+    block
+        let pair = (x = (block
+            generatedSetCount : Set Int -> Int
+            let generatedSetCount values = 2
 
-result : Option Int
+            let item = 0
+            let values = {|item, (item + 1)|}
+
+            generatedSetCount values), y = ((block
+            generatedSetCount : Set Int -> Int
+            let generatedSetCount values = 2
+
+            let item = 0
+            let values = {|item, (item + 1)|}
+
+            generatedSetCount values) + 1))
+        let (x = captured, y = other) = pair
+
+        (captured + other)
+
+result : Int
 let result = generated_1334
 
 --! assertNoErrors
---! assertType generated_1334 Option Int
---! assertType result Option Int
+--! assertType generated_1334 Int
+--! assertType result Int
 --! assertDeclKinds signature, let, signature, let

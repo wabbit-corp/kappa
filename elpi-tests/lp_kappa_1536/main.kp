@@ -1,12 +1,43 @@
 module main
 
-generated_1536 : Unit
-let generated_1536 = (if True then (if True then (if True then (if (True && True) then () else ()) else ()) else ()) else ())
+generated_1536 : Int
+let generated_1536 =
+    match [(((Some ((block
+        generatedSetCount : Set Int -> Int
+        let generatedSetCount values = 2
 
-result : Unit
+        let item = 0
+        let values = {|item, (item + 1)|}
+
+        generatedSetCount values) + 1)) ?: ((block
+        generatedSetCount : Set Int -> Int
+        let generatedSetCount values = 2
+
+        let item = 0
+        let values = {|item, (item + 1)|}
+
+        generatedSetCount values) + 2)) + 0), ((((Some ((block
+        generatedSetCount : Set Int -> Int
+        let generatedSetCount values = 2
+
+        let item = 0
+        let values = {|item, (item + 1)|}
+
+        generatedSetCount values) + 1)) ?: ((block
+        generatedSetCount : Set Int -> Int
+        let generatedSetCount values = 2
+
+        let item = 0
+        let values = {|item, (item + 1)|}
+
+        generatedSetCount values) + 2)) + 0) + 1)]
+      case head :: tail -> head
+      case Nil -> 0
+
+result : Int
 let result = generated_1536
 
 --! assertNoErrors
---! assertType generated_1536 Unit
---! assertType result Unit
+--! assertType generated_1536 Int
+--! assertType result Int
 --! assertDeclKinds signature, let, signature, let

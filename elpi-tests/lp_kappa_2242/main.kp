@@ -1,7 +1,11 @@
 module main
 
 generated_2242 : List Int
-let generated_2242 = [ yield (((((((((left = (0 + 0), right = 0)).left + 0) + 0) + 0) + 0) + 0) + 0) + 0) ]
+let generated_2242 = [ for x in [1, 2, 3], skip 1, take 2, yield (match (Some (match (Some x)
+  case Some payload -> payload
+  case None -> 0))
+  case Some payload -> payload
+  case None -> 0) ]
 
 result : List Int
 let result = generated_2242

@@ -1,17 +1,20 @@
 module main
 
-generated_4294 : Int
-let generated_4294 =
-    block
-        ranked : Int
-        let ranked = (((((0 + ((if False then 0 else 0) + 0)) + 0) + 0) + 0) + 0)
+generated_4294 : List Int
+let generated_4294 = [ for x in [1, 2, 3], skip 1, take 2, yield (block
+    let pair = (x = (match (x == x)
+      case True -> x
+      case False -> 0), y = ((match (x == x)
+      case True -> x
+      case False -> 0) + 1))
+    let (x = captured, y = other) = pair
 
-        (ranked + 0)
+    (captured + other)) ]
 
-result : Int
+result : List Int
 let result = generated_4294
 
 --! assertNoErrors
---! assertType generated_4294 Int
---! assertType result Int
+--! assertType generated_4294 List Int
+--! assertType result List Int
 --! assertDeclKinds signature, let, signature, let

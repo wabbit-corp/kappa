@@ -1,22 +1,12 @@
 module main
 
-trait GeneratedScore a =
-    score : a -> Int
+generated_4741 : (Int -> Int)
+let generated_4741 = \(x : Int) -> ((\(x : Int) -> ((\(x : Int) -> ((\(x : Int) -> if (x == 0) then x else ((\(x : Int) -> (0 + ((\(x : Int) -> x) x))) x)) x)) x)) x)
 
-instance GeneratedScore Int =
-    let score x = x
-
-generated_4741 : Int
-let generated_4741 =
-    let
-        dict = summon (GeneratedScore Int)
-in
-        dict.score ((((((0 + (((if True then (if True then 0 else 0) else 0) + 0) + 0)) + 0) + 0) + 0) + 0) + 0)
-
-result : Int
+result : (Int -> Int)
 let result = generated_4741
 
 --! assertNoErrors
---! assertType generated_4741 Int
---! assertType result Int
---! assertDeclKinds trait, instance, signature, let, signature, let
+--! assertType generated_4741 (Int -> Int)
+--! assertType result (Int -> Int)
+--! assertDeclKinds signature, let, signature, let

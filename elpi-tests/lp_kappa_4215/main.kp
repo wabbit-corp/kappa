@@ -1,12 +1,23 @@
 module main
 
-generated_4215 : Set Int
-let generated_4215 = {| yield ((((((0 + ((if True then ((left = (0 + 0), right = 0)).left else 0) + 0)) + 0) + 0) + 0) + 0) + 0) |}
+generated_4215 : Int
+let generated_4215 =
+    block
+        rankedHelper : (Int -> Int)
+        let rankedHelper x = x + 1
 
-result : Set Int
+        rankedHelper ((match [(match (0 == 0)
+          case True -> 0
+          case False -> 0), ((match (0 == 0)
+          case True -> 0
+          case False -> 0) + 1)]
+          case head :: tail -> head
+          case Nil -> 0) + 0)
+
+result : Int
 let result = generated_4215
 
 --! assertNoErrors
---! assertType generated_4215 Set Int
---! assertType result Set Int
+--! assertType generated_4215 Int
+--! assertType result Int
 --! assertDeclKinds signature, let, signature, let

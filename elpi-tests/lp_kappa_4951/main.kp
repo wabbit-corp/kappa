@@ -1,12 +1,35 @@
 module main
 
-generated_4951 : Set Int
-let generated_4951 = {| for x in [1, 2, 3], yield (((((0 + (((if True then ((Some (x + 0)) ?: 0) else 0) + 0) + 0)) + 0) + 0) + 0) + 0) |}
+generated_4951 : Int
+let generated_4951 =
+    block
+        scoped effect Choice =
+            ω choose : Unit -> Bool
 
-result : Set Int
+        let c = Choice
+
+        let seed = ((Some (((Some (0 + 1)) ?: (0 + 2)) + 1)) ?: (((Some (0 + 1)) ?: (0 + 2)) + 2))
+
+        let comp : Eff <[Choice : Choice]> Int =
+            do
+                let b <- c.choose ()
+                if b then seed else (seed + 1)
+
+        let handled : Eff <[ ]> Int =
+            deep handle Choice comp with
+                case return x -> pure x
+                case choose () k ->
+                    do
+                        let a <- k True
+                        let b <- k False
+                        pure (a + b)
+
+        runPure handled
+
+result : Int
 let result = generated_4951
 
 --! assertNoErrors
---! assertType generated_4951 Set Int
---! assertType result Set Int
+--! assertType generated_4951 Int
+--! assertType result Int
 --! assertDeclKinds signature, let, signature, let

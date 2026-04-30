@@ -1,18 +1,18 @@
 module main
 
-generated_2280 : Int
-let generated_2280 =
-    block
-        type RankedAlias = Int
+generated_2280 : List Int
+let generated_2280 = [ yield ((match [(match (Some 0)
+  case Some payload -> payload
+  case None -> 0), ((match (Some 0)
+  case Some payload -> payload
+  case None -> 0) + 1)]
+  case head :: tail -> head
+  case Nil -> 0) + 0) ]
 
-        let aliased : RankedAlias = (((((((((left = (((0 + 0) + 0) + 0), right = 0)).left + 0) + 0) + 0) + 0) + 0) + 0) + 0)
-
-        (aliased + 1)
-
-result : Int
+result : List Int
 let result = generated_2280
 
 --! assertNoErrors
---! assertType generated_2280 Int
---! assertType result Int
+--! assertType generated_2280 List Int
+--! assertType result List Int
 --! assertDeclKinds signature, let, signature, let

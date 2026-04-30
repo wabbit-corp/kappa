@@ -1,12 +1,28 @@
 module main
 
-generated_3047 : Set Int
-let generated_3047 = {| for x in [1, 2, 3], yield ((((((((Some ((if False then 0 else x) + 0)) ?: 0) + 0) + 0) + 0) + 0) + 0) + 0) |}
+generated_3047 : Int
+let generated_3047 =
+    match (Some ((block
+        generatedListLength : List Int -> Int
+        let generatedListLength xs decreases structural xs =
+            match xs
+              case Nil -> 0
+              case _ :: tail -> 1 + generatedListLength tail
 
-result : Set Int
+        let item = (block
+            let pair = (x = 0, y = (0 + 1))
+            let (x = captured, y = other) = pair
+
+            (captured + other))
+
+        generatedListLength [item, (item + 1), 0]) + 0))
+      case Some payload -> payload
+      case None -> 0
+
+result : Int
 let result = generated_3047
 
 --! assertNoErrors
---! assertType generated_3047 Set Int
---! assertType result Set Int
+--! assertType generated_3047 Int
+--! assertType result Int
 --! assertDeclKinds signature, let, signature, let

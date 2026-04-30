@@ -1,10 +1,33 @@
 module main
 
+generatedEcho : forall (a : Type). (this x : a) -> a
+let generatedEcho @a (this x : a) = x
+
 generated_1454 : Int
-let generated_1454 =
-    match (((((((((if False then 0 else ((left = (0 + 0), right = 0)).left) + 0) + 0) + 0) + 0) + 0) + 0) + 0) == ((((((((if False then 0 else ((left = (0 + 0), right = 0)).left) + 0) + 0) + 0) + 0) + 0) + 0) + 0))
-      case True -> ((((((((if False then 0 else ((left = (0 + 0), right = 0)).left) + 0) + 0) + 0) + 0) + 0) + 0) + 0)
-      case False -> 0
+let generated_1454 = ((match ((block
+    generatedSetCount : Set Int -> Int
+    let generatedSetCount values = 2
+
+    let item = 0
+    let values = {|item, (item + 1)|}
+
+    generatedSetCount values) == (block
+    generatedSetCount : Set Int -> Int
+    let generatedSetCount values = 2
+
+    let item = 0
+    let values = {|item, (item + 1)|}
+
+    generatedSetCount values))
+  case True -> (block
+      generatedSetCount : Set Int -> Int
+      let generatedSetCount values = 2
+
+      let item = 0
+      let values = {|item, (item + 1)|}
+
+      generatedSetCount values)
+  case False -> 0) + 0).generatedEcho
 
 result : Int
 let result = generated_1454
@@ -12,4 +35,4 @@ let result = generated_1454
 --! assertNoErrors
 --! assertType generated_1454 Int
 --! assertType result Int
---! assertDeclKinds signature, let, signature, let
+--! assertDeclKinds signature, let, signature, let, signature, let

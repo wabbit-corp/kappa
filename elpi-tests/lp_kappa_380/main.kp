@@ -1,12 +1,16 @@
 module main
 
-generated_380 : Unit
-let generated_380 = (if True then (if True then (if True then (if True then (if (False || True) then () else ()) else ()) else ()) else ()) else ())
+generated_380 : Map String Int
+let generated_380 = { for x in [1, 2, 3], if x > 0, yield "k" : (block
+    let pair = (x = x, y = (x + 1))
+    let (x = captured, y = other) = pair
 
-result : Unit
+    (captured + other)) }
+
+result : Map String Int
 let result = generated_380
 
 --! assertNoErrors
---! assertType generated_380 Unit
---! assertType result Unit
+--! assertType generated_380 Map String Int
+--! assertType result Map String Int
 --! assertDeclKinds signature, let, signature, let

@@ -1,15 +1,20 @@
 module main
 
-generated_369 : IO Int
+generated_369 : Int
 let generated_369 =
-    do
-        let staged = (((((((((((if True then 0 else 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0)
-        pure (staged + 1)
+    let
+        ranked : Int = (block
+            let pair = (x = 0, y = (0 + 1))
+            let (x = captured, y = other) = pair
 
-result : IO Int
+            (captured + other))
+in
+        (ranked + 0)
+
+result : Int
 let result = generated_369
 
 --! assertNoErrors
---! assertType generated_369 IO Int
---! assertType result IO Int
+--! assertType generated_369 Int
+--! assertType result Int
 --! assertDeclKinds signature, let, signature, let

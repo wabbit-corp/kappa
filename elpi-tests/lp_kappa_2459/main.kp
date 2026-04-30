@@ -1,16 +1,20 @@
 module main
 
-generated_2459 : Int
-let generated_2459 =
-    let
-        ranked : Int = ((((((((left = (((left = (0 + 0), right = 0)).left + 0), right = 0)).left + 0) + 0) + 0) + 0) + 0) + 0)
-in
-        (ranked + 0)
+generated_2459 : List Int
+let generated_2459 = [ for x in [1, 2, 3], order by x desc, yield (match ((match (Some x)
+  case Some payload -> payload
+  case None -> 0) == (match (Some x)
+  case Some payload -> payload
+  case None -> 0))
+  case True -> (match (Some x)
+    case Some payload -> payload
+    case None -> 0)
+  case False -> 0) ]
 
-result : Int
+result : List Int
 let result = generated_2459
 
 --! assertNoErrors
---! assertType generated_2459 Int
---! assertType result Int
+--! assertType generated_2459 List Int
+--! assertType result List Int
 --! assertDeclKinds signature, let, signature, let

@@ -1,12 +1,40 @@
 module main
 
-generated_2627 : (Int -> Int)
-let generated_2627 = \(x : Int) -> ((\(x : Int) -> ((\(x : Int) -> ((\(x : Int) -> if (x == 0) then ((\(x : Int) -> (((\(x : Int) -> x) x) + 0)) x) else x) x)) x)) x)
+generated_2627 : Int
+let generated_2627 =
+    block
+        scoped effect Ask =
+            ask : Unit -> Bool
 
-result : (Int -> Int)
+        let pkg = (label = Ask)
+
+        let seed = (block
+            generatedSetCount : Set Int -> Int
+            let generatedSetCount values = 2
+
+            let item = (match [0, (0 + 1)]
+              case head :: tail -> head
+              case Nil -> 0)
+            let values = {|item, (item + 1)|}
+
+            generatedSetCount values)
+
+        let comp : Eff <[Ask : Ask]> Int =
+            do
+                let b <- pkg.label.ask ()
+                if b then seed else (seed + 1)
+
+        let handled : Eff <[ ]> Int =
+            deep handle pkg.label comp with
+                case return x -> pure x
+                case ask () k -> k True
+
+        runPure handled
+
+result : Int
 let result = generated_2627
 
 --! assertNoErrors
---! assertType generated_2627 (Int -> Int)
---! assertType result (Int -> Int)
+--! assertType generated_2627 Int
+--! assertType result Int
 --! assertDeclKinds signature, let, signature, let

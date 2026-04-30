@@ -1,12 +1,35 @@
 module main
 
-generated_584 : Unit
-let generated_584 = (if True then (if True then (if True then (if False then () else (if False then () else ())) else ()) else ()) else ())
+generated_584 : Int
+let generated_584 =
+    block
+        ranked : Int
+        let ranked = (block
+            generatedListLength : List Int -> Int
+            let generatedListLength xs decreases structural xs =
+                match xs
+                  case Nil -> 0
+                  case _ :: tail -> 1 + generatedListLength tail
 
-result : Unit
+            let item = (block
+                generatedListLength : List Int -> Int
+                let generatedListLength xs decreases structural xs =
+                    match xs
+                      case Nil -> 0
+                      case _ :: tail -> 1 + generatedListLength tail
+
+                let item = 0
+
+                generatedListLength [item, (item + 1), 0])
+
+            generatedListLength [item, (item + 1), 0])
+
+        (ranked + 0)
+
+result : Int
 let result = generated_584
 
 --! assertNoErrors
---! assertType generated_584 Unit
---! assertType result Unit
+--! assertType generated_584 Int
+--! assertType result Int
 --! assertDeclKinds signature, let, signature, let

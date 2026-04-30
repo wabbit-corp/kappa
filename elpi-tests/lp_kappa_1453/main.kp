@@ -1,12 +1,45 @@
 module main
 
-generated_1453 : String
-let generated_1453 = (if (if (if (if (((if True then 1 else 0) == 1) || False) then True else False) then True else False) then True else False) then #"raw lambda-prolog"# else "fallback")
+trait GeneratedScore a =
+    score : a -> Int
 
-result : String
+instance GeneratedScore Int =
+    let score x = x
+
+generated_1453 : Int
+let generated_1453 =
+    let
+        dict = summon (GeneratedScore Int)
+in
+        dict.score ((match ((block
+            generatedSetCount : Set Int -> Int
+            let generatedSetCount values = 2
+
+            let item = 0
+            let values = {|item, (item + 1)|}
+
+            generatedSetCount values) == (block
+            generatedSetCount : Set Int -> Int
+            let generatedSetCount values = 2
+
+            let item = 0
+            let values = {|item, (item + 1)|}
+
+            generatedSetCount values))
+          case True -> (block
+              generatedSetCount : Set Int -> Int
+              let generatedSetCount values = 2
+
+              let item = 0
+              let values = {|item, (item + 1)|}
+
+              generatedSetCount values)
+          case False -> 0) + 0)
+
+result : Int
 let result = generated_1453
 
 --! assertNoErrors
---! assertType generated_1453 String
---! assertType result String
---! assertDeclKinds signature, let, signature, let
+--! assertType generated_1453 Int
+--! assertType result Int
+--! assertDeclKinds trait, instance, signature, let, signature, let

@@ -3,10 +3,30 @@ module main
 generated_4681 : Int
 let generated_4681 =
     block
-        rankedHelper : (Int -> Int)
-        let rankedHelper x = x + 1
+        scoped effect Choice =
+            ω choose : Unit -> Bool
 
-        rankedHelper ((((((0 + (((if True then ((0 + 0) + 0) else 0) + 0) + 0)) + 0) + 0) + 0) + 0) + 0)
+        let c = Choice
+
+        let seed = (match (Some ((Some (0 + 1)) ?: (0 + 2)))
+          case Some payload -> payload
+          case None -> 0)
+
+        let comp : Eff <[Choice : Choice]> Int =
+            do
+                let b <- c.choose ()
+                if b then seed else (seed + 1)
+
+        let handled : Eff <[ ]> Int =
+            deep handle Choice comp with
+                case return x -> pure x
+                case choose () k ->
+                    do
+                        let a <- k True
+                        let b <- k False
+                        pure (a + b)
+
+        runPure handled
 
 result : Int
 let result = generated_4681

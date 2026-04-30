@@ -1,15 +1,26 @@
 module main
 
-generated_3157 : IO Int
-let generated_3157 =
-    do
-        let staged = (((((((((Some (((left = (0 + 0), right = 0)).left + 0)) ?: 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0)
-        pure (staged + 1)
+generatedMakeConst : forall (a : Type). a -> Unit -> a
+let generatedMakeConst value = \() -> value
 
-result : IO Int
+generated_3157 : Int
+let generated_3157 = ((generatedMakeConst @Int ((block
+    generatedMapCount : Map String Int -> Int
+    let generatedMapCount values = 1
+
+    let item = (block
+        let pair = (x = 0, y = (0 + 1))
+        let (x = captured, y = other) = pair
+
+        (captured + other))
+    let values = { yield "item" : item }
+
+    generatedMapCount values) + 0)) ())
+
+result : Int
 let result = generated_3157
 
 --! assertNoErrors
---! assertType generated_3157 IO Int
---! assertType result IO Int
---! assertDeclKinds signature, let, signature, let
+--! assertType generated_3157 Int
+--! assertType result Int
+--! assertDeclKinds signature, let, signature, let, signature, let

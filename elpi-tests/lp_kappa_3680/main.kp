@@ -1,12 +1,21 @@
 module main
 
-generated_3680 : Option Int
-let generated_3680 = (if True then (if True then (if False then None else (if False then None else (if False then None else (Some (0 + 0))))) else None) else None)
+generated_3680 : Int
+let generated_3680 =
+    block
+        let base : (x : Int) = (x = ((match (Some ((\(n : Int) -> n) 0))
+          case Some payload -> payload
+          case None -> 0) + 0))
+        let extended = base.{ y := ((match (Some ((\(n : Int) -> n) 0))
+          case Some payload -> payload
+          case None -> 0) + 1) }
 
-result : Option Int
+        (extended.x + extended.y)
+
+result : Int
 let result = generated_3680
 
 --! assertNoErrors
---! assertType generated_3680 Option Int
---! assertType result Option Int
+--! assertType generated_3680 Int
+--! assertType result Int
 --! assertDeclKinds signature, let, signature, let

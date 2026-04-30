@@ -1,20 +1,28 @@
 module main
 
-generated_1567 : Int
-let generated_1567 =
-    block
-        data RankedBox : Type =
-            RankedBox (value : Int)
+generated_1567 : Set Int
+let generated_1567 = {| for x in [1, 2, 3], yield (block
+    generatedListLength : List Int -> Int
+    let generatedListLength xs decreases structural xs =
+        match xs
+          case Nil -> 0
+          case _ :: tail -> 1 + generatedListLength tail
 
-        let boxed = RankedBox (((((((((if True then 0 else 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0)
+    let item = (block
+        generatedMapCount : Map String Int -> Int
+        let generatedMapCount values = 1
 
-        match boxed
-          case RankedBox value -> (value + 1)
+        let item = x
+        let values = { yield "item" : item }
 
-result : Int
+        generatedMapCount values)
+
+    generatedListLength [item, (item + 1), 0]) |}
+
+result : Set Int
 let result = generated_1567
 
 --! assertNoErrors
---! assertType generated_1567 Int
---! assertType result Int
+--! assertType generated_1567 Set Int
+--! assertType result Set Int
 --! assertDeclKinds signature, let, signature, let

@@ -3,10 +3,19 @@ module main
 generated_4040 : Int
 let generated_4040 =
     block
-        let base : (x : Int) = (x = ((((((0 + ((if True then (0 + (0 + 0)) else 0) + 0)) + 0) + 0) + 0) + 0) + 0))
-        let extended = base.{ y := ((((((0 + ((if True then (0 + (0 + 0)) else 0) + 0)) + 0) + 0) + 0) + 0) + 1) }
+        ranked : Int
+        let ranked = (block
+            generatedSetCount : Set Int -> Int
+            let generatedSetCount values = 2
 
-        (extended.x + extended.y)
+            let item = (match (0 == 0)
+              case True -> 0
+              case False -> 0)
+            let values = {|item, (item + 1)|}
+
+            generatedSetCount values)
+
+        (ranked + 0)
 
 result : Int
 let result = generated_4040

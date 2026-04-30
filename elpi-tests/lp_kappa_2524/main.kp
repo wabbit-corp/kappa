@@ -1,12 +1,12 @@
 module main
 
-generated_2524 : Option Int
-let generated_2524 = (if True then (if True then (if True then (if (((if (True && True) then (if False then None else (Some (0 + 0))) else (Some 2)) ?: 0) == 1) then (Some (((if (True && True) then (if False then None else (Some (0 + 0))) else (Some 2)) ?: 0) + 0)) else (if (True && True) then (if False then None else (Some (0 + 0))) else (Some 2))) else None) else None) else None)
+generated_2524 : Unit
+let generated_2524 = (if True then (if True then (if True then (if (True && True) then (if False then () else ()) else ()) else ()) else ()) else ())
 
-result : Option Int
+result : Unit
 let result = generated_2524
 
 --! assertNoErrors
---! assertType generated_2524 Option Int
---! assertType result Option Int
+--! assertType generated_2524 Unit
+--! assertType result Unit
 --! assertDeclKinds signature, let, signature, let

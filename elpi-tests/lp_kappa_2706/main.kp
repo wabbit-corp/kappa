@@ -1,10 +1,22 @@
 module main
 
-generatedMakeConst : forall (a : Type). a -> Unit -> a
-let generatedMakeConst value = \() -> value
-
 generated_2706 : Int
-let generated_2706 = ((generatedMakeConst (((((((((left = 0, right = ((if False then 0 else 0) + 0))).right + 0) + 0) + 0) + 0) + 0) + 0) + 0)) ())
+let generated_2706 =
+    match (((match (Some (match [0, (0 + 1)]
+      case head :: tail -> head
+      case Nil -> 0))
+      case Some payload -> payload
+      case None -> 0) + 0) == ((match (Some (match [0, (0 + 1)]
+      case head :: tail -> head
+      case Nil -> 0))
+      case Some payload -> payload
+      case None -> 0) + 0))
+      case True -> ((match (Some (match [0, (0 + 1)]
+        case head :: tail -> head
+        case Nil -> 0))
+        case Some payload -> payload
+        case None -> 0) + 0)
+      case False -> 0
 
 result : Int
 let result = generated_2706
@@ -12,4 +24,4 @@ let result = generated_2706
 --! assertNoErrors
 --! assertType generated_2706 Int
 --! assertType result Int
---! assertDeclKinds signature, let, signature, let, signature, let
+--! assertDeclKinds signature, let, signature, let

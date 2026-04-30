@@ -1,12 +1,29 @@
 module main
 
-generated_1521 : String
-let generated_1521 = (if (if (if (if (((if True then True else False) && True) || False) then True else False) then True else False) then True else False) then #"raw lambda-prolog"# else "fallback")
+generated_1521 : IO Int
+let generated_1521 =
+    do
+        let staged = (((Some ((block
+            generatedSetCount : Set Int -> Int
+            let generatedSetCount values = 2
 
-result : String
+            let item = 0
+            let values = {|item, (item + 1)|}
+
+            generatedSetCount values) + 1)) ?: ((block
+            generatedSetCount : Set Int -> Int
+            let generatedSetCount values = 2
+
+            let item = 0
+            let values = {|item, (item + 1)|}
+
+            generatedSetCount values) + 2)) + 0)
+        pure (staged + 1)
+
+result : IO Int
 let result = generated_1521
 
 --! assertNoErrors
---! assertType generated_1521 String
---! assertType result String
+--! assertType generated_1521 IO Int
+--! assertType result IO Int
 --! assertDeclKinds signature, let, signature, let

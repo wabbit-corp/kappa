@@ -1,20 +1,24 @@
 module main
 
-generated_4491 : Int
+generated_4491 : IO Int
 let generated_4491 =
-    block
-        data RankedBox : Type =
-            RankedBox (value : Int)
+    do
+        let staged = ((block
+            generatedListLength : List Int -> Int
+            let generatedListLength xs decreases structural xs =
+                match xs
+                  case Nil -> 0
+                  case _ :: tail -> 1 + generatedListLength tail
 
-        let boxed = RankedBox ((((((0 + ((if False then 0 else ((if True then 0 else 0) + 0)) + 0)) + 0) + 0) + 0) + 0) + 0)
+            let item = ((Some (0 + 1)) ?: (0 + 2))
 
-        match boxed
-          case RankedBox value -> (value + 1)
+            generatedListLength [item, (item + 1), 0]) + 0)
+        pure (staged + 1)
 
-result : Int
+result : IO Int
 let result = generated_4491
 
 --! assertNoErrors
---! assertType generated_4491 Int
---! assertType result Int
+--! assertType generated_4491 IO Int
+--! assertType result IO Int
 --! assertDeclKinds signature, let, signature, let

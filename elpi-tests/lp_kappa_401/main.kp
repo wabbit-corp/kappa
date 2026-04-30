@@ -2,11 +2,13 @@ module main
 
 generated_401 : Int
 let generated_401 =
-    block
-        let pair = (x = (((((((((((if False then 0 else 0) + (0 + 0)) + 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0), y = (((((((((((if False then 0 else 0) + (0 + 0)) + 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0) + 1))
+    match (Some ((block
+        let pair = (x = 0, y = (0 + 1))
         let (x = captured, y = other) = pair
 
-        (captured + other)
+        (captured + other)) + 0))
+      case Some payload -> payload
+      case None -> 0
 
 result : Int
 let result = generated_401

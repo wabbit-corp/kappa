@@ -1,15 +1,21 @@
 module main
 
-generated_2134 : Int
-let generated_2134 =
-    match ((((((((((if False then 0 else ((left = (0 + 0), right = 0)).left) + (0 + 0)) + 0) + 0) + 0) + 0) + 0) + 0) + 0) == (((((((((if False then 0 else ((left = (0 + 0), right = 0)).left) + (0 + 0)) + 0) + 0) + 0) + 0) + 0) + 0) + 0))
-      case True -> (((((((((if False then 0 else ((left = (0 + 0), right = 0)).left) + (0 + 0)) + 0) + 0) + 0) + 0) + 0) + 0) + 0)
-      case False -> 0
+generated_2134 : List Int
+let generated_2134 = [ for x in [1, 2, 3], skip 1, take 2, yield (block
+    generatedSetCount : Set Int -> Int
+    let generatedSetCount values = 2
 
-result : Int
+    let item = (match (Some x)
+      case Some payload -> payload
+      case None -> 0)
+    let values = {|item, (item + 1)|}
+
+    generatedSetCount values) ]
+
+result : List Int
 let result = generated_2134
 
 --! assertNoErrors
---! assertType generated_2134 Int
---! assertType result Int
+--! assertType generated_2134 List Int
+--! assertType result List Int
 --! assertDeclKinds signature, let, signature, let

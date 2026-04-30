@@ -3,11 +3,28 @@ module main
 generated_2654 : Int
 let generated_2654 =
     block
-        type RankedAlias = Int
+        let base : (x : Int) = (x = ((block
+            generatedMapCount : Map String Int -> Int
+            let generatedMapCount values = 1
 
-        let aliased : RankedAlias = (((((((((left = 0, right = ((0 + (0 + 0)) + 0))).right + 0) + 0) + 0) + 0) + 0) + 0) + 0)
+            let item = (match [0, (0 + 1)]
+              case head :: tail -> head
+              case Nil -> 0)
+            let values = { yield "item" : item }
 
-        (aliased + 1)
+            generatedMapCount values) + 0))
+        let extended = base.{ y := ((block
+            generatedMapCount : Map String Int -> Int
+            let generatedMapCount values = 1
+
+            let item = (match [0, (0 + 1)]
+              case head :: tail -> head
+              case Nil -> 0)
+            let values = { yield "item" : item }
+
+            generatedMapCount values) + 1) }
+
+        (extended.x + extended.y)
 
 result : Int
 let result = generated_2654

@@ -1,12 +1,30 @@
 module main
 
-generated_587 : (Int -> Int)
-let generated_587 = \(x : Int) -> ((\(x : Int) -> ((\(x : Int) -> ((\(x : Int) -> (((\(x : Int) -> (((\(x : Int) -> x) x) + 0)) x) + 0)) x)) x)) x)
+generated_587 : List Int
+let generated_587 = [ for x in [1, 2, 3], if x > 0, yield (block
+    generatedListLength : List Int -> Int
+    let generatedListLength xs decreases structural xs =
+        match xs
+          case Nil -> 0
+          case _ :: tail -> 1 + generatedListLength tail
 
-result : (Int -> Int)
+    let item = (block
+        generatedListLength : List Int -> Int
+        let generatedListLength xs decreases structural xs =
+            match xs
+              case Nil -> 0
+              case _ :: tail -> 1 + generatedListLength tail
+
+        let item = x
+
+        generatedListLength [item, (item + 1), 0])
+
+    generatedListLength [item, (item + 1), 0]) ]
+
+result : List Int
 let result = generated_587
 
 --! assertNoErrors
---! assertType generated_587 (Int -> Int)
---! assertType result (Int -> Int)
+--! assertType generated_587 List Int
+--! assertType result List Int
 --! assertDeclKinds signature, let, signature, let

@@ -1,12 +1,20 @@
 module main
 
-generated_2928 : Int
-let generated_2928 = ((((((((Some (((0 + 0) + 0) + 0)) ?: 0) + 0) + 0) + 0) + 0) + 0) + 0)
+generated_2928 : List Int
+let generated_2928 = [ yield ((match ((match [0, (0 + 1)]
+  case head :: tail -> head
+  case Nil -> 0) == (match [0, (0 + 1)]
+  case head :: tail -> head
+  case Nil -> 0))
+  case True -> (match [0, (0 + 1)]
+    case head :: tail -> head
+    case Nil -> 0)
+  case False -> 0) + 0) ]
 
-result : Int
+result : List Int
 let result = generated_2928
 
 --! assertNoErrors
---! assertType generated_2928 Int
---! assertType result Int
+--! assertType generated_2928 List Int
+--! assertType result List Int
 --! assertDeclKinds signature, let, signature, let

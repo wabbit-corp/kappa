@@ -1,14 +1,17 @@
 module main
 
-type GeneratedPair = (left : Int, right : Int)
+generatedMakeConst : forall (a : Type). a -> Unit -> a
+let generatedMakeConst value = \() -> value
 
-generated_324 : GeneratedPair
-let generated_324 = ((left = (((((((((if False then 0 else 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0), right = 0)).{ right = ((((((((((if False then 0 else 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0) + 1) }
+generated_324 : Int
+let generated_324 = ((generatedMakeConst ((match [0, (0 + 1)]
+  case head :: tail -> head
+  case Nil -> 0) + 0)) ())
 
-result : GeneratedPair
+result : Int
 let result = generated_324
 
 --! assertNoErrors
---! assertType generated_324 GeneratedPair
---! assertType result GeneratedPair
---! assertDeclKinds type, signature, let, signature, let
+--! assertType generated_324 Int
+--! assertType result Int
+--! assertDeclKinds signature, let, signature, let, signature, let

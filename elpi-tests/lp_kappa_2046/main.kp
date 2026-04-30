@@ -1,12 +1,26 @@
 module main
 
-generated_2046 : Unit
-let generated_2046 = (if True then (if True then (if True then (if (False || True) then (if (True && True) then () else ()) else ()) else ()) else ()) else ())
+generated_2046 : IO Int
+let generated_2046 =
+    do
+        value <- pure ((block
+            generatedListLength : List Int -> Int
+            let generatedListLength xs decreases structural xs =
+                match xs
+                  case Nil -> 0
+                  case _ :: tail -> 1 + generatedListLength tail
 
-result : Unit
+            let item = (match (Some 0)
+              case Some payload -> payload
+              case None -> 0)
+
+            generatedListLength [item, (item + 1), 0]) + 0)
+        pure (value + 2)
+
+result : IO Int
 let result = generated_2046
 
 --! assertNoErrors
---! assertType generated_2046 Unit
---! assertType result Unit
+--! assertType generated_2046 IO Int
+--! assertType result IO Int
 --! assertDeclKinds signature, let, signature, let

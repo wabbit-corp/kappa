@@ -1,12 +1,35 @@
 module main
 
-generated_939 : Set Int
-let generated_939 = {| for x in [1, 2, 3], if x > 0, yield (((((((if True then (0 + (x + 0)) else 0) + 0) + 0) + 0) + 0) + 0) + 0) |}
+generated_939 : Int
+let generated_939 =
+    block
+        let pair = (x = (((\(n : Int) -> n) (block
+            generatedListLength : List Int -> Int
+            let generatedListLength xs decreases structural xs =
+                match xs
+                  case Nil -> 0
+                  case _ :: tail -> 1 + generatedListLength tail
 
-result : Set Int
+            let item = 0
+
+            generatedListLength [item, (item + 1), 0])) + 0), y = (((\(n : Int) -> n) (block
+            generatedListLength : List Int -> Int
+            let generatedListLength xs decreases structural xs =
+                match xs
+                  case Nil -> 0
+                  case _ :: tail -> 1 + generatedListLength tail
+
+            let item = 0
+
+            generatedListLength [item, (item + 1), 0])) + 1))
+        let whole@(x = captured, y = other) = pair
+
+        (whole.x + (captured + other))
+
+result : Int
 let result = generated_939
 
 --! assertNoErrors
---! assertType generated_939 Set Int
---! assertType result Set Int
+--! assertType generated_939 Int
+--! assertType result Int
 --! assertDeclKinds signature, let, signature, let

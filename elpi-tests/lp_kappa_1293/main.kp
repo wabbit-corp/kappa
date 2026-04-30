@@ -6,9 +6,41 @@ data GeneratedChoice : Type =
 
 generated_1293 : Int
 let generated_1293 =
-    match GeneratedRight
+    match (GeneratedLeft ((match [(block
+        generatedSetCount : Set Int -> Int
+        let generatedSetCount values = 2
+
+        let item = 0
+        let values = {|item, (item + 1)|}
+
+        generatedSetCount values), ((block
+        generatedSetCount : Set Int -> Int
+        let generatedSetCount values = 2
+
+        let item = 0
+        let values = {|item, (item + 1)|}
+
+        generatedSetCount values) + 1)]
+      case head :: tail -> head
+      case Nil -> 0) + 0))
       case GeneratedLeft payload -> (payload + 0)
-      case GeneratedRight -> ((((((((if False then 0 else (0 + (0 + 0))) + 0) + 0) + 0) + 0) + 0) + 0) + 0)
+      case GeneratedRight -> ((match [(block
+          generatedSetCount : Set Int -> Int
+          let generatedSetCount values = 2
+
+          let item = 0
+          let values = {|item, (item + 1)|}
+
+          generatedSetCount values), ((block
+          generatedSetCount : Set Int -> Int
+          let generatedSetCount values = 2
+
+          let item = 0
+          let values = {|item, (item + 1)|}
+
+          generatedSetCount values) + 1)]
+        case head :: tail -> head
+        case Nil -> 0) + 0)
 
 result : Int
 let result = generated_1293

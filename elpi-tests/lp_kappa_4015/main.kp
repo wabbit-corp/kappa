@@ -1,20 +1,26 @@
 module main
 
-generated_4015 : Int
-let generated_4015 =
-    block
-        data RankedBox : Type =
-            RankedBox (value : Int)
+generatedEcho : forall (a : Type). (this x : a) -> a
+let generatedEcho @a (this x : a) = x
 
-        let boxed = RankedBox ((((((0 + ((if True then ((0 + 0) + 0) else 0) + 0)) + 0) + 0) + 0) + 0) + 0)
+generated_4015 : Option Int
+let generated_4015 = (Some ((block
+    generatedListLength : List Int -> Int
+    let generatedListLength xs decreases structural xs =
+        match xs
+          case Nil -> 0
+          case _ :: tail -> 1 + generatedListLength tail
 
-        match boxed
-          case RankedBox value -> (value + 1)
+    let item = (match (0 == 0)
+      case True -> 0
+      case False -> 0)
 
-result : Int
+    generatedListLength [item, (item + 1), 0]) + 0))?.generatedEcho
+
+result : Option Int
 let result = generated_4015
 
 --! assertNoErrors
---! assertType generated_4015 Int
---! assertType result Int
---! assertDeclKinds signature, let, signature, let
+--! assertType generated_4015 Option Int
+--! assertType result Option Int
+--! assertDeclKinds signature, let, signature, let, signature, let

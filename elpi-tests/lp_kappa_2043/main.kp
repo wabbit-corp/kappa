@@ -2,14 +2,21 @@ module main
 
 generated_2043 : Int
 let generated_2043 =
-    block
-        data RankedBox : Type =
-            RankedBox (value : Int)
+    let
+        ranked : Int = (block
+            generatedListLength : List Int -> Int
+            let generatedListLength xs decreases structural xs =
+                match xs
+                  case Nil -> 0
+                  case _ :: tail -> 1 + generatedListLength tail
 
-        let boxed = RankedBox (((((((((if False then 0 else (if False then 0 else 0)) + (0 + 0)) + 0) + 0) + 0) + 0) + 0) + 0) + 0)
+            let item = (match (Some 0)
+              case Some payload -> payload
+              case None -> 0)
 
-        match boxed
-          case RankedBox value -> (value + 1)
+            generatedListLength [item, (item + 1), 0])
+in
+        (ranked + 0)
 
 result : Int
 let result = generated_2043

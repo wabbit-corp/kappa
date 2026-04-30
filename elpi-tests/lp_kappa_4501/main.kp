@@ -1,12 +1,24 @@
 module main
 
-generated_4501 : List Int
-let generated_4501 = [ for x in [1, 2, 3], let y = x + 1, if y > 0, yield (((((0 + ((if False then 0 else ((if False then 0 else x) + (0 + 0))) + 0)) + 0) + 0) + 0) + 0) ]
+generatedEcho : forall (a : Type). (this x : a) -> a
+let generatedEcho @a (this x : a) = x
 
-result : List Int
+generated_4501 : Option Int
+let generated_4501 = (Some ((block
+    generatedListLength : List Int -> Int
+    let generatedListLength xs decreases structural xs =
+        match xs
+          case Nil -> 0
+          case _ :: tail -> 1 + generatedListLength tail
+
+    let item = ((Some (0 + 1)) ?: (0 + 2))
+
+    generatedListLength [item, (item + 1), 0]) + 0))?.generatedEcho
+
+result : Option Int
 let result = generated_4501
 
 --! assertNoErrors
---! assertType generated_4501 List Int
---! assertType result List Int
---! assertDeclKinds signature, let, signature, let
+--! assertType generated_4501 Option Int
+--! assertType result Option Int
+--! assertDeclKinds signature, let, signature, let, signature, let

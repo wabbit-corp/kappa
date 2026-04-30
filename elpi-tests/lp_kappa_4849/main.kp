@@ -1,12 +1,12 @@
 module main
 
-generated_4849 : Set Int
-let generated_4849 = {| for x in [1, 2, 3], let y = x + 1, yield (((((0 + (((if True then ((if False then 0 else x) + (0 + 0)) else 0) + 0) + 0)) + 0) + 0) + 0) + 0) |}
+generated_4849 : (Int -> Int)
+let generated_4849 = \(x : Int) -> ((\(x : Int) -> ((\(x : Int) -> ((\(x : Int) -> if (x == 0) then x else (((if False then \(x : Int) -> x else \(x : Int) -> x)) x)) x)) x)) x)
 
-result : Set Int
+result : (Int -> Int)
 let result = generated_4849
 
 --! assertNoErrors
---! assertType generated_4849 Set Int
---! assertType result Set Int
+--! assertType generated_4849 (Int -> Int)
+--! assertType result (Int -> Int)
 --! assertDeclKinds signature, let, signature, let

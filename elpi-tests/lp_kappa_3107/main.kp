@@ -1,7 +1,18 @@
 module main
 
 generated_3107 : List Int
-let generated_3107 = [ for x in [1, 2, 3], if x > 0, yield ((((((((Some (((if False then 0 else x) + (0 + 0)) + 0)) ?: 0) + 0) + 0) + 0) + 0) + 0) + 0) ]
+let generated_3107 = [ for x in [1, 2, 3], order by x desc, yield (block
+    generatedSetCount : Set Int -> Int
+    let generatedSetCount values = 2
+
+    let item = (block
+        let pair = (x = x, y = (x + 1))
+        let (x = captured, y = other) = pair
+
+        (captured + other))
+    let values = {|item, (item + 1)|}
+
+    generatedSetCount values) ]
 
 result : List Int
 let result = generated_3107

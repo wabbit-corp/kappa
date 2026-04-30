@@ -1,12 +1,37 @@
 module main
 
-generated_3102 : Option Int
-let generated_3102 = (if True then (if True then (if True then (if (True && True) then (if False then None else (if (((Some (0 + 0)) ?: 0) == 0) then (Some ((Some (0 + 0)) ?: 0)) else None)) else (Some 2)) else None) else None) else None)
+generated_3102 : Int
+let generated_3102 =
+    match [((block
+        generatedSetCount : Set Int -> Int
+        let generatedSetCount values = 2
 
-result : Option Int
+        let item = (block
+            let pair = (x = 0, y = (0 + 1))
+            let (x = captured, y = other) = pair
+
+            (captured + other))
+        let values = {|item, (item + 1)|}
+
+        generatedSetCount values) + 0), (((block
+        generatedSetCount : Set Int -> Int
+        let generatedSetCount values = 2
+
+        let item = (block
+            let pair = (x = 0, y = (0 + 1))
+            let (x = captured, y = other) = pair
+
+            (captured + other))
+        let values = {|item, (item + 1)|}
+
+        generatedSetCount values) + 0) + 1)]
+      case head :: tail -> head
+      case Nil -> 0
+
+result : Int
 let result = generated_3102
 
 --! assertNoErrors
---! assertType generated_3102 Option Int
---! assertType result Option Int
+--! assertType generated_3102 Int
+--! assertType result Int
 --! assertDeclKinds signature, let, signature, let

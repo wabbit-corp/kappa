@@ -3,10 +3,21 @@ module main
 generated_2272 : Int
 let generated_2272 =
     block
-        let base : (x : Int) = (x = (((((((((left = (((0 + 0) + 0) + 0), right = 0)).left + 0) + 0) + 0) + 0) + 0) + 0) + 0))
-        let extended = base.{ y := (((((((((left = (((0 + 0) + 0) + 0), right = 0)).left + 0) + 0) + 0) + 0) + 0) + 0) + 1) }
+        trait RankedScore a =
+            rank : a -> Int
 
-        (extended.x + extended.y)
+        instance RankedScore Int =
+            let rank x = x
+
+        let dict = summon (RankedScore Int)
+
+        dict.rank ((match [(match (Some 0)
+          case Some payload -> payload
+          case None -> 0), ((match (Some 0)
+          case Some payload -> payload
+          case None -> 0) + 1)]
+          case head :: tail -> head
+          case Nil -> 0) + 0)
 
 result : Int
 let result = generated_2272

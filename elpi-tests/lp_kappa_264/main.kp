@@ -1,15 +1,17 @@
 module main
 
-generated_264 : Int
+generated_264 : IO Int
 let generated_264 =
-    match (((((((((((0 + (0 + 0)) + 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0) == ((((((((((0 + (0 + 0)) + 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0))
-      case True -> ((((((((((0 + (0 + 0)) + 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0)
-      case False -> 0
+    do
+        value <- pure ((match (Some 0)
+          case Some payload -> payload
+          case None -> 0) + 0)
+        pure (value + 2)
 
-result : Int
+result : IO Int
 let result = generated_264
 
 --! assertNoErrors
---! assertType generated_264 Int
---! assertType result Int
+--! assertType generated_264 IO Int
+--! assertType result IO Int
 --! assertDeclKinds signature, let, signature, let

@@ -3,10 +3,15 @@ module main
 generated_2288 : Int
 let generated_2288 =
     block
-        ranked : Int
-        let ranked = ((((((((left = ((0 + (0 + 0)) + 0), right = 0)).left + 0) + 0) + 0) + 0) + 0) + 0)
+        let (captured : Int) = ((match [(match (Some 0)
+          case Some payload -> payload
+          case None -> 0), ((match (Some 0)
+          case Some payload -> payload
+          case None -> 0) + 1)]
+          case head :: tail -> head
+          case Nil -> 0) + 0)
 
-        (ranked + 0)
+        captured
 
 result : Int
 let result = generated_2288

@@ -1,7 +1,9 @@
 module main
 
 generated_272 : Map String Int
-let generated_272 = { yield "only" : ((((((((((0 + (0 + 0)) + 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0) }
+let generated_272 = { for x in [1, 2, 3], yield "k" : (match (Some x)
+  case Some payload -> payload
+  case None -> 0) }
 
 result : Map String Int
 let result = generated_272

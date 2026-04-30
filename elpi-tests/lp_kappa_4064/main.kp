@@ -1,14 +1,21 @@
 module main
 
-type GeneratedPair = (left : Int, right : Int)
+generated_4064 : Map String Int
+let generated_4064 = { yield "only" : ((block
+    generatedSetCount : Set Int -> Int
+    let generatedSetCount values = 2
 
-generated_4064 : GeneratedPair
-let generated_4064 = ((left = (((((0 + ((if True then (if True then 0 else 0) else 0) + 0)) + 0) + 0) + 0) + 0), right = 0)).{ right = ((((((0 + ((if True then (if True then 0 else 0) else 0) + 0)) + 0) + 0) + 0) + 0) + 1) }
+    let item = (match (0 == 0)
+      case True -> 0
+      case False -> 0)
+    let values = {|item, (item + 1)|}
 
-result : GeneratedPair
+    generatedSetCount values) + 0) }
+
+result : Map String Int
 let result = generated_4064
 
 --! assertNoErrors
---! assertType generated_4064 GeneratedPair
---! assertType result GeneratedPair
---! assertDeclKinds type, signature, let, signature, let
+--! assertType generated_4064 Map String Int
+--! assertType result Map String Int
+--! assertDeclKinds signature, let, signature, let

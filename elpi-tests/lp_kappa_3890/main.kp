@@ -1,15 +1,14 @@
 module main
 
-generated_3890 : IO Int
-let generated_3890 =
-    do
-        value <- pure ((((((0 + ((0 + (((left = 0, right = (0 + 0))).right + 0)) + 0)) + 0) + 0) + 0) + 0) + 0)
-        pure (value + 2)
+generated_3890 : Map String Int
+let generated_3890 = { for x in [1, 2, 3], let y = x + 1, if y > 0, yield (if y > 1 then "hi" else "lo") : (match (((\(n : Int) -> n) x) == ((\(n : Int) -> n) x))
+  case True -> ((\(n : Int) -> n) x)
+  case False -> 0) }
 
-result : IO Int
+result : Map String Int
 let result = generated_3890
 
 --! assertNoErrors
---! assertType generated_3890 IO Int
---! assertType result IO Int
+--! assertType generated_3890 Map String Int
+--! assertType result Map String Int
 --! assertDeclKinds signature, let, signature, let

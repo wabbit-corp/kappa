@@ -1,10 +1,23 @@
 module main
 
-generatedMakeConst : forall (a : Type). a -> Unit -> a
-let generatedMakeConst value = \() -> value
+generatedNeed : (@x : Int) -> Int
+let generatedNeed (@x : Int) = x
 
 generated_2638 : Int
-let generated_2638 = ((generatedMakeConst (((((((((left = 0, right = ((0 + (0 + 0)) + 0))).right + 0) + 0) + 0) + 0) + 0) + 0) + 0)) ())
+let generated_2638 =
+    block
+        let (@x : Int) = (block
+            generatedMapCount : Map String Int -> Int
+            let generatedMapCount values = 1
+
+            let item = (match [0, (0 + 1)]
+              case head :: tail -> head
+              case Nil -> 0)
+            let values = { yield "item" : item }
+
+            generatedMapCount values)
+
+        if True then generatedNeed else 0
 
 result : Int
 let result = generated_2638

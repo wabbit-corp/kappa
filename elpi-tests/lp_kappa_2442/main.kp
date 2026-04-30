@@ -1,17 +1,20 @@
 module main
 
-generated_2442 : Int
-let generated_2442 =
-    block
-        let base : (x : Int) = (x = (((((((((left = (((if False then 0 else 0) + (0 + 0)) + 0), right = 0)).left + 0) + 0) + 0) + 0) + 0) + 0) + 0))
-        let extended = base.{ y := (((((((((left = (((if False then 0 else 0) + (0 + 0)) + 0), right = 0)).left + 0) + 0) + 0) + 0) + 0) + 0) + 1) }
+generated_2442 : List Int
+let generated_2442 = [ yield ((match ((match (Some 0)
+  case Some payload -> payload
+  case None -> 0) == (match (Some 0)
+  case Some payload -> payload
+  case None -> 0))
+  case True -> (match (Some 0)
+    case Some payload -> payload
+    case None -> 0)
+  case False -> 0) + 0) ]
 
-        (extended.x + extended.y)
-
-result : Int
+result : List Int
 let result = generated_2442
 
 --! assertNoErrors
---! assertType generated_2442 Int
---! assertType result Int
+--! assertType generated_2442 List Int
+--! assertType result List Int
 --! assertDeclKinds signature, let, signature, let

@@ -1,16 +1,19 @@
 module main
 
-generated_1405 : Int
-let generated_1405 =
-    let
-        ranked : Int = (((((((if False then 0 else ((if False then 0 else 0) + (0 + 0))) + 0) + 0) + 0) + 0) + 0) + 0)
-in
-        (ranked + 0)
+generated_1405 : Set Int
+let generated_1405 = {| for x in [1, 2, 3], let y = x + 1, yield ((\(n : Int) -> n) (block
+    generatedSetCount : Set Int -> Int
+    let generatedSetCount values = 2
 
-result : Int
+    let item = x
+    let values = {|item, (item + 1)|}
+
+    generatedSetCount values)) |}
+
+result : Set Int
 let result = generated_1405
 
 --! assertNoErrors
---! assertType generated_1405 Int
---! assertType result Int
+--! assertType generated_1405 Set Int
+--! assertType result Set Int
 --! assertDeclKinds signature, let, signature, let

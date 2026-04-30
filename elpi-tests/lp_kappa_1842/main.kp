@@ -1,12 +1,69 @@
 module main
 
-generated_1842 : Unit
-let generated_1842 = (if True then (if True then (if True then (if (True && True) then ((\(u : Unit) -> if True then u else ()) ()) else ()) else ()) else ()) else ())
+generated_1842 : Int
+let generated_1842 =
+    match (((block
+        let pair = (x = (block
+            generatedMapCount : Map String Int -> Int
+            let generatedMapCount values = 1
 
-result : Unit
+            let item = 0
+            let values = { yield "item" : item }
+
+            generatedMapCount values), y = ((block
+            generatedMapCount : Map String Int -> Int
+            let generatedMapCount values = 1
+
+            let item = 0
+            let values = { yield "item" : item }
+
+            generatedMapCount values) + 1))
+        let (x = captured, y = other) = pair
+
+        (captured + other)) + 0) == ((block
+        let pair = (x = (block
+            generatedMapCount : Map String Int -> Int
+            let generatedMapCount values = 1
+
+            let item = 0
+            let values = { yield "item" : item }
+
+            generatedMapCount values), y = ((block
+            generatedMapCount : Map String Int -> Int
+            let generatedMapCount values = 1
+
+            let item = 0
+            let values = { yield "item" : item }
+
+            generatedMapCount values) + 1))
+        let (x = captured, y = other) = pair
+
+        (captured + other)) + 0))
+      case True -> ((block
+          let pair = (x = (block
+              generatedMapCount : Map String Int -> Int
+              let generatedMapCount values = 1
+
+              let item = 0
+              let values = { yield "item" : item }
+
+              generatedMapCount values), y = ((block
+              generatedMapCount : Map String Int -> Int
+              let generatedMapCount values = 1
+
+              let item = 0
+              let values = { yield "item" : item }
+
+              generatedMapCount values) + 1))
+          let (x = captured, y = other) = pair
+
+          (captured + other)) + 0)
+      case False -> 0
+
+result : Int
 let result = generated_1842
 
 --! assertNoErrors
---! assertType generated_1842 Unit
---! assertType result Unit
+--! assertType generated_1842 Int
+--! assertType result Int
 --! assertDeclKinds signature, let, signature, let

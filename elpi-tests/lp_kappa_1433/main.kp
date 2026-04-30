@@ -1,12 +1,19 @@
 module main
 
-generated_1433 : Bool
-let generated_1433 = (if (if (if (((if True then 1 else 0) == 1) || False) then True else False) then True else False) then True else False)
+generated_1433 : List Int
+let generated_1433 = [ for x in [1, 2, 3], order by x desc, yield ((\(n : Int) -> n) (block
+    generatedSetCount : Set Int -> Int
+    let generatedSetCount values = 2
 
-result : Bool
+    let item = x
+    let values = {|item, (item + 1)|}
+
+    generatedSetCount values)) ]
+
+result : List Int
 let result = generated_1433
 
 --! assertNoErrors
---! assertType generated_1433 Bool
---! assertType result Bool
+--! assertType generated_1433 List Int
+--! assertType result List Int
 --! assertDeclKinds signature, let, signature, let

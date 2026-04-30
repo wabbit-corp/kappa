@@ -1,15 +1,45 @@
 module main
 
-generated_3021 : IO Int
-let generated_3021 =
-    do
-        let staged = (((((((((Some ((if True then 0 else 0) + 0)) ?: 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0)
-        pure (staged + 1)
+data GeneratedChoice : Type =
+    GeneratedLeft (value : Int)
+    GeneratedRight
 
-result : IO Int
+generated_3021 : Int
+let generated_3021 =
+    match (GeneratedLeft ((block
+        generatedListLength : List Int -> Int
+        let generatedListLength xs decreases structural xs =
+            match xs
+              case Nil -> 0
+              case _ :: tail -> 1 + generatedListLength tail
+
+        let item = (block
+            let pair = (x = 0, y = (0 + 1))
+            let (x = captured, y = other) = pair
+
+            (captured + other))
+
+        generatedListLength [item, (item + 1), 0]) + 0))
+      case GeneratedLeft payload -> (payload + 0)
+      case GeneratedRight -> ((block
+          generatedListLength : List Int -> Int
+          let generatedListLength xs decreases structural xs =
+              match xs
+                case Nil -> 0
+                case _ :: tail -> 1 + generatedListLength tail
+
+          let item = (block
+              let pair = (x = 0, y = (0 + 1))
+              let (x = captured, y = other) = pair
+
+              (captured + other))
+
+          generatedListLength [item, (item + 1), 0]) + 0)
+
+result : Int
 let result = generated_3021
 
 --! assertNoErrors
---! assertType generated_3021 IO Int
---! assertType result IO Int
---! assertDeclKinds signature, let, signature, let
+--! assertType generated_3021 Int
+--! assertType result Int
+--! assertDeclKinds data, signature, let, signature, let

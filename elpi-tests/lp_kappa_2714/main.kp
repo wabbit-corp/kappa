@@ -1,17 +1,16 @@
 module main
 
-generated_2714 : Int
-let generated_2714 =
-    block
-        let base : (x : Int) = (x = (((((((((left = 0, right = ((if False then 0 else 0) + 0))).right + 0) + 0) + 0) + 0) + 0) + 0) + 0))
-        let extended = base.{ y := (((((((((left = 0, right = ((if False then 0 else 0) + 0))).right + 0) + 0) + 0) + 0) + 0) + 0) + 1) }
+generated_2714 : Map String Int
+let generated_2714 = { yield "only" : ((match (Some (match [0, (0 + 1)]
+  case head :: tail -> head
+  case Nil -> 0))
+  case Some payload -> payload
+  case None -> 0) + 0) }
 
-        (extended.x + extended.y)
-
-result : Int
+result : Map String Int
 let result = generated_2714
 
 --! assertNoErrors
---! assertType generated_2714 Int
---! assertType result Int
+--! assertType generated_2714 Map String Int
+--! assertType result Map String Int
 --! assertDeclKinds signature, let, signature, let

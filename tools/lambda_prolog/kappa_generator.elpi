@@ -22,6 +22,10 @@
 % - Spec.md §7.4 conditionals
 % - Spec.md §7.5 match expressions
 % - Spec.md §7.6 patterns
+% - Spec.md §8.1.6 Eff and effect rows
+% - Spec.md §8.1.7 effect declarations and resumption quantities
+% - Spec.md §8.1.9 shallow handlers
+% - Spec.md §8.1.10 deep handlers
 % - Spec.md §8.2 do blocks
 % - Spec.md §10.1 collection literals
 % - Spec.md §10.3 comprehensions
@@ -130,6 +134,29 @@ type e-local-function expr -> expr.
 type e-local-trait-score expr -> expr.
 type e-local-type-alias expr -> expr.
 type e-local-data-match expr -> expr.
+type e-explicit-implicit expr -> expr.
+type e-safe-receiver expr -> expr.
+type e-typed-pattern expr -> expr.
+type e-as-record-pattern expr -> expr -> expr.
+type e-tuple-pattern-expr expr -> expr -> expr.
+type e-option-match expr -> expr.
+type e-list-cons-match expr -> expr.
+type e-make-const-explicit expr -> expr.
+type e-named-shorthand expr -> expr.
+type e-map-conflict expr -> expr.
+type e-list-page-query string -> expr -> expr.
+type e-list-order-query string -> expr -> expr.
+type e-list-length-expr expr -> expr.
+type e-set-count-expr expr -> expr.
+type e-map-count-expr expr -> expr.
+type e-eff-deep-ask expr -> expr.
+type e-eff-param-state expr -> expr.
+type e-eff-shallow-rehandle expr -> expr.
+type e-eff-multi-row expr -> expr.
+type e-eff-label-alias expr -> expr.
+type e-eff-record-label expr -> expr.
+type e-eff-multishot-choice expr -> expr.
+type e-eff-multishot-alias expr -> expr.
 
 kind binding type.
 type bind string -> ty -> binding.
@@ -144,6 +171,7 @@ type dep-make-const dep.
 type dep-need dep.
 type dep-echo dep.
 type dep-size dep.
+type dep-use-width dep.
 
 kind generated type.
 type generated list dep -> ty -> expr -> generated.
@@ -179,6 +207,7 @@ pred wrap-int-fun i:int, i:expr, o:expr.
 pred emit-indent i:out_stream, i:int.
 pred emit-ty i:out_stream, i:ty.
 pred emit-expr i:out_stream, i:expr.
+pred emit-expr-indented i:out_stream, i:int, i:expr.
 pred emit-expr-at i:out_stream, i:int, i:expr.
 pred emit-needs-parens i:expr.
 pred emit-top-expr i:out_stream, i:expr.
@@ -192,6 +221,7 @@ pred emit-make-const-decls i:list dep.
 pred emit-need-decls i:list dep.
 pred emit-echo-decls i:list dep.
 pred emit-size-decls i:list dep.
+pred emit-use-width-decls i:list dep.
 pred emit-kind-if-dep i:list dep, i:dep, i:string.
 pred emit-decl-kind-prefix i:list dep.
 pred emit-kappa-program i:int, i:generated.
@@ -360,6 +390,54 @@ typeof Ctx (e-local-type-alias Value) ty-int :-
   typeof Ctx Value ty-int.
 typeof Ctx (e-local-data-match Value) ty-int :-
   typeof Ctx Value ty-int.
+typeof Ctx (e-explicit-implicit Value) ty-int :-
+  typeof Ctx Value ty-int.
+typeof Ctx (e-safe-receiver Value) ty-option-int :-
+  typeof Ctx Value ty-int.
+typeof Ctx (e-typed-pattern Value) ty-int :-
+  typeof Ctx Value ty-int.
+typeof Ctx (e-as-record-pattern Left Right) ty-int :-
+  typeof Ctx Left ty-int,
+  typeof Ctx Right ty-int.
+typeof Ctx (e-tuple-pattern-expr Left Right) ty-int :-
+  typeof Ctx Left ty-int,
+  typeof Ctx Right ty-int.
+typeof Ctx (e-option-match Value) ty-int :-
+  typeof Ctx Value ty-int.
+typeof Ctx (e-list-cons-match Value) ty-int :-
+  typeof Ctx Value ty-int.
+typeof Ctx (e-make-const-explicit Value) ty-int :-
+  typeof Ctx Value ty-int.
+typeof Ctx (e-named-shorthand Value) ty-int :-
+  typeof Ctx Value ty-int.
+typeof Ctx (e-map-conflict Body) ty-map-string-int :-
+  typeof [bind "x" ty-int | Ctx] Body ty-int.
+typeof Ctx (e-list-page-query Binder Body) ty-list-int :-
+  typeof [bind Binder ty-int | Ctx] Body ty-int.
+typeof Ctx (e-list-order-query Binder Body) ty-list-int :-
+  typeof [bind Binder ty-int | Ctx] Body ty-int.
+typeof Ctx (e-list-length-expr Value) ty-int :-
+  typeof Ctx Value ty-int.
+typeof Ctx (e-set-count-expr Value) ty-int :-
+  typeof Ctx Value ty-int.
+typeof Ctx (e-map-count-expr Value) ty-int :-
+  typeof Ctx Value ty-int.
+typeof Ctx (e-eff-deep-ask Value) ty-int :-
+  typeof Ctx Value ty-int.
+typeof Ctx (e-eff-param-state Value) ty-int :-
+  typeof Ctx Value ty-int.
+typeof Ctx (e-eff-shallow-rehandle Value) ty-int :-
+  typeof Ctx Value ty-int.
+typeof Ctx (e-eff-multi-row Value) ty-int :-
+  typeof Ctx Value ty-int.
+typeof Ctx (e-eff-label-alias Value) ty-int :-
+  typeof Ctx Value ty-int.
+typeof Ctx (e-eff-record-label Value) ty-int :-
+  typeof Ctx Value ty-int.
+typeof Ctx (e-eff-multishot-choice Value) ty-int :-
+  typeof Ctx Value ty-int.
+typeof Ctx (e-eff-multishot-alias Value) ty-int :-
+  typeof Ctx Value ty-int.
 
 synth _ _ ty-unit e-unit.
 synth _ _ ty-int (e-int 0).
@@ -410,7 +488,7 @@ synth-first Depth Ty Expr :-
   typeof [] Expr Ty,
   !.
 
-ranked-family-count 34.
+ranked-family-count 54.
 
 ranked-capacity 0 1.
 ranked-capacity Depth Capacity :-
@@ -549,17 +627,76 @@ ranked-family 32 Depth Rank (generated [] ty-int (e-local-type-alias (e-add Valu
 ranked-family 33 Depth Rank (generated [] ty-int (e-local-data-match (e-add Value (e-int 0)))) :-
   ranked-int Depth Rank Value,
   typeof [] (e-local-data-match (e-add Value (e-int 0))) ty-int.
+ranked-family 34 Depth Rank (generated [dep-need] ty-int (e-explicit-implicit (e-add Value (e-int 0)))) :-
+  ranked-int Depth Rank Value,
+  typeof [] (e-explicit-implicit (e-add Value (e-int 0))) ty-int.
+ranked-family 35 Depth Rank (generated [dep-echo] ty-option-int (e-safe-receiver (e-add Value (e-int 0)))) :-
+  ranked-int Depth Rank Value,
+  typeof [] (e-safe-receiver (e-add Value (e-int 0))) ty-option-int.
+ranked-family 36 Depth Rank (generated [] ty-int (e-typed-pattern (e-add Value (e-int 0)))) :-
+  ranked-int Depth Rank Value,
+  typeof [] (e-typed-pattern (e-add Value (e-int 0))) ty-int.
+ranked-family 37 Depth Rank (generated [] ty-int (e-as-record-pattern (e-add Value (e-int 0)) (e-add Value (e-int 1)))) :-
+  ranked-int Depth Rank Value,
+  typeof [] (e-as-record-pattern (e-add Value (e-int 0)) (e-add Value (e-int 1))) ty-int.
+ranked-family 38 Depth Rank (generated [dep-tuple] ty-int (e-tuple-pattern-expr (e-add Value (e-int 0)) (e-add Value (e-int 1)))) :-
+  ranked-int Depth Rank Value,
+  typeof [] (e-tuple-pattern-expr (e-add Value (e-int 0)) (e-add Value (e-int 1))) ty-int.
+ranked-family 39 Depth Rank (generated [] ty-int (e-option-match (e-add Value (e-int 0)))) :-
+  ranked-int Depth Rank Value,
+  typeof [] (e-option-match (e-add Value (e-int 0))) ty-int.
+ranked-family 40 Depth Rank (generated [] ty-int (e-list-cons-match (e-add Value (e-int 0)))) :-
+  ranked-int Depth Rank Value,
+  typeof [] (e-list-cons-match (e-add Value (e-int 0))) ty-int.
+ranked-family 41 Depth Rank (generated [dep-make-const] ty-int (e-make-const-explicit (e-add Value (e-int 0)))) :-
+  ranked-int Depth Rank Value,
+  typeof [] (e-make-const-explicit (e-add Value (e-int 0))) ty-int.
+ranked-family 42 Depth Rank (generated [dep-use-width] ty-int (e-named-shorthand (e-add Value (e-int 0)))) :-
+  ranked-int Depth Rank Value,
+  typeof [] (e-named-shorthand (e-add Value (e-int 0))) ty-int.
+ranked-family 43 Depth Rank (generated [] ty-map-string-int (e-map-conflict Body)) :-
+  ranked-int-var Depth Rank "x" Body,
+  typeof [] (e-map-conflict Body) ty-map-string-int.
+ranked-family 44 Depth Rank (generated [] ty-list-int (e-list-page-query "x" Body)) :-
+  ranked-int-var Depth Rank "x" Body,
+  typeof [] (e-list-page-query "x" Body) ty-list-int.
+ranked-family 45 Depth Rank (generated [] ty-list-int (e-list-order-query "x" Body)) :-
+  ranked-int-var Depth Rank "x" Body,
+  typeof [] (e-list-order-query "x" Body) ty-list-int.
+ranked-family 46 Depth Rank (generated [] ty-int (e-eff-deep-ask Value)) :-
+  ranked-int Depth Rank Value,
+  typeof [] (e-eff-deep-ask Value) ty-int.
+ranked-family 47 Depth Rank (generated [] ty-int (e-eff-param-state Value)) :-
+  ranked-int Depth Rank Value,
+  typeof [] (e-eff-param-state Value) ty-int.
+ranked-family 48 Depth Rank (generated [] ty-int (e-eff-shallow-rehandle Value)) :-
+  ranked-int Depth Rank Value,
+  typeof [] (e-eff-shallow-rehandle Value) ty-int.
+ranked-family 49 Depth Rank (generated [] ty-int (e-eff-multi-row Value)) :-
+  ranked-int Depth Rank Value,
+  typeof [] (e-eff-multi-row Value) ty-int.
+ranked-family 50 Depth Rank (generated [] ty-int (e-eff-label-alias Value)) :-
+  ranked-int Depth Rank Value,
+  typeof [] (e-eff-label-alias Value) ty-int.
+ranked-family 51 Depth Rank (generated [] ty-int (e-eff-record-label Value)) :-
+  ranked-int Depth Rank Value,
+  typeof [] (e-eff-record-label Value) ty-int.
+ranked-family 52 Depth Rank (generated [] ty-int (e-eff-multishot-choice Value)) :-
+  ranked-int Depth Rank Value,
+  typeof [] (e-eff-multishot-choice Value) ty-int.
+ranked-family 53 Depth Rank (generated [] ty-int (e-eff-multishot-alias Value)) :-
+  ranked-int Depth Rank Value,
+  typeof [] (e-eff-multishot-alias Value) ty-int.
 
 ranked-int _ 0 (e-int 0).
 ranked-int Depth Rank Expr :-
   Depth > 0,
   Rank > 0,
   Depth1 is Depth - 1,
-  ranked-capacity Depth1 Capacity,
   Adjusted is Rank - 1,
-  Step is Adjusted div Capacity,
+  Step is Adjusted mod 9,
   Step < 9,
-  Rest is Adjusted mod Capacity,
+  Rest is Adjusted div 9,
   ranked-int Depth1 Rest Sub,
   wrap-int Step Sub Expr.
 
@@ -568,23 +705,22 @@ ranked-int-var Depth Rank Name Expr :-
   Depth > 0,
   Rank > 0,
   Depth1 is Depth - 1,
-  ranked-capacity Depth1 Capacity,
   Adjusted is Rank - 1,
-  Step is Adjusted div Capacity,
+  Step is Adjusted mod 9,
   Step < 9,
-  Rest is Adjusted mod Capacity,
+  Rest is Adjusted div 9,
   ranked-int-var Depth1 Rest Name Sub,
   wrap-int Step Sub Expr.
 
-wrap-int 0 Sub (e-add (e-add Sub (e-int 0)) (e-int 0)).
-wrap-int 1 Sub (e-add (e-int 0) (e-add Sub (e-int 0))).
-wrap-int 2 Sub (e-if e-true Sub (e-int 0)).
-wrap-int 3 Sub (e-if e-false (e-int 0) Sub).
-wrap-int 4 Sub (e-add (e-if e-true Sub (e-int 0)) (e-int 0)).
-wrap-int 5 Sub (e-add (e-if e-false (e-int 0) Sub) (e-add (e-int 0) (e-int 0))).
-wrap-int 6 Sub (e-proj-left (e-record (e-add Sub (e-int 0)) (e-int 0))).
-wrap-int 7 Sub (e-proj-right (e-record (e-int 0) (e-add Sub (e-int 0)))).
-wrap-int 8 Sub (e-elvis (e-option-some (e-add Sub (e-int 0))) (e-int 0)).
+wrap-int 0 Sub (e-list-length-expr Sub).
+wrap-int 1 Sub (e-set-count-expr Sub).
+wrap-int 2 Sub (e-map-count-expr Sub).
+wrap-int 3 Sub (e-option-match Sub).
+wrap-int 4 Sub (e-list-cons-match Sub).
+wrap-int 5 Sub (e-record-pattern-expr Sub (e-add Sub (e-int 1))).
+wrap-int 6 Sub (e-app (e-lam "n" ty-int (e-var "n")) Sub).
+wrap-int 7 Sub (e-bool-match-expr Sub).
+wrap-int 8 Sub (e-elvis (e-option-some (e-add Sub (e-int 1))) (e-add Sub (e-int 2))).
 
 ranked-bool _ 0 e-true.
 ranked-bool Depth Rank Expr :-
@@ -817,13 +953,16 @@ emit-ty Stream (ty-fun A B) :-
   output Stream ")".
 
 emit-expr Stream Expr :-
+  emit-expr-indented Stream 0 Expr.
+
+emit-expr-indented Stream Indent Expr :-
   emit-needs-parens Expr,
   !,
   output Stream "(",
-  emit-expr-at Stream 0 Expr,
+  emit-expr-at Stream Indent Expr,
   output Stream ")".
-emit-expr Stream Expr :-
-  emit-expr-at Stream 0 Expr.
+emit-expr-indented Stream Indent Expr :-
+  emit-expr-at Stream Indent Expr.
 
 emit-needs-parens (e-if _ _ _).
 emit-needs-parens (e-match-choice _ _ _ _).
@@ -847,6 +986,23 @@ emit-needs-parens (e-local-function _).
 emit-needs-parens (e-local-trait-score _).
 emit-needs-parens (e-local-type-alias _).
 emit-needs-parens (e-local-data-match _).
+emit-needs-parens (e-typed-pattern _).
+emit-needs-parens (e-as-record-pattern _ _).
+emit-needs-parens (e-tuple-pattern-expr _ _).
+emit-needs-parens (e-option-match _).
+emit-needs-parens (e-list-cons-match _).
+emit-needs-parens (e-named-shorthand _).
+emit-needs-parens (e-list-length-expr _).
+emit-needs-parens (e-set-count-expr _).
+emit-needs-parens (e-map-count-expr _).
+emit-needs-parens (e-eff-deep-ask _).
+emit-needs-parens (e-eff-param-state _).
+emit-needs-parens (e-eff-shallow-rehandle _).
+emit-needs-parens (e-eff-multi-row _).
+emit-needs-parens (e-eff-label-alias _).
+emit-needs-parens (e-eff-record-label _).
+emit-needs-parens (e-eff-multishot-choice _).
+emit-needs-parens (e-eff-multishot-alias _).
 
 emit-expr-at Stream _ e-unit :-
   output Stream "()".
@@ -880,89 +1036,89 @@ emit-expr-at Stream Indent (e-lam Name A Body) :-
   emit-ty Stream A,
   output Stream ") -> ",
   emit-expr-at Stream Indent Body.
-emit-expr-at Stream _ (e-app F X) :-
+emit-expr-at Stream Indent (e-app F X) :-
   output Stream "((",
-  emit-expr Stream F,
+  emit-expr-indented Stream Indent F,
   output Stream ") ",
-  emit-expr Stream X,
+  emit-expr-indented Stream Indent X,
   output Stream ")".
-emit-expr-at Stream _ (e-add Left Right) :-
+emit-expr-at Stream Indent (e-add Left Right) :-
   output Stream "(",
-  emit-expr Stream Left,
+  emit-expr-indented Stream Indent Left,
   output Stream " + ",
-  emit-expr Stream Right,
+  emit-expr-indented Stream Indent Right,
   output Stream ")".
-emit-expr-at Stream _ (e-eq-int Left Right) :-
+emit-expr-at Stream Indent (e-eq-int Left Right) :-
   output Stream "(",
-  emit-expr Stream Left,
+  emit-expr-indented Stream Indent Left,
   output Stream " == ",
-  emit-expr Stream Right,
+  emit-expr-indented Stream Indent Right,
   output Stream ")".
-emit-expr-at Stream _ (e-and Left Right) :-
+emit-expr-at Stream Indent (e-and Left Right) :-
   output Stream "(",
-  emit-expr Stream Left,
+  emit-expr-indented Stream Indent Left,
   output Stream " && ",
-  emit-expr Stream Right,
+  emit-expr-indented Stream Indent Right,
   output Stream ")".
-emit-expr-at Stream _ (e-or Left Right) :-
+emit-expr-at Stream Indent (e-or Left Right) :-
   output Stream "(",
-  emit-expr Stream Left,
+  emit-expr-indented Stream Indent Left,
   output Stream " || ",
-  emit-expr Stream Right,
+  emit-expr-indented Stream Indent Right,
   output Stream ")".
 emit-expr-at Stream Indent (e-if Condition Then Else) :-
   output Stream "if ",
-  emit-expr Stream Condition,
+  emit-expr-indented Stream Indent Condition,
   output Stream " then ",
-  emit-expr Stream Then,
+  emit-expr-indented Stream Indent Then,
   output Stream " else ",
-  emit-expr Stream Else.
-emit-expr-at Stream _ (e-record Left Right) :-
+  emit-expr-indented Stream Indent Else.
+emit-expr-at Stream Indent (e-record Left Right) :-
   output Stream "(left = ",
-  emit-expr Stream Left,
+  emit-expr-indented Stream Indent Left,
   output Stream ", right = ",
-  emit-expr Stream Right,
+  emit-expr-indented Stream Indent Right,
   output Stream ")".
-emit-expr-at Stream _ (e-proj-left Record) :-
+emit-expr-at Stream Indent (e-proj-left Record) :-
   output Stream "(",
-  emit-expr Stream Record,
+  emit-expr-indented Stream Indent Record,
   output Stream ").left".
-emit-expr-at Stream _ (e-proj-right Record) :-
+emit-expr-at Stream Indent (e-proj-right Record) :-
   output Stream "(",
-  emit-expr Stream Record,
+  emit-expr-indented Stream Indent Record,
   output Stream ").right".
-emit-expr-at Stream _ (e-record-update-right Record NewRight) :-
+emit-expr-at Stream Indent (e-record-update-right Record NewRight) :-
   output Stream "(",
-  emit-expr Stream Record,
+  emit-expr-indented Stream Indent Record,
   output Stream ").{ right = ",
-  emit-expr Stream NewRight,
+  emit-expr-indented Stream Indent NewRight,
   output Stream " }".
-emit-expr-at Stream _ (e-tuple2 Left Right) :-
+emit-expr-at Stream Indent (e-tuple2 Left Right) :-
   output Stream "(",
-  emit-expr Stream Left,
+  emit-expr-indented Stream Indent Left,
   output Stream ", ",
-  emit-expr Stream Right,
+  emit-expr-indented Stream Indent Right,
   output Stream ")".
-emit-expr-at Stream _ (e-choice-left Payload) :-
+emit-expr-at Stream Indent (e-choice-left Payload) :-
   output Stream "(GeneratedLeft ",
-  emit-expr Stream Payload,
+  emit-expr-indented Stream Indent Payload,
   output Stream ")".
 emit-expr-at Stream _ e-choice-right :-
   output Stream "GeneratedRight".
 emit-expr-at Stream Indent (e-match-choice Scrutinee PayloadName LeftBody RightBody) :-
   output Stream "match ",
-  emit-expr Stream Scrutinee,
+  emit-expr-indented Stream Indent Scrutinee,
   output Stream "\n",
   CaseIndent is Indent + 2,
   emit-indent Stream CaseIndent,
   output Stream "case GeneratedLeft ",
   output Stream PayloadName,
   output Stream " -> ",
-  emit-expr Stream LeftBody,
+  emit-expr-indented Stream CaseIndent LeftBody,
   output Stream "\n",
   emit-indent Stream CaseIndent,
   output Stream "case GeneratedRight -> ",
-  emit-expr Stream RightBody.
+  emit-expr-indented Stream CaseIndent RightBody.
 emit-expr-at Stream Indent (e-block Name A Value Body) :-
   output Stream "block\n",
   ItemIndent is Indent + 4,
@@ -975,7 +1131,7 @@ emit-expr-at Stream Indent (e-block Name A Value Body) :-
   output Stream "let ",
   output Stream Name,
   output Stream " = ",
-  emit-expr Stream Value,
+  emit-expr-indented Stream ItemIndent Value,
   output Stream "\n\n",
   emit-indent Stream ItemIndent,
   emit-expr-at Stream ItemIndent Body.
@@ -1000,15 +1156,15 @@ emit-expr-at Stream Indent (e-let-in Name A Value Body) :-
   output Stream " : ",
   emit-ty Stream A,
   output Stream " = ",
-  emit-expr Stream Value,
+  emit-expr-indented Stream ItemIndent Value,
   output Stream "\nin\n",
   emit-indent Stream ItemIndent,
   emit-expr-at Stream ItemIndent Body.
-emit-expr-at Stream _ (e-list2 Left Right) :-
+emit-expr-at Stream Indent (e-list2 Left Right) :-
   output Stream "[",
-  emit-expr Stream Left,
+  emit-expr-indented Stream Indent Left,
   output Stream ", ",
-  emit-expr Stream Right,
+  emit-expr-indented Stream Indent Right,
   output Stream "]".
 emit-expr-at Stream _ (e-list-range Start) :-
   Stop is Start + 2,
@@ -1046,17 +1202,17 @@ emit-expr-at Stream _ (e-map-string-int Value) :-
   output Stream ", \"grace\": ",
   printterm Stream Next,
   output Stream " }".
-emit-expr-at Stream _ (e-option-some Value) :-
+emit-expr-at Stream Indent (e-option-some Value) :-
   output Stream "(Some ",
-  emit-expr Stream Value,
+  emit-expr-indented Stream Indent Value,
   output Stream ")".
 emit-expr-at Stream _ e-option-none :-
   output Stream "None".
-emit-expr-at Stream _ (e-elvis Value Fallback) :-
+emit-expr-at Stream Indent (e-elvis Value Fallback) :-
   output Stream "(",
-  emit-expr Stream Value,
+  emit-expr-indented Stream Indent Value,
   output Stream " ?: ",
-  emit-expr Stream Fallback,
+  emit-expr-indented Stream Indent Fallback,
   output Stream ")".
 emit-expr-at Stream Indent (e-do-pure-int Value) :-
   output Stream "do\n",
@@ -1072,7 +1228,7 @@ emit-expr-at Stream Indent (e-do-pure-expr Value) :-
   ItemIndent is Indent + 4,
   emit-indent Stream ItemIndent,
   output Stream "value <- pure ",
-  emit-expr Stream Value,
+  emit-expr-indented Stream ItemIndent Value,
   output Stream "\n",
   emit-indent Stream ItemIndent,
   output Stream "pure (value + 2)".
@@ -1081,7 +1237,7 @@ emit-expr-at Stream Indent (e-do-local-let Value) :-
   ItemIndent is Indent + 4,
   emit-indent Stream ItemIndent,
   output Stream "let staged = ",
-  emit-expr Stream Value,
+  emit-expr-indented Stream ItemIndent Value,
   output Stream "\n",
   emit-indent Stream ItemIndent,
   output Stream "pure (staged + 1)".
@@ -1090,7 +1246,7 @@ emit-expr-at Stream Indent (e-do-implicit Value) :-
   ItemIndent is Indent + 4,
   emit-indent Stream ItemIndent,
   output Stream "let (@x : Int) = ",
-  emit-expr Stream Value,
+  emit-expr-indented Stream ItemIndent Value,
   output Stream "\n",
   emit-indent Stream ItemIndent,
   output Stream "pure generatedNeed".
@@ -1102,7 +1258,7 @@ emit-expr-at Stream Indent (e-score-int Value) :-
   output Stream "in\n",
   emit-indent Stream ItemIndent,
   output Stream "dict.score ",
-  emit-expr Stream Value.
+  emit-expr-indented Stream ItemIndent Value.
 emit-expr-at Stream _ (e-named-resize Image Width Height) :-
   output Stream "generatedResize { height = ",
   printterm Stream Height,
@@ -1111,9 +1267,9 @@ emit-expr-at Stream _ (e-named-resize Image Width Height) :-
   output Stream ", width = ",
   printterm Stream Width,
   output Stream " }".
-emit-expr-at Stream _ (e-named-resize-expr Image Width Height) :-
+emit-expr-at Stream Indent (e-named-resize-expr Image Width Height) :-
   output Stream "generatedResize { image = ",
-  emit-expr Stream Image,
+  emit-expr-indented Stream Indent Image,
   output Stream ", height = ",
   printterm Stream Height,
   output Stream ", width = ",
@@ -1127,9 +1283,9 @@ emit-expr-at Stream _ (e-make-const-string Value) :-
   output Stream "((generatedMakeConst \"",
   output Stream Value,
   output Stream "\") ())".
-emit-expr-at Stream _ (e-make-const-expr Value) :-
+emit-expr-at Stream Indent (e-make-const-expr Value) :-
   output Stream "((generatedMakeConst ",
-  emit-expr Stream Value,
+  emit-expr-indented Stream Indent Value,
   output Stream ") ())".
 emit-expr-at Stream _ (e-unit-lambda-app Value) :-
   output Stream "((\\() -> ",
@@ -1149,7 +1305,7 @@ emit-expr-at Stream Indent (e-implicit-value Value) :-
   ItemIndent is Indent + 4,
   emit-indent Stream ItemIndent,
   output Stream "let (@x : Int) = ",
-  emit-expr Stream Value,
+  emit-expr-indented Stream ItemIndent Value,
   output Stream "\n\n",
   emit-indent Stream ItemIndent,
   output Stream "if True then generatedNeed else 0".
@@ -1164,14 +1320,14 @@ emit-expr-at Stream Indent (e-bool-match Value) :-
   output Stream "case False -> 0".
 emit-expr-at Stream Indent (e-bool-match-expr Value) :-
   output Stream "match (",
-  emit-expr Stream Value,
+  emit-expr-indented Stream Indent Value,
   output Stream " == ",
-  emit-expr Stream Value,
+  emit-expr-indented Stream Indent Value,
   output Stream ")\n",
   CaseIndent is Indent + 2,
   emit-indent Stream CaseIndent,
   output Stream "case True -> ",
-  emit-expr Stream Value,
+  emit-expr-indented Stream CaseIndent Value,
   output Stream "\n",
   emit-indent Stream CaseIndent,
   output Stream "case False -> 0".
@@ -1202,9 +1358,9 @@ emit-expr-at Stream Indent (e-record-pattern-expr Left Right) :-
   ItemIndent is Indent + 4,
   emit-indent Stream ItemIndent,
   output Stream "let pair = (x = ",
-  emit-expr Stream Left,
+  emit-expr-indented Stream ItemIndent Left,
   output Stream ", y = ",
-  emit-expr Stream Right,
+  emit-expr-indented Stream ItemIndent Right,
   output Stream ")\n",
   emit-indent Stream ItemIndent,
   output Stream "let (x = captured, y = other) = pair\n\n",
@@ -1228,23 +1384,23 @@ emit-expr-at Stream Indent (e-row-extension-expr Base Extended) :-
   ItemIndent is Indent + 4,
   emit-indent Stream ItemIndent,
   output Stream "let base : (x : Int) = (x = ",
-  emit-expr Stream Base,
+  emit-expr-indented Stream ItemIndent Base,
   output Stream ")\n",
   emit-indent Stream ItemIndent,
   output Stream "let extended = base.{ y := ",
-  emit-expr Stream Extended,
+  emit-expr-indented Stream ItemIndent Extended,
   output Stream " }\n\n",
   emit-indent Stream ItemIndent,
   output Stream "(extended.x + extended.y)".
 emit-expr-at Stream _ (e-receiver-method-int Value) :-
   printterm Stream Value,
   output Stream ".generatedEcho".
-emit-expr-at Stream _ (e-receiver-method-expr Value) :-
-  emit-expr Stream Value,
+emit-expr-at Stream Indent (e-receiver-method-expr Value) :-
+  emit-expr-indented Stream Indent Value,
   output Stream ".generatedEcho".
-emit-expr-at Stream _ (e-receiver-section-expr Value) :-
+emit-expr-at Stream Indent (e-receiver-section-expr Value) :-
   output Stream "((.generatedEcho) ",
-  emit-expr Stream Value,
+  emit-expr-indented Stream Indent Value,
   output Stream ")".
 emit-expr-at Stream _ (e-list-size First Second Third) :-
   output Stream "generatedSize (",
@@ -1254,107 +1410,107 @@ emit-expr-at Stream _ (e-list-size First Second Third) :-
   output Stream " :: ",
   printterm Stream Third,
   output Stream " :: Nil)".
-emit-expr-at Stream _ (e-list-query 0 Binder Body) :-
+emit-expr-at Stream Indent (e-list-query 0 Binder Body) :-
   output Stream "[ for ",
   output Stream Binder,
   output Stream " in [1, 2, 3], yield ",
-  emit-expr Stream Body,
+  emit-expr-indented Stream Indent Body,
   output Stream " ]".
-emit-expr-at Stream _ (e-list-query 1 Binder Body) :-
+emit-expr-at Stream Indent (e-list-query 1 Binder Body) :-
   output Stream "[ for ",
   output Stream Binder,
   output Stream " in [1, 2, 3], let y = ",
   output Stream Binder,
   output Stream " + 1, yield ",
-  emit-expr Stream Body,
+  emit-expr-indented Stream Indent Body,
   output Stream " ]".
-emit-expr-at Stream _ (e-list-query 2 Binder Body) :-
+emit-expr-at Stream Indent (e-list-query 2 Binder Body) :-
   output Stream "[ for ",
   output Stream Binder,
   output Stream " in [1, 2, 3], if ",
   output Stream Binder,
   output Stream " > 0, yield ",
-  emit-expr Stream Body,
+  emit-expr-indented Stream Indent Body,
   output Stream " ]".
-emit-expr-at Stream _ (e-list-query _ Binder Body) :-
+emit-expr-at Stream Indent (e-list-query _ Binder Body) :-
   output Stream "[ for ",
   output Stream Binder,
   output Stream " in [1, 2, 3], let y = ",
   output Stream Binder,
   output Stream " + 1, if y > 0, yield ",
-  emit-expr Stream Body,
+  emit-expr-indented Stream Indent Body,
   output Stream " ]".
-emit-expr-at Stream _ (e-set-query 0 Binder Body) :-
+emit-expr-at Stream Indent (e-set-query 0 Binder Body) :-
   output Stream "{| for ",
   output Stream Binder,
   output Stream " in [1, 2, 3], yield ",
-  emit-expr Stream Body,
+  emit-expr-indented Stream Indent Body,
   output Stream " |}".
-emit-expr-at Stream _ (e-set-query 1 Binder Body) :-
+emit-expr-at Stream Indent (e-set-query 1 Binder Body) :-
   output Stream "{| for ",
   output Stream Binder,
   output Stream " in [1, 2, 3], let y = ",
   output Stream Binder,
   output Stream " + 1, yield ",
-  emit-expr Stream Body,
+  emit-expr-indented Stream Indent Body,
   output Stream " |}".
-emit-expr-at Stream _ (e-set-query 2 Binder Body) :-
+emit-expr-at Stream Indent (e-set-query 2 Binder Body) :-
   output Stream "{| for ",
   output Stream Binder,
   output Stream " in [1, 2, 3], if ",
   output Stream Binder,
   output Stream " > 0, yield ",
-  emit-expr Stream Body,
+  emit-expr-indented Stream Indent Body,
   output Stream " |}".
-emit-expr-at Stream _ (e-set-query _ Binder Body) :-
+emit-expr-at Stream Indent (e-set-query _ Binder Body) :-
   output Stream "{| for ",
   output Stream Binder,
   output Stream " in [1, 2, 3], let y = ",
   output Stream Binder,
   output Stream " + 1, if y > 0, yield ",
-  emit-expr Stream Body,
+  emit-expr-indented Stream Indent Body,
   output Stream " |}".
-emit-expr-at Stream _ (e-map-query 0 Binder Body) :-
+emit-expr-at Stream Indent (e-map-query 0 Binder Body) :-
   output Stream "{ for ",
   output Stream Binder,
   output Stream " in [1, 2, 3], yield \"k\" : ",
-  emit-expr Stream Body,
+  emit-expr-indented Stream Indent Body,
   output Stream " }".
-emit-expr-at Stream _ (e-map-query 1 Binder Body) :-
+emit-expr-at Stream Indent (e-map-query 1 Binder Body) :-
   output Stream "{ for ",
   output Stream Binder,
   output Stream " in [1, 2, 3], let y = ",
   output Stream Binder,
   output Stream " + 1, yield \"k\" : ",
-  emit-expr Stream Body,
+  emit-expr-indented Stream Indent Body,
   output Stream " }".
-emit-expr-at Stream _ (e-map-query 2 Binder Body) :-
+emit-expr-at Stream Indent (e-map-query 2 Binder Body) :-
   output Stream "{ for ",
   output Stream Binder,
   output Stream " in [1, 2, 3], if ",
   output Stream Binder,
   output Stream " > 0, yield \"k\" : ",
-  emit-expr Stream Body,
+  emit-expr-indented Stream Indent Body,
   output Stream " }".
-emit-expr-at Stream _ (e-map-query _ Binder Body) :-
+emit-expr-at Stream Indent (e-map-query _ Binder Body) :-
   output Stream "{ for ",
   output Stream Binder,
   output Stream " in [1, 2, 3], let y = ",
   output Stream Binder,
   output Stream " + 1, if y > 0, yield (if y > 1 then \"hi\" else \"lo\") : ",
-  emit-expr Stream Body,
+  emit-expr-indented Stream Indent Body,
   output Stream " }".
-emit-expr-at Stream _ (e-list-yield Value) :-
+emit-expr-at Stream Indent (e-list-yield Value) :-
   output Stream "[ yield ",
-  emit-expr Stream Value,
+  emit-expr-indented Stream Indent Value,
   output Stream " ]".
-emit-expr-at Stream _ (e-set-yield Value) :-
+emit-expr-at Stream Indent (e-set-yield Value) :-
   output Stream "{| yield ",
-  emit-expr Stream Value,
+  emit-expr-indented Stream Indent Value,
   output Stream " |}".
-emit-expr-at Stream _ (e-map-yield Value) :-
+emit-expr-at Stream Indent (e-map-yield Value) :-
   output Stream "{ yield \"only\" : ",
-  emit-expr Stream Value,
+  emit-expr-indented Stream Indent Value,
   output Stream " }".
 emit-expr-at Stream Indent (e-local-function Value) :-
   output Stream "block\n",
@@ -1365,7 +1521,7 @@ emit-expr-at Stream Indent (e-local-function Value) :-
   output Stream "let rankedHelper x = x + 1\n\n",
   emit-indent Stream ItemIndent,
   output Stream "rankedHelper ",
-  emit-expr Stream Value.
+  emit-expr-indented Stream ItemIndent Value.
 emit-expr-at Stream Indent (e-local-trait-score Value) :-
   output Stream "block\n",
   ItemIndent is Indent + 4,
@@ -1382,7 +1538,7 @@ emit-expr-at Stream Indent (e-local-trait-score Value) :-
   output Stream "let dict = summon (RankedScore Int)\n\n",
   emit-indent Stream ItemIndent,
   output Stream "dict.rank ",
-  emit-expr Stream Value.
+  emit-expr-indented Stream ItemIndent Value.
 emit-expr-at Stream Indent (e-local-type-alias Value) :-
   output Stream "block\n",
   ItemIndent is Indent + 4,
@@ -1390,7 +1546,7 @@ emit-expr-at Stream Indent (e-local-type-alias Value) :-
   output Stream "type RankedAlias = Int\n\n",
   emit-indent Stream ItemIndent,
   output Stream "let aliased : RankedAlias = ",
-  emit-expr Stream Value,
+  emit-expr-indented Stream ItemIndent Value,
   output Stream "\n\n",
   emit-indent Stream ItemIndent,
   output Stream "(aliased + 1)".
@@ -1404,13 +1560,483 @@ emit-expr-at Stream Indent (e-local-data-match Value) :-
   output Stream "RankedBox (value : Int)\n\n",
   emit-indent Stream ItemIndent,
   output Stream "let boxed = RankedBox ",
-  emit-expr Stream Value,
+  emit-expr-indented Stream ItemIndent Value,
   output Stream "\n\n",
   emit-indent Stream ItemIndent,
   output Stream "match boxed\n",
   CaseIndent is ItemIndent + 2,
   emit-indent Stream CaseIndent,
   output Stream "case RankedBox value -> (value + 1)".
+emit-expr-at Stream Indent (e-explicit-implicit Value) :-
+  output Stream "generatedNeed @(",
+  emit-expr-indented Stream Indent Value,
+  output Stream ")".
+emit-expr-at Stream Indent (e-safe-receiver Value) :-
+  output Stream "(Some ",
+  emit-expr-indented Stream Indent Value,
+  output Stream ")?.generatedEcho".
+emit-expr-at Stream Indent (e-typed-pattern Value) :-
+  output Stream "block\n",
+  ItemIndent is Indent + 4,
+  emit-indent Stream ItemIndent,
+  output Stream "let (captured : Int) = ",
+  emit-expr-indented Stream ItemIndent Value,
+  output Stream "\n\n",
+  emit-indent Stream ItemIndent,
+  output Stream "captured".
+emit-expr-at Stream Indent (e-as-record-pattern Left Right) :-
+  output Stream "block\n",
+  ItemIndent is Indent + 4,
+  emit-indent Stream ItemIndent,
+  output Stream "let pair = (x = ",
+  emit-expr-indented Stream ItemIndent Left,
+  output Stream ", y = ",
+  emit-expr-indented Stream ItemIndent Right,
+  output Stream ")\n",
+  emit-indent Stream ItemIndent,
+  output Stream "let whole@(x = captured, y = other) = pair\n\n",
+  emit-indent Stream ItemIndent,
+  output Stream "(whole.x + (captured + other))".
+emit-expr-at Stream Indent (e-tuple-pattern-expr Left Right) :-
+  output Stream "block\n",
+  ItemIndent is Indent + 4,
+  emit-indent Stream ItemIndent,
+  output Stream "let pair : GeneratedTuple = (",
+  emit-expr-indented Stream ItemIndent Left,
+  output Stream ", ",
+  emit-expr-indented Stream ItemIndent Right,
+  output Stream ")\n",
+  emit-indent Stream ItemIndent,
+  output Stream "let (left, right) = pair\n\n",
+  emit-indent Stream ItemIndent,
+  output Stream "(left + right)".
+emit-expr-at Stream Indent (e-option-match Value) :-
+  output Stream "match (Some ",
+  emit-expr-indented Stream Indent Value,
+  output Stream ")\n",
+  CaseIndent is Indent + 2,
+  emit-indent Stream CaseIndent,
+  output Stream "case Some payload -> payload\n",
+  emit-indent Stream CaseIndent,
+  output Stream "case None -> 0".
+emit-expr-at Stream Indent (e-list-cons-match Value) :-
+  output Stream "match [",
+  emit-expr-indented Stream Indent Value,
+  output Stream ", (",
+  emit-expr-indented Stream Indent Value,
+  output Stream " + 1)]\n",
+  CaseIndent is Indent + 2,
+  emit-indent Stream CaseIndent,
+  output Stream "case head :: tail -> head\n",
+  emit-indent Stream CaseIndent,
+  output Stream "case Nil -> 0".
+emit-expr-at Stream Indent (e-make-const-explicit Value) :-
+  output Stream "((generatedMakeConst @Int ",
+  emit-expr-indented Stream Indent Value,
+  output Stream ") ())".
+emit-expr-at Stream Indent (e-named-shorthand Value) :-
+  output Stream "block\n",
+  ItemIndent is Indent + 4,
+  emit-indent Stream ItemIndent,
+  output Stream "let width = ",
+  emit-expr-indented Stream ItemIndent Value,
+  output Stream "\n\n",
+  emit-indent Stream ItemIndent,
+  output Stream "generatedUseWidth { width }".
+emit-expr-at Stream Indent (e-map-conflict Body) :-
+  output Stream "{ for x in [1, 2, 3], yield \"k\" : ",
+  emit-expr-indented Stream Indent Body,
+  output Stream ", on conflict keep first }".
+emit-expr-at Stream Indent (e-list-page-query Binder Body) :-
+  output Stream "[ for ",
+  output Stream Binder,
+  output Stream " in [1, 2, 3], skip 1, take 2, yield ",
+  emit-expr-indented Stream Indent Body,
+  output Stream " ]".
+emit-expr-at Stream Indent (e-list-order-query Binder Body) :-
+  output Stream "[ for ",
+  output Stream Binder,
+  output Stream " in [1, 2, 3], order by x desc, yield ",
+  emit-expr-indented Stream Indent Body,
+  output Stream " ]".
+emit-expr-at Stream Indent (e-list-length-expr Value) :-
+  output Stream "block\n",
+  ItemIndent is Indent + 4,
+  emit-indent Stream ItemIndent,
+  output Stream "generatedListLength : List Int -> Int\n",
+  emit-indent Stream ItemIndent,
+  output Stream "let generatedListLength xs decreases structural xs =\n",
+  MatchIndent is ItemIndent + 4,
+  emit-indent Stream MatchIndent,
+  output Stream "match xs\n",
+  CaseIndent is MatchIndent + 2,
+  emit-indent Stream CaseIndent,
+  output Stream "case Nil -> 0\n",
+  emit-indent Stream CaseIndent,
+  output Stream "case _ :: tail -> 1 + generatedListLength tail\n\n",
+  emit-indent Stream ItemIndent,
+  output Stream "let item = ",
+  emit-expr-indented Stream ItemIndent Value,
+  output Stream "\n\n",
+  emit-indent Stream ItemIndent,
+  output Stream "generatedListLength [item, (item + 1), 0]".
+emit-expr-at Stream Indent (e-set-count-expr Value) :-
+  output Stream "block\n",
+  ItemIndent is Indent + 4,
+  emit-indent Stream ItemIndent,
+  output Stream "generatedSetCount : Set Int -> Int\n",
+  emit-indent Stream ItemIndent,
+  output Stream "let generatedSetCount values = 2\n\n",
+  emit-indent Stream ItemIndent,
+  output Stream "let item = ",
+  emit-expr-indented Stream ItemIndent Value,
+  output Stream "\n",
+  emit-indent Stream ItemIndent,
+  output Stream "let values = {|item, (item + 1)|}\n\n",
+  emit-indent Stream ItemIndent,
+  output Stream "generatedSetCount values".
+emit-expr-at Stream Indent (e-map-count-expr Value) :-
+  output Stream "block\n",
+  ItemIndent is Indent + 4,
+  emit-indent Stream ItemIndent,
+  output Stream "generatedMapCount : Map String Int -> Int\n",
+  emit-indent Stream ItemIndent,
+  output Stream "let generatedMapCount values = 1\n\n",
+  emit-indent Stream ItemIndent,
+  output Stream "let item = ",
+  emit-expr-indented Stream ItemIndent Value,
+  output Stream "\n",
+  emit-indent Stream ItemIndent,
+  output Stream "let values = { yield \"item\" : item }\n\n",
+  emit-indent Stream ItemIndent,
+  output Stream "generatedMapCount values".
+emit-expr-at Stream Indent (e-eff-deep-ask Value) :-
+  output Stream "block\n",
+  ItemIndent is Indent + 4,
+  EffectIndent is ItemIndent + 4,
+  emit-indent Stream ItemIndent,
+  output Stream "scoped effect Ask =\n",
+  emit-indent Stream EffectIndent,
+  output Stream "ask : Unit -> Bool\n\n",
+  emit-indent Stream ItemIndent,
+  output Stream "let seed = ",
+  emit-expr-indented Stream ItemIndent Value,
+  output Stream "\n\n",
+  emit-indent Stream ItemIndent,
+  output Stream "let comp : Eff <[Ask : Ask]> Int =\n",
+  DoIndent is ItemIndent + 4,
+  emit-indent Stream DoIndent,
+  output Stream "do\n",
+  DoItemIndent is DoIndent + 4,
+  emit-indent Stream DoItemIndent,
+  output Stream "let b <- Ask.ask ()\n",
+  emit-indent Stream DoItemIndent,
+  output Stream "if b then seed else (seed + 1)\n\n",
+  emit-indent Stream ItemIndent,
+  output Stream "let handled : Eff <[ ]> Int =\n",
+  HandleIndent is ItemIndent + 4,
+  emit-indent Stream HandleIndent,
+  output Stream "deep handle Ask comp with\n",
+  CaseIndent is HandleIndent + 4,
+  emit-indent Stream CaseIndent,
+  output Stream "case return x -> pure x\n",
+  emit-indent Stream CaseIndent,
+  output Stream "case ask () k -> k True\n\n",
+  emit-indent Stream ItemIndent,
+  output Stream "runPure handled".
+emit-expr-at Stream Indent (e-eff-param-state Value) :-
+  output Stream "block\n",
+  ItemIndent is Indent + 4,
+  EffectIndent is ItemIndent + 4,
+  emit-indent Stream ItemIndent,
+  output Stream "scoped effect State (s : Type) =\n",
+  emit-indent Stream EffectIndent,
+  output Stream "get : Unit -> s\n\n",
+  emit-indent Stream ItemIndent,
+  output Stream "let seed = ",
+  emit-expr-indented Stream ItemIndent Value,
+  output Stream "\n\n",
+  emit-indent Stream ItemIndent,
+  output Stream "let comp : Eff <[State : State Int]> Int =\n",
+  DoIndent is ItemIndent + 4,
+  emit-indent Stream DoIndent,
+  output Stream "do\n",
+  DoItemIndent is DoIndent + 4,
+  emit-indent Stream DoItemIndent,
+  output Stream "let n <- State.get ()\n",
+  emit-indent Stream DoItemIndent,
+  output Stream "n\n\n",
+  emit-indent Stream ItemIndent,
+  output Stream "let handled : Eff <[ ]> Int =\n",
+  HandleIndent is ItemIndent + 4,
+  emit-indent Stream HandleIndent,
+  output Stream "deep handle State comp with\n",
+  CaseIndent is HandleIndent + 4,
+  emit-indent Stream CaseIndent,
+  output Stream "case return x -> pure x\n",
+  emit-indent Stream CaseIndent,
+  output Stream "case get () k -> k seed\n\n",
+  emit-indent Stream ItemIndent,
+  output Stream "runPure handled".
+emit-expr-at Stream Indent (e-eff-shallow-rehandle Value) :-
+  output Stream "block\n",
+  ItemIndent is Indent + 4,
+  EffectIndent is ItemIndent + 4,
+  emit-indent Stream ItemIndent,
+  output Stream "scoped effect Ask =\n",
+  emit-indent Stream EffectIndent,
+  output Stream "ask : Unit -> Bool\n\n",
+  emit-indent Stream ItemIndent,
+  output Stream "let seed = ",
+  emit-expr-indented Stream ItemIndent Value,
+  output Stream "\n\n",
+  emit-indent Stream ItemIndent,
+  output Stream "let comp : Eff <[Ask : Ask]> Int =\n",
+  DoIndent is ItemIndent + 4,
+  emit-indent Stream DoIndent,
+  output Stream "do\n",
+  DoItemIndent is DoIndent + 4,
+  emit-indent Stream DoItemIndent,
+  output Stream "let b <- Ask.ask ()\n",
+  emit-indent Stream DoItemIndent,
+  output Stream "if b then seed else (seed + 1)\n\n",
+  emit-indent Stream ItemIndent,
+  output Stream "let rehandle : (1 k : ((1 x : Bool) -> Eff <[Ask : Ask]> Int)) -> Eff <[ ]> Int =\n",
+  LambdaIndent is ItemIndent + 4,
+  emit-indent Stream LambdaIndent,
+  output Stream "\\(1 k : ((1 x : Bool) -> Eff <[Ask : Ask]> Int)) ->\n",
+  InnerHandleIndent is LambdaIndent + 4,
+  emit-indent Stream InnerHandleIndent,
+  output Stream "handle Ask (k True) with\n",
+  InnerCaseIndent is InnerHandleIndent + 4,
+  emit-indent Stream InnerCaseIndent,
+  output Stream "case return y -> pure y\n",
+  emit-indent Stream InnerCaseIndent,
+  output Stream "case ask () k2 -> k2 False\n\n",
+  emit-indent Stream ItemIndent,
+  output Stream "let handled : Eff <[ ]> Int =\n",
+  HandleIndent is ItemIndent + 4,
+  emit-indent Stream HandleIndent,
+  output Stream "handle Ask comp with\n",
+  CaseIndent is HandleIndent + 4,
+  emit-indent Stream CaseIndent,
+  output Stream "case return y -> pure y\n",
+  emit-indent Stream CaseIndent,
+  output Stream "case ask () k -> rehandle k\n\n",
+  emit-indent Stream ItemIndent,
+  output Stream "runPure handled".
+emit-expr-at Stream Indent (e-eff-multi-row Value) :-
+  output Stream "block\n",
+  ItemIndent is Indent + 4,
+  EffectIndent is ItemIndent + 4,
+  emit-indent Stream ItemIndent,
+  output Stream "scoped effect Ask =\n",
+  emit-indent Stream EffectIndent,
+  output Stream "ask : Unit -> Bool\n\n",
+  emit-indent Stream ItemIndent,
+  output Stream "scoped effect Other =\n",
+  emit-indent Stream EffectIndent,
+  output Stream "other : Unit -> Int\n\n",
+  emit-indent Stream ItemIndent,
+  output Stream "let seed = ",
+  emit-expr-indented Stream ItemIndent Value,
+  output Stream "\n\n",
+  emit-indent Stream ItemIndent,
+  output Stream "let comp : Eff <[Ask : Ask, Other : Other]> Int =\n",
+  DoIndent is ItemIndent + 4,
+  emit-indent Stream DoIndent,
+  output Stream "do\n",
+  DoItemIndent is DoIndent + 4,
+  emit-indent Stream DoItemIndent,
+  output Stream "let b <- Ask.ask ()\n",
+  emit-indent Stream DoItemIndent,
+  output Stream "let n <- Other.other ()\n",
+  emit-indent Stream DoItemIndent,
+  output Stream "if b then (n + seed) else seed\n\n",
+  emit-indent Stream ItemIndent,
+  output Stream "let askHandled : Eff <[Other : Other]> Int =\n",
+  AskHandleIndent is ItemIndent + 4,
+  emit-indent Stream AskHandleIndent,
+  output Stream "deep handle Ask comp with\n",
+  AskCaseIndent is AskHandleIndent + 4,
+  emit-indent Stream AskCaseIndent,
+  output Stream "case return x -> pure x\n",
+  emit-indent Stream AskCaseIndent,
+  output Stream "case ask () k -> k True\n\n",
+  emit-indent Stream ItemIndent,
+  output Stream "let handled : Eff <[ ]> Int =\n",
+  OtherHandleIndent is ItemIndent + 4,
+  emit-indent Stream OtherHandleIndent,
+  output Stream "deep handle Other askHandled with\n",
+  OtherCaseIndent is OtherHandleIndent + 4,
+  emit-indent Stream OtherCaseIndent,
+  output Stream "case return x -> pure x\n",
+  emit-indent Stream OtherCaseIndent,
+  output Stream "case other () k -> k 1\n\n",
+  emit-indent Stream ItemIndent,
+  output Stream "runPure handled".
+emit-expr-at Stream Indent (e-eff-label-alias Value) :-
+  output Stream "block\n",
+  ItemIndent is Indent + 4,
+  EffectIndent is ItemIndent + 4,
+  emit-indent Stream ItemIndent,
+  output Stream "scoped effect Ask =\n",
+  emit-indent Stream EffectIndent,
+  output Stream "ask : Unit -> Bool\n\n",
+  emit-indent Stream ItemIndent,
+  output Stream "let l = Ask\n\n",
+  emit-indent Stream ItemIndent,
+  output Stream "let seed = ",
+  emit-expr-indented Stream ItemIndent Value,
+  output Stream "\n\n",
+  emit-indent Stream ItemIndent,
+  output Stream "let comp : Eff <[Ask : Ask]> Int =\n",
+  DoIndent is ItemIndent + 4,
+  emit-indent Stream DoIndent,
+  output Stream "do\n",
+  DoItemIndent is DoIndent + 4,
+  emit-indent Stream DoItemIndent,
+  output Stream "let b <- l.ask ()\n",
+  emit-indent Stream DoItemIndent,
+  output Stream "if b then seed else (seed + 1)\n\n",
+  emit-indent Stream ItemIndent,
+  output Stream "let handled : Eff <[ ]> Int =\n",
+  HandleIndent is ItemIndent + 4,
+  emit-indent Stream HandleIndent,
+  output Stream "deep handle l comp with\n",
+  CaseIndent is HandleIndent + 4,
+  emit-indent Stream CaseIndent,
+  output Stream "case return x -> pure x\n",
+  emit-indent Stream CaseIndent,
+  output Stream "case ask () k -> k True\n\n",
+  emit-indent Stream ItemIndent,
+  output Stream "runPure handled".
+emit-expr-at Stream Indent (e-eff-record-label Value) :-
+  output Stream "block\n",
+  ItemIndent is Indent + 4,
+  EffectIndent is ItemIndent + 4,
+  emit-indent Stream ItemIndent,
+  output Stream "scoped effect Ask =\n",
+  emit-indent Stream EffectIndent,
+  output Stream "ask : Unit -> Bool\n\n",
+  emit-indent Stream ItemIndent,
+  output Stream "let pkg = (label = Ask)\n\n",
+  emit-indent Stream ItemIndent,
+  output Stream "let seed = ",
+  emit-expr-indented Stream ItemIndent Value,
+  output Stream "\n\n",
+  emit-indent Stream ItemIndent,
+  output Stream "let comp : Eff <[Ask : Ask]> Int =\n",
+  DoIndent is ItemIndent + 4,
+  emit-indent Stream DoIndent,
+  output Stream "do\n",
+  DoItemIndent is DoIndent + 4,
+  emit-indent Stream DoItemIndent,
+  output Stream "let b <- pkg.label.ask ()\n",
+  emit-indent Stream DoItemIndent,
+  output Stream "if b then seed else (seed + 1)\n\n",
+  emit-indent Stream ItemIndent,
+  output Stream "let handled : Eff <[ ]> Int =\n",
+  HandleIndent is ItemIndent + 4,
+  emit-indent Stream HandleIndent,
+  output Stream "deep handle pkg.label comp with\n",
+  CaseIndent is HandleIndent + 4,
+  emit-indent Stream CaseIndent,
+  output Stream "case return x -> pure x\n",
+  emit-indent Stream CaseIndent,
+  output Stream "case ask () k -> k True\n\n",
+  emit-indent Stream ItemIndent,
+  output Stream "runPure handled".
+emit-expr-at Stream Indent (e-eff-multishot-choice Value) :-
+  output Stream "block\n",
+  ItemIndent is Indent + 4,
+  EffectIndent is ItemIndent + 4,
+  emit-indent Stream ItemIndent,
+  output Stream "scoped effect Choice =\n",
+  emit-indent Stream EffectIndent,
+  output Stream "ω choose : Unit -> Bool\n\n",
+  emit-indent Stream ItemIndent,
+  output Stream "let seed = ",
+  emit-expr-indented Stream ItemIndent Value,
+  output Stream "\n\n",
+  emit-indent Stream ItemIndent,
+  output Stream "let comp : Eff <[Choice : Choice]> Int =\n",
+  DoIndent is ItemIndent + 4,
+  emit-indent Stream DoIndent,
+  output Stream "do\n",
+  DoItemIndent is DoIndent + 4,
+  emit-indent Stream DoItemIndent,
+  output Stream "let b <- Choice.choose ()\n",
+  emit-indent Stream DoItemIndent,
+  output Stream "if b then seed else (seed + 1)\n\n",
+  emit-indent Stream ItemIndent,
+  output Stream "let handled : Eff <[ ]> Int =\n",
+  HandleIndent is ItemIndent + 4,
+  emit-indent Stream HandleIndent,
+  output Stream "deep handle Choice comp with\n",
+  CaseIndent is HandleIndent + 4,
+  emit-indent Stream CaseIndent,
+  output Stream "case return x -> pure x\n",
+  emit-indent Stream CaseIndent,
+  output Stream "case choose () k ->\n",
+  BodyIndent is CaseIndent + 4,
+  emit-indent Stream BodyIndent,
+  output Stream "do\n",
+  BodyItemIndent is BodyIndent + 4,
+  emit-indent Stream BodyItemIndent,
+  output Stream "let a <- k True\n",
+  emit-indent Stream BodyItemIndent,
+  output Stream "let b <- k False\n",
+  emit-indent Stream BodyItemIndent,
+  output Stream "pure (a + b)\n\n",
+  emit-indent Stream ItemIndent,
+  output Stream "runPure handled".
+emit-expr-at Stream Indent (e-eff-multishot-alias Value) :-
+  output Stream "block\n",
+  ItemIndent is Indent + 4,
+  EffectIndent is ItemIndent + 4,
+  emit-indent Stream ItemIndent,
+  output Stream "scoped effect Choice =\n",
+  emit-indent Stream EffectIndent,
+  output Stream "ω choose : Unit -> Bool\n\n",
+  emit-indent Stream ItemIndent,
+  output Stream "let c = Choice\n\n",
+  emit-indent Stream ItemIndent,
+  output Stream "let seed = ",
+  emit-expr-indented Stream ItemIndent Value,
+  output Stream "\n\n",
+  emit-indent Stream ItemIndent,
+  output Stream "let comp : Eff <[Choice : Choice]> Int =\n",
+  DoIndent is ItemIndent + 4,
+  emit-indent Stream DoIndent,
+  output Stream "do\n",
+  DoItemIndent is DoIndent + 4,
+  emit-indent Stream DoItemIndent,
+  output Stream "let b <- c.choose ()\n",
+  emit-indent Stream DoItemIndent,
+  output Stream "if b then seed else (seed + 1)\n\n",
+  emit-indent Stream ItemIndent,
+  output Stream "let handled : Eff <[ ]> Int =\n",
+  HandleIndent is ItemIndent + 4,
+  emit-indent Stream HandleIndent,
+  output Stream "deep handle Choice comp with\n",
+  CaseIndent is HandleIndent + 4,
+  emit-indent Stream CaseIndent,
+  output Stream "case return x -> pure x\n",
+  emit-indent Stream CaseIndent,
+  output Stream "case choose () k ->\n",
+  BodyIndent is CaseIndent + 4,
+  emit-indent Stream BodyIndent,
+  output Stream "do\n",
+  BodyItemIndent is BodyIndent + 4,
+  emit-indent Stream BodyItemIndent,
+  output Stream "let a <- k True\n",
+  emit-indent Stream BodyItemIndent,
+  output Stream "let b <- k False\n",
+  emit-indent Stream BodyItemIndent,
+  output Stream "pure (a + b)\n\n",
+  emit-indent Stream ItemIndent,
+  output Stream "runPure handled".
 
 emit-top-expr Stream (e-match-choice Scrutinee PayloadName LeftBody RightBody) :-
   output Stream "\n    ",
@@ -1500,6 +2126,74 @@ emit-top-expr Stream (e-local-data-match Value) :-
   output Stream "\n    ",
   emit-expr-at Stream 4 (e-local-data-match Value),
   !.
+emit-top-expr Stream (e-typed-pattern Value) :-
+  output Stream "\n    ",
+  emit-expr-at Stream 4 (e-typed-pattern Value),
+  !.
+emit-top-expr Stream (e-as-record-pattern Left Right) :-
+  output Stream "\n    ",
+  emit-expr-at Stream 4 (e-as-record-pattern Left Right),
+  !.
+emit-top-expr Stream (e-tuple-pattern-expr Left Right) :-
+  output Stream "\n    ",
+  emit-expr-at Stream 4 (e-tuple-pattern-expr Left Right),
+  !.
+emit-top-expr Stream (e-option-match Value) :-
+  output Stream "\n    ",
+  emit-expr-at Stream 4 (e-option-match Value),
+  !.
+emit-top-expr Stream (e-list-cons-match Value) :-
+  output Stream "\n    ",
+  emit-expr-at Stream 4 (e-list-cons-match Value),
+  !.
+emit-top-expr Stream (e-list-length-expr Value) :-
+  output Stream "\n    ",
+  emit-expr-at Stream 4 (e-list-length-expr Value),
+  !.
+emit-top-expr Stream (e-set-count-expr Value) :-
+  output Stream "\n    ",
+  emit-expr-at Stream 4 (e-set-count-expr Value),
+  !.
+emit-top-expr Stream (e-map-count-expr Value) :-
+  output Stream "\n    ",
+  emit-expr-at Stream 4 (e-map-count-expr Value),
+  !.
+emit-top-expr Stream (e-eff-deep-ask Value) :-
+  output Stream "\n    ",
+  emit-expr-at Stream 4 (e-eff-deep-ask Value),
+  !.
+emit-top-expr Stream (e-eff-param-state Value) :-
+  output Stream "\n    ",
+  emit-expr-at Stream 4 (e-eff-param-state Value),
+  !.
+emit-top-expr Stream (e-eff-shallow-rehandle Value) :-
+  output Stream "\n    ",
+  emit-expr-at Stream 4 (e-eff-shallow-rehandle Value),
+  !.
+emit-top-expr Stream (e-eff-multi-row Value) :-
+  output Stream "\n    ",
+  emit-expr-at Stream 4 (e-eff-multi-row Value),
+  !.
+emit-top-expr Stream (e-eff-label-alias Value) :-
+  output Stream "\n    ",
+  emit-expr-at Stream 4 (e-eff-label-alias Value),
+  !.
+emit-top-expr Stream (e-eff-record-label Value) :-
+  output Stream "\n    ",
+  emit-expr-at Stream 4 (e-eff-record-label Value),
+  !.
+emit-top-expr Stream (e-eff-multishot-choice Value) :-
+  output Stream "\n    ",
+  emit-expr-at Stream 4 (e-eff-multishot-choice Value),
+  !.
+emit-top-expr Stream (e-eff-multishot-alias Value) :-
+  output Stream "\n    ",
+  emit-expr-at Stream 4 (e-eff-multishot-alias Value),
+  !.
+emit-top-expr Stream (e-named-shorthand Value) :-
+  output Stream "\n    ",
+  emit-expr-at Stream 4 (e-named-shorthand Value),
+  !.
 emit-top-expr Stream Expr :-
   output Stream " ",
   emit-expr Stream Expr,
@@ -1514,7 +2208,8 @@ emit-preamble Deps :-
   emit-make-const-decls Deps,
   emit-need-decls Deps,
   emit-echo-decls Deps,
-  emit-size-decls Deps.
+  emit-size-decls Deps,
+  emit-use-width-decls Deps.
 
 emit-pair-decl Deps :-
   has-dep Deps dep-pair,
@@ -1583,6 +2278,13 @@ emit-size-decls Deps :-
   output std_out "    case _ :: tail -> 1 + generatedSize tail\n\n".
 emit-size-decls _.
 
+emit-use-width-decls Deps :-
+  has-dep Deps dep-use-width,
+  !,
+  output std_out "generatedUseWidth : (width : Int) -> Int\n",
+  output std_out "let generatedUseWidth width = width\n\n".
+emit-use-width-decls _.
+
 emit-kind-if-dep Deps Dep Kinds :-
   has-dep Deps Dep,
   !,
@@ -1599,7 +2301,8 @@ emit-decl-kind-prefix Deps :-
   emit-kind-if-dep Deps dep-make-const "signature, let",
   emit-kind-if-dep Deps dep-need "signature, let",
   emit-kind-if-dep Deps dep-echo "signature, let",
-  emit-kind-if-dep Deps dep-size "signature, let".
+  emit-kind-if-dep Deps dep-size "signature, let",
+  emit-kind-if-dep Deps dep-use-width "signature, let".
 
 emit-kappa-program Index (generated Deps Ty Expr) :-
   output std_out "%%KAPPA-SAMPLE ",

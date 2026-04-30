@@ -1,15 +1,35 @@
 module main
 
-generated_1797 : IO Int
-let generated_1797 =
-    do
-        let staged = (((((((((if True then ((left = (0 + 0), right = 0)).left else 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0)
-        pure (staged + 1)
+data GeneratedChoice : Type =
+    GeneratedLeft (value : Int)
+    GeneratedRight
 
-result : IO Int
+generated_1797 : Int
+let generated_1797 =
+    match GeneratedRight
+      case GeneratedLeft payload -> (payload + 0)
+      case GeneratedRight -> ((match [(block
+          generatedMapCount : Map String Int -> Int
+          let generatedMapCount values = 1
+
+          let item = 0
+          let values = { yield "item" : item }
+
+          generatedMapCount values), ((block
+          generatedMapCount : Map String Int -> Int
+          let generatedMapCount values = 1
+
+          let item = 0
+          let values = { yield "item" : item }
+
+          generatedMapCount values) + 1)]
+        case head :: tail -> head
+        case Nil -> 0) + 0)
+
+result : Int
 let result = generated_1797
 
 --! assertNoErrors
---! assertType generated_1797 IO Int
---! assertType result IO Int
---! assertDeclKinds signature, let, signature, let
+--! assertType generated_1797 Int
+--! assertType result Int
+--! assertDeclKinds data, signature, let, signature, let

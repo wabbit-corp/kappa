@@ -1,12 +1,31 @@
 module main
 
-generated_659 : List Int
-let generated_659 = [ for x in [1, 2, 3], if x > 0, yield (((((((0 + ((if False then 0 else x) + 0)) + 0) + 0) + 0) + 0) + 0) + 0) ]
+generatedEcho : forall (a : Type). (this x : a) -> a
+let generatedEcho @a (this x : a) = x
 
-result : List Int
+generated_659 : Int
+let generated_659 = ((.generatedEcho) ((block
+    generatedSetCount : Set Int -> Int
+    let generatedSetCount values = 2
+
+    let item = (block
+        generatedListLength : List Int -> Int
+        let generatedListLength xs decreases structural xs =
+            match xs
+              case Nil -> 0
+              case _ :: tail -> 1 + generatedListLength tail
+
+        let item = 0
+
+        generatedListLength [item, (item + 1), 0])
+    let values = {|item, (item + 1)|}
+
+    generatedSetCount values) + 0))
+
+result : Int
 let result = generated_659
 
 --! assertNoErrors
---! assertType generated_659 List Int
---! assertType result List Int
---! assertDeclKinds signature, let, signature, let
+--! assertType generated_659 Int
+--! assertType result Int
+--! assertDeclKinds signature, let, signature, let, signature, let

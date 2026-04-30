@@ -1,14 +1,21 @@
 module main
 
-generatedNeed : (@x : Int) -> Int
-let generatedNeed (@x : Int) = x
+generatedMakeConst : forall (a : Type). a -> Unit -> a
+let generatedMakeConst value = \() -> value
 
 generated_2052 : Int
-let generated_2052 =
-    block
-        let (@x : Int) = ((((((((if False then 0 else ((if True then 0 else 0) + 0)) + (0 + 0)) + 0) + 0) + 0) + 0) + 0) + 0)
+let generated_2052 = ((generatedMakeConst ((block
+    generatedListLength : List Int -> Int
+    let generatedListLength xs decreases structural xs =
+        match xs
+          case Nil -> 0
+          case _ :: tail -> 1 + generatedListLength tail
 
-        if True then generatedNeed else 0
+    let item = (match (Some 0)
+      case Some payload -> payload
+      case None -> 0)
+
+    generatedListLength [item, (item + 1), 0]) + 0)) ())
 
 result : Int
 let result = generated_2052

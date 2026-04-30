@@ -1,17 +1,20 @@
 module main
 
-generated_334 : Int
+generatedNeed : (@x : Int) -> Int
+let generatedNeed (@x : Int) = x
+
+generated_334 : IO Int
 let generated_334 =
-    block
-        let base : (x : Int) = (x = ((((((((((if False then 0 else 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0))
-        let extended = base.{ y := ((((((((((if False then 0 else 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0) + 1) }
+    do
+        let (@x : Int) = ((match [0, (0 + 1)]
+          case head :: tail -> head
+          case Nil -> 0) + 0)
+        pure generatedNeed
 
-        (extended.x + extended.y)
-
-result : Int
+result : IO Int
 let result = generated_334
 
 --! assertNoErrors
---! assertType generated_334 Int
---! assertType result Int
---! assertDeclKinds signature, let, signature, let
+--! assertType generated_334 IO Int
+--! assertType result IO Int
+--! assertDeclKinds signature, let, signature, let, signature, let

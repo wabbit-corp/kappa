@@ -1,12 +1,23 @@
 module main
 
-generated_2831 : (Int -> Int)
-let generated_2831 = \(x : Int) -> ((\(x : Int) -> ((\(x : Int) -> ((\(x : Int) -> if (x == 0) then ((\(x : Int) -> if (x == 0) then ((\(x : Int) -> x) x) else x) x) else x) x)) x)) x)
+generated_2831 : Int
+let generated_2831 =
+    match (Some ((block
+        let pair = (x = (match [0, (0 + 1)]
+          case head :: tail -> head
+          case Nil -> 0), y = ((match [0, (0 + 1)]
+          case head :: tail -> head
+          case Nil -> 0) + 1))
+        let (x = captured, y = other) = pair
 
-result : (Int -> Int)
+        (captured + other)) + 0))
+      case Some payload -> payload
+      case None -> 0
+
+result : Int
 let result = generated_2831
 
 --! assertNoErrors
---! assertType generated_2831 (Int -> Int)
---! assertType result (Int -> Int)
+--! assertType generated_2831 Int
+--! assertType result Int
 --! assertDeclKinds signature, let, signature, let

@@ -1,15 +1,12 @@
 module main
 
-generated_471 : IO Int
-let generated_471 =
-    do
-        let staged = (((((((((((left = 0, right = (0 + 0))).right + 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0)
-        pure (staged + 1)
+generated_471 : Bool
+let generated_471 = (if (if (if (if (True || False) then True else False) then True else False) then True else False) then True else False)
 
-result : IO Int
+result : Bool
 let result = generated_471
 
 --! assertNoErrors
---! assertType generated_471 IO Int
---! assertType result IO Int
+--! assertType generated_471 Bool
+--! assertType result Bool
 --! assertDeclKinds signature, let, signature, let

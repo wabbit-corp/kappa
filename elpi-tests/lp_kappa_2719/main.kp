@@ -1,12 +1,19 @@
 module main
 
-generated_2719 : Set Int
-let generated_2719 = {| yield (((((((((left = 0, right = ((if False then 0 else 0) + 0))).right + 0) + 0) + 0) + 0) + 0) + 0) + 0) |}
+generatedEcho : forall (a : Type). (this x : a) -> a
+let generatedEcho @a (this x : a) = x
 
-result : Set Int
+generated_2719 : Option Int
+let generated_2719 = (Some ((match (Some (match [0, (0 + 1)]
+  case head :: tail -> head
+  case Nil -> 0))
+  case Some payload -> payload
+  case None -> 0) + 0))?.generatedEcho
+
+result : Option Int
 let result = generated_2719
 
 --! assertNoErrors
---! assertType generated_2719 Set Int
---! assertType result Set Int
---! assertDeclKinds signature, let, signature, let
+--! assertType generated_2719 Option Int
+--! assertType result Option Int
+--! assertDeclKinds signature, let, signature, let, signature, let

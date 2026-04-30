@@ -3,10 +3,24 @@ module main
 generated_2407 : Int
 let generated_2407 =
     block
-        let pair = (x = (((((((((left = (((if True then 0 else 0) + 0) + 0), right = 0)).left + 0) + 0) + 0) + 0) + 0) + 0) + 0), y = (((((((((left = (((if True then 0 else 0) + 0) + 0), right = 0)).left + 0) + 0) + 0) + 0) + 0) + 0) + 1))
-        let (x = captured, y = other) = pair
+        scoped effect State (s : Type) =
+            get : Unit -> s
 
-        (captured + other)
+        let seed = ((\(n : Int) -> n) (match (Some 0)
+          case Some payload -> payload
+          case None -> 0))
+
+        let comp : Eff <[State : State Int]> Int =
+            do
+                let n <- State.get ()
+                n
+
+        let handled : Eff <[ ]> Int =
+            deep handle State comp with
+                case return x -> pure x
+                case get () k -> k seed
+
+        runPure handled
 
 result : Int
 let result = generated_2407

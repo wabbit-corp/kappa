@@ -1,12 +1,44 @@
 module main
 
-generated_991 : Bool
-let generated_991 = (if (if (if ((True || False) && False) then True else False) then True else False) then True else False)
+generatedEcho : forall (a : Type). (this x : a) -> a
+let generatedEcho @a (this x : a) = x
 
-result : Bool
+generated_991 : Option Int
+let generated_991 = (Some ((match ((block
+    generatedListLength : List Int -> Int
+    let generatedListLength xs decreases structural xs =
+        match xs
+          case Nil -> 0
+          case _ :: tail -> 1 + generatedListLength tail
+
+    let item = 0
+
+    generatedListLength [item, (item + 1), 0]) == (block
+    generatedListLength : List Int -> Int
+    let generatedListLength xs decreases structural xs =
+        match xs
+          case Nil -> 0
+          case _ :: tail -> 1 + generatedListLength tail
+
+    let item = 0
+
+    generatedListLength [item, (item + 1), 0]))
+  case True -> (block
+      generatedListLength : List Int -> Int
+      let generatedListLength xs decreases structural xs =
+          match xs
+            case Nil -> 0
+            case _ :: tail -> 1 + generatedListLength tail
+
+      let item = 0
+
+      generatedListLength [item, (item + 1), 0])
+  case False -> 0) + 0))?.generatedEcho
+
+result : Option Int
 let result = generated_991
 
 --! assertNoErrors
---! assertType generated_991 Bool
---! assertType result Bool
---! assertDeclKinds signature, let, signature, let
+--! assertType generated_991 Option Int
+--! assertType result Option Int
+--! assertDeclKinds signature, let, signature, let, signature, let

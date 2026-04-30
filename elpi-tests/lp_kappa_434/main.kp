@@ -1,15 +1,12 @@
 module main
 
-generated_434 : Int
-let generated_434 =
-    match ((((((((((((left = (0 + 0), right = 0)).left + 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0) == (((((((((((left = (0 + 0), right = 0)).left + 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0))
-      case True -> (((((((((((left = (0 + 0), right = 0)).left + 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0)
-      case False -> 0
+generated_434 : Map String Int
+let generated_434 = { for x in [1, 2, 3], let y = x + 1, if y > 0, yield (if y > 1 then "hi" else "lo") : ((\(n : Int) -> n) x) }
 
-result : Int
+result : Map String Int
 let result = generated_434
 
 --! assertNoErrors
---! assertType generated_434 Int
---! assertType result Int
+--! assertType generated_434 Map String Int
+--! assertType result Map String Int
 --! assertDeclKinds signature, let, signature, let

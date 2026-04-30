@@ -1,16 +1,31 @@
 module main
 
-generated_1099 : Int
-let generated_1099 =
-    let
-        ranked : Int = (((((((if True then ((left = (0 + 0), right = 0)).left else 0) + 0) + 0) + 0) + 0) + 0) + 0)
-in
-        (ranked + 0)
+generatedEcho : forall (a : Type). (this x : a) -> a
+let generatedEcho @a (this x : a) = x
 
-result : Int
+generated_1099 : Option Int
+let generated_1099 = (Some ((block
+    generatedListLength : List Int -> Int
+    let generatedListLength xs decreases structural xs =
+        match xs
+          case Nil -> 0
+          case _ :: tail -> 1 + generatedListLength tail
+
+    let item = (block
+        generatedSetCount : Set Int -> Int
+        let generatedSetCount values = 2
+
+        let item = 0
+        let values = {|item, (item + 1)|}
+
+        generatedSetCount values)
+
+    generatedListLength [item, (item + 1), 0]) + 0))?.generatedEcho
+
+result : Option Int
 let result = generated_1099
 
 --! assertNoErrors
---! assertType generated_1099 Int
---! assertType result Int
---! assertDeclKinds signature, let, signature, let
+--! assertType generated_1099 Option Int
+--! assertType result Option Int
+--! assertDeclKinds signature, let, signature, let, signature, let

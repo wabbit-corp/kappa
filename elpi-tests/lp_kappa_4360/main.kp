@@ -1,12 +1,12 @@
 module main
 
-generated_4360 : Option Int
-let generated_4360 = (if True then (if True then (if False then None else (if (((if False then None else (Some (0 + 0))) ?: 0) == 1) then None else (if False then None else (Some (0 + 0))))) else None) else None)
+generated_4360 : Unit
+let generated_4360 = (if True then (if True then (if True then (if (0 == 1) then () else (if (False || True) then () else ())) else ()) else ()) else ())
 
-result : Option Int
+result : Unit
 let result = generated_4360
 
 --! assertNoErrors
---! assertType generated_4360 Option Int
---! assertType result Option Int
+--! assertType generated_4360 Unit
+--! assertType result Unit
 --! assertDeclKinds signature, let, signature, let

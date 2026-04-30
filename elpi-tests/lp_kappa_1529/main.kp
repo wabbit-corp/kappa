@@ -1,12 +1,34 @@
 module main
 
-generated_1529 : Set Int
-let generated_1529 = {| yield ((((((((if False then 0 else ((Some (0 + 0)) ?: 0)) + 0) + 0) + 0) + 0) + 0) + 0) + 0) |}
+generated_1529 : Int
+let generated_1529 =
+    block
+        data RankedBox : Type =
+            RankedBox (value : Int)
 
-result : Set Int
+        let boxed = RankedBox (((Some ((block
+            generatedSetCount : Set Int -> Int
+            let generatedSetCount values = 2
+
+            let item = 0
+            let values = {|item, (item + 1)|}
+
+            generatedSetCount values) + 1)) ?: ((block
+            generatedSetCount : Set Int -> Int
+            let generatedSetCount values = 2
+
+            let item = 0
+            let values = {|item, (item + 1)|}
+
+            generatedSetCount values) + 2)) + 0)
+
+        match boxed
+          case RankedBox value -> (value + 1)
+
+result : Int
 let result = generated_1529
 
 --! assertNoErrors
---! assertType generated_1529 Set Int
---! assertType result Set Int
+--! assertType generated_1529 Int
+--! assertType result Int
 --! assertDeclKinds signature, let, signature, let

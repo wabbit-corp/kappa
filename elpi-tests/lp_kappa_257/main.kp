@@ -1,15 +1,14 @@
 module main
 
-generatedResize : (image : Int) -> (width : Int) -> (height : Int) -> Int
-let generatedResize image width height = image + width * 10 + height
+type GeneratedTuple = (Int, Int)
 
-generated_257 : Int
-let generated_257 = generatedResize { image = ((((((((((0 + (0 + 0)) + 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0), height = 3, width = 2 }
+generated_257 : GeneratedTuple
+let generated_257 = (if True then (if True then (if True then (if True then (0, (0 + 0)) else (0, (0 + 0))) else (0, (0 + 0))) else (0, (0 + 0))) else (0, (0 + 0)))
 
-result : Int
+result : GeneratedTuple
 let result = generated_257
 
 --! assertNoErrors
---! assertType generated_257 Int
---! assertType result Int
---! assertDeclKinds signature, let, signature, let, signature, let
+--! assertType generated_257 GeneratedTuple
+--! assertType result GeneratedTuple
+--! assertDeclKinds type, signature, let, signature, let

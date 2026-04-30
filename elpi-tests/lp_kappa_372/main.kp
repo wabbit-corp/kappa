@@ -1,12 +1,19 @@
 module main
 
-generated_372 : List Int
-let generated_372 = [ yield (((((((((((if True then 0 else 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0) ]
+generated_372 : IO Int
+let generated_372 =
+    do
+        value <- pure ((block
+            let pair = (x = 0, y = (0 + 1))
+            let (x = captured, y = other) = pair
 
-result : List Int
+            (captured + other)) + 0)
+        pure (value + 2)
+
+result : IO Int
 let result = generated_372
 
 --! assertNoErrors
---! assertType generated_372 List Int
---! assertType result List Int
+--! assertType generated_372 IO Int
+--! assertType result IO Int
 --! assertDeclKinds signature, let, signature, let

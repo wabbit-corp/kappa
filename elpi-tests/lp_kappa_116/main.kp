@@ -1,15 +1,35 @@
 module main
 
-generated_116 : IO Int
+generated_116 : Int
 let generated_116 =
-    do
-        value <- pure (((((0 + 0) + 0) + 0) + 0) + 0)
-        pure (value + 2)
+    block
+        let base : (x : Int) = (x = ((block
+            generatedListLength : List Int -> Int
+            let generatedListLength xs decreases structural xs =
+                match xs
+                  case Nil -> 0
+                  case _ :: tail -> 1 + generatedListLength tail
 
-result : IO Int
+            let item = 0
+
+            generatedListLength [item, (item + 1), 0]) + 0))
+        let extended = base.{ y := ((block
+            generatedListLength : List Int -> Int
+            let generatedListLength xs decreases structural xs =
+                match xs
+                  case Nil -> 0
+                  case _ :: tail -> 1 + generatedListLength tail
+
+            let item = 0
+
+            generatedListLength [item, (item + 1), 0]) + 1) }
+
+        (extended.x + extended.y)
+
+result : Int
 let result = generated_116
 
 --! assertNoErrors
---! assertType generated_116 IO Int
---! assertType result IO Int
+--! assertType generated_116 Int
+--! assertType result Int
 --! assertDeclKinds signature, let, signature, let

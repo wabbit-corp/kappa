@@ -1,17 +1,19 @@
 module main
 
-generated_164 : Int
-let generated_164 =
-    block
-        let base : (x : Int) = (x = (((((((0 + 0) + 0) + 0) + 0) + 0) + 0) + 0))
-        let extended = base.{ y := (((((((0 + 0) + 0) + 0) + 0) + 0) + 0) + 1) }
+generated_164 : Map String Int
+let generated_164 = { for x in [1, 2, 3], if x > 0, yield "k" : (block
+    generatedSetCount : Set Int -> Int
+    let generatedSetCount values = 2
 
-        (extended.x + extended.y)
+    let item = x
+    let values = {|item, (item + 1)|}
 
-result : Int
+    generatedSetCount values) }
+
+result : Map String Int
 let result = generated_164
 
 --! assertNoErrors
---! assertType generated_164 Int
---! assertType result Int
+--! assertType generated_164 Map String Int
+--! assertType result Map String Int
 --! assertDeclKinds signature, let, signature, let

@@ -1,12 +1,22 @@
 module main
 
-generated_3629 : String
-let generated_3629 = (if (if (if (if (if True then False else True) then False else True) then True else False) then True else False) then #"raw lambda-prolog"# else "fallback")
+generatedEcho : forall (a : Type). (this x : a) -> a
+let generatedEcho @a (this x : a) = x
 
-result : String
+generated_3629 : Int
+let generated_3629 = ((.generatedEcho) ((block
+    generatedMapCount : Map String Int -> Int
+    let generatedMapCount values = 1
+
+    let item = ((\(n : Int) -> n) 0)
+    let values = { yield "item" : item }
+
+    generatedMapCount values) + 0))
+
+result : Int
 let result = generated_3629
 
 --! assertNoErrors
---! assertType generated_3629 String
---! assertType result String
---! assertDeclKinds signature, let, signature, let
+--! assertType generated_3629 Int
+--! assertType result Int
+--! assertDeclKinds signature, let, signature, let, signature, let

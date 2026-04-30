@@ -1,15 +1,31 @@
 module main
 
-generated_3040 : IO Int
+generated_3040 : Int
 let generated_3040 =
-    do
-        value <- pure (((((((((Some ((if False then 0 else 0) + 0)) ?: 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0)
-        pure (value + 2)
+    block
+        type RankedAlias = Int
 
-result : IO Int
+        let aliased : RankedAlias = ((block
+            generatedListLength : List Int -> Int
+            let generatedListLength xs decreases structural xs =
+                match xs
+                  case Nil -> 0
+                  case _ :: tail -> 1 + generatedListLength tail
+
+            let item = (block
+                let pair = (x = 0, y = (0 + 1))
+                let (x = captured, y = other) = pair
+
+                (captured + other))
+
+            generatedListLength [item, (item + 1), 0]) + 0)
+
+        (aliased + 1)
+
+result : Int
 let result = generated_3040
 
 --! assertNoErrors
---! assertType generated_3040 IO Int
---! assertType result IO Int
+--! assertType generated_3040 Int
+--! assertType result Int
 --! assertDeclKinds signature, let, signature, let

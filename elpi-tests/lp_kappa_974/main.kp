@@ -1,7 +1,36 @@
 module main
 
 generated_974 : Map String Int
-let generated_974 = { for x in [1, 2, 3], let y = x + 1, if y > 0, yield (if y > 1 then "hi" else "lo") : (((((((if True then (if True then x else 0) else 0) + 0) + 0) + 0) + 0) + 0) + 0) }
+let generated_974 = { for x in [1, 2, 3], let y = x + 1, yield "k" : (match ((block
+    generatedListLength : List Int -> Int
+    let generatedListLength xs decreases structural xs =
+        match xs
+          case Nil -> 0
+          case _ :: tail -> 1 + generatedListLength tail
+
+    let item = x
+
+    generatedListLength [item, (item + 1), 0]) == (block
+    generatedListLength : List Int -> Int
+    let generatedListLength xs decreases structural xs =
+        match xs
+          case Nil -> 0
+          case _ :: tail -> 1 + generatedListLength tail
+
+    let item = x
+
+    generatedListLength [item, (item + 1), 0]))
+  case True -> (block
+      generatedListLength : List Int -> Int
+      let generatedListLength xs decreases structural xs =
+          match xs
+            case Nil -> 0
+            case _ :: tail -> 1 + generatedListLength tail
+
+      let item = x
+
+      generatedListLength [item, (item + 1), 0])
+  case False -> 0) }
 
 result : Map String Int
 let result = generated_974

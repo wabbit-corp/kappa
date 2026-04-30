@@ -1,12 +1,19 @@
 module main
 
-generated_176 : Unit
-let generated_176 = (if True then (if True then (if True then (if True then () else ()) else ()) else ()) else ())
+generated_176 : Map String Int
+let generated_176 = { yield "only" : ((block
+    generatedSetCount : Set Int -> Int
+    let generatedSetCount values = 2
 
-result : Unit
+    let item = 0
+    let values = {|item, (item + 1)|}
+
+    generatedSetCount values) + 0) }
+
+result : Map String Int
 let result = generated_176
 
 --! assertNoErrors
---! assertType generated_176 Unit
---! assertType result Unit
+--! assertType generated_176 Map String Int
+--! assertType result Map String Int
 --! assertDeclKinds signature, let, signature, let

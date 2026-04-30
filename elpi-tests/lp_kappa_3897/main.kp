@@ -1,12 +1,17 @@
 module main
 
-generated_3897 : Set Int
-let generated_3897 = {| for x in [1, 2, 3], let y = x + 1, yield (((((0 + ((0 + (((left = 0, right = (x + 0))).right + 0)) + 0)) + 0) + 0) + 0) + 0) |}
+generated_3897 : IO Int
+let generated_3897 =
+    do
+        let staged = ((match (((\(n : Int) -> n) 0) == ((\(n : Int) -> n) 0))
+          case True -> ((\(n : Int) -> n) 0)
+          case False -> 0) + 0)
+        pure (staged + 1)
 
-result : Set Int
+result : IO Int
 let result = generated_3897
 
 --! assertNoErrors
---! assertType generated_3897 Set Int
---! assertType result Set Int
+--! assertType generated_3897 IO Int
+--! assertType result IO Int
 --! assertDeclKinds signature, let, signature, let

@@ -1,17 +1,18 @@
 module main
 
-generated_2782 : Int
-let generated_2782 =
-    block
-        let base : (x : Int) = (x = (((((((((left = 0, right = (((if False then 0 else 0) + (0 + 0)) + 0))).right + 0) + 0) + 0) + 0) + 0) + 0) + 0))
-        let extended = base.{ y := (((((((((left = 0, right = (((if False then 0 else 0) + (0 + 0)) + 0))).right + 0) + 0) + 0) + 0) + 0) + 0) + 1) }
+generated_2782 : List Int
+let generated_2782 = [ for x in [1, 2, 3], skip 1, take 2, yield (match [(match [x, (x + 1)]
+  case head :: tail -> head
+  case Nil -> 0), ((match [x, (x + 1)]
+  case head :: tail -> head
+  case Nil -> 0) + 1)]
+  case head :: tail -> head
+  case Nil -> 0) ]
 
-        (extended.x + extended.y)
-
-result : Int
+result : List Int
 let result = generated_2782
 
 --! assertNoErrors
---! assertType generated_2782 Int
---! assertType result Int
+--! assertType generated_2782 List Int
+--! assertType result List Int
 --! assertDeclKinds signature, let, signature, let

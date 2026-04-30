@@ -1,12 +1,17 @@
 module main
 
-generated_1404 : Int
-let generated_1404 =
-    block
-        ranked : Int
-        let ranked = (((((((if False then 0 else ((if False then 0 else 0) + (0 + 0))) + 0) + 0) + 0) + 0) + 0) + 0)
+generatedMakeConst : forall (a : Type). a -> Unit -> a
+let generatedMakeConst value = \() -> value
 
-        (ranked + 0)
+generated_1404 : Int
+let generated_1404 = ((generatedMakeConst (((\(n : Int) -> n) (block
+    generatedSetCount : Set Int -> Int
+    let generatedSetCount values = 2
+
+    let item = 0
+    let values = {|item, (item + 1)|}
+
+    generatedSetCount values)) + 0)) ())
 
 result : Int
 let result = generated_1404
@@ -14,4 +19,4 @@ let result = generated_1404
 --! assertNoErrors
 --! assertType generated_1404 Int
 --! assertType result Int
---! assertDeclKinds signature, let, signature, let
+--! assertDeclKinds signature, let, signature, let, signature, let

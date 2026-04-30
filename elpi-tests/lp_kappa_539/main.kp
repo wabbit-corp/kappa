@@ -1,15 +1,15 @@
 module main
 
-generated_539 : IO Int
-let generated_539 =
-    do
-        let staged = ((((((((0 + (0 + 0)) + 0) + 0) + 0) + 0) + 0) + 0) + 0)
-        pure (staged + 1)
+generatedResize : (image : Int) -> (width : Int) -> (height : Int) -> Int
+let generatedResize image width height = image + width * 10 + height
 
-result : IO Int
+generated_539 : Int
+let generated_539 = generatedResize { image = (((Some (0 + 1)) ?: (0 + 2)) + 0), height = 3, width = 2 }
+
+result : Int
 let result = generated_539
 
 --! assertNoErrors
---! assertType generated_539 IO Int
---! assertType result IO Int
---! assertDeclKinds signature, let, signature, let
+--! assertType generated_539 Int
+--! assertType result Int
+--! assertDeclKinds signature, let, signature, let, signature, let

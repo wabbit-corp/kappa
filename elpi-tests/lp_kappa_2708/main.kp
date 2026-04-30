@@ -1,12 +1,25 @@
 module main
 
-generated_2708 : Map String Int
-let generated_2708 = { for x in [1, 2, 3], if x > 0, yield "k" : ((((((((left = 0, right = ((if False then 0 else x) + 0))).right + 0) + 0) + 0) + 0) + 0) + 0) }
+generated_2708 : Int
+let generated_2708 =
+    block
+        let base : (x : Int) = (x = ((match (Some (match [0, (0 + 1)]
+          case head :: tail -> head
+          case Nil -> 0))
+          case Some payload -> payload
+          case None -> 0) + 0))
+        let extended = base.{ y := ((match (Some (match [0, (0 + 1)]
+          case head :: tail -> head
+          case Nil -> 0))
+          case Some payload -> payload
+          case None -> 0) + 1) }
 
-result : Map String Int
+        (extended.x + extended.y)
+
+result : Int
 let result = generated_2708
 
 --! assertNoErrors
---! assertType generated_2708 Map String Int
---! assertType result Map String Int
+--! assertType generated_2708 Int
+--! assertType result Int
 --! assertDeclKinds signature, let, signature, let

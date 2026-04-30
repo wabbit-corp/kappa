@@ -2,11 +2,12 @@ module main
 
 generated_4311 : Int
 let generated_4311 =
-    block
-        let pair = (x = ((((((0 + ((if False then 0 else 0) + 0)) + 0) + 0) + 0) + 0) + 0), y = ((((((0 + ((if False then 0 else 0) + 0)) + 0) + 0) + 0) + 0) + 1))
-        let (x = captured, y = other) = pair
-
-        (captured + other)
+    let
+        ranked : Int = ((\(n : Int) -> n) (match (0 == 0)
+          case True -> 0
+          case False -> 0))
+in
+        (ranked + 0)
 
 result : Int
 let result = generated_4311

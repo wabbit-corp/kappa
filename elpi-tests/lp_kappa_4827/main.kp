@@ -1,12 +1,17 @@
 module main
 
-generated_4827 : Set Int
-let generated_4827 = {| yield ((((((0 + (((if True then ((if True then 0 else 0) + 0) else 0) + 0) + 0)) + 0) + 0) + 0) + 0) + 0) |}
+generated_4827 : Int
+let generated_4827 =
+    block
+        let pair = (x = (((\(n : Int) -> n) ((Some (0 + 1)) ?: (0 + 2))) + 0), y = (((\(n : Int) -> n) ((Some (0 + 1)) ?: (0 + 2))) + 1))
+        let whole@(x = captured, y = other) = pair
 
-result : Set Int
+        (whole.x + (captured + other))
+
+result : Int
 let result = generated_4827
 
 --! assertNoErrors
---! assertType generated_4827 Set Int
---! assertType result Set Int
+--! assertType generated_4827 Int
+--! assertType result Int
 --! assertDeclKinds signature, let, signature, let

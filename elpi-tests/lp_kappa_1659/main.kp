@@ -1,17 +1,12 @@
 module main
 
-generated_1659 : Int
-let generated_1659 =
-    block
-        let pair = (x = (((((((((if True then (if True then 0 else 0) else 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0), y = (((((((((if True then (if True then 0 else 0) else 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0) + 1))
-        let (x = captured, y = other) = pair
+generated_1659 : Bool
+let generated_1659 = (if (if (if ((if False then True else (True || False)) && False) then True else False) then True else False) then True else False)
 
-        (captured + other)
-
-result : Int
+result : Bool
 let result = generated_1659
 
 --! assertNoErrors
---! assertType generated_1659 Int
---! assertType result Int
+--! assertType generated_1659 Bool
+--! assertType result Bool
 --! assertDeclKinds signature, let, signature, let

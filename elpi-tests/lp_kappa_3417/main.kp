@@ -6,9 +6,23 @@ data GeneratedChoice : Type =
 
 generated_3417 : Int
 let generated_3417 =
-    match (GeneratedLeft ((((((0 + ((((if False then 0 else 0) + 0) + 0) + 0)) + 0) + 0) + 0) + 0) + 0))
+    match GeneratedRight
       case GeneratedLeft payload -> (payload + 0)
-      case GeneratedRight -> ((((((0 + ((((if False then 0 else 0) + 0) + 0) + 0)) + 0) + 0) + 0) + 0) + 0)
+      case GeneratedRight -> ((match ((block
+          let pair = (x = 0, y = (0 + 1))
+          let (x = captured, y = other) = pair
+
+          (captured + other)) == (block
+          let pair = (x = 0, y = (0 + 1))
+          let (x = captured, y = other) = pair
+
+          (captured + other)))
+        case True -> (block
+            let pair = (x = 0, y = (0 + 1))
+            let (x = captured, y = other) = pair
+
+            (captured + other))
+        case False -> 0) + 0)
 
 result : Int
 let result = generated_3417

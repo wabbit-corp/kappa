@@ -1,12 +1,28 @@
 module main
 
-generated_3035 : (Int -> Int)
-let generated_3035 = \(x : Int) -> ((\(x : Int) -> ((\(x : Int) -> ((\(x : Int) -> if (x == 0) then x else (((if True then \(x : Int) -> x else \(x : Int) -> x)) x)) x)) x)) x)
+generatedEcho : forall (a : Type). (this x : a) -> a
+let generatedEcho @a (this x : a) = x
 
-result : (Int -> Int)
+generated_3035 : Int
+let generated_3035 = ((.generatedEcho) ((block
+    generatedListLength : List Int -> Int
+    let generatedListLength xs decreases structural xs =
+        match xs
+          case Nil -> 0
+          case _ :: tail -> 1 + generatedListLength tail
+
+    let item = (block
+        let pair = (x = 0, y = (0 + 1))
+        let (x = captured, y = other) = pair
+
+        (captured + other))
+
+    generatedListLength [item, (item + 1), 0]) + 0))
+
+result : Int
 let result = generated_3035
 
 --! assertNoErrors
---! assertType generated_3035 (Int -> Int)
---! assertType result (Int -> Int)
---! assertDeclKinds signature, let, signature, let
+--! assertType generated_3035 Int
+--! assertType result Int
+--! assertDeclKinds signature, let, signature, let, signature, let

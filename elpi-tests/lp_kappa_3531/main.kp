@@ -1,15 +1,35 @@
 module main
 
-generated_3531 : IO Int
+generated_3531 : Int
 let generated_3531 =
-    do
-        let staged = ((((((0 + (((((left = (0 + 0), right = 0)).left + 0) + 0) + 0)) + 0) + 0) + 0) + 0) + 0)
-        pure (staged + 1)
+    block
+        let pair = (x = ((block
+            generatedListLength : List Int -> Int
+            let generatedListLength xs decreases structural xs =
+                match xs
+                  case Nil -> 0
+                  case _ :: tail -> 1 + generatedListLength tail
 
-result : IO Int
+            let item = ((\(n : Int) -> n) 0)
+
+            generatedListLength [item, (item + 1), 0]) + 0), y = ((block
+            generatedListLength : List Int -> Int
+            let generatedListLength xs decreases structural xs =
+                match xs
+                  case Nil -> 0
+                  case _ :: tail -> 1 + generatedListLength tail
+
+            let item = ((\(n : Int) -> n) 0)
+
+            generatedListLength [item, (item + 1), 0]) + 1))
+        let whole@(x = captured, y = other) = pair
+
+        (whole.x + (captured + other))
+
+result : Int
 let result = generated_3531
 
 --! assertNoErrors
---! assertType generated_3531 IO Int
---! assertType result IO Int
+--! assertType generated_3531 Int
+--! assertType result Int
 --! assertDeclKinds signature, let, signature, let

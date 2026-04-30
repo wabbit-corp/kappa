@@ -1,17 +1,12 @@
 module main
 
-generated_2850 : Int
-let generated_2850 =
-    block
-        let base : (x : Int) = (x = (((((((((left = 0, right = (((left = 0, right = (0 + 0))).right + 0))).right + 0) + 0) + 0) + 0) + 0) + 0) + 0))
-        let extended = base.{ y := (((((((((left = 0, right = (((left = 0, right = (0 + 0))).right + 0))).right + 0) + 0) + 0) + 0) + 0) + 0) + 1) }
+generated_2850 : Option Int
+let generated_2850 = (if True then (if True then (if True then (Some ((if (False || True) then (Some (0 + 0)) else (Some (1 + 1))) ?: 0)) else None) else None) else None)
 
-        (extended.x + extended.y)
-
-result : Int
+result : Option Int
 let result = generated_2850
 
 --! assertNoErrors
---! assertType generated_2850 Int
---! assertType result Int
+--! assertType generated_2850 Option Int
+--! assertType result Option Int
 --! assertDeclKinds signature, let, signature, let

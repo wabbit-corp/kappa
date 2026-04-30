@@ -1,18 +1,26 @@
 module main
 
-generated_1634 : Int
-let generated_1634 =
-    block
-        type RankedAlias = Int
+generated_1634 : Map String Int
+let generated_1634 = { yield "only" : ((block
+    generatedSetCount : Set Int -> Int
+    let generatedSetCount values = 2
 
-        let aliased : RankedAlias = (((((((((if True then (0 + (0 + 0)) else 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0)
+    let item = (block
+        generatedMapCount : Map String Int -> Int
+        let generatedMapCount values = 1
 
-        (aliased + 1)
+        let item = 0
+        let values = { yield "item" : item }
 
-result : Int
+        generatedMapCount values)
+    let values = {|item, (item + 1)|}
+
+    generatedSetCount values) + 0) }
+
+result : Map String Int
 let result = generated_1634
 
 --! assertNoErrors
---! assertType generated_1634 Int
---! assertType result Int
+--! assertType generated_1634 Map String Int
+--! assertType result Map String Int
 --! assertDeclKinds signature, let, signature, let

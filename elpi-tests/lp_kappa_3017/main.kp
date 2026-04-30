@@ -1,12 +1,25 @@
 module main
 
-generated_3017 : String
-let generated_3017 = (if (if (if (if ((if (True && False) then True else False) && True) then True else False) then True else False) then True else False) then #"raw lambda-prolog"# else "fallback")
+generated_3017 : List Int
+let generated_3017 = [ for x in [1, 2, 3], let y = x + 1, if y > 0, yield (block
+    generatedListLength : List Int -> Int
+    let generatedListLength xs decreases structural xs =
+        match xs
+          case Nil -> 0
+          case _ :: tail -> 1 + generatedListLength tail
 
-result : String
+    let item = (block
+        let pair = (x = x, y = (x + 1))
+        let (x = captured, y = other) = pair
+
+        (captured + other))
+
+    generatedListLength [item, (item + 1), 0]) ]
+
+result : List Int
 let result = generated_3017
 
 --! assertNoErrors
---! assertType generated_3017 String
---! assertType result String
+--! assertType generated_3017 List Int
+--! assertType result List Int
 --! assertDeclKinds signature, let, signature, let

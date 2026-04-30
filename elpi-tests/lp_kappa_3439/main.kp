@@ -1,12 +1,49 @@
 module main
 
-generated_3439 : Bool
-let generated_3439 = (if (if (if (if (if True then (True && True) else False) then True else False) then False else True) then True else False) then True else False)
+generated_3439 : Int
+let generated_3439 =
+    block
+        scoped effect Choice =
+            ω choose : Unit -> Bool
 
-result : Bool
+        let c = Choice
+
+        let seed = (match ((block
+            let pair = (x = 0, y = (0 + 1))
+            let (x = captured, y = other) = pair
+
+            (captured + other)) == (block
+            let pair = (x = 0, y = (0 + 1))
+            let (x = captured, y = other) = pair
+
+            (captured + other)))
+          case True -> (block
+              let pair = (x = 0, y = (0 + 1))
+              let (x = captured, y = other) = pair
+
+              (captured + other))
+          case False -> 0)
+
+        let comp : Eff <[Choice : Choice]> Int =
+            do
+                let b <- c.choose ()
+                if b then seed else (seed + 1)
+
+        let handled : Eff <[ ]> Int =
+            deep handle Choice comp with
+                case return x -> pure x
+                case choose () k ->
+                    do
+                        let a <- k True
+                        let b <- k False
+                        pure (a + b)
+
+        runPure handled
+
+result : Int
 let result = generated_3439
 
 --! assertNoErrors
---! assertType generated_3439 Bool
---! assertType result Bool
+--! assertType generated_3439 Int
+--! assertType result Int
 --! assertDeclKinds signature, let, signature, let

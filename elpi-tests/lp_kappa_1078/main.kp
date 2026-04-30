@@ -1,22 +1,46 @@
 module main
 
-generated_1078 : Int
-let generated_1078 =
-    block
-        trait RankedScore a =
-            rank : a -> Int
+type GeneratedPair = (left : Int, right : Int)
 
-        instance RankedScore Int =
-            let rank x = x
+generated_1078 : GeneratedPair
+let generated_1078 = ((left = (block
+    generatedListLength : List Int -> Int
+    let generatedListLength xs decreases structural xs =
+        match xs
+          case Nil -> 0
+          case _ :: tail -> 1 + generatedListLength tail
 
-        let dict = summon (RankedScore Int)
+    let item = (block
+        generatedSetCount : Set Int -> Int
+        let generatedSetCount values = 2
 
-        dict.rank ((((((((if True then ((if False then 0 else 0) + (0 + 0)) else 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0)
+        let item = 0
+        let values = {|item, (item + 1)|}
 
-result : Int
+        generatedSetCount values)
+
+    generatedListLength [item, (item + 1), 0]), right = 0)).{ right = ((block
+    generatedListLength : List Int -> Int
+    let generatedListLength xs decreases structural xs =
+        match xs
+          case Nil -> 0
+          case _ :: tail -> 1 + generatedListLength tail
+
+    let item = (block
+        generatedSetCount : Set Int -> Int
+        let generatedSetCount values = 2
+
+        let item = 0
+        let values = {|item, (item + 1)|}
+
+        generatedSetCount values)
+
+    generatedListLength [item, (item + 1), 0]) + 1) }
+
+result : GeneratedPair
 let result = generated_1078
 
 --! assertNoErrors
---! assertType generated_1078 Int
---! assertType result Int
---! assertDeclKinds signature, let, signature, let
+--! assertType generated_1078 GeneratedPair
+--! assertType result GeneratedPair
+--! assertDeclKinds type, signature, let, signature, let

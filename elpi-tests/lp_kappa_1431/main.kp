@@ -1,20 +1,19 @@
 module main
 
-generated_1431 : Int
-let generated_1431 =
-    block
-        data RankedBox : Type =
-            RankedBox (value : Int)
+generated_1431 : Map String Int
+let generated_1431 = { for x in [1, 2, 3], yield "k" : ((\(n : Int) -> n) (block
+    generatedSetCount : Set Int -> Int
+    let generatedSetCount values = 2
 
-        let boxed = RankedBox ((((((((if False then 0 else ((if False then 0 else 0) + (0 + 0))) + 0) + 0) + 0) + 0) + 0) + 0) + 0)
+    let item = x
+    let values = {|item, (item + 1)|}
 
-        match boxed
-          case RankedBox value -> (value + 1)
+    generatedSetCount values)), on conflict keep first }
 
-result : Int
+result : Map String Int
 let result = generated_1431
 
 --! assertNoErrors
---! assertType generated_1431 Int
---! assertType result Int
+--! assertType generated_1431 Map String Int
+--! assertType result Map String Int
 --! assertDeclKinds signature, let, signature, let

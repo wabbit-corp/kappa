@@ -1,12 +1,47 @@
 module main
 
-generated_625 : List Int
-let generated_625 = [ for x in [1, 2, 3], let y = x + 1, yield (((((((0 + ((if True then x else 0) + 0)) + 0) + 0) + 0) + 0) + 0) + 0) ]
+generated_625 : Int
+let generated_625 =
+    block
+        scoped effect State (s : Type) =
+            get : Unit -> s
 
-result : List Int
+        let seed = (block
+            generatedListLength : List Int -> Int
+            let generatedListLength xs decreases structural xs =
+                match xs
+                  case Nil -> 0
+                  case _ :: tail -> 1 + generatedListLength tail
+
+            let item = (block
+                generatedListLength : List Int -> Int
+                let generatedListLength xs decreases structural xs =
+                    match xs
+                      case Nil -> 0
+                      case _ :: tail -> 1 + generatedListLength tail
+
+                let item = 0
+
+                generatedListLength [item, (item + 1), 0])
+
+            generatedListLength [item, (item + 1), 0])
+
+        let comp : Eff <[State : State Int]> Int =
+            do
+                let n <- State.get ()
+                n
+
+        let handled : Eff <[ ]> Int =
+            deep handle State comp with
+                case return x -> pure x
+                case get () k -> k seed
+
+        runPure handled
+
+result : Int
 let result = generated_625
 
 --! assertNoErrors
---! assertType generated_625 List Int
---! assertType result List Int
+--! assertType generated_625 Int
+--! assertType result Int
 --! assertDeclKinds signature, let, signature, let

@@ -1,14 +1,40 @@
 module main
 
-type GeneratedPair = (left : Int, right : Int)
+generated_2194 : Int
+let generated_2194 =
+    block
+        scoped effect Ask =
+            ask : Unit -> Bool
 
-generated_2194 : GeneratedPair
-let generated_2194 = ((left = ((((((((if False then 0 else ((Some (0 + 0)) ?: 0)) + (0 + 0)) + 0) + 0) + 0) + 0) + 0) + 0), right = 0)).{ right = (((((((((if False then 0 else ((Some (0 + 0)) ?: 0)) + (0 + 0)) + 0) + 0) + 0) + 0) + 0) + 0) + 1) }
+        let l = Ask
 
-result : GeneratedPair
+        let seed = (block
+            generatedMapCount : Map String Int -> Int
+            let generatedMapCount values = 1
+
+            let item = (match (Some 0)
+              case Some payload -> payload
+              case None -> 0)
+            let values = { yield "item" : item }
+
+            generatedMapCount values)
+
+        let comp : Eff <[Ask : Ask]> Int =
+            do
+                let b <- l.ask ()
+                if b then seed else (seed + 1)
+
+        let handled : Eff <[ ]> Int =
+            deep handle l comp with
+                case return x -> pure x
+                case ask () k -> k True
+
+        runPure handled
+
+result : Int
 let result = generated_2194
 
 --! assertNoErrors
---! assertType generated_2194 GeneratedPair
---! assertType result GeneratedPair
---! assertDeclKinds type, signature, let, signature, let
+--! assertType generated_2194 Int
+--! assertType result Int
+--! assertDeclKinds signature, let, signature, let

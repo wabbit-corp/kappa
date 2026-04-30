@@ -2,8 +2,14 @@ module main
 
 generated_4650 : Int
 let generated_4650 =
-    match (((((((0 + (((if True then 0 else 0) + 0) + 0)) + 0) + 0) + 0) + 0) + 0) == ((((((0 + (((if True then 0 else 0) + 0) + 0)) + 0) + 0) + 0) + 0) + 0))
-      case True -> ((((((0 + (((if True then 0 else 0) + 0) + 0)) + 0) + 0) + 0) + 0) + 0)
+    match (((match (Some ((Some (0 + 1)) ?: (0 + 2)))
+      case Some payload -> payload
+      case None -> 0) + 0) == ((match (Some ((Some (0 + 1)) ?: (0 + 2)))
+      case Some payload -> payload
+      case None -> 0) + 0))
+      case True -> ((match (Some ((Some (0 + 1)) ?: (0 + 2)))
+        case Some payload -> payload
+        case None -> 0) + 0)
       case False -> 0
 
 result : Int

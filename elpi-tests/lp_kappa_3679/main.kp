@@ -1,14 +1,21 @@
 module main
 
-type GeneratedTuple = (Int, Int)
+generated_3679 : Int
+let generated_3679 =
+    block
+        let pair = (x = ((match (Some ((\(n : Int) -> n) 0))
+          case Some payload -> payload
+          case None -> 0) + 0), y = ((match (Some ((\(n : Int) -> n) 0))
+          case Some payload -> payload
+          case None -> 0) + 1))
+        let (x = captured, y = other) = pair
 
-generated_3679 : GeneratedTuple
-let generated_3679 = (if True then (if True then (if False then (0, (0 + 0)) else (if False then (0, (0 + 0)) else (if False then (0, (0 + 0)) else (0, (0 + 0))))) else (0, (0 + 0))) else (0, (0 + 0)))
+        (captured + other)
 
-result : GeneratedTuple
+result : Int
 let result = generated_3679
 
 --! assertNoErrors
---! assertType generated_3679 GeneratedTuple
---! assertType result GeneratedTuple
---! assertDeclKinds type, signature, let, signature, let
+--! assertType generated_3679 Int
+--! assertType result Int
+--! assertDeclKinds signature, let, signature, let

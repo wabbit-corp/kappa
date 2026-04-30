@@ -1,13 +1,28 @@
 module main
 
+type GeneratedTuple = (Int, Int)
+
 generated_4558 : Int
 let generated_4558 =
     block
-        type RankedAlias = Int
+        let pair : GeneratedTuple = (((block
+            generatedSetCount : Set Int -> Int
+            let generatedSetCount values = 2
 
-        let aliased : RankedAlias = ((((((0 + ((if False then 0 else ((left = (0 + 0), right = 0)).left) + 0)) + 0) + 0) + 0) + 0) + 0)
+            let item = ((Some (0 + 1)) ?: (0 + 2))
+            let values = {|item, (item + 1)|}
 
-        (aliased + 1)
+            generatedSetCount values) + 0), ((block
+            generatedSetCount : Set Int -> Int
+            let generatedSetCount values = 2
+
+            let item = ((Some (0 + 1)) ?: (0 + 2))
+            let values = {|item, (item + 1)|}
+
+            generatedSetCount values) + 1))
+        let (left, right) = pair
+
+        (left + right)
 
 result : Int
 let result = generated_4558
@@ -15,4 +30,4 @@ let result = generated_4558
 --! assertNoErrors
 --! assertType generated_4558 Int
 --! assertType result Int
---! assertDeclKinds signature, let, signature, let
+--! assertDeclKinds type, signature, let, signature, let

@@ -1,12 +1,33 @@
 module main
 
-generated_603 : String
-let generated_603 = (if (if (if (if (if (if True then False else True) then False else True) then True else False) then True else False) then True else False) then #"raw lambda-prolog"# else "fallback")
+generated_603 : IO Int
+let generated_603 =
+    do
+        let staged = ((block
+            generatedListLength : List Int -> Int
+            let generatedListLength xs decreases structural xs =
+                match xs
+                  case Nil -> 0
+                  case _ :: tail -> 1 + generatedListLength tail
 
-result : String
+            let item = (block
+                generatedListLength : List Int -> Int
+                let generatedListLength xs decreases structural xs =
+                    match xs
+                      case Nil -> 0
+                      case _ :: tail -> 1 + generatedListLength tail
+
+                let item = 0
+
+                generatedListLength [item, (item + 1), 0])
+
+            generatedListLength [item, (item + 1), 0]) + 0)
+        pure (staged + 1)
+
+result : IO Int
 let result = generated_603
 
 --! assertNoErrors
---! assertType generated_603 String
---! assertType result String
+--! assertType generated_603 IO Int
+--! assertType result IO Int
 --! assertDeclKinds signature, let, signature, let

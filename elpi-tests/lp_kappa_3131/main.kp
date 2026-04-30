@@ -1,15 +1,21 @@
 module main
 
+generatedResize : (image : Int) -> (width : Int) -> (height : Int) -> Int
+let generatedResize image width height = image + width * 10 + height
+
 generated_3131 : Int
-let generated_3131 =
-    block
-        data RankedBox : Type =
-            RankedBox (value : Int)
+let generated_3131 = generatedResize { image = ((block
+    generatedMapCount : Map String Int -> Int
+    let generatedMapCount values = 1
 
-        let boxed = RankedBox (((((((((Some (((if False then 0 else 0) + (0 + 0)) + 0)) ?: 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0)
+    let item = (block
+        let pair = (x = 0, y = (0 + 1))
+        let (x = captured, y = other) = pair
 
-        match boxed
-          case RankedBox value -> (value + 1)
+        (captured + other))
+    let values = { yield "item" : item }
+
+    generatedMapCount values) + 0), height = 3, width = 2 }
 
 result : Int
 let result = generated_3131
@@ -17,4 +23,4 @@ let result = generated_3131
 --! assertNoErrors
 --! assertType generated_3131 Int
 --! assertType result Int
---! assertDeclKinds signature, let, signature, let
+--! assertDeclKinds signature, let, signature, let, signature, let

@@ -1,15 +1,31 @@
 module main
 
-generated_354 : IO Int
+generated_354 : Int
 let generated_354 =
-    do
-        value <- pure (((((((((((if True then 0 else 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0)
-        pure (value + 2)
+    block
+        scoped effect Ask =
+            ask : Unit -> Bool
 
-result : IO Int
+        let seed = (match [0, (0 + 1)]
+          case head :: tail -> head
+          case Nil -> 0)
+
+        let comp : Eff <[Ask : Ask]> Int =
+            do
+                let b <- Ask.ask ()
+                if b then seed else (seed + 1)
+
+        let handled : Eff <[ ]> Int =
+            deep handle Ask comp with
+                case return x -> pure x
+                case ask () k -> k True
+
+        runPure handled
+
+result : Int
 let result = generated_354
 
 --! assertNoErrors
---! assertType generated_354 IO Int
---! assertType result IO Int
+--! assertType generated_354 Int
+--! assertType result Int
 --! assertDeclKinds signature, let, signature, let

@@ -2,11 +2,51 @@ module main
 
 generated_1626 : Int
 let generated_1626 =
-    block
-        let base : (x : Int) = (x = (((((((((if True then (0 + (0 + 0)) else 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0))
-        let extended = base.{ y := (((((((((if True then (0 + (0 + 0)) else 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0) + 1) }
+    match (((block
+        generatedSetCount : Set Int -> Int
+        let generatedSetCount values = 2
 
-        (extended.x + extended.y)
+        let item = (block
+            generatedMapCount : Map String Int -> Int
+            let generatedMapCount values = 1
+
+            let item = 0
+            let values = { yield "item" : item }
+
+            generatedMapCount values)
+        let values = {|item, (item + 1)|}
+
+        generatedSetCount values) + 0) == ((block
+        generatedSetCount : Set Int -> Int
+        let generatedSetCount values = 2
+
+        let item = (block
+            generatedMapCount : Map String Int -> Int
+            let generatedMapCount values = 1
+
+            let item = 0
+            let values = { yield "item" : item }
+
+            generatedMapCount values)
+        let values = {|item, (item + 1)|}
+
+        generatedSetCount values) + 0))
+      case True -> ((block
+          generatedSetCount : Set Int -> Int
+          let generatedSetCount values = 2
+
+          let item = (block
+              generatedMapCount : Map String Int -> Int
+              let generatedMapCount values = 1
+
+              let item = 0
+              let values = { yield "item" : item }
+
+              generatedMapCount values)
+          let values = {|item, (item + 1)|}
+
+          generatedSetCount values) + 0)
+      case False -> 0
 
 result : Int
 let result = generated_1626

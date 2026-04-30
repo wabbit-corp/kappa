@@ -1,12 +1,14 @@
 module main
 
-generated_2864 : Option Int
-let generated_2864 = (if True then (if True then (if True then (if (False || True) then (if (True && True) then (if False then None else (Some (0 + 0))) else (Some 2)) else (Some (1 + 1))) else None) else None) else None)
+generated_2864 : Map String Int
+let generated_2864 = { for x in [1, 2, 3], yield "k" : ((\(n : Int) -> n) (match [x, (x + 1)]
+  case head :: tail -> head
+  case Nil -> 0)) }
 
-result : Option Int
+result : Map String Int
 let result = generated_2864
 
 --! assertNoErrors
---! assertType generated_2864 Option Int
---! assertType result Option Int
+--! assertType generated_2864 Map String Int
+--! assertType result Map String Int
 --! assertDeclKinds signature, let, signature, let

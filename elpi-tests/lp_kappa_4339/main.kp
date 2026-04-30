@@ -1,12 +1,17 @@
 module main
 
-generated_4339 : Set Int
-let generated_4339 = {| for x in [1, 2, 3], if x > 0, yield (((((0 + ((if False then 0 else ((x + 0) + 0)) + 0)) + 0) + 0) + 0) + 0) |}
+generatedEcho : forall (a : Type). (this x : a) -> a
+let generatedEcho @a (this x : a) = x
 
-result : Set Int
+generated_4339 : Option Int
+let generated_4339 = (Some (((\(n : Int) -> n) (match (0 == 0)
+  case True -> 0
+  case False -> 0)) + 0))?.generatedEcho
+
+result : Option Int
 let result = generated_4339
 
 --! assertNoErrors
---! assertType generated_4339 Set Int
---! assertType result Set Int
---! assertDeclKinds signature, let, signature, let
+--! assertType generated_4339 Option Int
+--! assertType result Option Int
+--! assertDeclKinds signature, let, signature, let, signature, let

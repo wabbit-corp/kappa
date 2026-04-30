@@ -2,11 +2,17 @@ module main
 
 generated_2238 : Int
 let generated_2238 =
-    block
-        let base : (x : Int) = (x = (((((((((left = (0 + 0), right = 0)).left + 0) + 0) + 0) + 0) + 0) + 0) + 0))
-        let extended = base.{ y := (((((((((left = (0 + 0), right = 0)).left + 0) + 0) + 0) + 0) + 0) + 0) + 1) }
-
-        (extended.x + extended.y)
+    match [((match (Some (match (Some 0)
+      case Some payload -> payload
+      case None -> 0))
+      case Some payload -> payload
+      case None -> 0) + 0), (((match (Some (match (Some 0)
+      case Some payload -> payload
+      case None -> 0))
+      case Some payload -> payload
+      case None -> 0) + 0) + 1)]
+      case head :: tail -> head
+      case Nil -> 0
 
 result : Int
 let result = generated_2238

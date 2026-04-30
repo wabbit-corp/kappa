@@ -1,12 +1,33 @@
 module main
 
-generated_1369 : (Int -> Int)
-let generated_1369 = \(x : Int) -> ((\(x : Int) -> ((\(x : Int) -> (((if True then (if False then \(x : Int) -> x else \(x : Int) -> x) else \(x : Int) -> x)) x)) x)) x)
+generatedEcho : forall (a : Type). (this x : a) -> a
+let generatedEcho @a (this x : a) = x
 
-result : (Int -> Int)
+generated_1369 : Option Int
+let generated_1369 = (Some ((block
+    let pair = (x = (block
+        generatedSetCount : Set Int -> Int
+        let generatedSetCount values = 2
+
+        let item = 0
+        let values = {|item, (item + 1)|}
+
+        generatedSetCount values), y = ((block
+        generatedSetCount : Set Int -> Int
+        let generatedSetCount values = 2
+
+        let item = 0
+        let values = {|item, (item + 1)|}
+
+        generatedSetCount values) + 1))
+    let (x = captured, y = other) = pair
+
+    (captured + other)) + 0))?.generatedEcho
+
+result : Option Int
 let result = generated_1369
 
 --! assertNoErrors
---! assertType generated_1369 (Int -> Int)
---! assertType result (Int -> Int)
---! assertDeclKinds signature, let, signature, let
+--! assertType generated_1369 Option Int
+--! assertType result Option Int
+--! assertDeclKinds signature, let, signature, let, signature, let

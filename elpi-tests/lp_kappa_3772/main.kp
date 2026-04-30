@@ -1,12 +1,23 @@
 module main
 
-generated_3772 : List Int
-let generated_3772 = [ yield ((((((0 + ((0 + ((if False then 0 else 0) + 0)) + 0)) + 0) + 0) + 0) + 0) + 0) ]
+generatedNeed : (@x : Int) -> Int
+let generatedNeed (@x : Int) = x
 
-result : List Int
+generated_3772 : Int
+let generated_3772 =
+    block
+        let (@x : Int) = (block
+            let pair = (x = ((\(n : Int) -> n) 0), y = (((\(n : Int) -> n) 0) + 1))
+            let (x = captured, y = other) = pair
+
+            (captured + other))
+
+        if True then generatedNeed else 0
+
+result : Int
 let result = generated_3772
 
 --! assertNoErrors
---! assertType generated_3772 List Int
---! assertType result List Int
---! assertDeclKinds signature, let, signature, let
+--! assertType generated_3772 Int
+--! assertType result Int
+--! assertDeclKinds signature, let, signature, let, signature, let

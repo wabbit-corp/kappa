@@ -1,17 +1,16 @@
 module main
 
+generatedMakeConst : forall (a : Type). a -> Unit -> a
+let generatedMakeConst value = \() -> value
+
 generated_2268 : Int
-let generated_2268 =
-    block
-        trait RankedScore a =
-            rank : a -> Int
-
-        instance RankedScore Int =
-            let rank x = x
-
-        let dict = summon (RankedScore Int)
-
-        dict.rank (((((((((left = (((0 + 0) + 0) + 0), right = 0)).left + 0) + 0) + 0) + 0) + 0) + 0) + 0)
+let generated_2268 = ((generatedMakeConst ((match [(match (Some 0)
+  case Some payload -> payload
+  case None -> 0), ((match (Some 0)
+  case Some payload -> payload
+  case None -> 0) + 1)]
+  case head :: tail -> head
+  case Nil -> 0) + 0)) ())
 
 result : Int
 let result = generated_2268
@@ -19,4 +18,4 @@ let result = generated_2268
 --! assertNoErrors
 --! assertType generated_2268 Int
 --! assertType result Int
---! assertDeclKinds signature, let, signature, let
+--! assertDeclKinds signature, let, signature, let, signature, let

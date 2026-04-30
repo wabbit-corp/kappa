@@ -1,18 +1,14 @@
 module main
 
-generatedNeed : (@x : Int) -> Int
-let generatedNeed (@x : Int) = x
+generated_336 : List Int
+let generated_336 = [ yield ((match [0, (0 + 1)]
+  case head :: tail -> head
+  case Nil -> 0) + 0) ]
 
-generated_336 : IO Int
-let generated_336 =
-    do
-        let (@x : Int) = ((((((((((if False then 0 else 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0)
-        pure generatedNeed
-
-result : IO Int
+result : List Int
 let result = generated_336
 
 --! assertNoErrors
---! assertType generated_336 IO Int
---! assertType result IO Int
---! assertDeclKinds signature, let, signature, let, signature, let
+--! assertType generated_336 List Int
+--! assertType result List Int
+--! assertDeclKinds signature, let, signature, let

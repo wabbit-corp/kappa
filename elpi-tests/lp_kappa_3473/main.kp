@@ -1,12 +1,28 @@
 module main
 
-generated_3473 : Bool
-let generated_3473 = (if (if (if (if (if False then True else (True || False)) then True else False) then False else True) then True else False) then True else False)
+generated_3473 : Int
+let generated_3473 =
+    block
+        data RankedBox : Type =
+            RankedBox (value : Int)
 
-result : Bool
+        let boxed = RankedBox (((Some ((block
+            let pair = (x = 0, y = (0 + 1))
+            let (x = captured, y = other) = pair
+
+            (captured + other)) + 1)) ?: ((block
+            let pair = (x = 0, y = (0 + 1))
+            let (x = captured, y = other) = pair
+
+            (captured + other)) + 2)) + 0)
+
+        match boxed
+          case RankedBox value -> (value + 1)
+
+result : Int
 let result = generated_3473
 
 --! assertNoErrors
---! assertType generated_3473 Bool
---! assertType result Bool
+--! assertType generated_3473 Int
+--! assertType result Int
 --! assertDeclKinds signature, let, signature, let

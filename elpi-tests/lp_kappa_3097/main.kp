@@ -1,20 +1,26 @@
 module main
 
-generated_3097 : Int
-let generated_3097 =
-    block
-        data RankedBox : Type =
-            RankedBox (value : Int)
+generatedEcho : forall (a : Type). (this x : a) -> a
+let generatedEcho @a (this x : a) = x
 
-        let boxed = RankedBox (((((((((Some (((if True then 0 else 0) + 0) + 0)) ?: 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0)
+generated_3097 : Option Int
+let generated_3097 = (Some ((block
+    generatedSetCount : Set Int -> Int
+    let generatedSetCount values = 2
 
-        match boxed
-          case RankedBox value -> (value + 1)
+    let item = (block
+        let pair = (x = 0, y = (0 + 1))
+        let (x = captured, y = other) = pair
 
-result : Int
+        (captured + other))
+    let values = {|item, (item + 1)|}
+
+    generatedSetCount values) + 0))?.generatedEcho
+
+result : Option Int
 let result = generated_3097
 
 --! assertNoErrors
---! assertType generated_3097 Int
---! assertType result Int
---! assertDeclKinds signature, let, signature, let
+--! assertType generated_3097 Option Int
+--! assertType result Option Int
+--! assertDeclKinds signature, let, signature, let, signature, let

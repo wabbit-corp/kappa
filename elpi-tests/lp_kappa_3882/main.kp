@@ -1,12 +1,17 @@
 module main
 
-generated_3882 : Unit
-let generated_3882 = (if True then (if True then (if False then () else (if False then () else (if (0 == 1) then () else ()))) else ()) else ())
+generated_3882 : IO Int
+let generated_3882 =
+    do
+        value <- pure ((match (((\(n : Int) -> n) 0) == ((\(n : Int) -> n) 0))
+          case True -> ((\(n : Int) -> n) 0)
+          case False -> 0) + 0)
+        pure (value + 2)
 
-result : Unit
+result : IO Int
 let result = generated_3882
 
 --! assertNoErrors
---! assertType generated_3882 Unit
---! assertType result Unit
+--! assertType generated_3882 IO Int
+--! assertType result IO Int
 --! assertDeclKinds signature, let, signature, let

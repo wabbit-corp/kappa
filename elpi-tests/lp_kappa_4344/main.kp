@@ -2,9 +2,13 @@ module main
 
 generated_4344 : Int
 let generated_4344 =
-    match (((((((0 + ((if False then 0 else ((0 + 0) + 0)) + 0)) + 0) + 0) + 0) + 0) + 0) == ((((((0 + ((if False then 0 else ((0 + 0) + 0)) + 0)) + 0) + 0) + 0) + 0) + 0))
-      case True -> ((((((0 + ((if False then 0 else ((0 + 0) + 0)) + 0)) + 0) + 0) + 0) + 0) + 0)
-      case False -> 0
+    match [(((\(n : Int) -> n) (match (0 == 0)
+      case True -> 0
+      case False -> 0)) + 0), ((((\(n : Int) -> n) (match (0 == 0)
+      case True -> 0
+      case False -> 0)) + 0) + 1)]
+      case head :: tail -> head
+      case Nil -> 0
 
 result : Int
 let result = generated_4344

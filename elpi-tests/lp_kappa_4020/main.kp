@@ -1,12 +1,37 @@
 module main
 
-generated_4020 : Option Int
-let generated_4020 = (if True then (if True then (if False then None else (if (((if False then None else (Some (0 + 0))) ?: 0) == 0) then (if False then None else (Some (0 + 0))) else None)) else None) else None)
+generated_4020 : Int
+let generated_4020 =
+    match [((block
+        generatedListLength : List Int -> Int
+        let generatedListLength xs decreases structural xs =
+            match xs
+              case Nil -> 0
+              case _ :: tail -> 1 + generatedListLength tail
 
-result : Option Int
+        let item = (match (0 == 0)
+          case True -> 0
+          case False -> 0)
+
+        generatedListLength [item, (item + 1), 0]) + 0), (((block
+        generatedListLength : List Int -> Int
+        let generatedListLength xs decreases structural xs =
+            match xs
+              case Nil -> 0
+              case _ :: tail -> 1 + generatedListLength tail
+
+        let item = (match (0 == 0)
+          case True -> 0
+          case False -> 0)
+
+        generatedListLength [item, (item + 1), 0]) + 0) + 1)]
+      case head :: tail -> head
+      case Nil -> 0
+
+result : Int
 let result = generated_4020
 
 --! assertNoErrors
---! assertType generated_4020 Option Int
---! assertType result Option Int
+--! assertType generated_4020 Int
+--! assertType result Int
 --! assertDeclKinds signature, let, signature, let

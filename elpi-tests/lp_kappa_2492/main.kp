@@ -3,10 +3,18 @@ module main
 generated_2492 : Int
 let generated_2492 =
     block
-        ranked : Int
-        let ranked = ((((((((left = (((left = 0, right = (0 + 0))).right + 0), right = 0)).left + 0) + 0) + 0) + 0) + 0) + 0)
+        let base : (x : Int) = (x = (((Some ((match (Some 0)
+          case Some payload -> payload
+          case None -> 0) + 1)) ?: ((match (Some 0)
+          case Some payload -> payload
+          case None -> 0) + 2)) + 0))
+        let extended = base.{ y := (((Some ((match (Some 0)
+          case Some payload -> payload
+          case None -> 0) + 1)) ?: ((match (Some 0)
+          case Some payload -> payload
+          case None -> 0) + 2)) + 1) }
 
-        (ranked + 0)
+        (extended.x + extended.y)
 
 result : Int
 let result = generated_2492

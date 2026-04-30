@@ -1,12 +1,37 @@
 module main
 
-generated_858 : Option Int
-let generated_858 = (if True then (if True then (if True then (if (((Some (0 + 0)) ?: 0) == 0) then (Some (0 + 0)) else None) else None) else None) else None)
+generated_858 : IO Int
+let generated_858 =
+    do
+        value <- pure ((block
+            let pair = (x = (block
+                generatedListLength : List Int -> Int
+                let generatedListLength xs decreases structural xs =
+                    match xs
+                      case Nil -> 0
+                      case _ :: tail -> 1 + generatedListLength tail
 
-result : Option Int
+                let item = 0
+
+                generatedListLength [item, (item + 1), 0]), y = ((block
+                generatedListLength : List Int -> Int
+                let generatedListLength xs decreases structural xs =
+                    match xs
+                      case Nil -> 0
+                      case _ :: tail -> 1 + generatedListLength tail
+
+                let item = 0
+
+                generatedListLength [item, (item + 1), 0]) + 1))
+            let (x = captured, y = other) = pair
+
+            (captured + other)) + 0)
+        pure (value + 2)
+
+result : IO Int
 let result = generated_858
 
 --! assertNoErrors
---! assertType generated_858 Option Int
---! assertType result Option Int
+--! assertType generated_858 IO Int
+--! assertType result IO Int
 --! assertDeclKinds signature, let, signature, let

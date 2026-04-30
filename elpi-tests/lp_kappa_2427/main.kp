@@ -1,12 +1,35 @@
 module main
 
-generated_2427 : List Int
-let generated_2427 = [ for x in [1, 2, 3], if x > 0, yield ((((((((left = (((if False then 0 else x) + (0 + 0)) + 0), right = 0)).left + 0) + 0) + 0) + 0) + 0) + 0) ]
+data GeneratedChoice : Type =
+    GeneratedLeft (value : Int)
+    GeneratedRight
 
-result : List Int
+generated_2427 : Int
+let generated_2427 =
+    match (GeneratedLeft ((match ((match (Some 0)
+      case Some payload -> payload
+      case None -> 0) == (match (Some 0)
+      case Some payload -> payload
+      case None -> 0))
+      case True -> (match (Some 0)
+        case Some payload -> payload
+        case None -> 0)
+      case False -> 0) + 0))
+      case GeneratedLeft payload -> (payload + 0)
+      case GeneratedRight -> ((match ((match (Some 0)
+        case Some payload -> payload
+        case None -> 0) == (match (Some 0)
+        case Some payload -> payload
+        case None -> 0))
+        case True -> (match (Some 0)
+          case Some payload -> payload
+          case None -> 0)
+        case False -> 0) + 0)
+
+result : Int
 let result = generated_2427
 
 --! assertNoErrors
---! assertType generated_2427 List Int
---! assertType result List Int
---! assertDeclKinds signature, let, signature, let
+--! assertType generated_2427 Int
+--! assertType result Int
+--! assertDeclKinds data, signature, let, signature, let

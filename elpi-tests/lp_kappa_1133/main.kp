@@ -1,11 +1,24 @@
 module main
 
+generatedResize : (image : Int) -> (width : Int) -> (height : Int) -> Int
+let generatedResize image width height = image + width * 10 + height
+
 generated_1133 : Int
-let generated_1133 =
-    let
-        ranked : Int = (((((((if True then ((left = 0, right = (0 + 0))).right else 0) + 0) + 0) + 0) + 0) + 0) + 0)
-in
-        (ranked + 0)
+let generated_1133 = generatedResize { image = ((block
+    generatedSetCount : Set Int -> Int
+    let generatedSetCount values = 2
+
+    let item = (block
+        generatedSetCount : Set Int -> Int
+        let generatedSetCount values = 2
+
+        let item = 0
+        let values = {|item, (item + 1)|}
+
+        generatedSetCount values)
+    let values = {|item, (item + 1)|}
+
+    generatedSetCount values) + 0), height = 3, width = 2 }
 
 result : Int
 let result = generated_1133
@@ -13,4 +26,4 @@ let result = generated_1133
 --! assertNoErrors
 --! assertType generated_1133 Int
 --! assertType result Int
---! assertDeclKinds signature, let, signature, let
+--! assertDeclKinds signature, let, signature, let, signature, let

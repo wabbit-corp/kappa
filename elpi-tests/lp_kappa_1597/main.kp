@@ -1,12 +1,45 @@
 module main
 
-generated_1597 : Set Int
-let generated_1597 = {| yield (((((((((if True then ((0 + 0) + 0) else 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0) |}
+generated_1597 : Int
+let generated_1597 =
+    block
+        scoped effect State (s : Type) =
+            get : Unit -> s
 
-result : Set Int
+        let seed = (block
+            generatedListLength : List Int -> Int
+            let generatedListLength xs decreases structural xs =
+                match xs
+                  case Nil -> 0
+                  case _ :: tail -> 1 + generatedListLength tail
+
+            let item = (block
+                generatedMapCount : Map String Int -> Int
+                let generatedMapCount values = 1
+
+                let item = 0
+                let values = { yield "item" : item }
+
+                generatedMapCount values)
+
+            generatedListLength [item, (item + 1), 0])
+
+        let comp : Eff <[State : State Int]> Int =
+            do
+                let n <- State.get ()
+                n
+
+        let handled : Eff <[ ]> Int =
+            deep handle State comp with
+                case return x -> pure x
+                case get () k -> k seed
+
+        runPure handled
+
+result : Int
 let result = generated_1597
 
 --! assertNoErrors
---! assertType generated_1597 Set Int
---! assertType result Set Int
+--! assertType generated_1597 Int
+--! assertType result Int
 --! assertDeclKinds signature, let, signature, let

@@ -1,12 +1,35 @@
 module main
 
-generated_1263 : Bool
-let generated_1263 = (if (if (if ((if True then False else True) || False) then True else False) then True else False) then True else False)
+generated_1263 : Int
+let generated_1263 =
+    block
+        let pair = (x = ((match (Some (block
+            generatedSetCount : Set Int -> Int
+            let generatedSetCount values = 2
 
-result : Bool
+            let item = 0
+            let values = {|item, (item + 1)|}
+
+            generatedSetCount values))
+          case Some payload -> payload
+          case None -> 0) + 0), y = ((match (Some (block
+            generatedSetCount : Set Int -> Int
+            let generatedSetCount values = 2
+
+            let item = 0
+            let values = {|item, (item + 1)|}
+
+            generatedSetCount values))
+          case Some payload -> payload
+          case None -> 0) + 1))
+        let whole@(x = captured, y = other) = pair
+
+        (whole.x + (captured + other))
+
+result : Int
 let result = generated_1263
 
 --! assertNoErrors
---! assertType generated_1263 Bool
---! assertType result Bool
+--! assertType generated_1263 Int
+--! assertType result Int
 --! assertDeclKinds signature, let, signature, let

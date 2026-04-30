@@ -1,12 +1,19 @@
 module main
 
-generated_3591 : Set Int
-let generated_3591 = {| for x in [1, 2, 3], yield (((((0 + (((((Some (x + 0)) ?: 0) + 0) + 0) + 0)) + 0) + 0) + 0) + 0) |}
+generated_3591 : Map String Int
+let generated_3591 = { for x in [1, 2, 3], yield "k" : (block
+    generatedSetCount : Set Int -> Int
+    let generatedSetCount values = 2
 
-result : Set Int
+    let item = ((\(n : Int) -> n) x)
+    let values = {|item, (item + 1)|}
+
+    generatedSetCount values), on conflict keep first }
+
+result : Map String Int
 let result = generated_3591
 
 --! assertNoErrors
---! assertType generated_3591 Set Int
---! assertType result Set Int
+--! assertType generated_3591 Map String Int
+--! assertType result Map String Int
 --! assertDeclKinds signature, let, signature, let

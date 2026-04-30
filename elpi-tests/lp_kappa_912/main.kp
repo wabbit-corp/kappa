@@ -1,17 +1,24 @@
 module main
 
-generated_912 : Int
+generated_912 : IO Int
 let generated_912 =
-    block
-        let base : (x : Int) = (x = ((((((((if True then ((0 + 0) + 0) else 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0))
-        let extended = base.{ y := ((((((((if True then ((0 + 0) + 0) else 0) + 0) + 0) + 0) + 0) + 0) + 0) + 1) }
+    do
+        value <- pure (((\(n : Int) -> n) (block
+            generatedListLength : List Int -> Int
+            let generatedListLength xs decreases structural xs =
+                match xs
+                  case Nil -> 0
+                  case _ :: tail -> 1 + generatedListLength tail
 
-        (extended.x + extended.y)
+            let item = 0
 
-result : Int
+            generatedListLength [item, (item + 1), 0])) + 0)
+        pure (value + 2)
+
+result : IO Int
 let result = generated_912
 
 --! assertNoErrors
---! assertType generated_912 Int
---! assertType result Int
+--! assertType generated_912 IO Int
+--! assertType result IO Int
 --! assertDeclKinds signature, let, signature, let

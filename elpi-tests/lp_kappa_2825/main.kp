@@ -6,7 +6,15 @@ let generated_2825 =
         data RankedBox : Type =
             RankedBox (value : Int)
 
-        let boxed = RankedBox (((((((((left = 0, right = (((left = (0 + 0), right = 0)).left + 0))).right + 0) + 0) + 0) + 0) + 0) + 0) + 0)
+        let boxed = RankedBox ((block
+            let pair = (x = (match [0, (0 + 1)]
+              case head :: tail -> head
+              case Nil -> 0), y = ((match [0, (0 + 1)]
+              case head :: tail -> head
+              case Nil -> 0) + 1))
+            let (x = captured, y = other) = pair
+
+            (captured + other)) + 0)
 
         match boxed
           case RankedBox value -> (value + 1)

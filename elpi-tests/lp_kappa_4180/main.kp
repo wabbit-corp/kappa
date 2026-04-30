@@ -1,12 +1,27 @@
 module main
 
-generated_4180 : List Int
-let generated_4180 = [ yield ((((((0 + ((if True then ((if False then 0 else 0) + (0 + 0)) else 0) + 0)) + 0) + 0) + 0) + 0) + 0) ]
+type GeneratedTuple = (Int, Int)
 
-result : List Int
+generated_4180 : Int
+let generated_4180 =
+    block
+        let pair : GeneratedTuple = (((match (Some (match (0 == 0)
+          case True -> 0
+          case False -> 0))
+          case Some payload -> payload
+          case None -> 0) + 0), ((match (Some (match (0 == 0)
+          case True -> 0
+          case False -> 0))
+          case Some payload -> payload
+          case None -> 0) + 1))
+        let (left, right) = pair
+
+        (left + right)
+
+result : Int
 let result = generated_4180
 
 --! assertNoErrors
---! assertType generated_4180 List Int
---! assertType result List Int
---! assertDeclKinds signature, let, signature, let
+--! assertType generated_4180 Int
+--! assertType result Int
+--! assertDeclKinds type, signature, let, signature, let

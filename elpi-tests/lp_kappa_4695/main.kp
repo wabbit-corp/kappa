@@ -1,15 +1,18 @@
 module main
 
+data GeneratedChoice : Type =
+    GeneratedLeft (value : Int)
+    GeneratedRight
+
 generated_4695 : Int
 let generated_4695 =
-    block
-        data RankedBox : Type =
-            RankedBox (value : Int)
-
-        let boxed = RankedBox ((((((0 + (((if True then ((0 + 0) + 0) else 0) + 0) + 0)) + 0) + 0) + 0) + 0) + 0)
-
-        match boxed
-          case RankedBox value -> (value + 1)
+    match (GeneratedLeft ((match [((Some (0 + 1)) ?: (0 + 2)), (((Some (0 + 1)) ?: (0 + 2)) + 1)]
+      case head :: tail -> head
+      case Nil -> 0) + 0))
+      case GeneratedLeft payload -> (payload + 0)
+      case GeneratedRight -> ((match [((Some (0 + 1)) ?: (0 + 2)), (((Some (0 + 1)) ?: (0 + 2)) + 1)]
+        case head :: tail -> head
+        case Nil -> 0) + 0)
 
 result : Int
 let result = generated_4695
@@ -17,4 +20,4 @@ let result = generated_4695
 --! assertNoErrors
 --! assertType generated_4695 Int
 --! assertType result Int
---! assertDeclKinds signature, let, signature, let
+--! assertDeclKinds data, signature, let, signature, let

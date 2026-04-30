@@ -1,12 +1,32 @@
 module main
 
-generated_803 : Set Int
-let generated_803 = {| for x in [1, 2, 3], if x > 0, yield (((((((0 + (((left = 0, right = (x + 0))).right + 0)) + 0) + 0) + 0) + 0) + 0) + 0) |}
+generated_803 : List Int
+let generated_803 = [ for x in [1, 2, 3], if x > 0, yield (match [(block
+    generatedListLength : List Int -> Int
+    let generatedListLength xs decreases structural xs =
+        match xs
+          case Nil -> 0
+          case _ :: tail -> 1 + generatedListLength tail
 
-result : Set Int
+    let item = x
+
+    generatedListLength [item, (item + 1), 0]), ((block
+    generatedListLength : List Int -> Int
+    let generatedListLength xs decreases structural xs =
+        match xs
+          case Nil -> 0
+          case _ :: tail -> 1 + generatedListLength tail
+
+    let item = x
+
+    generatedListLength [item, (item + 1), 0]) + 1)]
+  case head :: tail -> head
+  case Nil -> 0) ]
+
+result : List Int
 let result = generated_803
 
 --! assertNoErrors
---! assertType generated_803 Set Int
---! assertType result Set Int
+--! assertType generated_803 List Int
+--! assertType result List Int
 --! assertDeclKinds signature, let, signature, let

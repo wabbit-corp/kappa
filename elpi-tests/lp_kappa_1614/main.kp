@@ -1,15 +1,29 @@
 module main
 
-generatedEcho : forall (a : Type). (this x : a) -> a
-let generatedEcho @a (this x : a) = x
+generated_1614 : IO Int
+let generated_1614 =
+    do
+        value <- pure ((block
+            generatedSetCount : Set Int -> Int
+            let generatedSetCount values = 2
 
-generated_1614 : Int
-let generated_1614 = (((((((((if True then (0 + (0 + 0)) else 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0).generatedEcho
+            let item = (block
+                generatedMapCount : Map String Int -> Int
+                let generatedMapCount values = 1
 
-result : Int
+                let item = 0
+                let values = { yield "item" : item }
+
+                generatedMapCount values)
+            let values = {|item, (item + 1)|}
+
+            generatedSetCount values) + 0)
+        pure (value + 2)
+
+result : IO Int
 let result = generated_1614
 
 --! assertNoErrors
---! assertType generated_1614 Int
---! assertType result Int
---! assertDeclKinds signature, let, signature, let, signature, let
+--! assertType generated_1614 IO Int
+--! assertType result IO Int
+--! assertDeclKinds signature, let, signature, let

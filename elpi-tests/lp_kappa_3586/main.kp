@@ -1,10 +1,28 @@
 module main
 
-generatedEcho : forall (a : Type). (this x : a) -> a
-let generatedEcho @a (this x : a) = x
+type GeneratedTuple = (Int, Int)
 
 generated_3586 : Int
-let generated_3586 = ((((((0 + (((((Some (0 + 0)) ?: 0) + 0) + 0) + 0)) + 0) + 0) + 0) + 0) + 0).generatedEcho
+let generated_3586 =
+    block
+        let pair : GeneratedTuple = (((block
+            generatedSetCount : Set Int -> Int
+            let generatedSetCount values = 2
+
+            let item = ((\(n : Int) -> n) 0)
+            let values = {|item, (item + 1)|}
+
+            generatedSetCount values) + 0), ((block
+            generatedSetCount : Set Int -> Int
+            let generatedSetCount values = 2
+
+            let item = ((\(n : Int) -> n) 0)
+            let values = {|item, (item + 1)|}
+
+            generatedSetCount values) + 1))
+        let (left, right) = pair
+
+        (left + right)
 
 result : Int
 let result = generated_3586
@@ -12,4 +30,4 @@ let result = generated_3586
 --! assertNoErrors
 --! assertType generated_3586 Int
 --! assertType result Int
---! assertDeclKinds signature, let, signature, let, signature, let
+--! assertDeclKinds type, signature, let, signature, let

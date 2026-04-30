@@ -1,16 +1,29 @@
 module main
 
-generated_3411 : Int
+generated_3411 : IO Int
 let generated_3411 =
-    let
-        ranked : Int = (((((0 + ((((if False then 0 else 0) + 0) + 0) + 0)) + 0) + 0) + 0) + 0)
-in
-        (ranked + 0)
+    do
+        let staged = ((match ((block
+            let pair = (x = 0, y = (0 + 1))
+            let (x = captured, y = other) = pair
 
-result : Int
+            (captured + other)) == (block
+            let pair = (x = 0, y = (0 + 1))
+            let (x = captured, y = other) = pair
+
+            (captured + other)))
+          case True -> (block
+              let pair = (x = 0, y = (0 + 1))
+              let (x = captured, y = other) = pair
+
+              (captured + other))
+          case False -> 0) + 0)
+        pure (staged + 1)
+
+result : IO Int
 let result = generated_3411
 
 --! assertNoErrors
---! assertType generated_3411 Int
---! assertType result Int
+--! assertType generated_3411 IO Int
+--! assertType result IO Int
 --! assertDeclKinds signature, let, signature, let

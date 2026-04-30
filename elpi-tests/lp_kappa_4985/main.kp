@@ -1,12 +1,47 @@
 module main
 
-generated_4985 : Set Int
-let generated_4985 = {| for x in [1, 2, 3], let y = x + 1, yield (((((0 + (((if False then 0 else x) + (0 + 0)) + 0)) + 0) + 0) + 0) + 0) |}
+generated_4985 : Int
+let generated_4985 =
+    block
+        data RankedBox : Type =
+            RankedBox (value : Int)
 
-result : Set Int
+        let boxed = RankedBox ((block
+            generatedListLength : List Int -> Int
+            let generatedListLength xs decreases structural xs =
+                match xs
+                  case Nil -> 0
+                  case _ :: tail -> 1 + generatedListLength tail
+
+            let item = (block
+                generatedListLength : List Int -> Int
+                let generatedListLength xs decreases structural xs =
+                    match xs
+                      case Nil -> 0
+                      case _ :: tail -> 1 + generatedListLength tail
+
+                let item = (block
+                    generatedListLength : List Int -> Int
+                    let generatedListLength xs decreases structural xs =
+                        match xs
+                          case Nil -> 0
+                          case _ :: tail -> 1 + generatedListLength tail
+
+                    let item = 0
+
+                    generatedListLength [item, (item + 1), 0])
+
+                generatedListLength [item, (item + 1), 0])
+
+            generatedListLength [item, (item + 1), 0]) + 0)
+
+        match boxed
+          case RankedBox value -> (value + 1)
+
+result : Int
 let result = generated_4985
 
 --! assertNoErrors
---! assertType generated_4985 Set Int
---! assertType result Set Int
+--! assertType generated_4985 Int
+--! assertType result Int
 --! assertDeclKinds signature, let, signature, let

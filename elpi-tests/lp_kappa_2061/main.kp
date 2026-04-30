@@ -1,12 +1,26 @@
 module main
 
-generated_2061 : Set Int
-let generated_2061 = {| for x in [1, 2, 3], let y = x + 1, if y > 0, yield ((((((((if False then 0 else ((if True then x else 0) + 0)) + (0 + 0)) + 0) + 0) + 0) + 0) + 0) + 0) |}
+generated_2061 : IO Int
+let generated_2061 =
+    do
+        let staged = ((block
+            generatedListLength : List Int -> Int
+            let generatedListLength xs decreases structural xs =
+                match xs
+                  case Nil -> 0
+                  case _ :: tail -> 1 + generatedListLength tail
 
-result : Set Int
+            let item = (match (Some 0)
+              case Some payload -> payload
+              case None -> 0)
+
+            generatedListLength [item, (item + 1), 0]) + 0)
+        pure (staged + 1)
+
+result : IO Int
 let result = generated_2061
 
 --! assertNoErrors
---! assertType generated_2061 Set Int
---! assertType result Set Int
+--! assertType generated_2061 IO Int
+--! assertType result IO Int
 --! assertDeclKinds signature, let, signature, let

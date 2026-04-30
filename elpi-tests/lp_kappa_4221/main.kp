@@ -1,12 +1,21 @@
 module main
 
-generated_4221 : Bool
-let generated_4221 = (if (if (if (((if True then (0 + 1) else 1) == 1) && False) then False else True) then True else False) then True else False)
+generated_4221 : IO Int
+let generated_4221 =
+    do
+        let staged = ((match [(match (0 == 0)
+          case True -> 0
+          case False -> 0), ((match (0 == 0)
+          case True -> 0
+          case False -> 0) + 1)]
+          case head :: tail -> head
+          case Nil -> 0) + 0)
+        pure (staged + 1)
 
-result : Bool
+result : IO Int
 let result = generated_4221
 
 --! assertNoErrors
---! assertType generated_4221 Bool
---! assertType result Bool
+--! assertType generated_4221 IO Int
+--! assertType result IO Int
 --! assertDeclKinds signature, let, signature, let

@@ -2,10 +2,15 @@ module main
 
 generated_4431 : Int
 let generated_4431 =
-    let
-        ranked : Int = (((((0 + ((if False then 0 else (if False then 0 else 0)) + 0)) + 0) + 0) + 0) + 0)
-in
-        (ranked + 0)
+    block
+        rankedHelper : (Int -> Int)
+        let rankedHelper x = x + 1
+
+        rankedHelper (((Some ((match (0 == 0)
+          case True -> 0
+          case False -> 0) + 1)) ?: ((match (0 == 0)
+          case True -> 0
+          case False -> 0) + 2)) + 0)
 
 result : Int
 let result = generated_4431

@@ -1,12 +1,24 @@
 module main
 
-generated_1523 : Int
-let generated_1523 =
-    block
-        let pair = (x = ((((((((if False then 0 else ((Some (0 + 0)) ?: 0)) + 0) + 0) + 0) + 0) + 0) + 0) + 0), y = ((((((((if False then 0 else ((Some (0 + 0)) ?: 0)) + 0) + 0) + 0) + 0) + 0) + 0) + 1))
-        let (x = captured, y = other) = pair
+generatedEcho : forall (a : Type). (this x : a) -> a
+let generatedEcho @a (this x : a) = x
 
-        (captured + other)
+generated_1523 : Int
+let generated_1523 = ((.generatedEcho) (((Some ((block
+    generatedSetCount : Set Int -> Int
+    let generatedSetCount values = 2
+
+    let item = 0
+    let values = {|item, (item + 1)|}
+
+    generatedSetCount values) + 1)) ?: ((block
+    generatedSetCount : Set Int -> Int
+    let generatedSetCount values = 2
+
+    let item = 0
+    let values = {|item, (item + 1)|}
+
+    generatedSetCount values) + 2)) + 0))
 
 result : Int
 let result = generated_1523
@@ -14,4 +26,4 @@ let result = generated_1523
 --! assertNoErrors
 --! assertType generated_1523 Int
 --! assertType result Int
---! assertDeclKinds signature, let, signature, let
+--! assertDeclKinds signature, let, signature, let, signature, let

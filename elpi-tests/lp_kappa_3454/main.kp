@@ -1,15 +1,30 @@
 module main
 
-generatedMakeConst : forall (a : Type). a -> Unit -> a
-let generatedMakeConst value = \() -> value
+type GeneratedPair = (left : Int, right : Int)
 
-generated_3454 : Int
-let generated_3454 = ((generatedMakeConst ((((((0 + (((((if True then 0 else 0) + 0) + 0) + 0) + 0)) + 0) + 0) + 0) + 0) + 0)) ())
+generated_3454 : GeneratedPair
+let generated_3454 = ((left = ((Some ((block
+    let pair = (x = 0, y = (0 + 1))
+    let (x = captured, y = other) = pair
 
-result : Int
+    (captured + other)) + 1)) ?: ((block
+    let pair = (x = 0, y = (0 + 1))
+    let (x = captured, y = other) = pair
+
+    (captured + other)) + 2)), right = 0)).{ right = (((Some ((block
+    let pair = (x = 0, y = (0 + 1))
+    let (x = captured, y = other) = pair
+
+    (captured + other)) + 1)) ?: ((block
+    let pair = (x = 0, y = (0 + 1))
+    let (x = captured, y = other) = pair
+
+    (captured + other)) + 2)) + 1) }
+
+result : GeneratedPair
 let result = generated_3454
 
 --! assertNoErrors
---! assertType generated_3454 Int
---! assertType result Int
---! assertDeclKinds signature, let, signature, let, signature, let
+--! assertType generated_3454 GeneratedPair
+--! assertType result GeneratedPair
+--! assertDeclKinds type, signature, let, signature, let

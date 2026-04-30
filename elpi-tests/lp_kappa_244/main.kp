@@ -1,12 +1,19 @@
 module main
 
-generated_244 : Unit
-let generated_244 = (if True then (if True then (if True then (if True then (if False then () else ()) else ()) else ()) else ()) else ())
+generated_244 : List Int
+let generated_244 = [ for x in [1, 2, 3], skip 1, take 2, yield (block
+    generatedMapCount : Map String Int -> Int
+    let generatedMapCount values = 1
 
-result : Unit
+    let item = x
+    let values = { yield "item" : item }
+
+    generatedMapCount values) ]
+
+result : List Int
 let result = generated_244
 
 --! assertNoErrors
---! assertType generated_244 Unit
---! assertType result Unit
+--! assertType generated_244 List Int
+--! assertType result List Int
 --! assertDeclKinds signature, let, signature, let

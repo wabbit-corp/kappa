@@ -2,11 +2,16 @@ module main
 
 generated_4613 : Int
 let generated_4613 =
-    block
-        rankedHelper : (Int -> Int)
-        let rankedHelper x = x + 1
+    match (Some ((block
+        generatedMapCount : Map String Int -> Int
+        let generatedMapCount values = 1
 
-        rankedHelper ((((((0 + ((if False then 0 else ((Some (0 + 0)) ?: 0)) + 0)) + 0) + 0) + 0) + 0) + 0)
+        let item = ((Some (0 + 1)) ?: (0 + 2))
+        let values = { yield "item" : item }
+
+        generatedMapCount values) + 0))
+      case Some payload -> payload
+      case None -> 0
 
 result : Int
 let result = generated_4613

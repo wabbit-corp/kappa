@@ -1,12 +1,23 @@
 module main
 
-generated_3340 : Option Int
-let generated_3340 = (if True then (if True then (if False then None else (if True then (if False then None else (Some (0 + 0))) else None)) else None) else None)
+generatedNeed : (@x : Int) -> Int
+let generatedNeed (@x : Int) = x
 
-result : Option Int
+generated_3340 : Int
+let generated_3340 =
+    block
+        let (@x : Int) = ((\(n : Int) -> n) (block
+            let pair = (x = 0, y = (0 + 1))
+            let (x = captured, y = other) = pair
+
+            (captured + other)))
+
+        if True then generatedNeed else 0
+
+result : Int
 let result = generated_3340
 
 --! assertNoErrors
---! assertType generated_3340 Option Int
---! assertType result Option Int
---! assertDeclKinds signature, let, signature, let
+--! assertType generated_3340 Int
+--! assertType result Int
+--! assertDeclKinds signature, let, signature, let, signature, let

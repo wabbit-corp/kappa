@@ -1,12 +1,28 @@
 module main
 
-generated_3068 : Option Int
-let generated_3068 = (if True then (if True then (if True then (if (True && True) then (if False then None else (Some ((Some (0 + 0)) ?: 0))) else (Some 2)) else None) else None) else None)
+generated_3068 : Int
+let generated_3068 =
+    block
+        ranked : Int
+        let ranked = (block
+            generatedSetCount : Set Int -> Int
+            let generatedSetCount values = 2
 
-result : Option Int
+            let item = (block
+                let pair = (x = 0, y = (0 + 1))
+                let (x = captured, y = other) = pair
+
+                (captured + other))
+            let values = {|item, (item + 1)|}
+
+            generatedSetCount values)
+
+        (ranked + 0)
+
+result : Int
 let result = generated_3068
 
 --! assertNoErrors
---! assertType generated_3068 Option Int
---! assertType result Option Int
+--! assertType generated_3068 Int
+--! assertType result Int
 --! assertDeclKinds signature, let, signature, let

@@ -1,17 +1,21 @@
 module main
 
-generated_3512 : Int
-let generated_3512 =
-    block
-        ranked : Int
-        let ranked = (((((0 + (((((left = (0 + 0), right = 0)).left + 0) + 0) + 0)) + 0) + 0) + 0) + 0)
+generated_3512 : Map String Int
+let generated_3512 = { for x in [1, 2, 3], yield "k" : (block
+    generatedListLength : List Int -> Int
+    let generatedListLength xs decreases structural xs =
+        match xs
+          case Nil -> 0
+          case _ :: tail -> 1 + generatedListLength tail
 
-        (ranked + 0)
+    let item = ((\(n : Int) -> n) x)
 
-result : Int
+    generatedListLength [item, (item + 1), 0]) }
+
+result : Map String Int
 let result = generated_3512
 
 --! assertNoErrors
---! assertType generated_3512 Int
---! assertType result Int
+--! assertType generated_3512 Map String Int
+--! assertType result Map String Int
 --! assertDeclKinds signature, let, signature, let

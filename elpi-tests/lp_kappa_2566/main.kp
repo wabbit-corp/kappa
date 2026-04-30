@@ -1,15 +1,23 @@
 module main
 
-generatedEcho : forall (a : Type). (this x : a) -> a
-let generatedEcho @a (this x : a) = x
+generated_2566 : List Int
+let generated_2566 = [ for x in [1, 2, 3], skip 1, take 2, yield (block
+    generatedListLength : List Int -> Int
+    let generatedListLength xs decreases structural xs =
+        match xs
+          case Nil -> 0
+          case _ :: tail -> 1 + generatedListLength tail
 
-generated_2566 : Int
-let generated_2566 = (((((((((left = 0, right = (0 + 0))).right + 0) + 0) + 0) + 0) + 0) + 0) + 0).generatedEcho
+    let item = (match [x, (x + 1)]
+      case head :: tail -> head
+      case Nil -> 0)
 
-result : Int
+    generatedListLength [item, (item + 1), 0]) ]
+
+result : List Int
 let result = generated_2566
 
 --! assertNoErrors
---! assertType generated_2566 Int
---! assertType result Int
---! assertDeclKinds signature, let, signature, let, signature, let
+--! assertType generated_2566 List Int
+--! assertType result List Int
+--! assertDeclKinds signature, let, signature, let

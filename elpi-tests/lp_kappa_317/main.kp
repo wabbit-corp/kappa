@@ -1,16 +1,14 @@
 module main
 
-generated_317 : Int
-let generated_317 =
-    let
-        ranked : Int = (((((((((if False then 0 else 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0)
-in
-        (ranked + 0)
+generated_317 : List Int
+let generated_317 = [ for x in [1, 2, 3], let y = x + 1, yield (match [x, (x + 1)]
+  case head :: tail -> head
+  case Nil -> 0) ]
 
-result : Int
+result : List Int
 let result = generated_317
 
 --! assertNoErrors
---! assertType generated_317 Int
---! assertType result Int
+--! assertType generated_317 List Int
+--! assertType result List Int
 --! assertDeclKinds signature, let, signature, let

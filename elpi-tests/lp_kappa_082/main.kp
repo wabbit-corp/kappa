@@ -1,15 +1,12 @@
 module main
 
-generated_82 : IO Int
-let generated_82 =
-    do
-        value <- pure (((0 + 0) + 0) + 0)
-        pure (value + 2)
+generated_82 : List Int
+let generated_82 = [ for x in [1, 2, 3], skip 1, take 2, yield x ]
 
-result : IO Int
+result : List Int
 let result = generated_82
 
 --! assertNoErrors
---! assertType generated_82 IO Int
---! assertType result IO Int
+--! assertType generated_82 List Int
+--! assertType result List Int
 --! assertDeclKinds signature, let, signature, let

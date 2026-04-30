@@ -1,22 +1,23 @@
 module main
 
-generated_2064 : Int
-let generated_2064 =
-    block
-        trait RankedScore a =
-            rank : a -> Int
+generated_2064 : List Int
+let generated_2064 = [ yield ((block
+    generatedListLength : List Int -> Int
+    let generatedListLength xs decreases structural xs =
+        match xs
+          case Nil -> 0
+          case _ :: tail -> 1 + generatedListLength tail
 
-        instance RankedScore Int =
-            let rank x = x
+    let item = (match (Some 0)
+      case Some payload -> payload
+      case None -> 0)
 
-        let dict = summon (RankedScore Int)
+    generatedListLength [item, (item + 1), 0]) + 0) ]
 
-        dict.rank (((((((((if False then 0 else ((if True then 0 else 0) + 0)) + (0 + 0)) + 0) + 0) + 0) + 0) + 0) + 0) + 0)
-
-result : Int
+result : List Int
 let result = generated_2064
 
 --! assertNoErrors
---! assertType generated_2064 Int
---! assertType result Int
+--! assertType generated_2064 List Int
+--! assertType result List Int
 --! assertDeclKinds signature, let, signature, let

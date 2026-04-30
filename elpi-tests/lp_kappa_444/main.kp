@@ -1,18 +1,12 @@
 module main
 
-generated_444 : Int
-let generated_444 =
-    block
-        type RankedAlias = Int
+generated_444 : List Int
+let generated_444 = [ yield (((\(n : Int) -> n) 0) + 0) ]
 
-        let aliased : RankedAlias = (((((((((((left = (0 + 0), right = 0)).left + 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0)
-
-        (aliased + 1)
-
-result : Int
+result : List Int
 let result = generated_444
 
 --! assertNoErrors
---! assertType generated_444 Int
---! assertType result Int
+--! assertType generated_444 List Int
+--! assertType result List Int
 --! assertDeclKinds signature, let, signature, let

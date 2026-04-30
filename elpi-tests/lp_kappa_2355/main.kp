@@ -1,12 +1,46 @@
 module main
 
-generated_2355 : (Int -> Int)
-let generated_2355 = \(x : Int) -> ((\(x : Int) -> ((\(x : Int) -> (((if (0 == 1) then \(x : Int) -> (0 + x) else (if True then \(x : Int) -> x else \(x : Int) -> x))) x)) x)) x)
+generated_2355 : Int
+let generated_2355 =
+    block
+        scoped effect Ask =
+            ask : Unit -> Bool
 
-result : (Int -> Int)
+        scoped effect Other =
+            other : Unit -> Int
+
+        let seed = (block
+            let pair = (x = (match (Some 0)
+              case Some payload -> payload
+              case None -> 0), y = ((match (Some 0)
+              case Some payload -> payload
+              case None -> 0) + 1))
+            let (x = captured, y = other) = pair
+
+            (captured + other))
+
+        let comp : Eff <[Ask : Ask, Other : Other]> Int =
+            do
+                let b <- Ask.ask ()
+                let n <- Other.other ()
+                if b then (n + seed) else seed
+
+        let askHandled : Eff <[Other : Other]> Int =
+            deep handle Ask comp with
+                case return x -> pure x
+                case ask () k -> k True
+
+        let handled : Eff <[ ]> Int =
+            deep handle Other askHandled with
+                case return x -> pure x
+                case other () k -> k 1
+
+        runPure handled
+
+result : Int
 let result = generated_2355
 
 --! assertNoErrors
---! assertType generated_2355 (Int -> Int)
---! assertType result (Int -> Int)
+--! assertType generated_2355 Int
+--! assertType result Int
 --! assertDeclKinds signature, let, signature, let

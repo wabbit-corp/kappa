@@ -1,14 +1,12 @@
 module main
 
-type GeneratedPair = (left : Int, right : Int)
+generated_3928 : Unit
+let generated_3928 = (if True then (if True then (if True then ((\(u : Unit) -> if False then () else u) (if (0 == 1) then () else ())) else ()) else ()) else ())
 
-generated_3928 : GeneratedPair
-let generated_3928 = ((left = (((((0 + ((0 + (((Some (0 + 0)) ?: 0) + 0)) + 0)) + 0) + 0) + 0) + 0), right = 0)).{ right = ((((((0 + ((0 + (((Some (0 + 0)) ?: 0) + 0)) + 0)) + 0) + 0) + 0) + 0) + 1) }
-
-result : GeneratedPair
+result : Unit
 let result = generated_3928
 
 --! assertNoErrors
---! assertType generated_3928 GeneratedPair
---! assertType result GeneratedPair
---! assertDeclKinds type, signature, let, signature, let
+--! assertType generated_3928 Unit
+--! assertType result Unit
+--! assertDeclKinds signature, let, signature, let

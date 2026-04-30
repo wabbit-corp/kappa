@@ -1,7 +1,7 @@
 module main
 
 generated_1875 : Bool
-let generated_1875 = (if (if (if (if False then True else (True || False)) then True else False) then True else False) then True else False)
+let generated_1875 = (if (if (if (True || False) then True else False) then True else False) then True else False)
 
 result : Bool
 let result = generated_1875

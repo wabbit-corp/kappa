@@ -1,12 +1,24 @@
 module main
 
-generated_102 : Map String Int
-let generated_102 = { yield "only" : (((0 + 0) + 0) + 0) }
+generated_102 : IO Int
+let generated_102 =
+    do
+        value <- pure ((block
+            generatedListLength : List Int -> Int
+            let generatedListLength xs decreases structural xs =
+                match xs
+                  case Nil -> 0
+                  case _ :: tail -> 1 + generatedListLength tail
 
-result : Map String Int
+            let item = 0
+
+            generatedListLength [item, (item + 1), 0]) + 0)
+        pure (value + 2)
+
+result : IO Int
 let result = generated_102
 
 --! assertNoErrors
---! assertType generated_102 Map String Int
---! assertType result Map String Int
+--! assertType generated_102 IO Int
+--! assertType result IO Int
 --! assertDeclKinds signature, let, signature, let

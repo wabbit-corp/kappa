@@ -1,22 +1,12 @@
 module main
 
-generated_1554 : Int
-let generated_1554 =
-    block
-        trait RankedScore a =
-            rank : a -> Int
+generated_1554 : Option Int
+let generated_1554 = (if True then (if True then (if True then (if (((if (((Some (0 + 0)) ?: 0) == 1) then None else (Some (0 + 0))) ?: 0) == 0) then (if (((Some (0 + 0)) ?: 0) == 1) then None else (Some (0 + 0))) else None) else None) else None) else None)
 
-        instance RankedScore Int =
-            let rank x = x
-
-        let dict = summon (RankedScore Int)
-
-        dict.rank (((((((((if True then 0 else 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0)
-
-result : Int
+result : Option Int
 let result = generated_1554
 
 --! assertNoErrors
---! assertType generated_1554 Int
---! assertType result Int
+--! assertType generated_1554 Option Int
+--! assertType result Option Int
 --! assertDeclKinds signature, let, signature, let

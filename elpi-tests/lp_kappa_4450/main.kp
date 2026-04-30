@@ -1,18 +1,27 @@
 module main
 
-generatedNeed : (@x : Int) -> Int
-let generatedNeed (@x : Int) = x
+type GeneratedTuple = (Int, Int)
 
-generated_4450 : IO Int
+generated_4450 : Int
 let generated_4450 =
-    do
-        let (@x : Int) = ((((((0 + ((if False then 0 else (if False then 0 else 0)) + 0)) + 0) + 0) + 0) + 0) + 0)
-        pure generatedNeed
+    block
+        let pair : GeneratedTuple = ((((Some ((match (0 == 0)
+          case True -> 0
+          case False -> 0) + 1)) ?: ((match (0 == 0)
+          case True -> 0
+          case False -> 0) + 2)) + 0), (((Some ((match (0 == 0)
+          case True -> 0
+          case False -> 0) + 1)) ?: ((match (0 == 0)
+          case True -> 0
+          case False -> 0) + 2)) + 1))
+        let (left, right) = pair
 
-result : IO Int
+        (left + right)
+
+result : Int
 let result = generated_4450
 
 --! assertNoErrors
---! assertType generated_4450 IO Int
---! assertType result IO Int
---! assertDeclKinds signature, let, signature, let, signature, let
+--! assertType generated_4450 Int
+--! assertType result Int
+--! assertDeclKinds type, signature, let, signature, let

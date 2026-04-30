@@ -1,16 +1,22 @@
 module main
 
-generated_181 : Int
-let generated_181 =
-    let
-        ranked : Int = ((((((((0 + 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0)
-in
-        (ranked + 0)
+generatedEcho : forall (a : Type). (this x : a) -> a
+let generatedEcho @a (this x : a) = x
 
-result : Int
+generated_181 : Option Int
+let generated_181 = (Some ((block
+    generatedSetCount : Set Int -> Int
+    let generatedSetCount values = 2
+
+    let item = 0
+    let values = {|item, (item + 1)|}
+
+    generatedSetCount values) + 0))?.generatedEcho
+
+result : Option Int
 let result = generated_181
 
 --! assertNoErrors
---! assertType generated_181 Int
---! assertType result Int
---! assertDeclKinds signature, let, signature, let
+--! assertType generated_181 Option Int
+--! assertType result Option Int
+--! assertDeclKinds signature, let, signature, let, signature, let

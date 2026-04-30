@@ -1,12 +1,51 @@
 module main
 
-generated_739 : String
-let generated_739 = (if (if (if (if (if (if False then True else (True || False)) then False else True) then True else False) then True else False) then True else False) then #"raw lambda-prolog"# else "fallback")
+generated_739 : Int
+let generated_739 =
+    block
+        scoped effect Choice =
+            ω choose : Unit -> Bool
 
-result : String
+        let c = Choice
+
+        let seed = (block
+            generatedMapCount : Map String Int -> Int
+            let generatedMapCount values = 1
+
+            let item = (block
+                generatedListLength : List Int -> Int
+                let generatedListLength xs decreases structural xs =
+                    match xs
+                      case Nil -> 0
+                      case _ :: tail -> 1 + generatedListLength tail
+
+                let item = 0
+
+                generatedListLength [item, (item + 1), 0])
+            let values = { yield "item" : item }
+
+            generatedMapCount values)
+
+        let comp : Eff <[Choice : Choice]> Int =
+            do
+                let b <- c.choose ()
+                if b then seed else (seed + 1)
+
+        let handled : Eff <[ ]> Int =
+            deep handle Choice comp with
+                case return x -> pure x
+                case choose () k ->
+                    do
+                        let a <- k True
+                        let b <- k False
+                        pure (a + b)
+
+        runPure handled
+
+result : Int
 let result = generated_739
 
 --! assertNoErrors
---! assertType generated_739 String
---! assertType result String
+--! assertType generated_739 Int
+--! assertType result Int
 --! assertDeclKinds signature, let, signature, let

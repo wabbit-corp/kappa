@@ -3,7 +3,15 @@ module main
 generated_2799 : Int
 let generated_2799 =
     let
-        ranked : Int = ((((((((left = 0, right = (((left = (0 + 0), right = 0)).left + 0))).right + 0) + 0) + 0) + 0) + 0) + 0)
+        ranked : Int = (block
+            let pair = (x = (match [0, (0 + 1)]
+              case head :: tail -> head
+              case Nil -> 0), y = ((match [0, (0 + 1)]
+              case head :: tail -> head
+              case Nil -> 0) + 1))
+            let (x = captured, y = other) = pair
+
+            (captured + other))
 in
         (ranked + 0)
 

@@ -3,10 +3,22 @@ module main
 generated_125 : Int
 let generated_125 =
     block
-        rankedHelper : (Int -> Int)
-        let rankedHelper x = x + 1
+        data RankedBox : Type =
+            RankedBox (value : Int)
 
-        rankedHelper (((((0 + 0) + 0) + 0) + 0) + 0)
+        let boxed = RankedBox ((block
+            generatedListLength : List Int -> Int
+            let generatedListLength xs decreases structural xs =
+                match xs
+                  case Nil -> 0
+                  case _ :: tail -> 1 + generatedListLength tail
+
+            let item = 0
+
+            generatedListLength [item, (item + 1), 0]) + 0)
+
+        match boxed
+          case RankedBox value -> (value + 1)
 
 result : Int
 let result = generated_125

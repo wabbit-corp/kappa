@@ -1,12 +1,33 @@
 module main
 
-generated_3991 : List Int
-let generated_3991 = [ for x in [1, 2, 3], yield (((((0 + ((if True then ((x + 0) + 0) else 0) + 0)) + 0) + 0) + 0) + 0) ]
+trait GeneratedScore a =
+    score : a -> Int
 
-result : List Int
+instance GeneratedScore Int =
+    let score x = x
+
+generated_3991 : Int
+let generated_3991 =
+    let
+        dict = summon (GeneratedScore Int)
+in
+        dict.score ((block
+            generatedListLength : List Int -> Int
+            let generatedListLength xs decreases structural xs =
+                match xs
+                  case Nil -> 0
+                  case _ :: tail -> 1 + generatedListLength tail
+
+            let item = (match (0 == 0)
+              case True -> 0
+              case False -> 0)
+
+            generatedListLength [item, (item + 1), 0]) + 0)
+
+result : Int
 let result = generated_3991
 
 --! assertNoErrors
---! assertType generated_3991 List Int
---! assertType result List Int
---! assertDeclKinds signature, let, signature, let
+--! assertType generated_3991 Int
+--! assertType result Int
+--! assertDeclKinds trait, instance, signature, let, signature, let

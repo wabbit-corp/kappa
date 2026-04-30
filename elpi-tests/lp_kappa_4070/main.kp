@@ -3,15 +3,18 @@ module main
 generated_4070 : Int
 let generated_4070 =
     block
-        trait RankedScore a =
-            rank : a -> Int
+        let (captured : Int) = ((block
+            generatedSetCount : Set Int -> Int
+            let generatedSetCount values = 2
 
-        instance RankedScore Int =
-            let rank x = x
+            let item = (match (0 == 0)
+              case True -> 0
+              case False -> 0)
+            let values = {|item, (item + 1)|}
 
-        let dict = summon (RankedScore Int)
+            generatedSetCount values) + 0)
 
-        dict.rank ((((((0 + ((if True then (if True then 0 else 0) else 0) + 0)) + 0) + 0) + 0) + 0) + 0)
+        captured
 
 result : Int
 let result = generated_4070

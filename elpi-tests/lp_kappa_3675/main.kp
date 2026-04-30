@@ -3,13 +3,12 @@ module main
 generated_3675 : Int
 let generated_3675 =
     block
-        data RankedBox : Type =
-            RankedBox (value : Int)
+        rankedHelper : (Int -> Int)
+        let rankedHelper x = x + 1
 
-        let boxed = RankedBox ((((((0 + ((0 + (((0 + 0) + 0) + 0)) + 0)) + 0) + 0) + 0) + 0) + 0)
-
-        match boxed
-          case RankedBox value -> (value + 1)
+        rankedHelper ((match (Some ((\(n : Int) -> n) 0))
+          case Some payload -> payload
+          case None -> 0) + 0)
 
 result : Int
 let result = generated_3675

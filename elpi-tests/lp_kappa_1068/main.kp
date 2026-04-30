@@ -1,15 +1,12 @@
 module main
 
-generated_1068 : IO Int
-let generated_1068 =
-    do
-        value <- pure ((((((((if True then ((if False then 0 else 0) + (0 + 0)) else 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0)
-        pure (value + 2)
+generated_1068 : Option Int
+let generated_1068 = (if True then (if True then (if True then (if False then None else (Some ((Some (0 + 0)) ?: 0))) else None) else None) else None)
 
-result : IO Int
+result : Option Int
 let result = generated_1068
 
 --! assertNoErrors
---! assertType generated_1068 IO Int
---! assertType result IO Int
+--! assertType generated_1068 Option Int
+--! assertType result Option Int
 --! assertDeclKinds signature, let, signature, let

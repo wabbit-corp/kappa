@@ -1,20 +1,18 @@
 module main
 
-generated_3199 : Int
-let generated_3199 =
-    block
-        data RankedBox : Type =
-            RankedBox (value : Int)
+generated_3199 : Set Int
+let generated_3199 = {| yield ((match (Some (block
+    let pair = (x = 0, y = (0 + 1))
+    let (x = captured, y = other) = pair
 
-        let boxed = RankedBox (((((((((Some (((left = 0, right = (0 + 0))).right + 0)) ?: 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0)
+    (captured + other)))
+  case Some payload -> payload
+  case None -> 0) + 0) |}
 
-        match boxed
-          case RankedBox value -> (value + 1)
-
-result : Int
+result : Set Int
 let result = generated_3199
 
 --! assertNoErrors
---! assertType generated_3199 Int
---! assertType result Int
+--! assertType generated_3199 Set Int
+--! assertType result Set Int
 --! assertDeclKinds signature, let, signature, let

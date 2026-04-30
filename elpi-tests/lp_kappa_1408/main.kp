@@ -1,15 +1,29 @@
 module main
 
-generated_1408 : IO Int
+generated_1408 : Int
 let generated_1408 =
-    do
-        value <- pure ((((((((if False then 0 else ((if False then 0 else 0) + (0 + 0))) + 0) + 0) + 0) + 0) + 0) + 0) + 0)
-        pure (value + 2)
+    block
+        trait RankedScore a =
+            rank : a -> Int
 
-result : IO Int
+        instance RankedScore Int =
+            let rank x = x
+
+        let dict = summon (RankedScore Int)
+
+        dict.rank (((\(n : Int) -> n) (block
+            generatedSetCount : Set Int -> Int
+            let generatedSetCount values = 2
+
+            let item = 0
+            let values = {|item, (item + 1)|}
+
+            generatedSetCount values)) + 0)
+
+result : Int
 let result = generated_1408
 
 --! assertNoErrors
---! assertType generated_1408 IO Int
---! assertType result IO Int
+--! assertType generated_1408 Int
+--! assertType result Int
 --! assertDeclKinds signature, let, signature, let

@@ -1,7 +1,13 @@
 module main
 
 generated_344 : Int
-let generated_344 = ((((((((((if True then 0 else 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0)
+let generated_344 =
+    block
+        let (captured : Int) = ((match [0, (0 + 1)]
+          case head :: tail -> head
+          case Nil -> 0) + 0)
+
+        captured
 
 result : Int
 let result = generated_344

@@ -1,12 +1,12 @@
 module main
 
-generated_4467 : List Int
-let generated_4467 = [ for x in [1, 2, 3], if x > 0, yield (((((0 + ((if False then 0 else ((if True then x else 0) + 0)) + 0)) + 0) + 0) + 0) + 0) ]
+generated_4467 : Bool
+let generated_4467 = (if (if (if ((if ((if True then (0 + 1) else 1) == 1) then (0 + 1) else 1) == 1) then True else False) then True else False) then True else False)
 
-result : List Int
+result : Bool
 let result = generated_4467
 
 --! assertNoErrors
---! assertType generated_4467 List Int
---! assertType result List Int
+--! assertType generated_4467 Bool
+--! assertType result Bool
 --! assertDeclKinds signature, let, signature, let

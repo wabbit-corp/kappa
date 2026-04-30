@@ -1,12 +1,40 @@
 module main
 
-generated_1947 : (Int -> Int)
-let generated_1947 = \(x : Int) -> ((\(x : Int) -> ((\(x : Int) -> (((if (0 == 0) then \(x : Int) -> (((\(x : Int) -> x) x) + 0) else \(x : Int) -> (x + 0))) x)) x)) x)
+generated_1947 : Int
+let generated_1947 =
+    block
+        rankedHelper : (Int -> Int)
+        let rankedHelper x = x + 1
 
-result : (Int -> Int)
+        rankedHelper ((match ((block
+            generatedMapCount : Map String Int -> Int
+            let generatedMapCount values = 1
+
+            let item = 0
+            let values = { yield "item" : item }
+
+            generatedMapCount values) == (block
+            generatedMapCount : Map String Int -> Int
+            let generatedMapCount values = 1
+
+            let item = 0
+            let values = { yield "item" : item }
+
+            generatedMapCount values))
+          case True -> (block
+              generatedMapCount : Map String Int -> Int
+              let generatedMapCount values = 1
+
+              let item = 0
+              let values = { yield "item" : item }
+
+              generatedMapCount values)
+          case False -> 0) + 0)
+
+result : Int
 let result = generated_1947
 
 --! assertNoErrors
---! assertType generated_1947 (Int -> Int)
---! assertType result (Int -> Int)
+--! assertType generated_1947 Int
+--! assertType result Int
 --! assertDeclKinds signature, let, signature, let

@@ -1,12 +1,12 @@
 module main
 
-generated_504 : Int
-let generated_504 =
-    block
-        let base : (x : Int) = (x = (((((((((((Some (0 + 0)) ?: 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0))
-        let extended = base.{ y := (((((((((((Some (0 + 0)) ?: 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0) + 1) }
+generatedNeed : (@x : Int) -> Int
+let generatedNeed (@x : Int) = x
 
-        (extended.x + extended.y)
+generated_504 : Int
+let generated_504 = generatedNeed @(((match (0 == 0)
+  case True -> 0
+  case False -> 0) + 0))
 
 result : Int
 let result = generated_504
@@ -14,4 +14,4 @@ let result = generated_504
 --! assertNoErrors
 --! assertType generated_504 Int
 --! assertType result Int
---! assertDeclKinds signature, let, signature, let
+--! assertDeclKinds signature, let, signature, let, signature, let

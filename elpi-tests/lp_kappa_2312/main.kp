@@ -1,12 +1,25 @@
 module main
 
-generated_2312 : Map String Int
-let generated_2312 = { yield "only" : (((((((((left = ((0 + (0 + 0)) + 0), right = 0)).left + 0) + 0) + 0) + 0) + 0) + 0) + 0) }
+generated_2312 : Int
+let generated_2312 =
+    block
+        ranked : Int
+        let ranked = (block
+            let pair = (x = (match (Some 0)
+              case Some payload -> payload
+              case None -> 0), y = ((match (Some 0)
+              case Some payload -> payload
+              case None -> 0) + 1))
+            let (x = captured, y = other) = pair
 
-result : Map String Int
+            (captured + other))
+
+        (ranked + 0)
+
+result : Int
 let result = generated_2312
 
 --! assertNoErrors
---! assertType generated_2312 Map String Int
---! assertType result Map String Int
+--! assertType generated_2312 Int
+--! assertType result Int
 --! assertDeclKinds signature, let, signature, let

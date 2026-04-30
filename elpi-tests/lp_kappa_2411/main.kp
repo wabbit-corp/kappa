@@ -1,10 +1,28 @@
 module main
 
-generatedEcho : forall (a : Type). (this x : a) -> a
-let generatedEcho @a (this x : a) = x
-
 generated_2411 : Int
-let generated_2411 = ((.generatedEcho) (((((((((left = (((if True then 0 else 0) + 0) + 0), right = 0)).left + 0) + 0) + 0) + 0) + 0) + 0) + 0))
+let generated_2411 =
+    block
+        scoped effect Ask =
+            ask : Unit -> Bool
+
+        let pkg = (label = Ask)
+
+        let seed = ((\(n : Int) -> n) (match (Some 0)
+          case Some payload -> payload
+          case None -> 0))
+
+        let comp : Eff <[Ask : Ask]> Int =
+            do
+                let b <- pkg.label.ask ()
+                if b then seed else (seed + 1)
+
+        let handled : Eff <[ ]> Int =
+            deep handle pkg.label comp with
+                case return x -> pure x
+                case ask () k -> k True
+
+        runPure handled
 
 result : Int
 let result = generated_2411
@@ -12,4 +30,4 @@ let result = generated_2411
 --! assertNoErrors
 --! assertType generated_2411 Int
 --! assertType result Int
---! assertDeclKinds signature, let, signature, let, signature, let
+--! assertDeclKinds signature, let, signature, let

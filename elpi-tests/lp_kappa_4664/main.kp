@@ -1,12 +1,18 @@
 module main
 
-generated_4664 : Unit
-let generated_4664 = (if True then (if True then (if False then () else (if (True && True) then (if True then () else ()) else ())) else ()) else ())
+generated_4664 : Int
+let generated_4664 =
+    block
+        let (captured : Int) = ((match (Some ((Some (0 + 1)) ?: (0 + 2)))
+          case Some payload -> payload
+          case None -> 0) + 0)
 
-result : Unit
+        captured
+
+result : Int
 let result = generated_4664
 
 --! assertNoErrors
---! assertType generated_4664 Unit
---! assertType result Unit
+--! assertType generated_4664 Int
+--! assertType result Int
 --! assertDeclKinds signature, let, signature, let

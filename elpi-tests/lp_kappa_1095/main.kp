@@ -1,14 +1,35 @@
 module main
 
-type GeneratedTuple = (Int, Int)
+data GeneratedChoice : Type =
+    GeneratedLeft (value : Int)
+    GeneratedRight
 
-generated_1095 : GeneratedTuple
-let generated_1095 = (if True then (if True then (if True then (if (0 == 0) then (if (False || True) then (1, (1 + (1 + 1))) else (0, (0 + 0))) else ((1 + 1), 1)) else (0, (0 + 0))) else (0, (0 + 0))) else (0, (0 + 0)))
+generated_1095 : Int
+let generated_1095 =
+    match GeneratedRight
+      case GeneratedLeft payload -> (payload + 0)
+      case GeneratedRight -> ((block
+          generatedListLength : List Int -> Int
+          let generatedListLength xs decreases structural xs =
+              match xs
+                case Nil -> 0
+                case _ :: tail -> 1 + generatedListLength tail
 
-result : GeneratedTuple
+          let item = (block
+              generatedSetCount : Set Int -> Int
+              let generatedSetCount values = 2
+
+              let item = 0
+              let values = {|item, (item + 1)|}
+
+              generatedSetCount values)
+
+          generatedListLength [item, (item + 1), 0]) + 0)
+
+result : Int
 let result = generated_1095
 
 --! assertNoErrors
---! assertType generated_1095 GeneratedTuple
---! assertType result GeneratedTuple
---! assertDeclKinds type, signature, let, signature, let
+--! assertType generated_1095 Int
+--! assertType result Int
+--! assertDeclKinds data, signature, let, signature, let

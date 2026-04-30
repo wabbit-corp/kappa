@@ -1,12 +1,17 @@
 module main
 
-generated_4935 : Bool
-let generated_4935 = (if (if (if (if True then (((if True then True else False) && True) && True) else False) then False else True) then True else False) then True else False)
+generated_4935 : Int
+let generated_4935 =
+    block
+        let pair = (x = (((Some (((Some (0 + 1)) ?: (0 + 2)) + 1)) ?: (((Some (0 + 1)) ?: (0 + 2)) + 2)) + 0), y = (((Some (((Some (0 + 1)) ?: (0 + 2)) + 1)) ?: (((Some (0 + 1)) ?: (0 + 2)) + 2)) + 1))
+        let whole@(x = captured, y = other) = pair
 
-result : Bool
+        (whole.x + (captured + other))
+
+result : Int
 let result = generated_4935
 
 --! assertNoErrors
---! assertType generated_4935 Bool
---! assertType result Bool
+--! assertType generated_4935 Int
+--! assertType result Int
 --! assertDeclKinds signature, let, signature, let

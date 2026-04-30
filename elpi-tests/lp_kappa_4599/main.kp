@@ -1,12 +1,22 @@
 module main
 
-generated_4599 : (Int -> Int)
-let generated_4599 = \(x : Int) -> ((\(x : Int) -> ((\(x : Int) -> ((((if True then \(x : Int) -> if (x == 0) then x else ((\(x : Int) -> x) x) else \(x : Int) -> x)) x) + 0)) x)) x)
+generated_4599 : IO Int
+let generated_4599 =
+    do
+        let staged = ((block
+            generatedMapCount : Map String Int -> Int
+            let generatedMapCount values = 1
 
-result : (Int -> Int)
+            let item = ((Some (0 + 1)) ?: (0 + 2))
+            let values = { yield "item" : item }
+
+            generatedMapCount values) + 0)
+        pure (staged + 1)
+
+result : IO Int
 let result = generated_4599
 
 --! assertNoErrors
---! assertType generated_4599 (Int -> Int)
---! assertType result (Int -> Int)
+--! assertType generated_4599 IO Int
+--! assertType result IO Int
 --! assertDeclKinds signature, let, signature, let

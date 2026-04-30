@@ -1,12 +1,24 @@
 module main
 
-generated_927 : (Int -> Int)
-let generated_927 = \(x : Int) -> ((\(x : Int) -> ((\(x : Int) -> ((\(x : Int) -> (0 + ((\(x : Int) -> (((\(x : Int) -> x) x) + 0)) x))) x)) x)) x)
+generated_927 : IO Int
+let generated_927 =
+    do
+        let staged = (((\(n : Int) -> n) (block
+            generatedListLength : List Int -> Int
+            let generatedListLength xs decreases structural xs =
+                match xs
+                  case Nil -> 0
+                  case _ :: tail -> 1 + generatedListLength tail
 
-result : (Int -> Int)
+            let item = 0
+
+            generatedListLength [item, (item + 1), 0])) + 0)
+        pure (staged + 1)
+
+result : IO Int
 let result = generated_927
 
 --! assertNoErrors
---! assertType generated_927 (Int -> Int)
---! assertType result (Int -> Int)
+--! assertType generated_927 IO Int
+--! assertType result IO Int
 --! assertDeclKinds signature, let, signature, let

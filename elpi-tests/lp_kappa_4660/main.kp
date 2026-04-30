@@ -5,7 +5,9 @@ let generated_4660 =
     block
         type RankedAlias = Int
 
-        let aliased : RankedAlias = ((((((0 + (((if True then 0 else 0) + 0) + 0)) + 0) + 0) + 0) + 0) + 0)
+        let aliased : RankedAlias = ((match (Some ((Some (0 + 1)) ?: (0 + 2)))
+          case Some payload -> payload
+          case None -> 0) + 0)
 
         (aliased + 1)
 

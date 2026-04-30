@@ -1,12 +1,33 @@
 module main
 
-generated_4459 : Bool
-let generated_4459 = (if (if (if ((if True then (True && True) else False) || False) then False else True) then True else False) then True else False)
+generated_4459 : Int
+let generated_4459 =
+    block
+        scoped effect State (s : Type) =
+            get : Unit -> s
 
-result : Bool
+        let seed = ((Some ((match (0 == 0)
+          case True -> 0
+          case False -> 0) + 1)) ?: ((match (0 == 0)
+          case True -> 0
+          case False -> 0) + 2))
+
+        let comp : Eff <[State : State Int]> Int =
+            do
+                let n <- State.get ()
+                n
+
+        let handled : Eff <[ ]> Int =
+            deep handle State comp with
+                case return x -> pure x
+                case get () k -> k seed
+
+        runPure handled
+
+result : Int
 let result = generated_4459
 
 --! assertNoErrors
---! assertType generated_4459 Bool
---! assertType result Bool
+--! assertType generated_4459 Int
+--! assertType result Int
 --! assertDeclKinds signature, let, signature, let

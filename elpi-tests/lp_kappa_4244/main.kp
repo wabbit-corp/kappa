@@ -3,10 +3,34 @@ module main
 generated_4244 : Int
 let generated_4244 =
     block
-        let base : (x : Int) = (x = ((((((0 + ((if True then ((left = 0, right = (0 + 0))).right else 0) + 0)) + 0) + 0) + 0) + 0) + 0))
-        let extended = base.{ y := ((((((0 + ((if True then ((left = 0, right = (0 + 0))).right else 0) + 0)) + 0) + 0) + 0) + 0) + 1) }
+        scoped effect Ask =
+            ask : Unit -> Bool
 
-        (extended.x + extended.y)
+        let seed = (match [(match (0 == 0)
+          case True -> 0
+          case False -> 0), ((match (0 == 0)
+          case True -> 0
+          case False -> 0) + 1)]
+          case head :: tail -> head
+          case Nil -> 0)
+
+        let comp : Eff <[Ask : Ask]> Int =
+            do
+                let b <- Ask.ask ()
+                if b then seed else (seed + 1)
+
+        let rehandle : (1 k : ((1 x : Bool) -> Eff <[Ask : Ask]> Int)) -> Eff <[ ]> Int =
+            \(1 k : ((1 x : Bool) -> Eff <[Ask : Ask]> Int)) ->
+                handle Ask (k True) with
+                    case return y -> pure y
+                    case ask () k2 -> k2 False
+
+        let handled : Eff <[ ]> Int =
+            handle Ask comp with
+                case return y -> pure y
+                case ask () k -> rehandle k
+
+        runPure handled
 
 result : Int
 let result = generated_4244

@@ -1,15 +1,19 @@
 module main
 
-generated_3939 : IO Int
-let generated_3939 =
-    do
-        let staged = ((((((0 + ((0 + (((Some (0 + 0)) ?: 0) + 0)) + 0)) + 0) + 0) + 0) + 0) + 0)
-        pure (staged + 1)
+data GeneratedChoice : Type =
+    GeneratedLeft (value : Int)
+    GeneratedRight
 
-result : IO Int
+generated_3939 : Int
+let generated_3939 =
+    match (GeneratedLeft (((Some (((\(n : Int) -> n) 0) + 1)) ?: (((\(n : Int) -> n) 0) + 2)) + 0))
+      case GeneratedLeft payload -> (payload + 0)
+      case GeneratedRight -> (((Some (((\(n : Int) -> n) 0) + 1)) ?: (((\(n : Int) -> n) 0) + 2)) + 0)
+
+result : Int
 let result = generated_3939
 
 --! assertNoErrors
---! assertType generated_3939 IO Int
---! assertType result IO Int
---! assertDeclKinds signature, let, signature, let
+--! assertType generated_3939 Int
+--! assertType result Int
+--! assertDeclKinds data, signature, let, signature, let

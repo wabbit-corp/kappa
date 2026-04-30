@@ -1,15 +1,16 @@
 module main
 
-generatedEcho : forall (a : Type). (this x : a) -> a
-let generatedEcho @a (this x : a) = x
+generated_2498 : Map String Int
+let generated_2498 = { yield "only" : (((Some ((match (Some 0)
+  case Some payload -> payload
+  case None -> 0) + 1)) ?: ((match (Some 0)
+  case Some payload -> payload
+  case None -> 0) + 2)) + 0) }
 
-generated_2498 : Int
-let generated_2498 = (((((((((left = (((left = 0, right = (0 + 0))).right + 0), right = 0)).left + 0) + 0) + 0) + 0) + 0) + 0) + 0).generatedEcho
-
-result : Int
+result : Map String Int
 let result = generated_2498
 
 --! assertNoErrors
---! assertType generated_2498 Int
---! assertType result Int
---! assertDeclKinds signature, let, signature, let, signature, let
+--! assertType generated_2498 Map String Int
+--! assertType result Map String Int
+--! assertDeclKinds signature, let, signature, let

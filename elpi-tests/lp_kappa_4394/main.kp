@@ -1,12 +1,24 @@
 module main
 
-generated_4394 : Option Int
-let generated_4394 = (if True then (if True then (if False then None else (if (((if (((Some (0 + 0)) ?: 0) == 0) then (Some (0 + 0)) else None) ?: 0) == 1) then None else (if (((Some (0 + 0)) ?: 0) == 0) then (Some (0 + 0)) else None))) else None) else None)
+generated_4394 : Int
+let generated_4394 =
+    block
+        let (captured : Int) = ((match ((match (0 == 0)
+          case True -> 0
+          case False -> 0) == (match (0 == 0)
+          case True -> 0
+          case False -> 0))
+          case True -> (match (0 == 0)
+            case True -> 0
+            case False -> 0)
+          case False -> 0) + 0)
 
-result : Option Int
+        captured
+
+result : Int
 let result = generated_4394
 
 --! assertNoErrors
---! assertType generated_4394 Option Int
---! assertType result Option Int
+--! assertType generated_4394 Int
+--! assertType result Int
 --! assertDeclKinds signature, let, signature, let

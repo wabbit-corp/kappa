@@ -1,12 +1,21 @@
 module main
 
-generated_1721 : Set Int
-let generated_1721 = {| for x in [1, 2, 3], let y = x + 1, yield ((((((((if True then ((if True then x else 0) + 0) else 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0) |}
+generated_1721 : List Int
+let generated_1721 = [ for x in [1, 2, 3], let y = x + 1, if y > 0, yield (match (Some (block
+    generatedMapCount : Map String Int -> Int
+    let generatedMapCount values = 1
 
-result : Set Int
+    let item = x
+    let values = { yield "item" : item }
+
+    generatedMapCount values))
+  case Some payload -> payload
+  case None -> 0) ]
+
+result : List Int
 let result = generated_1721
 
 --! assertNoErrors
---! assertType generated_1721 Set Int
---! assertType result Set Int
+--! assertType generated_1721 List Int
+--! assertType result List Int
 --! assertDeclKinds signature, let, signature, let

@@ -3,10 +3,25 @@ module main
 generated_1150 : Int
 let generated_1150 =
     block
-        let base : (x : Int) = (x = ((((((((if True then ((left = 0, right = (0 + 0))).right else 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0))
-        let extended = base.{ y := ((((((((if True then ((left = 0, right = (0 + 0))).right else 0) + 0) + 0) + 0) + 0) + 0) + 0) + 1) }
+        type RankedAlias = Int
 
-        (extended.x + extended.y)
+        let aliased : RankedAlias = ((block
+            generatedSetCount : Set Int -> Int
+            let generatedSetCount values = 2
+
+            let item = (block
+                generatedSetCount : Set Int -> Int
+                let generatedSetCount values = 2
+
+                let item = 0
+                let values = {|item, (item + 1)|}
+
+                generatedSetCount values)
+            let values = {|item, (item + 1)|}
+
+            generatedSetCount values) + 0)
+
+        (aliased + 1)
 
 result : Int
 let result = generated_1150

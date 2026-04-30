@@ -1,7 +1,21 @@
 module main
 
+generatedUseWidth : (width : Int) -> Int
+let generatedUseWidth width = width
+
 generated_242 : Int
-let generated_242 = (((((((((0 + (0 + 0)) + 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0)
+let generated_242 =
+    block
+        let width = ((block
+            generatedMapCount : Map String Int -> Int
+            let generatedMapCount values = 1
+
+            let item = 0
+            let values = { yield "item" : item }
+
+            generatedMapCount values) + 0)
+
+        generatedUseWidth { width }
 
 result : Int
 let result = generated_242
@@ -9,4 +23,4 @@ let result = generated_242
 --! assertNoErrors
 --! assertType generated_242 Int
 --! assertType result Int
---! assertDeclKinds signature, let, signature, let
+--! assertDeclKinds signature, let, signature, let, signature, let

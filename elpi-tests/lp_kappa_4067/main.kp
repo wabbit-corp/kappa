@@ -1,12 +1,29 @@
 module main
 
-generated_4067 : Set Int
-let generated_4067 = {| for x in [1, 2, 3], if x > 0, yield (((((0 + ((if True then (if True then x else 0) else 0) + 0)) + 0) + 0) + 0) + 0) |}
+generated_4067 : Int
+let generated_4067 =
+    block
+        data RankedBox : Type =
+            RankedBox (value : Int)
 
-result : Set Int
+        let boxed = RankedBox ((block
+            generatedSetCount : Set Int -> Int
+            let generatedSetCount values = 2
+
+            let item = (match (0 == 0)
+              case True -> 0
+              case False -> 0)
+            let values = {|item, (item + 1)|}
+
+            generatedSetCount values) + 0)
+
+        match boxed
+          case RankedBox value -> (value + 1)
+
+result : Int
 let result = generated_4067
 
 --! assertNoErrors
---! assertType generated_4067 Set Int
---! assertType result Set Int
+--! assertType generated_4067 Int
+--! assertType result Int
 --! assertDeclKinds signature, let, signature, let

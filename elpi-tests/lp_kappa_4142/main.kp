@@ -2,11 +2,11 @@ module main
 
 generated_4142 : Int
 let generated_4142 =
-    block
-        let base : (x : Int) = (x = ((((((0 + ((if True then ((if True then 0 else 0) + 0) else 0) + 0)) + 0) + 0) + 0) + 0) + 0))
-        let extended = base.{ y := ((((((0 + ((if True then ((if True then 0 else 0) + 0) else 0) + 0)) + 0) + 0) + 0) + 0) + 1) }
-
-        (extended.x + extended.y)
+    match (Some (match (0 == 0)
+      case True -> 0
+      case False -> 0))
+      case Some payload -> payload
+      case None -> 0
 
 result : Int
 let result = generated_4142

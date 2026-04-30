@@ -1,12 +1,16 @@
 module main
 
-generated_3808 : Map String Int
-let generated_3808 = { yield "only" : ((((((0 + ((0 + (((if True then 0 else 0) + 0) + 0)) + 0)) + 0) + 0) + 0) + 0) + 0) }
+generated_3808 : List Int
+let generated_3808 = [ for x in [1, 2, 3], skip 1, take 2, yield (block
+    let pair = (x = ((\(n : Int) -> n) x), y = (((\(n : Int) -> n) x) + 1))
+    let (x = captured, y = other) = pair
 
-result : Map String Int
+    (captured + other)) ]
+
+result : List Int
 let result = generated_3808
 
 --! assertNoErrors
---! assertType generated_3808 Map String Int
---! assertType result Map String Int
+--! assertType generated_3808 List Int
+--! assertType result List Int
 --! assertDeclKinds signature, let, signature, let

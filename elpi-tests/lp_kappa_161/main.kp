@@ -1,12 +1,22 @@
 module main
 
-generated_161 : String
-let generated_161 = (if (if (if (if True then True else False) then True else False) then True else False) then #"raw lambda-prolog"# else "fallback")
+generatedResize : (image : Int) -> (width : Int) -> (height : Int) -> Int
+let generatedResize image width height = image + width * 10 + height
 
-result : String
+generated_161 : Int
+let generated_161 = generatedResize { image = ((block
+    generatedSetCount : Set Int -> Int
+    let generatedSetCount values = 2
+
+    let item = 0
+    let values = {|item, (item + 1)|}
+
+    generatedSetCount values) + 0), height = 3, width = 2 }
+
+result : Int
 let result = generated_161
 
 --! assertNoErrors
---! assertType generated_161 String
---! assertType result String
---! assertDeclKinds signature, let, signature, let
+--! assertType generated_161 Int
+--! assertType result Int
+--! assertDeclKinds signature, let, signature, let, signature, let

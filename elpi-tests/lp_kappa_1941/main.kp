@@ -1,15 +1,60 @@
 module main
 
+data GeneratedChoice : Type =
+    GeneratedLeft (value : Int)
+    GeneratedRight
+
 generated_1941 : Int
 let generated_1941 =
-    block
-        data RankedBox : Type =
-            RankedBox (value : Int)
+    match (GeneratedLeft ((match ((block
+        generatedMapCount : Map String Int -> Int
+        let generatedMapCount values = 1
 
-        let boxed = RankedBox (((((((((if False then 0 else ((0 + 0) + 0)) + (0 + 0)) + 0) + 0) + 0) + 0) + 0) + 0) + 0)
+        let item = 0
+        let values = { yield "item" : item }
 
-        match boxed
-          case RankedBox value -> (value + 1)
+        generatedMapCount values) == (block
+        generatedMapCount : Map String Int -> Int
+        let generatedMapCount values = 1
+
+        let item = 0
+        let values = { yield "item" : item }
+
+        generatedMapCount values))
+      case True -> (block
+          generatedMapCount : Map String Int -> Int
+          let generatedMapCount values = 1
+
+          let item = 0
+          let values = { yield "item" : item }
+
+          generatedMapCount values)
+      case False -> 0) + 0))
+      case GeneratedLeft payload -> (payload + 0)
+      case GeneratedRight -> ((match ((block
+          generatedMapCount : Map String Int -> Int
+          let generatedMapCount values = 1
+
+          let item = 0
+          let values = { yield "item" : item }
+
+          generatedMapCount values) == (block
+          generatedMapCount : Map String Int -> Int
+          let generatedMapCount values = 1
+
+          let item = 0
+          let values = { yield "item" : item }
+
+          generatedMapCount values))
+        case True -> (block
+            generatedMapCount : Map String Int -> Int
+            let generatedMapCount values = 1
+
+            let item = 0
+            let values = { yield "item" : item }
+
+            generatedMapCount values)
+        case False -> 0) + 0)
 
 result : Int
 let result = generated_1941
@@ -17,4 +62,4 @@ let result = generated_1941
 --! assertNoErrors
 --! assertType generated_1941 Int
 --! assertType result Int
---! assertDeclKinds signature, let, signature, let
+--! assertDeclKinds data, signature, let, signature, let

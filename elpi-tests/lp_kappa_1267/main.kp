@@ -1,12 +1,24 @@
 module main
 
-generated_1267 : (Int -> Int)
-let generated_1267 = \(x : Int) -> ((\(x : Int) -> ((\(x : Int) -> (((if True then \(x : Int) -> (((\(x : Int) -> x) x) + 0) else \(x : Int) -> x)) x)) x)) x)
+generatedMakeConst : forall (a : Type). a -> Unit -> a
+let generatedMakeConst value = \() -> value
 
-result : (Int -> Int)
+generated_1267 : Int
+let generated_1267 = ((generatedMakeConst @Int ((match (Some (block
+    generatedSetCount : Set Int -> Int
+    let generatedSetCount values = 2
+
+    let item = 0
+    let values = {|item, (item + 1)|}
+
+    generatedSetCount values))
+  case Some payload -> payload
+  case None -> 0) + 0)) ())
+
+result : Int
 let result = generated_1267
 
 --! assertNoErrors
---! assertType generated_1267 (Int -> Int)
---! assertType result (Int -> Int)
---! assertDeclKinds signature, let, signature, let
+--! assertType generated_1267 Int
+--! assertType result Int
+--! assertDeclKinds signature, let, signature, let, signature, let

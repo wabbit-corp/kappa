@@ -1,16 +1,12 @@
 module main
 
-generated_1031 : Int
-let generated_1031 =
-    let
-        ranked : Int = (((((((if True then ((if True then 0 else 0) + 0) else 0) + 0) + 0) + 0) + 0) + 0) + 0)
-in
-        (ranked + 0)
+generated_1031 : String
+let generated_1031 = (if (if (if (if (if (True || False) then False else True) then True else False) then True else False) then True else False) then #"raw lambda-prolog"# else "fallback")
 
-result : Int
+result : String
 let result = generated_1031
 
 --! assertNoErrors
---! assertType generated_1031 Int
---! assertType result Int
+--! assertType generated_1031 String
+--! assertType result String
 --! assertDeclKinds signature, let, signature, let

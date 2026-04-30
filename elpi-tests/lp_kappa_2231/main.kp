@@ -1,12 +1,24 @@
 module main
 
-generated_2231 : Set Int
-let generated_2231 = {| for x in [1, 2, 3], yield ((((((((left = (x + 0), right = 0)).left + 0) + 0) + 0) + 0) + 0) + 0) |}
+generated_2231 : Int
+let generated_2231 =
+    block
+        data RankedBox : Type =
+            RankedBox (value : Int)
 
-result : Set Int
+        let boxed = RankedBox ((match (Some (match (Some 0)
+          case Some payload -> payload
+          case None -> 0))
+          case Some payload -> payload
+          case None -> 0) + 0)
+
+        match boxed
+          case RankedBox value -> (value + 1)
+
+result : Int
 let result = generated_2231
 
 --! assertNoErrors
---! assertType generated_2231 Set Int
---! assertType result Set Int
+--! assertType generated_2231 Int
+--! assertType result Int
 --! assertDeclKinds signature, let, signature, let

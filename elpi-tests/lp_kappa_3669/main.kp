@@ -1,10 +1,18 @@
 module main
 
-generatedEcho : forall (a : Type). (this x : a) -> a
-let generatedEcho @a (this x : a) = x
+data GeneratedChoice : Type =
+    GeneratedLeft (value : Int)
+    GeneratedRight
 
 generated_3669 : Int
-let generated_3669 = ((.generatedEcho) ((((((0 + ((0 + (((0 + 0) + 0) + 0)) + 0)) + 0) + 0) + 0) + 0) + 0))
+let generated_3669 =
+    match (GeneratedLeft ((match (Some ((\(n : Int) -> n) 0))
+      case Some payload -> payload
+      case None -> 0) + 0))
+      case GeneratedLeft payload -> (payload + 0)
+      case GeneratedRight -> ((match (Some ((\(n : Int) -> n) 0))
+        case Some payload -> payload
+        case None -> 0) + 0)
 
 result : Int
 let result = generated_3669
@@ -12,4 +20,4 @@ let result = generated_3669
 --! assertNoErrors
 --! assertType generated_3669 Int
 --! assertType result Int
---! assertDeclKinds signature, let, signature, let, signature, let
+--! assertDeclKinds data, signature, let, signature, let

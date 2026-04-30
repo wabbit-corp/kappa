@@ -1,15 +1,12 @@
 module main
 
+generatedMakeConst : forall (a : Type). a -> Unit -> a
+let generatedMakeConst value = \() -> value
+
 generated_3913 : Int
-let generated_3913 =
-    block
-        data RankedBox : Type =
-            RankedBox (value : Int)
-
-        let boxed = RankedBox ((((((0 + ((0 + (((left = 0, right = (0 + 0))).right + 0)) + 0)) + 0) + 0) + 0) + 0) + 0)
-
-        match boxed
-          case RankedBox value -> (value + 1)
+let generated_3913 = ((generatedMakeConst @Int ((match (((\(n : Int) -> n) 0) == ((\(n : Int) -> n) 0))
+  case True -> ((\(n : Int) -> n) 0)
+  case False -> 0) + 0)) ())
 
 result : Int
 let result = generated_3913
@@ -17,4 +14,4 @@ let result = generated_3913
 --! assertNoErrors
 --! assertType generated_3913 Int
 --! assertType result Int
---! assertDeclKinds signature, let, signature, let
+--! assertDeclKinds signature, let, signature, let, signature, let

@@ -1,12 +1,32 @@
 module main
 
-generated_2590 : Unit
-let generated_2590 = (if True then (if True then (if True then (if (0 == 1) then () else (if True then () else ())) else ()) else ()) else ())
+type GeneratedPair = (left : Int, right : Int)
 
-result : Unit
+generated_2590 : GeneratedPair
+let generated_2590 = ((left = (block
+    generatedSetCount : Set Int -> Int
+    let generatedSetCount values = 2
+
+    let item = (match [0, (0 + 1)]
+      case head :: tail -> head
+      case Nil -> 0)
+    let values = {|item, (item + 1)|}
+
+    generatedSetCount values), right = 0)).{ right = ((block
+    generatedSetCount : Set Int -> Int
+    let generatedSetCount values = 2
+
+    let item = (match [0, (0 + 1)]
+      case head :: tail -> head
+      case Nil -> 0)
+    let values = {|item, (item + 1)|}
+
+    generatedSetCount values) + 1) }
+
+result : GeneratedPair
 let result = generated_2590
 
 --! assertNoErrors
---! assertType generated_2590 Unit
---! assertType result Unit
---! assertDeclKinds signature, let, signature, let
+--! assertType generated_2590 GeneratedPair
+--! assertType result GeneratedPair
+--! assertDeclKinds type, signature, let, signature, let

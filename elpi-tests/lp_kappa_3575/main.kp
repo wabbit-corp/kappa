@@ -1,12 +1,22 @@
 module main
 
-generated_3575 : Bool
-let generated_3575 = (if (if (if (if ((if True then True else False) && True) then True else False) then False else True) then True else False) then True else False)
+generatedEcho : forall (a : Type). (this x : a) -> a
+let generatedEcho @a (this x : a) = x
 
-result : Bool
+generated_3575 : Int
+let generated_3575 = ((.generatedEcho) ((block
+    generatedSetCount : Set Int -> Int
+    let generatedSetCount values = 2
+
+    let item = ((\(n : Int) -> n) 0)
+    let values = {|item, (item + 1)|}
+
+    generatedSetCount values) + 0))
+
+result : Int
 let result = generated_3575
 
 --! assertNoErrors
---! assertType generated_3575 Bool
---! assertType result Bool
---! assertDeclKinds signature, let, signature, let
+--! assertType generated_3575 Int
+--! assertType result Int
+--! assertDeclKinds signature, let, signature, let, signature, let

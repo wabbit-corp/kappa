@@ -1,20 +1,14 @@
 module main
 
-generated_513 : Int
-let generated_513 =
-    block
-        data RankedBox : Type =
-            RankedBox (value : Int)
+generated_513 : Map String Int
+let generated_513 = { for x in [1, 2, 3], yield "k" : (match (x == x)
+  case True -> x
+  case False -> 0), on conflict keep first }
 
-        let boxed = RankedBox (((((((((((Some (0 + 0)) ?: 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0)
-
-        match boxed
-          case RankedBox value -> (value + 1)
-
-result : Int
+result : Map String Int
 let result = generated_513
 
 --! assertNoErrors
---! assertType generated_513 Int
---! assertType result Int
+--! assertType generated_513 Map String Int
+--! assertType result Map String Int
 --! assertDeclKinds signature, let, signature, let

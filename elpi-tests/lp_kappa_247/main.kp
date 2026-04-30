@@ -1,12 +1,36 @@
 module main
 
-generated_247 : (Int -> Int)
-let generated_247 = \(x : Int) -> ((\(x : Int) -> ((\(x : Int) -> ((\(x : Int) -> ((\(x : Int) -> (((\(x : Int) -> x) x) + 0)) x)) x)) x)) x)
+generated_247 : Int
+let generated_247 =
+    block
+        scoped effect State (s : Type) =
+            get : Unit -> s
 
-result : (Int -> Int)
+        let seed = (block
+            generatedMapCount : Map String Int -> Int
+            let generatedMapCount values = 1
+
+            let item = 0
+            let values = { yield "item" : item }
+
+            generatedMapCount values)
+
+        let comp : Eff <[State : State Int]> Int =
+            do
+                let n <- State.get ()
+                n
+
+        let handled : Eff <[ ]> Int =
+            deep handle State comp with
+                case return x -> pure x
+                case get () k -> k seed
+
+        runPure handled
+
+result : Int
 let result = generated_247
 
 --! assertNoErrors
---! assertType generated_247 (Int -> Int)
---! assertType result (Int -> Int)
+--! assertType generated_247 Int
+--! assertType result Int
 --! assertDeclKinds signature, let, signature, let

@@ -1,12 +1,12 @@
 module main
 
-generated_2419 : Bool
-let generated_2419 = (if (if (if ((if (if False then True else (True || False)) then 1 else 0) == 1) then True else False) then True else False) then True else False)
+generated_2419 : (Int -> Int)
+let generated_2419 = \(x : Int) -> ((\(x : Int) -> ((\(x : Int) -> (((if False then \(x : Int) -> x else \(x : Int) -> x)) x)) x)) x)
 
-result : Bool
+result : (Int -> Int)
 let result = generated_2419
 
 --! assertNoErrors
---! assertType generated_2419 Bool
---! assertType result Bool
+--! assertType generated_2419 (Int -> Int)
+--! assertType result (Int -> Int)
 --! assertDeclKinds signature, let, signature, let

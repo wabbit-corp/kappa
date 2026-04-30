@@ -1,15 +1,33 @@
 module main
 
-generated_184 : IO Int
-let generated_184 =
-    do
-        value <- pure (((((((((0 + 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0)
-        pure (value + 2)
+type GeneratedTuple = (Int, Int)
 
-result : IO Int
+generated_184 : Int
+let generated_184 =
+    block
+        let pair : GeneratedTuple = (((block
+            generatedSetCount : Set Int -> Int
+            let generatedSetCount values = 2
+
+            let item = 0
+            let values = {|item, (item + 1)|}
+
+            generatedSetCount values) + 0), ((block
+            generatedSetCount : Set Int -> Int
+            let generatedSetCount values = 2
+
+            let item = 0
+            let values = {|item, (item + 1)|}
+
+            generatedSetCount values) + 1))
+        let (left, right) = pair
+
+        (left + right)
+
+result : Int
 let result = generated_184
 
 --! assertNoErrors
---! assertType generated_184 IO Int
---! assertType result IO Int
---! assertDeclKinds signature, let, signature, let
+--! assertType generated_184 Int
+--! assertType result Int
+--! assertDeclKinds type, signature, let, signature, let

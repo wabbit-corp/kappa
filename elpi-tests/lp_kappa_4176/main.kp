@@ -1,12 +1,14 @@
 module main
 
-generated_4176 : Int
-let generated_4176 =
-    block
-        let base : (x : Int) = (x = ((((((0 + ((if True then ((if False then 0 else 0) + (0 + 0)) else 0) + 0)) + 0) + 0) + 0) + 0) + 0))
-        let extended = base.{ y := ((((((0 + ((if True then ((if False then 0 else 0) + (0 + 0)) else 0) + 0)) + 0) + 0) + 0) + 0) + 1) }
+generatedNeed : (@x : Int) -> Int
+let generatedNeed (@x : Int) = x
 
-        (extended.x + extended.y)
+generated_4176 : Int
+let generated_4176 = generatedNeed @(((match (Some (match (0 == 0)
+  case True -> 0
+  case False -> 0))
+  case Some payload -> payload
+  case None -> 0) + 0))
 
 result : Int
 let result = generated_4176
@@ -14,4 +16,4 @@ let result = generated_4176
 --! assertNoErrors
 --! assertType generated_4176 Int
 --! assertType result Int
---! assertDeclKinds signature, let, signature, let
+--! assertDeclKinds signature, let, signature, let, signature, let

@@ -1,14 +1,30 @@
 module main
 
-type GeneratedPair = (left : Int, right : Int)
+generated_1378 : List Int
+let generated_1378 = [ for x in [1, 2, 3], skip 1, take 2, yield (block
+    let pair = (x = (block
+        generatedSetCount : Set Int -> Int
+        let generatedSetCount values = 2
 
-generated_1378 : GeneratedPair
-let generated_1378 = ((left = (((((((if False then 0 else ((if True then 0 else 0) + 0)) + 0) + 0) + 0) + 0) + 0) + 0), right = 0)).{ right = ((((((((if False then 0 else ((if True then 0 else 0) + 0)) + 0) + 0) + 0) + 0) + 0) + 0) + 1) }
+        let item = x
+        let values = {|item, (item + 1)|}
 
-result : GeneratedPair
+        generatedSetCount values), y = ((block
+        generatedSetCount : Set Int -> Int
+        let generatedSetCount values = 2
+
+        let item = x
+        let values = {|item, (item + 1)|}
+
+        generatedSetCount values) + 1))
+    let (x = captured, y = other) = pair
+
+    (captured + other)) ]
+
+result : List Int
 let result = generated_1378
 
 --! assertNoErrors
---! assertType generated_1378 GeneratedPair
---! assertType result GeneratedPair
---! assertDeclKinds type, signature, let, signature, let
+--! assertType generated_1378 List Int
+--! assertType result List Int
+--! assertDeclKinds signature, let, signature, let

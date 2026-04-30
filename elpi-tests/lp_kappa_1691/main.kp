@@ -1,12 +1,34 @@
 module main
 
-generated_1691 : String
-let generated_1691 = (if (if (if (if (if True then ((True || False) && True) else False) then True else False) then True else False) then True else False) then #"raw lambda-prolog"# else "fallback")
+generated_1691 : Int
+let generated_1691 =
+    block
+        data RankedBox : Type =
+            RankedBox (value : Int)
 
-result : String
+        let boxed = RankedBox ((block
+            generatedMapCount : Map String Int -> Int
+            let generatedMapCount values = 1
+
+            let item = (block
+                generatedMapCount : Map String Int -> Int
+                let generatedMapCount values = 1
+
+                let item = 0
+                let values = { yield "item" : item }
+
+                generatedMapCount values)
+            let values = { yield "item" : item }
+
+            generatedMapCount values) + 0)
+
+        match boxed
+          case RankedBox value -> (value + 1)
+
+result : Int
 let result = generated_1691
 
 --! assertNoErrors
---! assertType generated_1691 String
---! assertType result String
+--! assertType generated_1691 Int
+--! assertType result Int
 --! assertDeclKinds signature, let, signature, let

@@ -1,15 +1,14 @@
 module main
 
-generated_3497 : IO Int
-let generated_3497 =
-    do
-        let staged = ((((((0 + (((((if False then 0 else 0) + (0 + 0)) + 0) + 0) + 0)) + 0) + 0) + 0) + 0) + 0)
-        pure (staged + 1)
+type GeneratedTuple = (Int, Int)
 
-result : IO Int
+generated_3497 : GeneratedTuple
+let generated_3497 = (if True then (if True then (if True then (if (False || True) then (1, (1 + (1 + 1))) else (0, (0 + 0))) else (0, (0 + 0))) else (0, (0 + 0))) else (0, (0 + 0)))
+
+result : GeneratedTuple
 let result = generated_3497
 
 --! assertNoErrors
---! assertType generated_3497 IO Int
---! assertType result IO Int
---! assertDeclKinds signature, let, signature, let
+--! assertType generated_3497 GeneratedTuple
+--! assertType result GeneratedTuple
+--! assertDeclKinds type, signature, let, signature, let

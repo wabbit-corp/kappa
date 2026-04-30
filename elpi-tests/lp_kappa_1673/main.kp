@@ -1,14 +1,29 @@
 module main
 
-type GeneratedTuple = (Int, Int)
+generatedResize : (image : Int) -> (width : Int) -> (height : Int) -> Int
+let generatedResize image width height = image + width * 10 + height
 
-generated_1673 : GeneratedTuple
-let generated_1673 = (if True then (if True then (if True then (if True then (if True then (if (0 == 1) then (1, (1 + (1 + 1))) else (0, (0 + 0))) else (0, (0 + 0))) else ((1 + 1), 1)) else (0, (0 + 0))) else (0, (0 + 0))) else (0, (0 + 0)))
+generated_1673 : Int
+let generated_1673 = generatedResize { image = ((block
+    generatedMapCount : Map String Int -> Int
+    let generatedMapCount values = 1
 
-result : GeneratedTuple
+    let item = (block
+        generatedMapCount : Map String Int -> Int
+        let generatedMapCount values = 1
+
+        let item = 0
+        let values = { yield "item" : item }
+
+        generatedMapCount values)
+    let values = { yield "item" : item }
+
+    generatedMapCount values) + 0), height = 3, width = 2 }
+
+result : Int
 let result = generated_1673
 
 --! assertNoErrors
---! assertType generated_1673 GeneratedTuple
---! assertType result GeneratedTuple
---! assertDeclKinds type, signature, let, signature, let
+--! assertType generated_1673 Int
+--! assertType result Int
+--! assertDeclKinds signature, let, signature, let, signature, let

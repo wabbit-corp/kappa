@@ -1,15 +1,27 @@
 module main
 
-generated_4366 : IO Int
-let generated_4366 =
-    do
-        value <- pure ((((((0 + ((if False then 0 else (0 + (0 + 0))) + 0)) + 0) + 0) + 0) + 0) + 0)
-        pure (value + 2)
+generatedNeed : (@x : Int) -> Int
+let generatedNeed (@x : Int) = x
 
-result : IO Int
+generated_4366 : Int
+let generated_4366 =
+    block
+        let (@x : Int) = (match ((match (0 == 0)
+          case True -> 0
+          case False -> 0) == (match (0 == 0)
+          case True -> 0
+          case False -> 0))
+          case True -> (match (0 == 0)
+            case True -> 0
+            case False -> 0)
+          case False -> 0)
+
+        if True then generatedNeed else 0
+
+result : Int
 let result = generated_4366
 
 --! assertNoErrors
---! assertType generated_4366 IO Int
---! assertType result IO Int
---! assertDeclKinds signature, let, signature, let
+--! assertType generated_4366 Int
+--! assertType result Int
+--! assertDeclKinds signature, let, signature, let, signature, let

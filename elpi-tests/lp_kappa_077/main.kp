@@ -1,12 +1,15 @@
 module main
 
-generated_77 : (Int -> Int)
-let generated_77 = \(x : Int) -> ((\(x : Int) -> x) x)
+generated_77 : Int
+let generated_77 =
+    match (Some (0 + 0))
+      case Some payload -> payload
+      case None -> 0
 
-result : (Int -> Int)
+result : Int
 let result = generated_77
 
 --! assertNoErrors
---! assertType generated_77 (Int -> Int)
---! assertType result (Int -> Int)
+--! assertType generated_77 Int
+--! assertType result Int
 --! assertDeclKinds signature, let, signature, let

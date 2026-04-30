@@ -3,15 +3,20 @@ module main
 generated_3526 : Int
 let generated_3526 =
     block
-        trait RankedScore a =
-            rank : a -> Int
+        type RankedAlias = Int
 
-        instance RankedScore Int =
-            let rank x = x
+        let aliased : RankedAlias = ((block
+            generatedListLength : List Int -> Int
+            let generatedListLength xs decreases structural xs =
+                match xs
+                  case Nil -> 0
+                  case _ :: tail -> 1 + generatedListLength tail
 
-        let dict = summon (RankedScore Int)
+            let item = ((\(n : Int) -> n) 0)
 
-        dict.rank ((((((0 + (((((left = (0 + 0), right = 0)).left + 0) + 0) + 0)) + 0) + 0) + 0) + 0) + 0)
+            generatedListLength [item, (item + 1), 0]) + 0)
+
+        (aliased + 1)
 
 result : Int
 let result = generated_3526

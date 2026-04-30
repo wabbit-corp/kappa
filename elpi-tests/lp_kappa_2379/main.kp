@@ -1,12 +1,19 @@
 module main
 
-generated_2379 : Set Int
-let generated_2379 = {| yield (((((((((left = ((if False then 0 else 0) + 0), right = 0)).left + 0) + 0) + 0) + 0) + 0) + 0) + 0) |}
+generated_2379 : Int
+let generated_2379 =
+    block
+        rankedHelper : (Int -> Int)
+        let rankedHelper x = x + 1
 
-result : Set Int
+        rankedHelper (((\(n : Int) -> n) (match (Some 0)
+          case Some payload -> payload
+          case None -> 0)) + 0)
+
+result : Int
 let result = generated_2379
 
 --! assertNoErrors
---! assertType generated_2379 Set Int
---! assertType result Set Int
+--! assertType generated_2379 Int
+--! assertType result Int
 --! assertDeclKinds signature, let, signature, let

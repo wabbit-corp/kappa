@@ -1,12 +1,19 @@
 module main
 
-generated_243 : Bool
-let generated_243 = (if (if (if (if (if True then False else True) then True else False) then True else False) then True else False) then True else False)
+generated_243 : Map String Int
+let generated_243 = { for x in [1, 2, 3], yield "k" : (block
+    generatedMapCount : Map String Int -> Int
+    let generatedMapCount values = 1
 
-result : Bool
+    let item = x
+    let values = { yield "item" : item }
+
+    generatedMapCount values), on conflict keep first }
+
+result : Map String Int
 let result = generated_243
 
 --! assertNoErrors
---! assertType generated_243 Bool
---! assertType result Bool
+--! assertType generated_243 Map String Int
+--! assertType result Map String Int
 --! assertDeclKinds signature, let, signature, let

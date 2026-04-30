@@ -1,12 +1,40 @@
 module main
 
-generated_4731 : Bool
-let generated_4731 = (if (if (if (if True then ((True && False) && True) else False) then False else True) then True else False) then True else False)
+generated_4731 : Int
+let generated_4731 =
+    block
+        scoped effect Ask =
+            ask : Unit -> Bool
 
-result : Bool
+        scoped effect Other =
+            other : Unit -> Int
+
+        let seed = (match [((Some (0 + 1)) ?: (0 + 2)), (((Some (0 + 1)) ?: (0 + 2)) + 1)]
+          case head :: tail -> head
+          case Nil -> 0)
+
+        let comp : Eff <[Ask : Ask, Other : Other]> Int =
+            do
+                let b <- Ask.ask ()
+                let n <- Other.other ()
+                if b then (n + seed) else seed
+
+        let askHandled : Eff <[Other : Other]> Int =
+            deep handle Ask comp with
+                case return x -> pure x
+                case ask () k -> k True
+
+        let handled : Eff <[ ]> Int =
+            deep handle Other askHandled with
+                case return x -> pure x
+                case other () k -> k 1
+
+        runPure handled
+
+result : Int
 let result = generated_4731
 
 --! assertNoErrors
---! assertType generated_4731 Bool
---! assertType result Bool
+--! assertType generated_4731 Int
+--! assertType result Int
 --! assertDeclKinds signature, let, signature, let

@@ -1,12 +1,26 @@
 module main
 
-generated_781 : Set Int
-let generated_781 = {| yield ((((((((0 + (((left = (0 + 0), right = 0)).left + 0)) + 0) + 0) + 0) + 0) + 0) + 0) + 0) |}
+generatedMakeConst : forall (a : Type). a -> Unit -> a
+let generatedMakeConst value = \() -> value
 
-result : Set Int
+generated_781 : Int
+let generated_781 = ((generatedMakeConst @Int ((match (Some (block
+    generatedListLength : List Int -> Int
+    let generatedListLength xs decreases structural xs =
+        match xs
+          case Nil -> 0
+          case _ :: tail -> 1 + generatedListLength tail
+
+    let item = 0
+
+    generatedListLength [item, (item + 1), 0]))
+  case Some payload -> payload
+  case None -> 0) + 0)) ())
+
+result : Int
 let result = generated_781
 
 --! assertNoErrors
---! assertType generated_781 Set Int
---! assertType result Set Int
---! assertDeclKinds signature, let, signature, let
+--! assertType generated_781 Int
+--! assertType result Int
+--! assertDeclKinds signature, let, signature, let, signature, let

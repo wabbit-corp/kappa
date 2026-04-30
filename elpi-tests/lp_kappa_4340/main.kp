@@ -1,12 +1,18 @@
 module main
 
-generated_4340 : Map String Int
-let generated_4340 = { for x in [1, 2, 3], if x > 0, yield "k" : (((((0 + ((if False then 0 else ((x + 0) + 0)) + 0)) + 0) + 0) + 0) + 0) }
+generated_4340 : Int
+let generated_4340 =
+    block
+        let (captured : Int) = (((\(n : Int) -> n) (match (0 == 0)
+          case True -> 0
+          case False -> 0)) + 0)
 
-result : Map String Int
+        captured
+
+result : Int
 let result = generated_4340
 
 --! assertNoErrors
---! assertType generated_4340 Map String Int
---! assertType result Map String Int
+--! assertType generated_4340 Int
+--! assertType result Int
 --! assertDeclKinds signature, let, signature, let

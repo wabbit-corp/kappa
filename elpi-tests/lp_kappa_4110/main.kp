@@ -1,18 +1,42 @@
 module main
 
-generatedNeed : (@x : Int) -> Int
-let generatedNeed (@x : Int) = x
-
-generated_4110 : IO Int
+generated_4110 : Int
 let generated_4110 =
-    do
-        let (@x : Int) = ((((((0 + ((if True then (if False then 0 else 0) else 0) + 0)) + 0) + 0) + 0) + 0) + 0)
-        pure generatedNeed
+    match (((block
+        generatedMapCount : Map String Int -> Int
+        let generatedMapCount values = 1
 
-result : IO Int
+        let item = (match (0 == 0)
+          case True -> 0
+          case False -> 0)
+        let values = { yield "item" : item }
+
+        generatedMapCount values) + 0) == ((block
+        generatedMapCount : Map String Int -> Int
+        let generatedMapCount values = 1
+
+        let item = (match (0 == 0)
+          case True -> 0
+          case False -> 0)
+        let values = { yield "item" : item }
+
+        generatedMapCount values) + 0))
+      case True -> ((block
+          generatedMapCount : Map String Int -> Int
+          let generatedMapCount values = 1
+
+          let item = (match (0 == 0)
+            case True -> 0
+            case False -> 0)
+          let values = { yield "item" : item }
+
+          generatedMapCount values) + 0)
+      case False -> 0
+
+result : Int
 let result = generated_4110
 
 --! assertNoErrors
---! assertType generated_4110 IO Int
---! assertType result IO Int
---! assertDeclKinds signature, let, signature, let, signature, let
+--! assertType generated_4110 Int
+--! assertType result Int
+--! assertDeclKinds signature, let, signature, let

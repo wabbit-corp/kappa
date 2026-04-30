@@ -1,20 +1,22 @@
 module main
 
-generated_3233 : Int
-let generated_3233 =
-    block
-        data RankedBox : Type =
-            RankedBox (value : Int)
+generated_3233 : List Int
+let generated_3233 = [ for x in [1, 2, 3], let y = x + 1, if y > 0, yield (match [(block
+    let pair = (x = x, y = (x + 1))
+    let (x = captured, y = other) = pair
 
-        let boxed = RankedBox (((((((((Some (((Some (0 + 0)) ?: 0) + 0)) ?: 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0)
+    (captured + other)), ((block
+    let pair = (x = x, y = (x + 1))
+    let (x = captured, y = other) = pair
 
-        match boxed
-          case RankedBox value -> (value + 1)
+    (captured + other)) + 1)]
+  case head :: tail -> head
+  case Nil -> 0) ]
 
-result : Int
+result : List Int
 let result = generated_3233
 
 --! assertNoErrors
---! assertType generated_3233 Int
---! assertType result Int
+--! assertType generated_3233 List Int
+--! assertType result List Int
 --! assertDeclKinds signature, let, signature, let

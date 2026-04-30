@@ -1,12 +1,21 @@
 module main
 
-generated_2763 : (Int -> Int)
-let generated_2763 = \(x : Int) -> ((\(x : Int) -> ((\(x : Int) -> ((\(x : Int) -> if (x == 0) then (((if (0 == 0) then \(x : Int) -> x else \(x : Int) -> (x + 0))) x) else x) x)) x)) x)
+generated_2763 : IO Int
+let generated_2763 =
+    do
+        let staged = ((match [(match [0, (0 + 1)]
+          case head :: tail -> head
+          case Nil -> 0), ((match [0, (0 + 1)]
+          case head :: tail -> head
+          case Nil -> 0) + 1)]
+          case head :: tail -> head
+          case Nil -> 0) + 0)
+        pure (staged + 1)
 
-result : (Int -> Int)
+result : IO Int
 let result = generated_2763
 
 --! assertNoErrors
---! assertType generated_2763 (Int -> Int)
---! assertType result (Int -> Int)
+--! assertType generated_2763 IO Int
+--! assertType result IO Int
 --! assertDeclKinds signature, let, signature, let

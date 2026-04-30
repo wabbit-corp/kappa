@@ -1,14 +1,18 @@
 module main
 
-type GeneratedPair = (left : Int, right : Int)
+generated_4880 : Int
+let generated_4880 =
+    block
+        let (captured : Int) = ((match (((Some (0 + 1)) ?: (0 + 2)) == ((Some (0 + 1)) ?: (0 + 2)))
+          case True -> ((Some (0 + 1)) ?: (0 + 2))
+          case False -> 0) + 0)
 
-generated_4880 : GeneratedPair
-let generated_4880 = ((left = (((((0 + (((if True then ((left = (0 + 0), right = 0)).left else 0) + 0) + 0)) + 0) + 0) + 0) + 0), right = 0)).{ right = ((((((0 + (((if True then ((left = (0 + 0), right = 0)).left else 0) + 0) + 0)) + 0) + 0) + 0) + 0) + 1) }
+        captured
 
-result : GeneratedPair
+result : Int
 let result = generated_4880
 
 --! assertNoErrors
---! assertType generated_4880 GeneratedPair
---! assertType result GeneratedPair
---! assertDeclKinds type, signature, let, signature, let
+--! assertType generated_4880 Int
+--! assertType result Int
+--! assertDeclKinds signature, let, signature, let

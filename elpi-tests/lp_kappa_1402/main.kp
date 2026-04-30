@@ -1,12 +1,28 @@
 module main
 
-generated_1402 : Option Int
-let generated_1402 = (if True then (if True then (if True then (if (((if (((Some (0 + 0)) ?: 0) == 0) then (Some ((Some (0 + 0)) ?: 0)) else None) ?: 0) == 1) then None else (if (((Some (0 + 0)) ?: 0) == 0) then (Some ((Some (0 + 0)) ?: 0)) else None)) else None) else None) else None)
+type GeneratedPair = (left : Int, right : Int)
 
-result : Option Int
+generated_1402 : GeneratedPair
+let generated_1402 = ((left = ((\(n : Int) -> n) (block
+    generatedSetCount : Set Int -> Int
+    let generatedSetCount values = 2
+
+    let item = 0
+    let values = {|item, (item + 1)|}
+
+    generatedSetCount values)), right = 0)).{ right = (((\(n : Int) -> n) (block
+    generatedSetCount : Set Int -> Int
+    let generatedSetCount values = 2
+
+    let item = 0
+    let values = {|item, (item + 1)|}
+
+    generatedSetCount values)) + 1) }
+
+result : GeneratedPair
 let result = generated_1402
 
 --! assertNoErrors
---! assertType generated_1402 Option Int
---! assertType result Option Int
---! assertDeclKinds signature, let, signature, let
+--! assertType generated_1402 GeneratedPair
+--! assertType result GeneratedPair
+--! assertDeclKinds type, signature, let, signature, let

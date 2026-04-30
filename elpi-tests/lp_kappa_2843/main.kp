@@ -1,12 +1,39 @@
 module main
 
-generated_2843 : Set Int
-let generated_2843 = {| for x in [1, 2, 3], if x > 0, yield ((((((((left = 0, right = (((left = 0, right = (x + 0))).right + 0))).right + 0) + 0) + 0) + 0) + 0) + 0) |}
+generated_2843 : Int
+let generated_2843 =
+    block
+        scoped effect Ask =
+            ask : Unit -> Bool
 
-result : Set Int
+        let pkg = (label = Ask)
+
+        let seed = (block
+            let pair = (x = (match [0, (0 + 1)]
+              case head :: tail -> head
+              case Nil -> 0), y = ((match [0, (0 + 1)]
+              case head :: tail -> head
+              case Nil -> 0) + 1))
+            let (x = captured, y = other) = pair
+
+            (captured + other))
+
+        let comp : Eff <[Ask : Ask]> Int =
+            do
+                let b <- pkg.label.ask ()
+                if b then seed else (seed + 1)
+
+        let handled : Eff <[ ]> Int =
+            deep handle pkg.label comp with
+                case return x -> pure x
+                case ask () k -> k True
+
+        runPure handled
+
+result : Int
 let result = generated_2843
 
 --! assertNoErrors
---! assertType generated_2843 Set Int
---! assertType result Set Int
+--! assertType generated_2843 Int
+--! assertType result Int
 --! assertDeclKinds signature, let, signature, let

@@ -1,14 +1,24 @@
 module main
 
-type GeneratedTuple = (Int, Int)
+generatedResize : (image : Int) -> (width : Int) -> (height : Int) -> Int
+let generatedResize image width height = image + width * 10 + height
 
-generated_3509 : GeneratedTuple
-let generated_3509 = (if True then (if True then (if False then (0, (0 + 0)) else (if True then (if (False || True) then (1, (1 + (1 + 1))) else (0, (0 + 0))) else (0, (0 + 0)))) else (0, (0 + 0))) else (0, (0 + 0)))
+generated_3509 : Int
+let generated_3509 = generatedResize { image = ((block
+    generatedListLength : List Int -> Int
+    let generatedListLength xs decreases structural xs =
+        match xs
+          case Nil -> 0
+          case _ :: tail -> 1 + generatedListLength tail
 
-result : GeneratedTuple
+    let item = ((\(n : Int) -> n) 0)
+
+    generatedListLength [item, (item + 1), 0]) + 0), height = 3, width = 2 }
+
+result : Int
 let result = generated_3509
 
 --! assertNoErrors
---! assertType generated_3509 GeneratedTuple
---! assertType result GeneratedTuple
---! assertDeclKinds type, signature, let, signature, let
+--! assertType generated_3509 Int
+--! assertType result Int
+--! assertDeclKinds signature, let, signature, let, signature, let

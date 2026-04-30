@@ -1,17 +1,30 @@
 module main
 
-generated_622 : Int
-let generated_622 =
-    block
-        ranked : Int
-        let ranked = (((((((0 + ((if True then 0 else 0) + 0)) + 0) + 0) + 0) + 0) + 0) + 0)
+generated_622 : List Int
+let generated_622 = [ for x in [1, 2, 3], skip 1, take 2, yield (block
+    generatedListLength : List Int -> Int
+    let generatedListLength xs decreases structural xs =
+        match xs
+          case Nil -> 0
+          case _ :: tail -> 1 + generatedListLength tail
 
-        (ranked + 0)
+    let item = (block
+        generatedListLength : List Int -> Int
+        let generatedListLength xs decreases structural xs =
+            match xs
+              case Nil -> 0
+              case _ :: tail -> 1 + generatedListLength tail
 
-result : Int
+        let item = x
+
+        generatedListLength [item, (item + 1), 0])
+
+    generatedListLength [item, (item + 1), 0]) ]
+
+result : List Int
 let result = generated_622
 
 --! assertNoErrors
---! assertType generated_622 Int
---! assertType result Int
+--! assertType generated_622 List Int
+--! assertType result List Int
 --! assertDeclKinds signature, let, signature, let

@@ -1,17 +1,14 @@
 module main
 
+generatedUseWidth : (width : Int) -> Int
+let generatedUseWidth width = width
+
 generated_3968 : Int
 let generated_3968 =
     block
-        trait RankedScore a =
-            rank : a -> Int
+        let width = (((Some (((\(n : Int) -> n) 0) + 1)) ?: (((\(n : Int) -> n) 0) + 2)) + 0)
 
-        instance RankedScore Int =
-            let rank x = x
-
-        let dict = summon (RankedScore Int)
-
-        dict.rank ((((((0 + ((if True then 0 else 0) + 0)) + 0) + 0) + 0) + 0) + 0)
+        generatedUseWidth { width }
 
 result : Int
 let result = generated_3968
@@ -19,4 +16,4 @@ let result = generated_3968
 --! assertNoErrors
 --! assertType generated_3968 Int
 --! assertType result Int
---! assertDeclKinds signature, let, signature, let
+--! assertDeclKinds signature, let, signature, let, signature, let

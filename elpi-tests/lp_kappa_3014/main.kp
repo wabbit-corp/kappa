@@ -1,12 +1,30 @@
 module main
 
-generated_3014 : Map String Int
-let generated_3014 = { for x in [1, 2, 3], let y = x + 1, if y > 0, yield (if y > 1 then "hi" else "lo") : ((((((((Some ((if True then x else 0) + 0)) ?: 0) + 0) + 0) + 0) + 0) + 0) + 0) }
+generated_3014 : Int
+let generated_3014 =
+    block
+        ranked : Int
+        let ranked = (block
+            generatedListLength : List Int -> Int
+            let generatedListLength xs decreases structural xs =
+                match xs
+                  case Nil -> 0
+                  case _ :: tail -> 1 + generatedListLength tail
 
-result : Map String Int
+            let item = (block
+                let pair = (x = 0, y = (0 + 1))
+                let (x = captured, y = other) = pair
+
+                (captured + other))
+
+            generatedListLength [item, (item + 1), 0])
+
+        (ranked + 0)
+
+result : Int
 let result = generated_3014
 
 --! assertNoErrors
---! assertType generated_3014 Map String Int
---! assertType result Map String Int
+--! assertType generated_3014 Int
+--! assertType result Int
 --! assertDeclKinds signature, let, signature, let

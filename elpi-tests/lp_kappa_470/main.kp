@@ -2,11 +2,9 @@ module main
 
 generated_470 : Int
 let generated_470 =
-    block
-        let base : (x : Int) = (x = (((((((((((left = 0, right = (0 + 0))).right + 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0))
-        let extended = base.{ y := (((((((((((left = 0, right = (0 + 0))).right + 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0) + 1) }
-
-        (extended.x + extended.y)
+    match (0 == 0)
+      case True -> 0
+      case False -> 0
 
 result : Int
 let result = generated_470

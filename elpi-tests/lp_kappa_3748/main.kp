@@ -1,12 +1,23 @@
 module main
 
-generated_3748 : Option Int
-let generated_3748 = (if True then (if True then (if False then None else (if False then None else (if (((Some (0 + 0)) ?: 0) == 1) then None else (Some (0 + 0))))) else None) else None)
+type GeneratedTuple = (Int, Int)
 
-result : Option Int
+generated_3748 : Int
+let generated_3748 =
+    block
+        let pair : GeneratedTuple = (((match [((\(n : Int) -> n) 0), (((\(n : Int) -> n) 0) + 1)]
+          case head :: tail -> head
+          case Nil -> 0) + 0), ((match [((\(n : Int) -> n) 0), (((\(n : Int) -> n) 0) + 1)]
+          case head :: tail -> head
+          case Nil -> 0) + 1))
+        let (left, right) = pair
+
+        (left + right)
+
+result : Int
 let result = generated_3748
 
 --! assertNoErrors
---! assertType generated_3748 Option Int
---! assertType result Option Int
---! assertDeclKinds signature, let, signature, let
+--! assertType generated_3748 Int
+--! assertType result Int
+--! assertDeclKinds type, signature, let, signature, let

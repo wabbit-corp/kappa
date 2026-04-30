@@ -1,12 +1,30 @@
 module main
 
-generated_621 : (Int -> Int)
-let generated_621 = \(x : Int) -> ((\(x : Int) -> ((\(x : Int) -> ((\(x : Int) -> (((\(x : Int) -> (0 + ((\(x : Int) -> x) x))) x) + 0)) x)) x)) x)
+generated_621 : Map String Int
+let generated_621 = { for x in [1, 2, 3], yield "k" : (block
+    generatedListLength : List Int -> Int
+    let generatedListLength xs decreases structural xs =
+        match xs
+          case Nil -> 0
+          case _ :: tail -> 1 + generatedListLength tail
 
-result : (Int -> Int)
+    let item = (block
+        generatedListLength : List Int -> Int
+        let generatedListLength xs decreases structural xs =
+            match xs
+              case Nil -> 0
+              case _ :: tail -> 1 + generatedListLength tail
+
+        let item = x
+
+        generatedListLength [item, (item + 1), 0])
+
+    generatedListLength [item, (item + 1), 0]), on conflict keep first }
+
+result : Map String Int
 let result = generated_621
 
 --! assertNoErrors
---! assertType generated_621 (Int -> Int)
---! assertType result (Int -> Int)
+--! assertType generated_621 Map String Int
+--! assertType result Map String Int
 --! assertDeclKinds signature, let, signature, let

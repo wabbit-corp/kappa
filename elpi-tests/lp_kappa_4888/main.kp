@@ -1,15 +1,14 @@
 module main
 
-generated_4888 : Int
-let generated_4888 =
-    match (((((((0 + (((if True then ((left = (0 + 0), right = 0)).left else 0) + 0) + 0)) + 0) + 0) + 0) + 0) + 0) == ((((((0 + (((if True then ((left = (0 + 0), right = 0)).left else 0) + 0) + 0)) + 0) + 0) + 0) + 0) + 0))
-      case True -> ((((((0 + (((if True then ((left = (0 + 0), right = 0)).left else 0) + 0) + 0)) + 0) + 0) + 0) + 0) + 0)
-      case False -> 0
+generated_4888 : List Int
+let generated_4888 = [ for x in [1, 2, 3], skip 1, take 2, yield (match (((Some (x + 1)) ?: (x + 2)) == ((Some (x + 1)) ?: (x + 2)))
+  case True -> ((Some (x + 1)) ?: (x + 2))
+  case False -> 0) ]
 
-result : Int
+result : List Int
 let result = generated_4888
 
 --! assertNoErrors
---! assertType generated_4888 Int
---! assertType result Int
+--! assertType generated_4888 List Int
+--! assertType result List Int
 --! assertDeclKinds signature, let, signature, let

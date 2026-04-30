@@ -3,11 +3,24 @@ module main
 generated_2110 : Int
 let generated_2110 =
     block
-        type RankedAlias = Int
+        trait RankedScore a =
+            rank : a -> Int
 
-        let aliased : RankedAlias = (((((((((if False then 0 else ((if False then 0 else 0) + (0 + 0))) + (0 + 0)) + 0) + 0) + 0) + 0) + 0) + 0) + 0)
+        instance RankedScore Int =
+            let rank x = x
 
-        (aliased + 1)
+        let dict = summon (RankedScore Int)
+
+        dict.rank ((block
+            generatedSetCount : Set Int -> Int
+            let generatedSetCount values = 2
+
+            let item = (match (Some 0)
+              case Some payload -> payload
+              case None -> 0)
+            let values = {|item, (item + 1)|}
+
+            generatedSetCount values) + 0)
 
 result : Int
 let result = generated_2110

@@ -1,12 +1,33 @@
 module main
 
-generated_705 : String
-let generated_705 = (if (if (if (if (if (if True then (True && True) else False) then False else True) then True else False) then True else False) then True else False) then #"raw lambda-prolog"# else "fallback")
+generated_705 : Int
+let generated_705 =
+    block
+        rankedHelper : (Int -> Int)
+        let rankedHelper x = x + 1
 
-result : String
+        rankedHelper ((block
+            generatedMapCount : Map String Int -> Int
+            let generatedMapCount values = 1
+
+            let item = (block
+                generatedListLength : List Int -> Int
+                let generatedListLength xs decreases structural xs =
+                    match xs
+                      case Nil -> 0
+                      case _ :: tail -> 1 + generatedListLength tail
+
+                let item = 0
+
+                generatedListLength [item, (item + 1), 0])
+            let values = { yield "item" : item }
+
+            generatedMapCount values) + 0)
+
+result : Int
 let result = generated_705
 
 --! assertNoErrors
---! assertType generated_705 String
---! assertType result String
+--! assertType generated_705 Int
+--! assertType result Int
 --! assertDeclKinds signature, let, signature, let

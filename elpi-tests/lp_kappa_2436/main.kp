@@ -1,12 +1,39 @@
 module main
 
-generated_2436 : Map String Int
-let generated_2436 = { for x in [1, 2, 3], if x > 0, yield "k" : ((((((((left = (((if False then 0 else x) + (0 + 0)) + 0), right = 0)).left + 0) + 0) + 0) + 0) + 0) + 0) }
+generated_2436 : Int
+let generated_2436 =
+    match (((match ((match (Some 0)
+      case Some payload -> payload
+      case None -> 0) == (match (Some 0)
+      case Some payload -> payload
+      case None -> 0))
+      case True -> (match (Some 0)
+        case Some payload -> payload
+        case None -> 0)
+      case False -> 0) + 0) == ((match ((match (Some 0)
+      case Some payload -> payload
+      case None -> 0) == (match (Some 0)
+      case Some payload -> payload
+      case None -> 0))
+      case True -> (match (Some 0)
+        case Some payload -> payload
+        case None -> 0)
+      case False -> 0) + 0))
+      case True -> ((match ((match (Some 0)
+        case Some payload -> payload
+        case None -> 0) == (match (Some 0)
+        case Some payload -> payload
+        case None -> 0))
+        case True -> (match (Some 0)
+          case Some payload -> payload
+          case None -> 0)
+        case False -> 0) + 0)
+      case False -> 0
 
-result : Map String Int
+result : Int
 let result = generated_2436
 
 --! assertNoErrors
---! assertType generated_2436 Map String Int
---! assertType result Map String Int
+--! assertType generated_2436 Int
+--! assertType result Int
 --! assertDeclKinds signature, let, signature, let

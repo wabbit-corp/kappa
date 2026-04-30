@@ -1,12 +1,37 @@
 module main
 
-generated_518 : Option Int
-let generated_518 = (if True then (if True then (if True then (if False then None else (Some (0 + 0))) else None) else None) else None)
+generated_518 : Int
+let generated_518 =
+    block
+        scoped effect Ask =
+            ask : Unit -> Bool
 
-result : Option Int
+        let seed = (match (0 == 0)
+          case True -> 0
+          case False -> 0)
+
+        let comp : Eff <[Ask : Ask]> Int =
+            do
+                let b <- Ask.ask ()
+                if b then seed else (seed + 1)
+
+        let rehandle : (1 k : ((1 x : Bool) -> Eff <[Ask : Ask]> Int)) -> Eff <[ ]> Int =
+            \(1 k : ((1 x : Bool) -> Eff <[Ask : Ask]> Int)) ->
+                handle Ask (k True) with
+                    case return y -> pure y
+                    case ask () k2 -> k2 False
+
+        let handled : Eff <[ ]> Int =
+            handle Ask comp with
+                case return y -> pure y
+                case ask () k -> rehandle k
+
+        runPure handled
+
+result : Int
 let result = generated_518
 
 --! assertNoErrors
---! assertType generated_518 Option Int
---! assertType result Option Int
+--! assertType generated_518 Int
+--! assertType result Int
 --! assertDeclKinds signature, let, signature, let

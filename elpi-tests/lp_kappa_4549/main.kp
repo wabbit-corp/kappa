@@ -1,17 +1,19 @@
 module main
 
-generated_4549 : Int
-let generated_4549 =
-    block
-        let pair = (x = ((((((0 + ((if False then 0 else ((left = (0 + 0), right = 0)).left) + 0)) + 0) + 0) + 0) + 0) + 0), y = ((((((0 + ((if False then 0 else ((left = (0 + 0), right = 0)).left) + 0)) + 0) + 0) + 0) + 0) + 1))
-        let (x = captured, y = other) = pair
+generated_4549 : Set Int
+let generated_4549 = {| yield ((block
+    generatedSetCount : Set Int -> Int
+    let generatedSetCount values = 2
 
-        (captured + other)
+    let item = ((Some (0 + 1)) ?: (0 + 2))
+    let values = {|item, (item + 1)|}
 
-result : Int
+    generatedSetCount values) + 0) |}
+
+result : Set Int
 let result = generated_4549
 
 --! assertNoErrors
---! assertType generated_4549 Int
---! assertType result Int
+--! assertType generated_4549 Set Int
+--! assertType result Set Int
 --! assertDeclKinds signature, let, signature, let

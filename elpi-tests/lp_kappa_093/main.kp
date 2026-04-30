@@ -1,12 +1,12 @@
 module main
 
-generated_93 : String
-let generated_93 = (if (if True then True else False) then #"raw lambda-prolog"# else "fallback")
+generated_93 : Bool
+let generated_93 = (if True then True else False)
 
-result : String
+result : Bool
 let result = generated_93
 
 --! assertNoErrors
---! assertType generated_93 String
---! assertType result String
+--! assertType generated_93 Bool
+--! assertType result Bool
 --! assertDeclKinds signature, let, signature, let

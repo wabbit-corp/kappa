@@ -1,15 +1,38 @@
 module main
 
-generated_3599 : IO Int
+generated_3599 : Int
 let generated_3599 =
-    do
-        let staged = ((((((0 + (((((Some (0 + 0)) ?: 0) + 0) + 0) + 0)) + 0) + 0) + 0) + 0) + 0)
-        pure (staged + 1)
+    block
+        scoped effect Ask =
+            ask : Unit -> Bool
 
-result : IO Int
+        let pkg = (label = Ask)
+
+        let seed = (block
+            generatedSetCount : Set Int -> Int
+            let generatedSetCount values = 2
+
+            let item = ((\(n : Int) -> n) 0)
+            let values = {|item, (item + 1)|}
+
+            generatedSetCount values)
+
+        let comp : Eff <[Ask : Ask]> Int =
+            do
+                let b <- pkg.label.ask ()
+                if b then seed else (seed + 1)
+
+        let handled : Eff <[ ]> Int =
+            deep handle pkg.label comp with
+                case return x -> pure x
+                case ask () k -> k True
+
+        runPure handled
+
+result : Int
 let result = generated_3599
 
 --! assertNoErrors
---! assertType generated_3599 IO Int
---! assertType result IO Int
+--! assertType generated_3599 Int
+--! assertType result Int
 --! assertDeclKinds signature, let, signature, let

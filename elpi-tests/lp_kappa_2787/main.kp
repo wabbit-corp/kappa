@@ -1,12 +1,44 @@
 module main
 
-generated_2787 : Set Int
-let generated_2787 = {| yield (((((((((left = 0, right = (((if False then 0 else 0) + (0 + 0)) + 0))).right + 0) + 0) + 0) + 0) + 0) + 0) + 0) |}
+generated_2787 : Int
+let generated_2787 =
+    block
+        scoped effect Ask =
+            ask : Unit -> Bool
 
-result : Set Int
+        scoped effect Other =
+            other : Unit -> Int
+
+        let seed = (match [(match [0, (0 + 1)]
+          case head :: tail -> head
+          case Nil -> 0), ((match [0, (0 + 1)]
+          case head :: tail -> head
+          case Nil -> 0) + 1)]
+          case head :: tail -> head
+          case Nil -> 0)
+
+        let comp : Eff <[Ask : Ask, Other : Other]> Int =
+            do
+                let b <- Ask.ask ()
+                let n <- Other.other ()
+                if b then (n + seed) else seed
+
+        let askHandled : Eff <[Other : Other]> Int =
+            deep handle Ask comp with
+                case return x -> pure x
+                case ask () k -> k True
+
+        let handled : Eff <[ ]> Int =
+            deep handle Other askHandled with
+                case return x -> pure x
+                case other () k -> k 1
+
+        runPure handled
+
+result : Int
 let result = generated_2787
 
 --! assertNoErrors
---! assertType generated_2787 Set Int
---! assertType result Set Int
+--! assertType generated_2787 Int
+--! assertType result Int
 --! assertDeclKinds signature, let, signature, let

@@ -1,12 +1,32 @@
 module main
 
-generated_3039 : List Int
-let generated_3039 = [ for x in [1, 2, 3], yield ((((((((Some ((if False then 0 else x) + 0)) ?: 0) + 0) + 0) + 0) + 0) + 0) + 0) ]
+data GeneratedChoice : Type =
+    GeneratedLeft (value : Int)
+    GeneratedRight
 
-result : List Int
+generated_3039 : Int
+let generated_3039 =
+    match GeneratedRight
+      case GeneratedLeft payload -> (payload + 0)
+      case GeneratedRight -> ((block
+          generatedListLength : List Int -> Int
+          let generatedListLength xs decreases structural xs =
+              match xs
+                case Nil -> 0
+                case _ :: tail -> 1 + generatedListLength tail
+
+          let item = (block
+              let pair = (x = 0, y = (0 + 1))
+              let (x = captured, y = other) = pair
+
+              (captured + other))
+
+          generatedListLength [item, (item + 1), 0]) + 0)
+
+result : Int
 let result = generated_3039
 
 --! assertNoErrors
---! assertType generated_3039 List Int
---! assertType result List Int
---! assertDeclKinds signature, let, signature, let
+--! assertType generated_3039 Int
+--! assertType result Int
+--! assertDeclKinds data, signature, let, signature, let

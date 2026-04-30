@@ -1,12 +1,31 @@
 module main
 
-generated_773 : String
-let generated_773 = (if (if (if (if (if ((if True then 1 else 0) == 1) then False else True) then True else False) then True else False) then True else False) then #"raw lambda-prolog"# else "fallback")
+generated_773 : Int
+let generated_773 =
+    block
+        data RankedBox : Type =
+            RankedBox (value : Int)
 
-result : String
+        let boxed = RankedBox ((match (Some (block
+            generatedListLength : List Int -> Int
+            let generatedListLength xs decreases structural xs =
+                match xs
+                  case Nil -> 0
+                  case _ :: tail -> 1 + generatedListLength tail
+
+            let item = 0
+
+            generatedListLength [item, (item + 1), 0]))
+          case Some payload -> payload
+          case None -> 0) + 0)
+
+        match boxed
+          case RankedBox value -> (value + 1)
+
+result : Int
 let result = generated_773
 
 --! assertNoErrors
---! assertType generated_773 String
---! assertType result String
+--! assertType generated_773 Int
+--! assertType result Int
 --! assertDeclKinds signature, let, signature, let

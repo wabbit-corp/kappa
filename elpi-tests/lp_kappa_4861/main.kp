@@ -1,7 +1,9 @@
 module main
 
 generated_4861 : Set Int
-let generated_4861 = {| yield ((((((0 + (((if True then ((if False then 0 else 0) + (0 + 0)) else 0) + 0) + 0)) + 0) + 0) + 0) + 0) + 0) |}
+let generated_4861 = {| for x in [1, 2, 3], let y = x + 1, yield (match (((Some (x + 1)) ?: (x + 2)) == ((Some (x + 1)) ?: (x + 2)))
+  case True -> ((Some (x + 1)) ?: (x + 2))
+  case False -> 0) |}
 
 result : Set Int
 let result = generated_4861

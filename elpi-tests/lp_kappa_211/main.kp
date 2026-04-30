@@ -1,14 +1,29 @@
 module main
 
-type GeneratedTuple = (Int, Int)
+trait GeneratedScore a =
+    score : a -> Int
 
-generated_211 : GeneratedTuple
-let generated_211 = (if True then (if True then (if True then (if True then (if True then (0, (0 + 0)) else (0, (0 + 0))) else (0, (0 + 0))) else (0, (0 + 0))) else (0, (0 + 0))) else (0, (0 + 0)))
+instance GeneratedScore Int =
+    let score x = x
 
-result : GeneratedTuple
+generated_211 : Int
+let generated_211 =
+    let
+        dict = summon (GeneratedScore Int)
+in
+        dict.score ((block
+            generatedMapCount : Map String Int -> Int
+            let generatedMapCount values = 1
+
+            let item = 0
+            let values = { yield "item" : item }
+
+            generatedMapCount values) + 0)
+
+result : Int
 let result = generated_211
 
 --! assertNoErrors
---! assertType generated_211 GeneratedTuple
---! assertType result GeneratedTuple
---! assertDeclKinds type, signature, let, signature, let
+--! assertType generated_211 Int
+--! assertType result Int
+--! assertDeclKinds trait, instance, signature, let, signature, let

@@ -1,15 +1,22 @@
 module main
 
+data GeneratedChoice : Type =
+    GeneratedLeft (value : Int)
+    GeneratedRight
+
 generated_3777 : Int
 let generated_3777 =
-    block
-        data RankedBox : Type =
-            RankedBox (value : Int)
+    match (GeneratedLeft ((block
+        let pair = (x = ((\(n : Int) -> n) 0), y = (((\(n : Int) -> n) 0) + 1))
+        let (x = captured, y = other) = pair
 
-        let boxed = RankedBox ((((((0 + ((0 + ((if False then 0 else 0) + 0)) + 0)) + 0) + 0) + 0) + 0) + 0)
+        (captured + other)) + 0))
+      case GeneratedLeft payload -> (payload + 0)
+      case GeneratedRight -> ((block
+          let pair = (x = ((\(n : Int) -> n) 0), y = (((\(n : Int) -> n) 0) + 1))
+          let (x = captured, y = other) = pair
 
-        match boxed
-          case RankedBox value -> (value + 1)
+          (captured + other)) + 0)
 
 result : Int
 let result = generated_3777
@@ -17,4 +24,4 @@ let result = generated_3777
 --! assertNoErrors
 --! assertType generated_3777 Int
 --! assertType result Int
---! assertDeclKinds signature, let, signature, let
+--! assertDeclKinds data, signature, let, signature, let

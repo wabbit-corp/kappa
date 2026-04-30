@@ -1,14 +1,26 @@
 module main
 
-type GeneratedPair = (left : Int, right : Int)
+generatedNeed : (@x : Int) -> Int
+let generatedNeed (@x : Int) = x
 
-generated_154 : GeneratedPair
-let generated_154 = ((left = ((((((0 + 0) + 0) + 0) + 0) + 0) + 0), right = 0)).{ right = (((((((0 + 0) + 0) + 0) + 0) + 0) + 0) + 1) }
+generated_154 : Int
+let generated_154 =
+    block
+        let (@x : Int) = (block
+            generatedSetCount : Set Int -> Int
+            let generatedSetCount values = 2
 
-result : GeneratedPair
+            let item = 0
+            let values = {|item, (item + 1)|}
+
+            generatedSetCount values)
+
+        if True then generatedNeed else 0
+
+result : Int
 let result = generated_154
 
 --! assertNoErrors
---! assertType generated_154 GeneratedPair
---! assertType result GeneratedPair
---! assertDeclKinds type, signature, let, signature, let
+--! assertType generated_154 Int
+--! assertType result Int
+--! assertDeclKinds signature, let, signature, let, signature, let

@@ -1,12 +1,54 @@
 module main
 
-generated_1113 : String
-let generated_1113 = (if (if (if (if (((if True then 1 else 0) == 1) && False) then True else False) then True else False) then True else False) then #"raw lambda-prolog"# else "fallback")
+generated_1113 : Int
+let generated_1113 =
+    block
+        scoped effect Ask =
+            ask : Unit -> Bool
 
-result : String
+        scoped effect Other =
+            other : Unit -> Int
+
+        let seed = (block
+            generatedListLength : List Int -> Int
+            let generatedListLength xs decreases structural xs =
+                match xs
+                  case Nil -> 0
+                  case _ :: tail -> 1 + generatedListLength tail
+
+            let item = (block
+                generatedSetCount : Set Int -> Int
+                let generatedSetCount values = 2
+
+                let item = 0
+                let values = {|item, (item + 1)|}
+
+                generatedSetCount values)
+
+            generatedListLength [item, (item + 1), 0])
+
+        let comp : Eff <[Ask : Ask, Other : Other]> Int =
+            do
+                let b <- Ask.ask ()
+                let n <- Other.other ()
+                if b then (n + seed) else seed
+
+        let askHandled : Eff <[Other : Other]> Int =
+            deep handle Ask comp with
+                case return x -> pure x
+                case ask () k -> k True
+
+        let handled : Eff <[ ]> Int =
+            deep handle Other askHandled with
+                case return x -> pure x
+                case other () k -> k 1
+
+        runPure handled
+
+result : Int
 let result = generated_1113
 
 --! assertNoErrors
---! assertType generated_1113 String
---! assertType result String
+--! assertType generated_1113 Int
+--! assertType result Int
 --! assertDeclKinds signature, let, signature, let

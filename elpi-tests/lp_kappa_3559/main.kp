@@ -1,12 +1,24 @@
 module main
 
+trait GeneratedScore a =
+    score : a -> Int
+
+instance GeneratedScore Int =
+    let score x = x
+
 generated_3559 : Int
 let generated_3559 =
-    block
-        rankedHelper : (Int -> Int)
-        let rankedHelper x = x + 1
+    let
+        dict = summon (GeneratedScore Int)
+in
+        dict.score ((block
+            generatedSetCount : Set Int -> Int
+            let generatedSetCount values = 2
 
-        rankedHelper ((((((0 + (((((left = 0, right = (0 + 0))).right + 0) + 0) + 0)) + 0) + 0) + 0) + 0) + 0)
+            let item = ((\(n : Int) -> n) 0)
+            let values = {|item, (item + 1)|}
+
+            generatedSetCount values) + 0)
 
 result : Int
 let result = generated_3559
@@ -14,4 +26,4 @@ let result = generated_3559
 --! assertNoErrors
 --! assertType generated_3559 Int
 --! assertType result Int
---! assertDeclKinds signature, let, signature, let
+--! assertDeclKinds trait, instance, signature, let, signature, let

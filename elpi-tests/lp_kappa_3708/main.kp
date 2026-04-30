@@ -3,11 +3,28 @@ module main
 generated_3708 : Int
 let generated_3708 =
     block
-        type RankedAlias = Int
+        scoped effect Choice =
+            ω choose : Unit -> Bool
 
-        let aliased : RankedAlias = ((((((0 + ((0 + ((0 + (0 + 0)) + 0)) + 0)) + 0) + 0) + 0) + 0) + 0)
+        let seed = (match (Some ((\(n : Int) -> n) 0))
+          case Some payload -> payload
+          case None -> 0)
 
-        (aliased + 1)
+        let comp : Eff <[Choice : Choice]> Int =
+            do
+                let b <- Choice.choose ()
+                if b then seed else (seed + 1)
+
+        let handled : Eff <[ ]> Int =
+            deep handle Choice comp with
+                case return x -> pure x
+                case choose () k ->
+                    do
+                        let a <- k True
+                        let b <- k False
+                        pure (a + b)
+
+        runPure handled
 
 result : Int
 let result = generated_3708

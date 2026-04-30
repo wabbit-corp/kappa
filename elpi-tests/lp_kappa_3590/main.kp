@@ -1,10 +1,21 @@
 module main
 
-generatedMakeConst : forall (a : Type). a -> Unit -> a
-let generatedMakeConst value = \() -> value
+generatedUseWidth : (width : Int) -> Int
+let generatedUseWidth width = width
 
 generated_3590 : Int
-let generated_3590 = ((generatedMakeConst ((((((0 + (((((Some (0 + 0)) ?: 0) + 0) + 0) + 0)) + 0) + 0) + 0) + 0) + 0)) ())
+let generated_3590 =
+    block
+        let width = ((block
+            generatedSetCount : Set Int -> Int
+            let generatedSetCount values = 2
+
+            let item = ((\(n : Int) -> n) 0)
+            let values = {|item, (item + 1)|}
+
+            generatedSetCount values) + 0)
+
+        generatedUseWidth { width }
 
 result : Int
 let result = generated_3590

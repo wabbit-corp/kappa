@@ -1,7 +1,18 @@
 module main
 
+generatedNeed : (@x : Int) -> Int
+let generatedNeed (@x : Int) = x
+
 generated_2962 : Int
-let generated_2962 = ((((((((Some ((0 + (0 + 0)) + 0)) ?: 0) + 0) + 0) + 0) + 0) + 0) + 0)
+let generated_2962 =
+    block
+        let (@x : Int) = ((Some ((match [0, (0 + 1)]
+          case head :: tail -> head
+          case Nil -> 0) + 1)) ?: ((match [0, (0 + 1)]
+          case head :: tail -> head
+          case Nil -> 0) + 2))
+
+        if True then generatedNeed else 0
 
 result : Int
 let result = generated_2962
@@ -9,4 +20,4 @@ let result = generated_2962
 --! assertNoErrors
 --! assertType generated_2962 Int
 --! assertType result Int
---! assertDeclKinds signature, let, signature, let
+--! assertDeclKinds signature, let, signature, let, signature, let

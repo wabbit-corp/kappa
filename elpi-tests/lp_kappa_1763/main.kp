@@ -1,15 +1,40 @@
 module main
 
-generated_1763 : IO Int
+generated_1763 : Int
 let generated_1763 =
-    do
-        let staged = (((((((((if True then ((if False then 0 else 0) + (0 + 0)) else 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0)
-        pure (staged + 1)
+    block
+        scoped effect Ask =
+            ask : Unit -> Bool
 
-result : IO Int
+        let pkg = (label = Ask)
+
+        let seed = (match (Some (block
+            generatedMapCount : Map String Int -> Int
+            let generatedMapCount values = 1
+
+            let item = 0
+            let values = { yield "item" : item }
+
+            generatedMapCount values))
+          case Some payload -> payload
+          case None -> 0)
+
+        let comp : Eff <[Ask : Ask]> Int =
+            do
+                let b <- pkg.label.ask ()
+                if b then seed else (seed + 1)
+
+        let handled : Eff <[ ]> Int =
+            deep handle pkg.label comp with
+                case return x -> pure x
+                case ask () k -> k True
+
+        runPure handled
+
+result : Int
 let result = generated_1763
 
 --! assertNoErrors
---! assertType generated_1763 IO Int
---! assertType result IO Int
+--! assertType generated_1763 Int
+--! assertType result Int
 --! assertDeclKinds signature, let, signature, let

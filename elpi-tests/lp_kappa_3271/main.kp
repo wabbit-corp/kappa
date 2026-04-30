@@ -1,14 +1,39 @@
 module main
 
-type GeneratedTuple = (Int, Int)
+generated_3271 : Int
+let generated_3271 =
+    block
+        scoped effect State (s : Type) =
+            get : Unit -> s
 
-generated_3271 : GeneratedTuple
-let generated_3271 = (if True then (if True then (if False then (0, (0 + 0)) else (if True then (0, (0 + 0)) else (0, (0 + 0)))) else (0, (0 + 0))) else (0, (0 + 0)))
+        let seed = (match [(block
+            let pair = (x = 0, y = (0 + 1))
+            let (x = captured, y = other) = pair
 
-result : GeneratedTuple
+            (captured + other)), ((block
+            let pair = (x = 0, y = (0 + 1))
+            let (x = captured, y = other) = pair
+
+            (captured + other)) + 1)]
+          case head :: tail -> head
+          case Nil -> 0)
+
+        let comp : Eff <[State : State Int]> Int =
+            do
+                let n <- State.get ()
+                n
+
+        let handled : Eff <[ ]> Int =
+            deep handle State comp with
+                case return x -> pure x
+                case get () k -> k seed
+
+        runPure handled
+
+result : Int
 let result = generated_3271
 
 --! assertNoErrors
---! assertType generated_3271 GeneratedTuple
---! assertType result GeneratedTuple
---! assertDeclKinds type, signature, let, signature, let
+--! assertType generated_3271 Int
+--! assertType result Int
+--! assertDeclKinds signature, let, signature, let

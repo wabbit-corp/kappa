@@ -1,17 +1,12 @@
 module main
 
-generated_2578 : Int
-let generated_2578 =
-    block
-        let base : (x : Int) = (x = (((((((((left = 0, right = (0 + 0))).right + 0) + 0) + 0) + 0) + 0) + 0) + 0))
-        let extended = base.{ y := (((((((((left = 0, right = (0 + 0))).right + 0) + 0) + 0) + 0) + 0) + 0) + 1) }
+generated_2578 : Unit
+let generated_2578 = (if True then (if True then (if True then (if (True && True) then ((\(u : Unit) -> u) ()) else ()) else ()) else ()) else ())
 
-        (extended.x + extended.y)
-
-result : Int
+result : Unit
 let result = generated_2578
 
 --! assertNoErrors
---! assertType generated_2578 Int
---! assertType result Int
+--! assertType generated_2578 Unit
+--! assertType result Unit
 --! assertDeclKinds signature, let, signature, let

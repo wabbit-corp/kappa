@@ -1,12 +1,16 @@
 module main
 
-generated_531 : Set Int
-let generated_531 = {| for x in [1, 2, 3], if x > 0, yield (((((((0 + (x + 0)) + 0) + 0) + 0) + 0) + 0) + 0) |}
+generated_531 : Int
+let generated_531 =
+    let
+        ranked : Int = ((Some (0 + 1)) ?: (0 + 2))
+in
+        (ranked + 0)
 
-result : Set Int
+result : Int
 let result = generated_531
 
 --! assertNoErrors
---! assertType generated_531 Set Int
---! assertType result Set Int
+--! assertType generated_531 Int
+--! assertType result Int
 --! assertDeclKinds signature, let, signature, let

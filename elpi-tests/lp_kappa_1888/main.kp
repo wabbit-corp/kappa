@@ -3,7 +3,21 @@ module main
 type GeneratedPair = (left : Int, right : Int)
 
 generated_1888 : GeneratedPair
-let generated_1888 = ((left = ((((((((if False then 0 else 0) + (0 + 0)) + 0) + 0) + 0) + 0) + 0) + 0), right = 0)).{ right = (((((((((if False then 0 else 0) + (0 + 0)) + 0) + 0) + 0) + 0) + 0) + 0) + 1) }
+let generated_1888 = ((left = ((\(n : Int) -> n) (block
+    generatedMapCount : Map String Int -> Int
+    let generatedMapCount values = 1
+
+    let item = 0
+    let values = { yield "item" : item }
+
+    generatedMapCount values)), right = 0)).{ right = (((\(n : Int) -> n) (block
+    generatedMapCount : Map String Int -> Int
+    let generatedMapCount values = 1
+
+    let item = 0
+    let values = { yield "item" : item }
+
+    generatedMapCount values)) + 1) }
 
 result : GeneratedPair
 let result = generated_1888

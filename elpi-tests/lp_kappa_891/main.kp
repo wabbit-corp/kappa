@@ -1,14 +1,34 @@
 module main
 
-type GeneratedTuple = (Int, Int)
+generated_891 : Map String Int
+let generated_891 = { for x in [1, 2, 3], yield "k" : (block
+    let pair = (x = (block
+        generatedListLength : List Int -> Int
+        let generatedListLength xs decreases structural xs =
+            match xs
+              case Nil -> 0
+              case _ :: tail -> 1 + generatedListLength tail
 
-generated_891 : GeneratedTuple
-let generated_891 = (if True then (if True then (if True then (if (0 == 0) then (if True then (0, (0 + 0)) else (0, (0 + 0))) else ((1 + 1), 1)) else (0, (0 + 0))) else (0, (0 + 0))) else (0, (0 + 0)))
+        let item = x
 
-result : GeneratedTuple
+        generatedListLength [item, (item + 1), 0]), y = ((block
+        generatedListLength : List Int -> Int
+        let generatedListLength xs decreases structural xs =
+            match xs
+              case Nil -> 0
+              case _ :: tail -> 1 + generatedListLength tail
+
+        let item = x
+
+        generatedListLength [item, (item + 1), 0]) + 1))
+    let (x = captured, y = other) = pair
+
+    (captured + other)), on conflict keep first }
+
+result : Map String Int
 let result = generated_891
 
 --! assertNoErrors
---! assertType generated_891 GeneratedTuple
---! assertType result GeneratedTuple
---! assertDeclKinds type, signature, let, signature, let
+--! assertType generated_891 Map String Int
+--! assertType result Map String Int
+--! assertDeclKinds signature, let, signature, let

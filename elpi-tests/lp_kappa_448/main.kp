@@ -1,12 +1,18 @@
 module main
 
-generated_448 : Unit
-let generated_448 = (if True then (if True then (if True then (if True then (if (0 == 1) then () else ()) else ()) else ()) else ()) else ())
+generated_448 : Int
+let generated_448 =
+    block
+        type RankedAlias = Int
 
-result : Unit
+        let aliased : RankedAlias = (((\(n : Int) -> n) 0) + 0)
+
+        (aliased + 1)
+
+result : Int
 let result = generated_448
 
 --! assertNoErrors
---! assertType generated_448 Unit
---! assertType result Unit
+--! assertType generated_448 Int
+--! assertType result Int
 --! assertDeclKinds signature, let, signature, let

@@ -1,14 +1,26 @@
 module main
 
-type GeneratedPair = (left : Int, right : Int)
+generatedEcho : forall (a : Type). (this x : a) -> a
+let generatedEcho @a (this x : a) = x
 
-generated_2534 : GeneratedPair
-let generated_2534 = ((left = ((((((((left = (((Some (0 + 0)) ?: 0) + 0), right = 0)).left + 0) + 0) + 0) + 0) + 0) + 0), right = 0)).{ right = (((((((((left = (((Some (0 + 0)) ?: 0) + 0), right = 0)).left + 0) + 0) + 0) + 0) + 0) + 0) + 1) }
+generated_2534 : Int
+let generated_2534 = ((block
+    generatedListLength : List Int -> Int
+    let generatedListLength xs decreases structural xs =
+        match xs
+          case Nil -> 0
+          case _ :: tail -> 1 + generatedListLength tail
 
-result : GeneratedPair
+    let item = (match [0, (0 + 1)]
+      case head :: tail -> head
+      case Nil -> 0)
+
+    generatedListLength [item, (item + 1), 0]) + 0).generatedEcho
+
+result : Int
 let result = generated_2534
 
 --! assertNoErrors
---! assertType generated_2534 GeneratedPair
---! assertType result GeneratedPair
---! assertDeclKinds type, signature, let, signature, let
+--! assertType generated_2534 Int
+--! assertType result Int
+--! assertDeclKinds signature, let, signature, let, signature, let

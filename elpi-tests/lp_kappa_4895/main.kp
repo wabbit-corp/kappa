@@ -1,12 +1,33 @@
 module main
 
-generated_4895 : Set Int
-let generated_4895 = {| yield ((((((0 + (((if True then ((left = (0 + 0), right = 0)).left else 0) + 0) + 0)) + 0) + 0) + 0) + 0) + 0) |}
+generated_4895 : Int
+let generated_4895 =
+    block
+        scoped effect Ask =
+            ask : Unit -> Bool
 
-result : Set Int
+        let pkg = (label = Ask)
+
+        let seed = (match (((Some (0 + 1)) ?: (0 + 2)) == ((Some (0 + 1)) ?: (0 + 2)))
+          case True -> ((Some (0 + 1)) ?: (0 + 2))
+          case False -> 0)
+
+        let comp : Eff <[Ask : Ask]> Int =
+            do
+                let b <- pkg.label.ask ()
+                if b then seed else (seed + 1)
+
+        let handled : Eff <[ ]> Int =
+            deep handle pkg.label comp with
+                case return x -> pure x
+                case ask () k -> k True
+
+        runPure handled
+
+result : Int
 let result = generated_4895
 
 --! assertNoErrors
---! assertType generated_4895 Set Int
---! assertType result Set Int
+--! assertType generated_4895 Int
+--! assertType result Int
 --! assertDeclKinds signature, let, signature, let

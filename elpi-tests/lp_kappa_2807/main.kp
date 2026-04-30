@@ -4,7 +4,15 @@ generatedResize : (image : Int) -> (width : Int) -> (height : Int) -> Int
 let generatedResize image width height = image + width * 10 + height
 
 generated_2807 : Int
-let generated_2807 = generatedResize { image = (((((((((left = 0, right = (((left = (0 + 0), right = 0)).left + 0))).right + 0) + 0) + 0) + 0) + 0) + 0) + 0), height = 3, width = 2 }
+let generated_2807 = generatedResize { image = ((block
+    let pair = (x = (match [0, (0 + 1)]
+      case head :: tail -> head
+      case Nil -> 0), y = ((match [0, (0 + 1)]
+      case head :: tail -> head
+      case Nil -> 0) + 1))
+    let (x = captured, y = other) = pair
+
+    (captured + other)) + 0), height = 3, width = 2 }
 
 result : Int
 let result = generated_2807

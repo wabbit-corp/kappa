@@ -1,12 +1,17 @@
 module main
 
-generated_4717 : String
-let generated_4717 = (if (if (if (if (if True then ((if True then False else True) && True) else False) then False else True) then True else False) then True else False) then #"raw lambda-prolog"# else "fallback")
+generatedEcho : forall (a : Type). (this x : a) -> a
+let generatedEcho @a (this x : a) = x
 
-result : String
+generated_4717 : Option Int
+let generated_4717 = (Some ((match [((Some (0 + 1)) ?: (0 + 2)), (((Some (0 + 1)) ?: (0 + 2)) + 1)]
+  case head :: tail -> head
+  case Nil -> 0) + 0))?.generatedEcho
+
+result : Option Int
 let result = generated_4717
 
 --! assertNoErrors
---! assertType generated_4717 String
---! assertType result String
---! assertDeclKinds signature, let, signature, let
+--! assertType generated_4717 Option Int
+--! assertType result Option Int
+--! assertDeclKinds signature, let, signature, let, signature, let

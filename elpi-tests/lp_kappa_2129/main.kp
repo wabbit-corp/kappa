@@ -1,12 +1,24 @@
 module main
 
-generated_2129 : Set Int
-let generated_2129 = {| for x in [1, 2, 3], let y = x + 1, yield ((((((((if False then 0 else ((left = (x + 0), right = 0)).left) + (0 + 0)) + 0) + 0) + 0) + 0) + 0) + 0) |}
+generated_2129 : Int
+let generated_2129 =
+    match (Some ((block
+        generatedSetCount : Set Int -> Int
+        let generatedSetCount values = 2
 
-result : Set Int
+        let item = (match (Some 0)
+          case Some payload -> payload
+          case None -> 0)
+        let values = {|item, (item + 1)|}
+
+        generatedSetCount values) + 0))
+      case Some payload -> payload
+      case None -> 0
+
+result : Int
 let result = generated_2129
 
 --! assertNoErrors
---! assertType generated_2129 Set Int
---! assertType result Set Int
+--! assertType generated_2129 Int
+--! assertType result Int
 --! assertDeclKinds signature, let, signature, let

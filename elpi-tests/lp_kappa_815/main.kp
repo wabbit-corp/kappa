@@ -1,12 +1,12 @@
 module main
 
-generated_815 : Set Int
-let generated_815 = {| yield ((((((((0 + (((left = 0, right = (0 + 0))).right + 0)) + 0) + 0) + 0) + 0) + 0) + 0) + 0) |}
+generated_815 : String
+let generated_815 = (if (if (if (if (if True then False else True) then True else False) then True else False) then True else False) then #"raw lambda-prolog"# else "fallback")
 
-result : Set Int
+result : String
 let result = generated_815
 
 --! assertNoErrors
---! assertType generated_815 Set Int
---! assertType result Set Int
+--! assertType generated_815 String
+--! assertType result String
 --! assertDeclKinds signature, let, signature, let

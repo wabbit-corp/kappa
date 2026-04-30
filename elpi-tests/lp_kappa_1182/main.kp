@@ -1,15 +1,29 @@
 module main
 
-generated_1182 : Int
+generated_1182 : IO Int
 let generated_1182 =
-    match (((((((((if True then ((Some (0 + 0)) ?: 0) else 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0) == ((((((((if True then ((Some (0 + 0)) ?: 0) else 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0))
-      case True -> ((((((((if True then ((Some (0 + 0)) ?: 0) else 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0)
-      case False -> 0
+    do
+        value <- pure ((block
+            generatedMapCount : Map String Int -> Int
+            let generatedMapCount values = 1
 
-result : Int
+            let item = (block
+                generatedSetCount : Set Int -> Int
+                let generatedSetCount values = 2
+
+                let item = 0
+                let values = {|item, (item + 1)|}
+
+                generatedSetCount values)
+            let values = { yield "item" : item }
+
+            generatedMapCount values) + 0)
+        pure (value + 2)
+
+result : IO Int
 let result = generated_1182
 
 --! assertNoErrors
---! assertType generated_1182 Int
---! assertType result Int
+--! assertType generated_1182 IO Int
+--! assertType result IO Int
 --! assertDeclKinds signature, let, signature, let

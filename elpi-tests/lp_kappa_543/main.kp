@@ -1,12 +1,17 @@
 module main
 
-generated_543 : Set Int
-let generated_543 = {| yield ((((((((0 + (0 + 0)) + 0) + 0) + 0) + 0) + 0) + 0) + 0) |}
+generated_543 : Int
+let generated_543 =
+    block
+        rankedHelper : (Int -> Int)
+        let rankedHelper x = x + 1
 
-result : Set Int
+        rankedHelper (((Some (0 + 1)) ?: (0 + 2)) + 0)
+
+result : Int
 let result = generated_543
 
 --! assertNoErrors
---! assertType generated_543 Set Int
---! assertType result Set Int
+--! assertType generated_543 Int
+--! assertType result Int
 --! assertDeclKinds signature, let, signature, let

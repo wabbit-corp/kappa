@@ -1,19 +1,24 @@
 module main
 
-generatedNeed : (@x : Int) -> Int
-let generatedNeed (@x : Int) = x
-
-generated_1236 : Int
+generated_1236 : IO Int
 let generated_1236 =
-    block
-        let (@x : Int) = (((((((if False then 0 else ((0 + 0) + 0)) + 0) + 0) + 0) + 0) + 0) + 0)
+    do
+        value <- pure ((match (Some (block
+            generatedSetCount : Set Int -> Int
+            let generatedSetCount values = 2
 
-        if True then generatedNeed else 0
+            let item = 0
+            let values = {|item, (item + 1)|}
 
-result : Int
+            generatedSetCount values))
+          case Some payload -> payload
+          case None -> 0) + 0)
+        pure (value + 2)
+
+result : IO Int
 let result = generated_1236
 
 --! assertNoErrors
---! assertType generated_1236 Int
---! assertType result Int
---! assertDeclKinds signature, let, signature, let, signature, let
+--! assertType generated_1236 IO Int
+--! assertType result IO Int
+--! assertDeclKinds signature, let, signature, let

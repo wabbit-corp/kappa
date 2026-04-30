@@ -6,7 +6,9 @@ let generatedNeed (@x : Int) = x
 generated_3718 : Int
 let generated_3718 =
     block
-        let (@x : Int) = (((((0 + ((0 + ((if True then 0 else 0) + 0)) + 0)) + 0) + 0) + 0) + 0)
+        let (@x : Int) = (match [((\(n : Int) -> n) 0), (((\(n : Int) -> n) 0) + 1)]
+          case head :: tail -> head
+          case Nil -> 0)
 
         if True then generatedNeed else 0
 

@@ -1,18 +1,12 @@
 module main
 
-generated_580 : Int
-let generated_580 =
-    block
-        type RankedAlias = Int
+generated_580 : Unit
+let generated_580 = (if True then (if True then (if True then (if True then (if (False || True) then () else ()) else ()) else ()) else ()) else ())
 
-        let aliased : RankedAlias = ((((((((0 + (((0 + 0) + 0) + 0)) + 0) + 0) + 0) + 0) + 0) + 0) + 0)
-
-        (aliased + 1)
-
-result : Int
+result : Unit
 let result = generated_580
 
 --! assertNoErrors
---! assertType generated_580 Int
---! assertType result Int
+--! assertType generated_580 Unit
+--! assertType result Unit
 --! assertDeclKinds signature, let, signature, let

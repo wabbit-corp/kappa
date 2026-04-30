@@ -1,14 +1,19 @@
 module main
 
-type GeneratedPair = (left : Int, right : Int)
+generated_2738 : Int
+let generated_2738 =
+    match [(match [0, (0 + 1)]
+      case head :: tail -> head
+      case Nil -> 0), ((match [0, (0 + 1)]
+      case head :: tail -> head
+      case Nil -> 0) + 1)]
+      case head :: tail -> head
+      case Nil -> 0
 
-generated_2738 : GeneratedPair
-let generated_2738 = ((left = ((((((((left = 0, right = (((if True then 0 else 0) + 0) + 0))).right + 0) + 0) + 0) + 0) + 0) + 0), right = 0)).{ right = (((((((((left = 0, right = (((if True then 0 else 0) + 0) + 0))).right + 0) + 0) + 0) + 0) + 0) + 0) + 1) }
-
-result : GeneratedPair
+result : Int
 let result = generated_2738
 
 --! assertNoErrors
---! assertType generated_2738 GeneratedPair
---! assertType result GeneratedPair
---! assertDeclKinds type, signature, let, signature, let
+--! assertType generated_2738 Int
+--! assertType result Int
+--! assertDeclKinds signature, let, signature, let

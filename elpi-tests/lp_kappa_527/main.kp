@@ -1,19 +1,14 @@
 module main
 
-data GeneratedChoice : Type =
-    GeneratedLeft (value : Int)
-    GeneratedRight
+type GeneratedTuple = (Int, Int)
 
-generated_527 : Int
-let generated_527 =
-    match (GeneratedLeft ((((((((0 + (0 + 0)) + 0) + 0) + 0) + 0) + 0) + 0) + 0))
-      case GeneratedLeft payload -> (payload + 0)
-      case GeneratedRight -> ((((((((0 + (0 + 0)) + 0) + 0) + 0) + 0) + 0) + 0) + 0)
+generated_527 : GeneratedTuple
+let generated_527 = (if True then (if True then (if True then (if True then (if True then (if True then (0, (0 + 0)) else (0, (0 + 0))) else ((1 + 1), 1)) else (0, (0 + 0))) else (0, (0 + 0))) else (0, (0 + 0))) else (0, (0 + 0)))
 
-result : Int
+result : GeneratedTuple
 let result = generated_527
 
 --! assertNoErrors
---! assertType generated_527 Int
---! assertType result Int
---! assertDeclKinds data, signature, let, signature, let
+--! assertType generated_527 GeneratedTuple
+--! assertType result GeneratedTuple
+--! assertDeclKinds type, signature, let, signature, let

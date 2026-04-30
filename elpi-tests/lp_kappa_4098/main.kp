@@ -1,14 +1,24 @@
 module main
 
-type GeneratedPair = (left : Int, right : Int)
+generated_4098 : IO Int
+let generated_4098 =
+    do
+        value <- pure ((block
+            generatedMapCount : Map String Int -> Int
+            let generatedMapCount values = 1
 
-generated_4098 : GeneratedPair
-let generated_4098 = ((left = (((((0 + ((if True then (if False then 0 else 0) else 0) + 0)) + 0) + 0) + 0) + 0), right = 0)).{ right = ((((((0 + ((if True then (if False then 0 else 0) else 0) + 0)) + 0) + 0) + 0) + 0) + 1) }
+            let item = (match (0 == 0)
+              case True -> 0
+              case False -> 0)
+            let values = { yield "item" : item }
 
-result : GeneratedPair
+            generatedMapCount values) + 0)
+        pure (value + 2)
+
+result : IO Int
 let result = generated_4098
 
 --! assertNoErrors
---! assertType generated_4098 GeneratedPair
---! assertType result GeneratedPair
---! assertDeclKinds type, signature, let, signature, let
+--! assertType generated_4098 IO Int
+--! assertType result IO Int
+--! assertDeclKinds signature, let, signature, let

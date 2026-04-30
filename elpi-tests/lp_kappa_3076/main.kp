@@ -1,15 +1,36 @@
 module main
 
-generatedEcho : forall (a : Type). (this x : a) -> a
-let generatedEcho @a (this x : a) = x
+type GeneratedPair = (left : Int, right : Int)
 
-generated_3076 : Int
-let generated_3076 = (((((((((Some (((if True then 0 else 0) + 0) + 0)) ?: 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0).generatedEcho
+generated_3076 : GeneratedPair
+let generated_3076 = ((left = (block
+    generatedSetCount : Set Int -> Int
+    let generatedSetCount values = 2
 
-result : Int
+    let item = (block
+        let pair = (x = 0, y = (0 + 1))
+        let (x = captured, y = other) = pair
+
+        (captured + other))
+    let values = {|item, (item + 1)|}
+
+    generatedSetCount values), right = 0)).{ right = ((block
+    generatedSetCount : Set Int -> Int
+    let generatedSetCount values = 2
+
+    let item = (block
+        let pair = (x = 0, y = (0 + 1))
+        let (x = captured, y = other) = pair
+
+        (captured + other))
+    let values = {|item, (item + 1)|}
+
+    generatedSetCount values) + 1) }
+
+result : GeneratedPair
 let result = generated_3076
 
 --! assertNoErrors
---! assertType generated_3076 Int
---! assertType result Int
---! assertDeclKinds signature, let, signature, let, signature, let
+--! assertType generated_3076 GeneratedPair
+--! assertType result GeneratedPair
+--! assertDeclKinds type, signature, let, signature, let

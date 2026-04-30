@@ -1,12 +1,22 @@
 module main
 
-generated_1400 : Unit
-let generated_1400 = (if True then (if True then (if True then ((\(u : Unit) -> ()) (if (False || True) then () else ())) else ()) else ()) else ())
+generatedEcho : forall (a : Type). (this x : a) -> a
+let generatedEcho @a (this x : a) = x
 
-result : Unit
+generated_1400 : Int
+let generated_1400 = (((\(n : Int) -> n) (block
+    generatedSetCount : Set Int -> Int
+    let generatedSetCount values = 2
+
+    let item = 0
+    let values = {|item, (item + 1)|}
+
+    generatedSetCount values)) + 0).generatedEcho
+
+result : Int
 let result = generated_1400
 
 --! assertNoErrors
---! assertType generated_1400 Unit
---! assertType result Unit
---! assertDeclKinds signature, let, signature, let
+--! assertType generated_1400 Int
+--! assertType result Int
+--! assertDeclKinds signature, let, signature, let, signature, let

@@ -1,12 +1,31 @@
 module main
 
-generated_1314 : Map String Int
-let generated_1314 = { for x in [1, 2, 3], let y = x + 1, yield "k" : (((((((if False then 0 else (if True then x else 0)) + 0) + 0) + 0) + 0) + 0) + 0) }
+generatedNeed : (@x : Int) -> Int
+let generatedNeed (@x : Int) = x
 
-result : Map String Int
+generated_1314 : Int
+let generated_1314 = generatedNeed @(((match [(block
+    generatedSetCount : Set Int -> Int
+    let generatedSetCount values = 2
+
+    let item = 0
+    let values = {|item, (item + 1)|}
+
+    generatedSetCount values), ((block
+    generatedSetCount : Set Int -> Int
+    let generatedSetCount values = 2
+
+    let item = 0
+    let values = {|item, (item + 1)|}
+
+    generatedSetCount values) + 1)]
+  case head :: tail -> head
+  case Nil -> 0) + 0))
+
+result : Int
 let result = generated_1314
 
 --! assertNoErrors
---! assertType generated_1314 Map String Int
---! assertType result Map String Int
---! assertDeclKinds signature, let, signature, let
+--! assertType generated_1314 Int
+--! assertType result Int
+--! assertDeclKinds signature, let, signature, let, signature, let

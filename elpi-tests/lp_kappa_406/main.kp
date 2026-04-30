@@ -1,7 +1,11 @@
 module main
 
 generated_406 : List Int
-let generated_406 = [ yield (((((((((((if False then 0 else 0) + (0 + 0)) + 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0) ]
+let generated_406 = [ for x in [1, 2, 3], skip 1, take 2, yield (block
+    let pair = (x = x, y = (x + 1))
+    let (x = captured, y = other) = pair
+
+    (captured + other)) ]
 
 result : List Int
 let result = generated_406

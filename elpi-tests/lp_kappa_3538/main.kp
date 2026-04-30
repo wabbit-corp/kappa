@@ -1,18 +1,21 @@
 module main
 
-generated_3538 : Int
-let generated_3538 =
-    block
-        type RankedAlias = Int
+generated_3538 : List Int
+let generated_3538 = [ for x in [1, 2, 3], skip 1, take 2, yield (block
+    generatedListLength : List Int -> Int
+    let generatedListLength xs decreases structural xs =
+        match xs
+          case Nil -> 0
+          case _ :: tail -> 1 + generatedListLength tail
 
-        let aliased : RankedAlias = ((((((0 + (((((left = (0 + 0), right = 0)).left + 0) + 0) + 0)) + 0) + 0) + 0) + 0) + 0)
+    let item = ((\(n : Int) -> n) x)
 
-        (aliased + 1)
+    generatedListLength [item, (item + 1), 0]) ]
 
-result : Int
+result : List Int
 let result = generated_3538
 
 --! assertNoErrors
---! assertType generated_3538 Int
---! assertType result Int
+--! assertType generated_3538 List Int
+--! assertType result List Int
 --! assertDeclKinds signature, let, signature, let

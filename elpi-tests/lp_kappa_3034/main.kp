@@ -1,12 +1,31 @@
 module main
 
-generated_3034 : Option Int
-let generated_3034 = (if True then (if True then (if True then (if (True && True) then (if False then None else (if (((Some (0 + 0)) ?: 0) == 1) then None else (Some (0 + 0)))) else (Some 2)) else None) else None) else None)
+generatedNeed : (@x : Int) -> Int
+let generatedNeed (@x : Int) = x
 
-result : Option Int
+generated_3034 : IO Int
+let generated_3034 =
+    do
+        let (@x : Int) = ((block
+            generatedListLength : List Int -> Int
+            let generatedListLength xs decreases structural xs =
+                match xs
+                  case Nil -> 0
+                  case _ :: tail -> 1 + generatedListLength tail
+
+            let item = (block
+                let pair = (x = 0, y = (0 + 1))
+                let (x = captured, y = other) = pair
+
+                (captured + other))
+
+            generatedListLength [item, (item + 1), 0]) + 0)
+        pure generatedNeed
+
+result : IO Int
 let result = generated_3034
 
 --! assertNoErrors
---! assertType generated_3034 Option Int
---! assertType result Option Int
---! assertDeclKinds signature, let, signature, let
+--! assertType generated_3034 IO Int
+--! assertType result IO Int
+--! assertDeclKinds signature, let, signature, let, signature, let

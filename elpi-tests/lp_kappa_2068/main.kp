@@ -3,10 +3,22 @@ module main
 generated_2068 : Int
 let generated_2068 =
     block
-        let base : (x : Int) = (x = (((((((((if False then 0 else ((if True then 0 else 0) + 0)) + (0 + 0)) + 0) + 0) + 0) + 0) + 0) + 0) + 0))
-        let extended = base.{ y := (((((((((if False then 0 else ((if True then 0 else 0) + 0)) + (0 + 0)) + 0) + 0) + 0) + 0) + 0) + 0) + 1) }
+        type RankedAlias = Int
 
-        (extended.x + extended.y)
+        let aliased : RankedAlias = ((block
+            generatedListLength : List Int -> Int
+            let generatedListLength xs decreases structural xs =
+                match xs
+                  case Nil -> 0
+                  case _ :: tail -> 1 + generatedListLength tail
+
+            let item = (match (Some 0)
+              case Some payload -> payload
+              case None -> 0)
+
+            generatedListLength [item, (item + 1), 0]) + 0)
+
+        (aliased + 1)
 
 result : Int
 let result = generated_2068

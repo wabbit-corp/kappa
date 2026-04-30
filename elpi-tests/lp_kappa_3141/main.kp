@@ -1,12 +1,26 @@
 module main
 
-generated_3141 : List Int
-let generated_3141 = [ for x in [1, 2, 3], let y = x + 1, if y > 0, yield ((((((((Some (((left = (x + 0), right = 0)).left + 0)) ?: 0) + 0) + 0) + 0) + 0) + 0) + 0) ]
+generated_3141 : IO Int
+let generated_3141 =
+    do
+        let staged = ((block
+            generatedMapCount : Map String Int -> Int
+            let generatedMapCount values = 1
 
-result : List Int
+            let item = (block
+                let pair = (x = 0, y = (0 + 1))
+                let (x = captured, y = other) = pair
+
+                (captured + other))
+            let values = { yield "item" : item }
+
+            generatedMapCount values) + 0)
+        pure (staged + 1)
+
+result : IO Int
 let result = generated_3141
 
 --! assertNoErrors
---! assertType generated_3141 List Int
---! assertType result List Int
+--! assertType generated_3141 IO Int
+--! assertType result IO Int
 --! assertDeclKinds signature, let, signature, let

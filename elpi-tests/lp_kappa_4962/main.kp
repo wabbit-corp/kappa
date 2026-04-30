@@ -1,12 +1,42 @@
 module main
 
-generated_4962 : List Int
-let generated_4962 = [ yield ((((((0 + (((if True then ((Some (0 + 0)) ?: 0) else 0) + 0) + 0)) + 0) + 0) + 0) + 0) + 0) ]
+generated_4962 : IO Int
+let generated_4962 =
+    do
+        value <- pure ((block
+            generatedListLength : List Int -> Int
+            let generatedListLength xs decreases structural xs =
+                match xs
+                  case Nil -> 0
+                  case _ :: tail -> 1 + generatedListLength tail
 
-result : List Int
+            let item = (block
+                generatedListLength : List Int -> Int
+                let generatedListLength xs decreases structural xs =
+                    match xs
+                      case Nil -> 0
+                      case _ :: tail -> 1 + generatedListLength tail
+
+                let item = (block
+                    generatedListLength : List Int -> Int
+                    let generatedListLength xs decreases structural xs =
+                        match xs
+                          case Nil -> 0
+                          case _ :: tail -> 1 + generatedListLength tail
+
+                    let item = 0
+
+                    generatedListLength [item, (item + 1), 0])
+
+                generatedListLength [item, (item + 1), 0])
+
+            generatedListLength [item, (item + 1), 0]) + 0)
+        pure (value + 2)
+
+result : IO Int
 let result = generated_4962
 
 --! assertNoErrors
---! assertType generated_4962 List Int
---! assertType result List Int
+--! assertType generated_4962 IO Int
+--! assertType result IO Int
 --! assertDeclKinds signature, let, signature, let

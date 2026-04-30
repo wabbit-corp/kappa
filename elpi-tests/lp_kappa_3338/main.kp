@@ -1,12 +1,21 @@
 module main
 
-generated_3338 : Unit
-let generated_3338 = (if True then (if True then (if False then () else (if True then (if False then () else ()) else ())) else ()) else ())
+generated_3338 : Int
+let generated_3338 =
+    block
+        ranked : Int
+        let ranked = ((\(n : Int) -> n) (block
+            let pair = (x = 0, y = (0 + 1))
+            let (x = captured, y = other) = pair
 
-result : Unit
+            (captured + other)))
+
+        (ranked + 0)
+
+result : Int
 let result = generated_3338
 
 --! assertNoErrors
---! assertType generated_3338 Unit
---! assertType result Unit
+--! assertType generated_3338 Int
+--! assertType result Int
 --! assertDeclKinds signature, let, signature, let

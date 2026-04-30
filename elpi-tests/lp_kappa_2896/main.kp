@@ -1,12 +1,33 @@
 module main
 
-generated_2896 : Unit
-let generated_2896 = (if True then (if True then (if True then ((\(u : Unit) -> if True then u else ()) ()) else ()) else ()) else ())
+generated_2896 : Int
+let generated_2896 =
+    block
+        scoped effect Ask =
+            ask : Unit -> Bool
 
-result : Unit
+        let l = Ask
+
+        let seed = ((\(n : Int) -> n) (match [0, (0 + 1)]
+          case head :: tail -> head
+          case Nil -> 0))
+
+        let comp : Eff <[Ask : Ask]> Int =
+            do
+                let b <- l.ask ()
+                if b then seed else (seed + 1)
+
+        let handled : Eff <[ ]> Int =
+            deep handle l comp with
+                case return x -> pure x
+                case ask () k -> k True
+
+        runPure handled
+
+result : Int
 let result = generated_2896
 
 --! assertNoErrors
---! assertType generated_2896 Unit
---! assertType result Unit
+--! assertType generated_2896 Int
+--! assertType result Int
 --! assertDeclKinds signature, let, signature, let

@@ -1,12 +1,39 @@
 module main
 
-generated_4003 : String
-let generated_4003 = (if (if (if (if ((if True then True else False) && False) then False else True) then True else False) then True else False) then #"raw lambda-prolog"# else "fallback")
+generated_4003 : Int
+let generated_4003 =
+    block
+        let pair = (x = ((block
+            generatedListLength : List Int -> Int
+            let generatedListLength xs decreases structural xs =
+                match xs
+                  case Nil -> 0
+                  case _ :: tail -> 1 + generatedListLength tail
 
-result : String
+            let item = (match (0 == 0)
+              case True -> 0
+              case False -> 0)
+
+            generatedListLength [item, (item + 1), 0]) + 0), y = ((block
+            generatedListLength : List Int -> Int
+            let generatedListLength xs decreases structural xs =
+                match xs
+                  case Nil -> 0
+                  case _ :: tail -> 1 + generatedListLength tail
+
+            let item = (match (0 == 0)
+              case True -> 0
+              case False -> 0)
+
+            generatedListLength [item, (item + 1), 0]) + 1))
+        let (x = captured, y = other) = pair
+
+        (captured + other)
+
+result : Int
 let result = generated_4003
 
 --! assertNoErrors
---! assertType generated_4003 String
---! assertType result String
+--! assertType generated_4003 Int
+--! assertType result Int
 --! assertDeclKinds signature, let, signature, let

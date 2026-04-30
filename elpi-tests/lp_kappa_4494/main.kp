@@ -1,12 +1,21 @@
 module main
 
-generated_4494 : Unit
-let generated_4494 = (if True then (if True then (if False then () else ((\(u : Unit) -> ()) (if (False || True) then () else ()))) else ()) else ())
+generated_4494 : List Int
+let generated_4494 = [ yield ((block
+    generatedListLength : List Int -> Int
+    let generatedListLength xs decreases structural xs =
+        match xs
+          case Nil -> 0
+          case _ :: tail -> 1 + generatedListLength tail
 
-result : Unit
+    let item = ((Some (0 + 1)) ?: (0 + 2))
+
+    generatedListLength [item, (item + 1), 0]) + 0) ]
+
+result : List Int
 let result = generated_4494
 
 --! assertNoErrors
---! assertType generated_4494 Unit
---! assertType result Unit
+--! assertType generated_4494 List Int
+--! assertType result List Int
 --! assertDeclKinds signature, let, signature, let

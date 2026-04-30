@@ -1,12 +1,19 @@
 module main
 
-generated_3170 : Option Int
-let generated_3170 = (if True then (if True then (if True then (if (True && True) then (if False then None else (if (False || True) then (Some (0 + 0)) else (Some (1 + 1)))) else (Some 2)) else None) else None) else None)
+generated_3170 : Int
+let generated_3170 =
+    match (Some (block
+        let pair = (x = 0, y = (0 + 1))
+        let (x = captured, y = other) = pair
 
-result : Option Int
+        (captured + other)))
+      case Some payload -> payload
+      case None -> 0
+
+result : Int
 let result = generated_3170
 
 --! assertNoErrors
---! assertType generated_3170 Option Int
---! assertType result Option Int
+--! assertType generated_3170 Int
+--! assertType result Int
 --! assertDeclKinds signature, let, signature, let

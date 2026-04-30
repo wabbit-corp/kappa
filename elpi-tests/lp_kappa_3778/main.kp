@@ -1,12 +1,22 @@
 module main
 
-generated_3778 : Int
-let generated_3778 = (((((0 + ((0 + (((if True then 0 else 0) + 0) + 0)) + 0)) + 0) + 0) + 0) + 0)
+type GeneratedPair = (left : Int, right : Int)
 
-result : Int
+generated_3778 : GeneratedPair
+let generated_3778 = ((left = (block
+    let pair = (x = ((\(n : Int) -> n) 0), y = (((\(n : Int) -> n) 0) + 1))
+    let (x = captured, y = other) = pair
+
+    (captured + other)), right = 0)).{ right = ((block
+    let pair = (x = ((\(n : Int) -> n) 0), y = (((\(n : Int) -> n) 0) + 1))
+    let (x = captured, y = other) = pair
+
+    (captured + other)) + 1) }
+
+result : GeneratedPair
 let result = generated_3778
 
 --! assertNoErrors
---! assertType generated_3778 Int
---! assertType result Int
---! assertDeclKinds signature, let, signature, let
+--! assertType generated_3778 GeneratedPair
+--! assertType result GeneratedPair
+--! assertDeclKinds type, signature, let, signature, let

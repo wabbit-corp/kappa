@@ -1,12 +1,19 @@
 module main
 
-generated_2979 : Set Int
-let generated_2979 = {| for x in [1, 2, 3], if x > 0, yield ((((((((Some ((0 + (x + 0)) + 0)) ?: 0) + 0) + 0) + 0) + 0) + 0) + 0) |}
+generated_2979 : IO Int
+let generated_2979 =
+    do
+        let staged = (((Some ((match [0, (0 + 1)]
+          case head :: tail -> head
+          case Nil -> 0) + 1)) ?: ((match [0, (0 + 1)]
+          case head :: tail -> head
+          case Nil -> 0) + 2)) + 0)
+        pure (staged + 1)
 
-result : Set Int
+result : IO Int
 let result = generated_2979
 
 --! assertNoErrors
---! assertType generated_2979 Set Int
---! assertType result Set Int
+--! assertType generated_2979 IO Int
+--! assertType result IO Int
 --! assertDeclKinds signature, let, signature, let

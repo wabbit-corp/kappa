@@ -1,10 +1,32 @@
 module main
 
-generatedEcho : forall (a : Type). (this x : a) -> a
-let generatedEcho @a (this x : a) = x
+generatedUseWidth : (width : Int) -> Int
+let generatedUseWidth width = width
 
 generated_1376 : Int
-let generated_1376 = ((((((((if False then 0 else ((if True then 0 else 0) + 0)) + 0) + 0) + 0) + 0) + 0) + 0) + 0).generatedEcho
+let generated_1376 =
+    block
+        let width = ((block
+            let pair = (x = (block
+                generatedSetCount : Set Int -> Int
+                let generatedSetCount values = 2
+
+                let item = 0
+                let values = {|item, (item + 1)|}
+
+                generatedSetCount values), y = ((block
+                generatedSetCount : Set Int -> Int
+                let generatedSetCount values = 2
+
+                let item = 0
+                let values = {|item, (item + 1)|}
+
+                generatedSetCount values) + 1))
+            let (x = captured, y = other) = pair
+
+            (captured + other)) + 0)
+
+        generatedUseWidth { width }
 
 result : Int
 let result = generated_1376

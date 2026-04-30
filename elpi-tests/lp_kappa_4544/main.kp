@@ -1,12 +1,31 @@
 module main
 
-generated_4544 : Map String Int
-let generated_4544 = { for x in [1, 2, 3], yield "k" : (((((0 + ((if False then 0 else ((left = (x + 0), right = 0)).left) + 0)) + 0) + 0) + 0) + 0) }
+generated_4544 : Int
+let generated_4544 =
+    block
+        let base : (x : Int) = (x = ((block
+            generatedSetCount : Set Int -> Int
+            let generatedSetCount values = 2
 
-result : Map String Int
+            let item = ((Some (0 + 1)) ?: (0 + 2))
+            let values = {|item, (item + 1)|}
+
+            generatedSetCount values) + 0))
+        let extended = base.{ y := ((block
+            generatedSetCount : Set Int -> Int
+            let generatedSetCount values = 2
+
+            let item = ((Some (0 + 1)) ?: (0 + 2))
+            let values = {|item, (item + 1)|}
+
+            generatedSetCount values) + 1) }
+
+        (extended.x + extended.y)
+
+result : Int
 let result = generated_4544
 
 --! assertNoErrors
---! assertType generated_4544 Map String Int
---! assertType result Map String Int
+--! assertType generated_4544 Int
+--! assertType result Int
 --! assertDeclKinds signature, let, signature, let

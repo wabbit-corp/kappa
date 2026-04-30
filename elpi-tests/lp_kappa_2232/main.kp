@@ -1,12 +1,19 @@
 module main
 
-generated_2232 : Map String Int
-let generated_2232 = { for x in [1, 2, 3], yield "k" : ((((((((left = (x + 0), right = 0)).left + 0) + 0) + 0) + 0) + 0) + 0) }
+generatedNeed : (@x : Int) -> Int
+let generatedNeed (@x : Int) = x
 
-result : Map String Int
+generated_2232 : Int
+let generated_2232 = generatedNeed @(((match (Some (match (Some 0)
+  case Some payload -> payload
+  case None -> 0))
+  case Some payload -> payload
+  case None -> 0) + 0))
+
+result : Int
 let result = generated_2232
 
 --! assertNoErrors
---! assertType generated_2232 Map String Int
---! assertType result Map String Int
---! assertDeclKinds signature, let, signature, let
+--! assertType generated_2232 Int
+--! assertType result Int
+--! assertDeclKinds signature, let, signature, let, signature, let

@@ -1,22 +1,12 @@
 module main
 
-generated_568 : Int
-let generated_568 =
-    block
-        trait RankedScore a =
-            rank : a -> Int
+generated_568 : List Int
+let generated_568 = [ for x in [1, 2, 3], skip 1, take 2, yield ((Some (x + 1)) ?: (x + 2)) ]
 
-        instance RankedScore Int =
-            let rank x = x
-
-        let dict = summon (RankedScore Int)
-
-        dict.rank ((((((((0 + (((0 + 0) + 0) + 0)) + 0) + 0) + 0) + 0) + 0) + 0) + 0)
-
-result : Int
+result : List Int
 let result = generated_568
 
 --! assertNoErrors
---! assertType generated_568 Int
---! assertType result Int
+--! assertType generated_568 List Int
+--! assertType result List Int
 --! assertDeclKinds signature, let, signature, let

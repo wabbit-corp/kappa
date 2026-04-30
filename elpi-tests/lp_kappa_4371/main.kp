@@ -1,10 +1,30 @@
 module main
 
-generatedResize : (image : Int) -> (width : Int) -> (height : Int) -> Int
-let generatedResize image width height = image + width * 10 + height
+data GeneratedChoice : Type =
+    GeneratedLeft (value : Int)
+    GeneratedRight
 
 generated_4371 : Int
-let generated_4371 = generatedResize { image = ((((((0 + ((if False then 0 else (0 + (0 + 0))) + 0)) + 0) + 0) + 0) + 0) + 0), height = 3, width = 2 }
+let generated_4371 =
+    match (GeneratedLeft ((match ((match (0 == 0)
+      case True -> 0
+      case False -> 0) == (match (0 == 0)
+      case True -> 0
+      case False -> 0))
+      case True -> (match (0 == 0)
+        case True -> 0
+        case False -> 0)
+      case False -> 0) + 0))
+      case GeneratedLeft payload -> (payload + 0)
+      case GeneratedRight -> ((match ((match (0 == 0)
+        case True -> 0
+        case False -> 0) == (match (0 == 0)
+        case True -> 0
+        case False -> 0))
+        case True -> (match (0 == 0)
+          case True -> 0
+          case False -> 0)
+        case False -> 0) + 0)
 
 result : Int
 let result = generated_4371
@@ -12,4 +32,4 @@ let result = generated_4371
 --! assertNoErrors
 --! assertType generated_4371 Int
 --! assertType result Int
---! assertDeclKinds signature, let, signature, let, signature, let
+--! assertDeclKinds data, signature, let, signature, let

@@ -1,15 +1,14 @@
 module main
 
-generated_4347 : IO Int
-let generated_4347 =
-    do
-        let staged = ((((((0 + ((if False then 0 else ((0 + 0) + 0)) + 0)) + 0) + 0) + 0) + 0) + 0)
-        pure (staged + 1)
+generated_4347 : Map String Int
+let generated_4347 = { for x in [1, 2, 3], yield "k" : ((\(n : Int) -> n) (match (x == x)
+  case True -> x
+  case False -> 0)), on conflict keep first }
 
-result : IO Int
+result : Map String Int
 let result = generated_4347
 
 --! assertNoErrors
---! assertType generated_4347 IO Int
---! assertType result IO Int
+--! assertType generated_4347 Map String Int
+--! assertType result Map String Int
 --! assertDeclKinds signature, let, signature, let

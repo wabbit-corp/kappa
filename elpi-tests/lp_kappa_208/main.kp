@@ -1,7 +1,21 @@
 module main
 
+generatedNeed : (@x : Int) -> Int
+let generatedNeed (@x : Int) = x
+
 generated_208 : Int
-let generated_208 = ((((((((((0 + 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0)
+let generated_208 =
+    block
+        let (@x : Int) = (block
+            generatedMapCount : Map String Int -> Int
+            let generatedMapCount values = 1
+
+            let item = 0
+            let values = { yield "item" : item }
+
+            generatedMapCount values)
+
+        if True then generatedNeed else 0
 
 result : Int
 let result = generated_208
@@ -9,4 +23,4 @@ let result = generated_208
 --! assertNoErrors
 --! assertType generated_208 Int
 --! assertType result Int
---! assertDeclKinds signature, let, signature, let
+--! assertDeclKinds signature, let, signature, let, signature, let

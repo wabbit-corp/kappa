@@ -1,12 +1,17 @@
 module main
 
-generated_3563 : Int
-let generated_3563 =
-    block
-        let pair = (x = ((((((0 + (((((left = 0, right = (0 + 0))).right + 0) + 0) + 0)) + 0) + 0) + 0) + 0) + 0), y = ((((((0 + (((((left = 0, right = (0 + 0))).right + 0) + 0) + 0)) + 0) + 0) + 0) + 0) + 1))
-        let (x = captured, y = other) = pair
+generatedResize : (image : Int) -> (width : Int) -> (height : Int) -> Int
+let generatedResize image width height = image + width * 10 + height
 
-        (captured + other)
+generated_3563 : Int
+let generated_3563 = generatedResize { image = ((block
+    generatedSetCount : Set Int -> Int
+    let generatedSetCount values = 2
+
+    let item = ((\(n : Int) -> n) 0)
+    let values = {|item, (item + 1)|}
+
+    generatedSetCount values) + 0), height = 3, width = 2 }
 
 result : Int
 let result = generated_3563
@@ -14,4 +19,4 @@ let result = generated_3563
 --! assertNoErrors
 --! assertType generated_3563 Int
 --! assertType result Int
---! assertDeclKinds signature, let, signature, let
+--! assertDeclKinds signature, let, signature, let, signature, let

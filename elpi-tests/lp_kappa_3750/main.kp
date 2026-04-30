@@ -2,11 +2,13 @@ module main
 
 generated_3750 : Int
 let generated_3750 =
-    block
-        ranked : Int
-        let ranked = (((((0 + ((0 + ((if False then 0 else 0) + 0)) + 0)) + 0) + 0) + 0) + 0)
-
-        (ranked + 0)
+    match [((match [((\(n : Int) -> n) 0), (((\(n : Int) -> n) 0) + 1)]
+      case head :: tail -> head
+      case Nil -> 0) + 0), (((match [((\(n : Int) -> n) 0), (((\(n : Int) -> n) 0) + 1)]
+      case head :: tail -> head
+      case Nil -> 0) + 0) + 1)]
+      case head :: tail -> head
+      case Nil -> 0
 
 result : Int
 let result = generated_3750

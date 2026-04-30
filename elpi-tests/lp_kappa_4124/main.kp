@@ -3,10 +3,18 @@ module main
 generated_4124 : Int
 let generated_4124 =
     block
-        ranked : Int
-        let ranked = (((((0 + ((if True then ((if True then 0 else 0) + 0) else 0) + 0)) + 0) + 0) + 0) + 0)
+        let (captured : Int) = ((block
+            generatedMapCount : Map String Int -> Int
+            let generatedMapCount values = 1
 
-        (ranked + 0)
+            let item = (match (0 == 0)
+              case True -> 0
+              case False -> 0)
+            let values = { yield "item" : item }
+
+            generatedMapCount values) + 0)
+
+        captured
 
 result : Int
 let result = generated_4124

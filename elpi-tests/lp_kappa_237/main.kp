@@ -1,12 +1,31 @@
 module main
 
-generated_237 : Set Int
-let generated_237 = {| yield (((((((((((0 + 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0) |}
+generated_237 : Int
+let generated_237 =
+    block
+        let pair = (x = ((block
+            generatedMapCount : Map String Int -> Int
+            let generatedMapCount values = 1
 
-result : Set Int
+            let item = 0
+            let values = { yield "item" : item }
+
+            generatedMapCount values) + 0), y = ((block
+            generatedMapCount : Map String Int -> Int
+            let generatedMapCount values = 1
+
+            let item = 0
+            let values = { yield "item" : item }
+
+            generatedMapCount values) + 1))
+        let whole@(x = captured, y = other) = pair
+
+        (whole.x + (captured + other))
+
+result : Int
 let result = generated_237
 
 --! assertNoErrors
---! assertType generated_237 Set Int
---! assertType result Set Int
+--! assertType generated_237 Int
+--! assertType result Int
 --! assertDeclKinds signature, let, signature, let

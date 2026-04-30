@@ -1,12 +1,53 @@
 module main
 
-generated_1844 : Option Int
-let generated_1844 = (if True then (if True then (if True then (Some ((if (True && True) then (if False then None else (Some (0 + 0))) else (Some 2)) ?: 0)) else None) else None) else None)
+generated_1844 : Int
+let generated_1844 =
+    block
+        let base : (x : Int) = (x = ((block
+            let pair = (x = (block
+                generatedMapCount : Map String Int -> Int
+                let generatedMapCount values = 1
 
-result : Option Int
+                let item = 0
+                let values = { yield "item" : item }
+
+                generatedMapCount values), y = ((block
+                generatedMapCount : Map String Int -> Int
+                let generatedMapCount values = 1
+
+                let item = 0
+                let values = { yield "item" : item }
+
+                generatedMapCount values) + 1))
+            let (x = captured, y = other) = pair
+
+            (captured + other)) + 0))
+        let extended = base.{ y := ((block
+            let pair = (x = (block
+                generatedMapCount : Map String Int -> Int
+                let generatedMapCount values = 1
+
+                let item = 0
+                let values = { yield "item" : item }
+
+                generatedMapCount values), y = ((block
+                generatedMapCount : Map String Int -> Int
+                let generatedMapCount values = 1
+
+                let item = 0
+                let values = { yield "item" : item }
+
+                generatedMapCount values) + 1))
+            let (x = captured, y = other) = pair
+
+            (captured + other)) + 1) }
+
+        (extended.x + extended.y)
+
+result : Int
 let result = generated_1844
 
 --! assertNoErrors
---! assertType generated_1844 Option Int
---! assertType result Option Int
+--! assertType generated_1844 Int
+--! assertType result Int
 --! assertDeclKinds signature, let, signature, let

@@ -1,12 +1,28 @@
 module main
 
-generated_3986 : Option Int
-let generated_3986 = (if True then (if True then (if False then None else (if (((if True then (Some (0 + 0)) else None) ?: 0) == 0) then (if True then (Some (0 + 0)) else None) else None)) else None) else None)
+generated_3986 : Int
+let generated_3986 =
+    block
+        ranked : Int
+        let ranked = (block
+            generatedListLength : List Int -> Int
+            let generatedListLength xs decreases structural xs =
+                match xs
+                  case Nil -> 0
+                  case _ :: tail -> 1 + generatedListLength tail
 
-result : Option Int
+            let item = (match (0 == 0)
+              case True -> 0
+              case False -> 0)
+
+            generatedListLength [item, (item + 1), 0])
+
+        (ranked + 0)
+
+result : Int
 let result = generated_3986
 
 --! assertNoErrors
---! assertType generated_3986 Option Int
---! assertType result Option Int
+--! assertType generated_3986 Int
+--! assertType result Int
 --! assertDeclKinds signature, let, signature, let

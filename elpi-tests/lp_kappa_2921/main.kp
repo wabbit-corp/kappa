@@ -1,15 +1,12 @@
 module main
 
-generatedEcho : forall (a : Type). (this x : a) -> a
-let generatedEcho @a (this x : a) = x
+generated_2921 : String
+let generated_2921 = (if (if (if (if (if True then (((if True then True else False) && True) && True) else False) then True else False) then True else False) then True else False) then #"raw lambda-prolog"# else "fallback")
 
-generated_2921 : Int
-let generated_2921 = ((.generatedEcho) (((((((((Some (0 + 0)) ?: 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0))
-
-result : Int
+result : String
 let result = generated_2921
 
 --! assertNoErrors
---! assertType generated_2921 Int
---! assertType result Int
---! assertDeclKinds signature, let, signature, let, signature, let
+--! assertType generated_2921 String
+--! assertType result String
+--! assertDeclKinds signature, let, signature, let

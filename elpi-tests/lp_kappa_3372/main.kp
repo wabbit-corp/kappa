@@ -1,12 +1,23 @@
 module main
 
-generated_3372 : Unit
-let generated_3372 = (if True then (if True then (if False then () else (if True then ((\(u : Unit) -> u) ()) else ())) else ()) else ())
+generated_3372 : Int
+let generated_3372 =
+    match [(((\(n : Int) -> n) (block
+        let pair = (x = 0, y = (0 + 1))
+        let (x = captured, y = other) = pair
 
-result : Unit
+        (captured + other))) + 0), ((((\(n : Int) -> n) (block
+        let pair = (x = 0, y = (0 + 1))
+        let (x = captured, y = other) = pair
+
+        (captured + other))) + 0) + 1)]
+      case head :: tail -> head
+      case Nil -> 0
+
+result : Int
 let result = generated_3372
 
 --! assertNoErrors
---! assertType generated_3372 Unit
---! assertType result Unit
+--! assertType generated_3372 Int
+--! assertType result Int
 --! assertDeclKinds signature, let, signature, let

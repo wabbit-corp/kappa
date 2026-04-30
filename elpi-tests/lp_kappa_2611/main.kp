@@ -1,17 +1,24 @@
 module main
 
-generated_2611 : Int
-let generated_2611 =
-    block
-        let pair = (x = (((((((((left = 0, right = (((0 + 0) + 0) + 0))).right + 0) + 0) + 0) + 0) + 0) + 0) + 0), y = (((((((((left = 0, right = (((0 + 0) + 0) + 0))).right + 0) + 0) + 0) + 0) + 0) + 0) + 1))
-        let (x = captured, y = other) = pair
+generatedEcho : forall (a : Type). (this x : a) -> a
+let generatedEcho @a (this x : a) = x
 
-        (captured + other)
+generated_2611 : Option Int
+let generated_2611 = (Some ((block
+    generatedSetCount : Set Int -> Int
+    let generatedSetCount values = 2
 
-result : Int
+    let item = (match [0, (0 + 1)]
+      case head :: tail -> head
+      case Nil -> 0)
+    let values = {|item, (item + 1)|}
+
+    generatedSetCount values) + 0))?.generatedEcho
+
+result : Option Int
 let result = generated_2611
 
 --! assertNoErrors
---! assertType generated_2611 Int
---! assertType result Int
---! assertDeclKinds signature, let, signature, let
+--! assertType generated_2611 Option Int
+--! assertType result Option Int
+--! assertDeclKinds signature, let, signature, let, signature, let

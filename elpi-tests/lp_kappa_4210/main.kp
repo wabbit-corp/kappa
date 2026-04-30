@@ -1,17 +1,26 @@
 module main
 
-generated_4210 : Int
-let generated_4210 =
-    block
-        let base : (x : Int) = (x = ((((((0 + ((if True then ((left = (0 + 0), right = 0)).left else 0) + 0)) + 0) + 0) + 0) + 0) + 0))
-        let extended = base.{ y := ((((((0 + ((if True then ((left = (0 + 0), right = 0)).left else 0) + 0)) + 0) + 0) + 0) + 0) + 1) }
+type GeneratedPair = (left : Int, right : Int)
 
-        (extended.x + extended.y)
+generated_4210 : GeneratedPair
+let generated_4210 = ((left = (match [(match (0 == 0)
+  case True -> 0
+  case False -> 0), ((match (0 == 0)
+  case True -> 0
+  case False -> 0) + 1)]
+  case head :: tail -> head
+  case Nil -> 0), right = 0)).{ right = ((match [(match (0 == 0)
+  case True -> 0
+  case False -> 0), ((match (0 == 0)
+  case True -> 0
+  case False -> 0) + 1)]
+  case head :: tail -> head
+  case Nil -> 0) + 1) }
 
-result : Int
+result : GeneratedPair
 let result = generated_4210
 
 --! assertNoErrors
---! assertType generated_4210 Int
---! assertType result Int
---! assertDeclKinds signature, let, signature, let
+--! assertType generated_4210 GeneratedPair
+--! assertType result GeneratedPair
+--! assertDeclKinds type, signature, let, signature, let

@@ -1,15 +1,15 @@
 module main
 
-generated_4925 : IO Int
-let generated_4925 =
-    do
-        let staged = ((((((0 + (((if True then ((left = 0, right = (0 + 0))).right else 0) + 0) + 0)) + 0) + 0) + 0) + 0) + 0)
-        pure (staged + 1)
+generatedEcho : forall (a : Type). (this x : a) -> a
+let generatedEcho @a (this x : a) = x
 
-result : IO Int
+generated_4925 : Int
+let generated_4925 = ((.generatedEcho) (((Some (((Some (0 + 1)) ?: (0 + 2)) + 1)) ?: (((Some (0 + 1)) ?: (0 + 2)) + 2)) + 0))
+
+result : Int
 let result = generated_4925
 
 --! assertNoErrors
---! assertType generated_4925 IO Int
---! assertType result IO Int
---! assertDeclKinds signature, let, signature, let
+--! assertType generated_4925 Int
+--! assertType result Int
+--! assertDeclKinds signature, let, signature, let, signature, let

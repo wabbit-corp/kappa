@@ -1,12 +1,24 @@
 module main
 
-generated_2617 : Set Int
-let generated_2617 = {| yield (((((((((left = 0, right = (((0 + 0) + 0) + 0))).right + 0) + 0) + 0) + 0) + 0) + 0) + 0) |}
+generatedMakeConst : forall (a : Type). a -> Unit -> a
+let generatedMakeConst value = \() -> value
 
-result : Set Int
+generated_2617 : Int
+let generated_2617 = ((generatedMakeConst @Int ((block
+    generatedSetCount : Set Int -> Int
+    let generatedSetCount values = 2
+
+    let item = (match [0, (0 + 1)]
+      case head :: tail -> head
+      case Nil -> 0)
+    let values = {|item, (item + 1)|}
+
+    generatedSetCount values) + 0)) ())
+
+result : Int
 let result = generated_2617
 
 --! assertNoErrors
---! assertType generated_2617 Set Int
---! assertType result Set Int
---! assertDeclKinds signature, let, signature, let
+--! assertType generated_2617 Int
+--! assertType result Int
+--! assertDeclKinds signature, let, signature, let, signature, let

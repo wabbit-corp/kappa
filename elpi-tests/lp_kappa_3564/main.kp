@@ -1,12 +1,17 @@
 module main
 
-generated_3564 : Int
-let generated_3564 =
-    block
-        let base : (x : Int) = (x = ((((((0 + (((((left = 0, right = (0 + 0))).right + 0) + 0) + 0)) + 0) + 0) + 0) + 0) + 0))
-        let extended = base.{ y := ((((((0 + (((((left = 0, right = (0 + 0))).right + 0) + 0) + 0)) + 0) + 0) + 0) + 0) + 1) }
+generatedMakeConst : forall (a : Type). a -> Unit -> a
+let generatedMakeConst value = \() -> value
 
-        (extended.x + extended.y)
+generated_3564 : Int
+let generated_3564 = ((generatedMakeConst ((block
+    generatedSetCount : Set Int -> Int
+    let generatedSetCount values = 2
+
+    let item = ((\(n : Int) -> n) 0)
+    let values = {|item, (item + 1)|}
+
+    generatedSetCount values) + 0)) ())
 
 result : Int
 let result = generated_3564
@@ -14,4 +19,4 @@ let result = generated_3564
 --! assertNoErrors
 --! assertType generated_3564 Int
 --! assertType result Int
---! assertDeclKinds signature, let, signature, let
+--! assertDeclKinds signature, let, signature, let, signature, let

@@ -2,11 +2,10 @@ module main
 
 generated_3933 : Int
 let generated_3933 =
-    block
-        rankedHelper : (Int -> Int)
-        let rankedHelper x = x + 1
-
-        rankedHelper ((((((0 + ((0 + (((Some (0 + 0)) ?: 0) + 0)) + 0)) + 0) + 0) + 0) + 0) + 0)
+    let
+        ranked : Int = ((Some (((\(n : Int) -> n) 0) + 1)) ?: (((\(n : Int) -> n) 0) + 2))
+in
+        (ranked + 0)
 
 result : Int
 let result = generated_3933

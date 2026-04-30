@@ -1,12 +1,23 @@
 module main
 
-generated_2550 : Map String Int
-let generated_2550 = { yield "only" : (((((((((left = (((Some (0 + 0)) ?: 0) + 0), right = 0)).left + 0) + 0) + 0) + 0) + 0) + 0) + 0) }
+generated_2550 : List Int
+let generated_2550 = [ yield ((block
+    generatedListLength : List Int -> Int
+    let generatedListLength xs decreases structural xs =
+        match xs
+          case Nil -> 0
+          case _ :: tail -> 1 + generatedListLength tail
 
-result : Map String Int
+    let item = (match [0, (0 + 1)]
+      case head :: tail -> head
+      case Nil -> 0)
+
+    generatedListLength [item, (item + 1), 0]) + 0) ]
+
+result : List Int
 let result = generated_2550
 
 --! assertNoErrors
---! assertType generated_2550 Map String Int
---! assertType result Map String Int
+--! assertType generated_2550 List Int
+--! assertType result List Int
 --! assertDeclKinds signature, let, signature, let

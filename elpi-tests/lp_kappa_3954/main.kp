@@ -1,17 +1,12 @@
 module main
 
-generated_3954 : Int
-let generated_3954 =
-    block
-        ranked : Int
-        let ranked = (((((0 + ((if True then 0 else 0) + 0)) + 0) + 0) + 0) + 0)
+generated_3954 : List Int
+let generated_3954 = [ yield (((Some (((\(n : Int) -> n) 0) + 1)) ?: (((\(n : Int) -> n) 0) + 2)) + 0) ]
 
-        (ranked + 0)
-
-result : Int
+result : List Int
 let result = generated_3954
 
 --! assertNoErrors
---! assertType generated_3954 Int
---! assertType result Int
+--! assertType generated_3954 List Int
+--! assertType result List Int
 --! assertDeclKinds signature, let, signature, let

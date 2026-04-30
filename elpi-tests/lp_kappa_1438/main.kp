@@ -3,10 +3,31 @@ module main
 generated_1438 : Int
 let generated_1438 =
     block
-        ranked : Int
-        let ranked = (((((((if False then 0 else ((left = (0 + 0), right = 0)).left) + 0) + 0) + 0) + 0) + 0) + 0)
+        scoped effect Ask =
+            ask : Unit -> Bool
 
-        (ranked + 0)
+        let l = Ask
+
+        let seed = ((\(n : Int) -> n) (block
+            generatedSetCount : Set Int -> Int
+            let generatedSetCount values = 2
+
+            let item = 0
+            let values = {|item, (item + 1)|}
+
+            generatedSetCount values))
+
+        let comp : Eff <[Ask : Ask]> Int =
+            do
+                let b <- l.ask ()
+                if b then seed else (seed + 1)
+
+        let handled : Eff <[ ]> Int =
+            deep handle l comp with
+                case return x -> pure x
+                case ask () k -> k True
+
+        runPure handled
 
 result : Int
 let result = generated_1438

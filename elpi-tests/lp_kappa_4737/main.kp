@@ -1,16 +1,12 @@
 module main
 
-generated_4737 : Int
-let generated_4737 =
-    let
-        ranked : Int = (((((0 + (((if True then (if True then 0 else 0) else 0) + 0) + 0)) + 0) + 0) + 0) + 0)
-in
-        (ranked + 0)
+generated_4737 : Bool
+let generated_4737 = (if (if (if ((if (True && False) then True else False) && True) then True else False) then True else False) then True else False)
 
-result : Int
+result : Bool
 let result = generated_4737
 
 --! assertNoErrors
---! assertType generated_4737 Int
---! assertType result Int
+--! assertType generated_4737 Bool
+--! assertType result Bool
 --! assertDeclKinds signature, let, signature, let

@@ -1,12 +1,28 @@
 module main
 
-generated_4588 : List Int
-let generated_4588 = [ yield ((((((0 + ((if False then 0 else ((left = 0, right = (0 + 0))).right) + 0)) + 0) + 0) + 0) + 0) + 0) ]
+type GeneratedPair = (left : Int, right : Int)
 
-result : List Int
+generated_4588 : GeneratedPair
+let generated_4588 = ((left = (block
+    generatedMapCount : Map String Int -> Int
+    let generatedMapCount values = 1
+
+    let item = ((Some (0 + 1)) ?: (0 + 2))
+    let values = { yield "item" : item }
+
+    generatedMapCount values), right = 0)).{ right = ((block
+    generatedMapCount : Map String Int -> Int
+    let generatedMapCount values = 1
+
+    let item = ((Some (0 + 1)) ?: (0 + 2))
+    let values = { yield "item" : item }
+
+    generatedMapCount values) + 1) }
+
+result : GeneratedPair
 let result = generated_4588
 
 --! assertNoErrors
---! assertType generated_4588 List Int
---! assertType result List Int
---! assertDeclKinds signature, let, signature, let
+--! assertType generated_4588 GeneratedPair
+--! assertType result GeneratedPair
+--! assertDeclKinds type, signature, let, signature, let

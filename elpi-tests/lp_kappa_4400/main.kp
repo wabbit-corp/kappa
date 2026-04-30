@@ -1,15 +1,27 @@
 module main
 
-generated_4400 : IO Int
-let generated_4400 =
-    do
-        value <- pure ((((((0 + ((if False then 0 else (if True then 0 else 0)) + 0)) + 0) + 0) + 0) + 0) + 0)
-        pure (value + 2)
+generatedUseWidth : (width : Int) -> Int
+let generatedUseWidth width = width
 
-result : IO Int
+generated_4400 : Int
+let generated_4400 =
+    block
+        let width = ((match ((match (0 == 0)
+          case True -> 0
+          case False -> 0) == (match (0 == 0)
+          case True -> 0
+          case False -> 0))
+          case True -> (match (0 == 0)
+            case True -> 0
+            case False -> 0)
+          case False -> 0) + 0)
+
+        generatedUseWidth { width }
+
+result : Int
 let result = generated_4400
 
 --! assertNoErrors
---! assertType generated_4400 IO Int
---! assertType result IO Int
---! assertDeclKinds signature, let, signature, let
+--! assertType generated_4400 Int
+--! assertType result Int
+--! assertDeclKinds signature, let, signature, let, signature, let

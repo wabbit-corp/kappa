@@ -1,15 +1,43 @@
 module main
 
-generated_4959 : IO Int
+generated_4959 : Int
 let generated_4959 =
-    do
-        let staged = ((((((0 + (((if True then ((Some (0 + 0)) ?: 0) else 0) + 0) + 0)) + 0) + 0) + 0) + 0) + 0)
-        pure (staged + 1)
+    let
+        ranked : Int = (block
+            generatedListLength : List Int -> Int
+            let generatedListLength xs decreases structural xs =
+                match xs
+                  case Nil -> 0
+                  case _ :: tail -> 1 + generatedListLength tail
 
-result : IO Int
+            let item = (block
+                generatedListLength : List Int -> Int
+                let generatedListLength xs decreases structural xs =
+                    match xs
+                      case Nil -> 0
+                      case _ :: tail -> 1 + generatedListLength tail
+
+                let item = (block
+                    generatedListLength : List Int -> Int
+                    let generatedListLength xs decreases structural xs =
+                        match xs
+                          case Nil -> 0
+                          case _ :: tail -> 1 + generatedListLength tail
+
+                    let item = 0
+
+                    generatedListLength [item, (item + 1), 0])
+
+                generatedListLength [item, (item + 1), 0])
+
+            generatedListLength [item, (item + 1), 0])
+in
+        (ranked + 0)
+
+result : Int
 let result = generated_4959
 
 --! assertNoErrors
---! assertType generated_4959 IO Int
---! assertType result IO Int
+--! assertType generated_4959 Int
+--! assertType result Int
 --! assertDeclKinds signature, let, signature, let

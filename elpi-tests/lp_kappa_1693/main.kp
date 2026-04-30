@@ -1,17 +1,29 @@
 module main
 
-generated_1693 : Int
-let generated_1693 =
-    block
-        let pair = (x = (((((((((if True then (if False then 0 else 0) else 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0), y = (((((((((if True then (if False then 0 else 0) else 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0) + 1))
-        let (x = captured, y = other) = pair
+generatedEcho : forall (a : Type). (this x : a) -> a
+let generatedEcho @a (this x : a) = x
 
-        (captured + other)
+generated_1693 : Option Int
+let generated_1693 = (Some ((block
+    generatedMapCount : Map String Int -> Int
+    let generatedMapCount values = 1
 
-result : Int
+    let item = (block
+        generatedMapCount : Map String Int -> Int
+        let generatedMapCount values = 1
+
+        let item = 0
+        let values = { yield "item" : item }
+
+        generatedMapCount values)
+    let values = { yield "item" : item }
+
+    generatedMapCount values) + 0))?.generatedEcho
+
+result : Option Int
 let result = generated_1693
 
 --! assertNoErrors
---! assertType generated_1693 Int
---! assertType result Int
---! assertDeclKinds signature, let, signature, let
+--! assertType generated_1693 Option Int
+--! assertType result Option Int
+--! assertDeclKinds signature, let, signature, let, signature, let

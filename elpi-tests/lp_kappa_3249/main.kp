@@ -1,15 +1,25 @@
 module main
 
-generatedResize : (image : Int) -> (width : Int) -> (height : Int) -> Int
-let generatedResize image width height = image + width * 10 + height
+generated_3249 : IO Int
+let generated_3249 =
+    do
+        let staged = ((match [(block
+            let pair = (x = 0, y = (0 + 1))
+            let (x = captured, y = other) = pair
 
-generated_3249 : Int
-let generated_3249 = generatedResize { image = ((((((0 + (0 + 0)) + 0) + 0) + 0) + 0) + 0), height = 3, width = 2 }
+            (captured + other)), ((block
+            let pair = (x = 0, y = (0 + 1))
+            let (x = captured, y = other) = pair
 
-result : Int
+            (captured + other)) + 1)]
+          case head :: tail -> head
+          case Nil -> 0) + 0)
+        pure (staged + 1)
+
+result : IO Int
 let result = generated_3249
 
 --! assertNoErrors
---! assertType generated_3249 Int
---! assertType result Int
---! assertDeclKinds signature, let, signature, let, signature, let
+--! assertType generated_3249 IO Int
+--! assertType result IO Int
+--! assertDeclKinds signature, let, signature, let

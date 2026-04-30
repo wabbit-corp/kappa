@@ -1,12 +1,29 @@
 module main
 
-generated_1997 : String
-let generated_1997 = (if (if (if (if (if False then True else ((True && False) || False)) then True else False) then True else False) then True else False) then #"raw lambda-prolog"# else "fallback")
+generatedResize : (image : Int) -> (width : Int) -> (height : Int) -> Int
+let generatedResize image width height = image + width * 10 + height
 
-result : String
+generated_1997 : Int
+let generated_1997 = generatedResize { image = (((Some ((block
+    generatedMapCount : Map String Int -> Int
+    let generatedMapCount values = 1
+
+    let item = 0
+    let values = { yield "item" : item }
+
+    generatedMapCount values) + 1)) ?: ((block
+    generatedMapCount : Map String Int -> Int
+    let generatedMapCount values = 1
+
+    let item = 0
+    let values = { yield "item" : item }
+
+    generatedMapCount values) + 2)) + 0), height = 3, width = 2 }
+
+result : Int
 let result = generated_1997
 
 --! assertNoErrors
---! assertType generated_1997 String
---! assertType result String
---! assertDeclKinds signature, let, signature, let
+--! assertType generated_1997 Int
+--! assertType result Int
+--! assertDeclKinds signature, let, signature, let, signature, let

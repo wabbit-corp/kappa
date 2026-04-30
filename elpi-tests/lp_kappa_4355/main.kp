@@ -3,13 +3,26 @@ module main
 generated_4355 : Int
 let generated_4355 =
     block
-        data RankedBox : Type =
-            RankedBox (value : Int)
+        scoped effect Ask =
+            ask : Unit -> Bool
 
-        let boxed = RankedBox ((((((0 + ((if False then 0 else ((0 + 0) + 0)) + 0)) + 0) + 0) + 0) + 0) + 0)
+        let pkg = (label = Ask)
 
-        match boxed
-          case RankedBox value -> (value + 1)
+        let seed = ((\(n : Int) -> n) (match (0 == 0)
+          case True -> 0
+          case False -> 0))
+
+        let comp : Eff <[Ask : Ask]> Int =
+            do
+                let b <- pkg.label.ask ()
+                if b then seed else (seed + 1)
+
+        let handled : Eff <[ ]> Int =
+            deep handle pkg.label comp with
+                case return x -> pure x
+                case ask () k -> k True
+
+        runPure handled
 
 result : Int
 let result = generated_4355

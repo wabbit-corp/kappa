@@ -3,13 +3,31 @@ module main
 generated_139 : Int
 let generated_139 =
     block
-        data RankedBox : Type =
-            RankedBox (value : Int)
+        scoped effect State (s : Type) =
+            get : Unit -> s
 
-        let boxed = RankedBox (((((0 + 0) + 0) + 0) + 0) + 0)
+        let seed = (block
+            generatedListLength : List Int -> Int
+            let generatedListLength xs decreases structural xs =
+                match xs
+                  case Nil -> 0
+                  case _ :: tail -> 1 + generatedListLength tail
 
-        match boxed
-          case RankedBox value -> (value + 1)
+            let item = 0
+
+            generatedListLength [item, (item + 1), 0])
+
+        let comp : Eff <[State : State Int]> Int =
+            do
+                let n <- State.get ()
+                n
+
+        let handled : Eff <[ ]> Int =
+            deep handle State comp with
+                case return x -> pure x
+                case get () k -> k seed
+
+        runPure handled
 
 result : Int
 let result = generated_139

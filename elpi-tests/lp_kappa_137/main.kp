@@ -1,19 +1,21 @@
 module main
 
-data GeneratedChoice : Type =
-    GeneratedLeft (value : Int)
-    GeneratedRight
+generated_137 : List Int
+let generated_137 = [ for x in [1, 2, 3], order by x desc, yield (block
+    generatedListLength : List Int -> Int
+    let generatedListLength xs decreases structural xs =
+        match xs
+          case Nil -> 0
+          case _ :: tail -> 1 + generatedListLength tail
 
-generated_137 : Int
-let generated_137 =
-    match GeneratedRight
-      case GeneratedLeft payload -> (payload + 0)
-      case GeneratedRight -> (((((0 + 0) + 0) + 0) + 0) + 0)
+    let item = x
 
-result : Int
+    generatedListLength [item, (item + 1), 0]) ]
+
+result : List Int
 let result = generated_137
 
 --! assertNoErrors
---! assertType generated_137 Int
---! assertType result Int
---! assertDeclKinds data, signature, let, signature, let
+--! assertType generated_137 List Int
+--! assertType result List Int
+--! assertDeclKinds signature, let, signature, let

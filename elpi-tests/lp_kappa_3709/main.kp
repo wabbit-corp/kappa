@@ -3,13 +3,30 @@ module main
 generated_3709 : Int
 let generated_3709 =
     block
-        data RankedBox : Type =
-            RankedBox (value : Int)
+        scoped effect Choice =
+            ω choose : Unit -> Bool
 
-        let boxed = RankedBox ((((((0 + ((0 + ((0 + (0 + 0)) + 0)) + 0)) + 0) + 0) + 0) + 0) + 0)
+        let c = Choice
 
-        match boxed
-          case RankedBox value -> (value + 1)
+        let seed = (match (Some ((\(n : Int) -> n) 0))
+          case Some payload -> payload
+          case None -> 0)
+
+        let comp : Eff <[Choice : Choice]> Int =
+            do
+                let b <- c.choose ()
+                if b then seed else (seed + 1)
+
+        let handled : Eff <[ ]> Int =
+            deep handle Choice comp with
+                case return x -> pure x
+                case choose () k ->
+                    do
+                        let a <- k True
+                        let b <- k False
+                        pure (a + b)
+
+        runPure handled
 
 result : Int
 let result = generated_3709

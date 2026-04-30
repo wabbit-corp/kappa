@@ -1,12 +1,17 @@
 module main
 
-generated_509 : Set Int
-let generated_509 = {| yield (((((((((((Some (0 + 0)) ?: 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0) |}
+generated_509 : Int
+let generated_509 =
+    match (Some ((match (0 == 0)
+      case True -> 0
+      case False -> 0) + 0))
+      case Some payload -> payload
+      case None -> 0
 
-result : Set Int
+result : Int
 let result = generated_509
 
 --! assertNoErrors
---! assertType generated_509 Set Int
---! assertType result Set Int
+--! assertType generated_509 Int
+--! assertType result Int
 --! assertDeclKinds signature, let, signature, let

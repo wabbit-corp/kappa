@@ -1,17 +1,23 @@
 module main
 
-generated_2424 : Int
+generated_2424 : IO Int
 let generated_2424 =
-    block
-        ranked : Int
-        let ranked = ((((((((left = (((if False then 0 else 0) + (0 + 0)) + 0), right = 0)).left + 0) + 0) + 0) + 0) + 0) + 0)
+    do
+        value <- pure ((match ((match (Some 0)
+          case Some payload -> payload
+          case None -> 0) == (match (Some 0)
+          case Some payload -> payload
+          case None -> 0))
+          case True -> (match (Some 0)
+            case Some payload -> payload
+            case None -> 0)
+          case False -> 0) + 0)
+        pure (value + 2)
 
-        (ranked + 0)
-
-result : Int
+result : IO Int
 let result = generated_2424
 
 --! assertNoErrors
---! assertType generated_2424 Int
---! assertType result Int
+--! assertType generated_2424 IO Int
+--! assertType result IO Int
 --! assertDeclKinds signature, let, signature, let

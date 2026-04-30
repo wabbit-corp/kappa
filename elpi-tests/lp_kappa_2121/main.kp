@@ -1,12 +1,28 @@
 module main
 
-generated_2121 : List Int
-let generated_2121 = [ for x in [1, 2, 3], let y = x + 1, yield ((((((((if False then 0 else ((left = (x + 0), right = 0)).left) + (0 + 0)) + 0) + 0) + 0) + 0) + 0) + 0) ]
+data GeneratedChoice : Type =
+    GeneratedLeft (value : Int)
+    GeneratedRight
 
-result : List Int
+generated_2121 : Int
+let generated_2121 =
+    match GeneratedRight
+      case GeneratedLeft payload -> (payload + 0)
+      case GeneratedRight -> ((block
+          generatedSetCount : Set Int -> Int
+          let generatedSetCount values = 2
+
+          let item = (match (Some 0)
+            case Some payload -> payload
+            case None -> 0)
+          let values = {|item, (item + 1)|}
+
+          generatedSetCount values) + 0)
+
+result : Int
 let result = generated_2121
 
 --! assertNoErrors
---! assertType generated_2121 List Int
---! assertType result List Int
---! assertDeclKinds signature, let, signature, let
+--! assertType generated_2121 Int
+--! assertType result Int
+--! assertDeclKinds data, signature, let, signature, let

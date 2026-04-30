@@ -1,12 +1,19 @@
 module main
 
-generated_174 : Int
-let generated_174 = ((((((((0 + 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0)
+generated_174 : List Int
+let generated_174 = [ yield ((block
+    generatedSetCount : Set Int -> Int
+    let generatedSetCount values = 2
 
-result : Int
+    let item = 0
+    let values = {|item, (item + 1)|}
+
+    generatedSetCount values) + 0) ]
+
+result : List Int
 let result = generated_174
 
 --! assertNoErrors
---! assertType generated_174 Int
---! assertType result Int
+--! assertType generated_174 List Int
+--! assertType result List Int
 --! assertDeclKinds signature, let, signature, let

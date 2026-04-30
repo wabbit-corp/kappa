@@ -1,17 +1,23 @@
 module main
 
-generated_4260 : Int
+generated_4260 : IO Int
 let generated_4260 =
-    block
-        ranked : Int
-        let ranked = (((((0 + ((if True then ((Some (0 + 0)) ?: 0) else 0) + 0)) + 0) + 0) + 0) + 0)
+    do
+        value <- pure ((block
+            let pair = (x = (match (0 == 0)
+              case True -> 0
+              case False -> 0), y = ((match (0 == 0)
+              case True -> 0
+              case False -> 0) + 1))
+            let (x = captured, y = other) = pair
 
-        (ranked + 0)
+            (captured + other)) + 0)
+        pure (value + 2)
 
-result : Int
+result : IO Int
 let result = generated_4260
 
 --! assertNoErrors
---! assertType generated_4260 Int
---! assertType result Int
+--! assertType generated_4260 IO Int
+--! assertType result IO Int
 --! assertDeclKinds signature, let, signature, let

@@ -2,16 +2,45 @@ module main
 
 generated_1860 : Int
 let generated_1860 =
-    block
-        trait RankedScore a =
-            rank : a -> Int
+    match [((block
+        let pair = (x = (block
+            generatedMapCount : Map String Int -> Int
+            let generatedMapCount values = 1
 
-        instance RankedScore Int =
-            let rank x = x
+            let item = 0
+            let values = { yield "item" : item }
 
-        let dict = summon (RankedScore Int)
+            generatedMapCount values), y = ((block
+            generatedMapCount : Map String Int -> Int
+            let generatedMapCount values = 1
 
-        dict.rank (((((((((if True then ((Some (0 + 0)) ?: 0) else 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0)
+            let item = 0
+            let values = { yield "item" : item }
+
+            generatedMapCount values) + 1))
+        let (x = captured, y = other) = pair
+
+        (captured + other)) + 0), (((block
+        let pair = (x = (block
+            generatedMapCount : Map String Int -> Int
+            let generatedMapCount values = 1
+
+            let item = 0
+            let values = { yield "item" : item }
+
+            generatedMapCount values), y = ((block
+            generatedMapCount : Map String Int -> Int
+            let generatedMapCount values = 1
+
+            let item = 0
+            let values = { yield "item" : item }
+
+            generatedMapCount values) + 1))
+        let (x = captured, y = other) = pair
+
+        (captured + other)) + 0) + 1)]
+      case head :: tail -> head
+      case Nil -> 0
 
 result : Int
 let result = generated_1860

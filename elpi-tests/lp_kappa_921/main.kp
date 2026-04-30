@@ -3,13 +3,19 @@ module main
 generated_921 : Int
 let generated_921 =
     block
-        data RankedBox : Type =
-            RankedBox (value : Int)
+        rankedHelper : (Int -> Int)
+        let rankedHelper x = x + 1
 
-        let boxed = RankedBox ((((((((if True then ((0 + 0) + 0) else 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0)
+        rankedHelper (((\(n : Int) -> n) (block
+            generatedListLength : List Int -> Int
+            let generatedListLength xs decreases structural xs =
+                match xs
+                  case Nil -> 0
+                  case _ :: tail -> 1 + generatedListLength tail
 
-        match boxed
-          case RankedBox value -> (value + 1)
+            let item = 0
+
+            generatedListLength [item, (item + 1), 0])) + 0)
 
 result : Int
 let result = generated_921

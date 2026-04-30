@@ -1,17 +1,19 @@
 module main
 
-generated_2233 : Int
-let generated_2233 =
-    block
-        rankedHelper : (Int -> Int)
-        let rankedHelper x = x + 1
+generatedEcho : forall (a : Type). (this x : a) -> a
+let generatedEcho @a (this x : a) = x
 
-        rankedHelper (((((((((left = (0 + 0), right = 0)).left + 0) + 0) + 0) + 0) + 0) + 0) + 0)
+generated_2233 : Option Int
+let generated_2233 = (Some ((match (Some (match (Some 0)
+  case Some payload -> payload
+  case None -> 0))
+  case Some payload -> payload
+  case None -> 0) + 0))?.generatedEcho
 
-result : Int
+result : Option Int
 let result = generated_2233
 
 --! assertNoErrors
---! assertType generated_2233 Int
---! assertType result Int
---! assertDeclKinds signature, let, signature, let
+--! assertType generated_2233 Option Int
+--! assertType result Option Int
+--! assertDeclKinds signature, let, signature, let, signature, let

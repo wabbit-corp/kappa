@@ -1,17 +1,23 @@
 module main
 
-generated_758 : Int
-let generated_758 =
-    block
-        ranked : Int
-        let ranked = (((((((0 + (((left = (0 + 0), right = 0)).left + 0)) + 0) + 0) + 0) + 0) + 0) + 0)
+generated_758 : Map String Int
+let generated_758 = { for x in [1, 2, 3], let y = x + 1, yield "k" : (match (Some (block
+    generatedListLength : List Int -> Int
+    let generatedListLength xs decreases structural xs =
+        match xs
+          case Nil -> 0
+          case _ :: tail -> 1 + generatedListLength tail
 
-        (ranked + 0)
+    let item = x
 
-result : Int
+    generatedListLength [item, (item + 1), 0]))
+  case Some payload -> payload
+  case None -> 0) }
+
+result : Map String Int
 let result = generated_758
 
 --! assertNoErrors
---! assertType generated_758 Int
---! assertType result Int
+--! assertType generated_758 Map String Int
+--! assertType result Map String Int
 --! assertDeclKinds signature, let, signature, let

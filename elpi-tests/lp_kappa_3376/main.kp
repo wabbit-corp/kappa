@@ -1,17 +1,16 @@
 module main
 
-generated_3376 : Int
-let generated_3376 =
-    block
-        ranked : Int
-        let ranked = (((((0 + ((((if True then 0 else 0) + 0) + 0) + 0)) + 0) + 0) + 0) + 0)
+generated_3376 : List Int
+let generated_3376 = [ for x in [1, 2, 3], skip 1, take 2, yield ((\(n : Int) -> n) (block
+    let pair = (x = x, y = (x + 1))
+    let (x = captured, y = other) = pair
 
-        (ranked + 0)
+    (captured + other))) ]
 
-result : Int
+result : List Int
 let result = generated_3376
 
 --! assertNoErrors
---! assertType generated_3376 Int
---! assertType result Int
+--! assertType generated_3376 List Int
+--! assertType result List Int
 --! assertDeclKinds signature, let, signature, let

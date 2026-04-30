@@ -1,12 +1,19 @@
 module main
 
-generated_229 : String
-let generated_229 = (if (if (if (if (if (if True then True else False) then True else False) then True else False) then True else False) then True else False) then #"raw lambda-prolog"# else "fallback")
+generated_229 : Set Int
+let generated_229 = {| yield ((block
+    generatedMapCount : Map String Int -> Int
+    let generatedMapCount values = 1
 
-result : String
+    let item = 0
+    let values = { yield "item" : item }
+
+    generatedMapCount values) + 0) |}
+
+result : Set Int
 let result = generated_229
 
 --! assertNoErrors
---! assertType generated_229 String
---! assertType result String
+--! assertType generated_229 Set Int
+--! assertType result Set Int
 --! assertDeclKinds signature, let, signature, let

@@ -1,12 +1,45 @@
 module main
 
-generated_1709 : (Int -> Int)
-let generated_1709 = \(x : Int) -> ((\(x : Int) -> ((\(x : Int) -> (((if False then \(x : Int) -> x else (if False then \(x : Int) -> x else \(x : Int) -> x))) x)) x)) x)
+generated_1709 : Int
+let generated_1709 =
+    block
+        scoped effect Ask =
+            ask : Unit -> Bool
 
-result : (Int -> Int)
+        let pkg = (label = Ask)
+
+        let seed = (block
+            generatedMapCount : Map String Int -> Int
+            let generatedMapCount values = 1
+
+            let item = (block
+                generatedMapCount : Map String Int -> Int
+                let generatedMapCount values = 1
+
+                let item = 0
+                let values = { yield "item" : item }
+
+                generatedMapCount values)
+            let values = { yield "item" : item }
+
+            generatedMapCount values)
+
+        let comp : Eff <[Ask : Ask]> Int =
+            do
+                let b <- pkg.label.ask ()
+                if b then seed else (seed + 1)
+
+        let handled : Eff <[ ]> Int =
+            deep handle pkg.label comp with
+                case return x -> pure x
+                case ask () k -> k True
+
+        runPure handled
+
+result : Int
 let result = generated_1709
 
 --! assertNoErrors
---! assertType generated_1709 (Int -> Int)
---! assertType result (Int -> Int)
+--! assertType generated_1709 Int
+--! assertType result Int
 --! assertDeclKinds signature, let, signature, let

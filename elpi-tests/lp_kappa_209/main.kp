@@ -1,12 +1,19 @@
 module main
 
-generated_209 : Bool
-let generated_209 = (if (if (if (if (if True then True else False) then True else False) then True else False) then True else False) then True else False)
+generated_209 : List Int
+let generated_209 = [ for x in [1, 2, 3], let y = x + 1, if y > 0, yield (block
+    generatedMapCount : Map String Int -> Int
+    let generatedMapCount values = 1
 
-result : Bool
+    let item = x
+    let values = { yield "item" : item }
+
+    generatedMapCount values) ]
+
+result : List Int
 let result = generated_209
 
 --! assertNoErrors
---! assertType generated_209 Bool
---! assertType result Bool
+--! assertType generated_209 List Int
+--! assertType result List Int
 --! assertDeclKinds signature, let, signature, let

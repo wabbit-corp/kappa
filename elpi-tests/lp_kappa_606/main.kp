@@ -1,17 +1,30 @@
 module main
 
-generated_606 : Int
-let generated_606 =
-    block
-        let base : (x : Int) = (x = ((((((((0 + ((0 + (0 + 0)) + 0)) + 0) + 0) + 0) + 0) + 0) + 0) + 0))
-        let extended = base.{ y := ((((((((0 + ((0 + (0 + 0)) + 0)) + 0) + 0) + 0) + 0) + 0) + 0) + 1) }
+generated_606 : List Int
+let generated_606 = [ yield ((block
+    generatedListLength : List Int -> Int
+    let generatedListLength xs decreases structural xs =
+        match xs
+          case Nil -> 0
+          case _ :: tail -> 1 + generatedListLength tail
 
-        (extended.x + extended.y)
+    let item = (block
+        generatedListLength : List Int -> Int
+        let generatedListLength xs decreases structural xs =
+            match xs
+              case Nil -> 0
+              case _ :: tail -> 1 + generatedListLength tail
 
-result : Int
+        let item = 0
+
+        generatedListLength [item, (item + 1), 0])
+
+    generatedListLength [item, (item + 1), 0]) + 0) ]
+
+result : List Int
 let result = generated_606
 
 --! assertNoErrors
---! assertType generated_606 Int
---! assertType result Int
+--! assertType generated_606 List Int
+--! assertType result List Int
 --! assertDeclKinds signature, let, signature, let

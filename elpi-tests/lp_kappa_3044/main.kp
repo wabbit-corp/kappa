@@ -1,14 +1,29 @@
 module main
 
-type GeneratedPair = (left : Int, right : Int)
+generated_3044 : Int
+let generated_3044 =
+    block
+        let (captured : Int) = ((block
+            generatedListLength : List Int -> Int
+            let generatedListLength xs decreases structural xs =
+                match xs
+                  case Nil -> 0
+                  case _ :: tail -> 1 + generatedListLength tail
 
-generated_3044 : GeneratedPair
-let generated_3044 = ((left = ((((((((Some ((if False then 0 else 0) + 0)) ?: 0) + 0) + 0) + 0) + 0) + 0) + 0), right = 0)).{ right = (((((((((Some ((if False then 0 else 0) + 0)) ?: 0) + 0) + 0) + 0) + 0) + 0) + 0) + 1) }
+            let item = (block
+                let pair = (x = 0, y = (0 + 1))
+                let (x = captured, y = other) = pair
 
-result : GeneratedPair
+                (captured + other))
+
+            generatedListLength [item, (item + 1), 0]) + 0)
+
+        captured
+
+result : Int
 let result = generated_3044
 
 --! assertNoErrors
---! assertType generated_3044 GeneratedPair
---! assertType result GeneratedPair
---! assertDeclKinds type, signature, let, signature, let
+--! assertType generated_3044 Int
+--! assertType result Int
+--! assertDeclKinds signature, let, signature, let

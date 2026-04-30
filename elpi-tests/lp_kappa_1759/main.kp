@@ -1,12 +1,38 @@
 module main
 
-generated_1759 : String
-let generated_1759 = (if (if (if (if (if True then ((if False then True else (True || False)) && True) else False) then True else False) then True else False) then True else False) then #"raw lambda-prolog"# else "fallback")
+generated_1759 : Int
+let generated_1759 =
+    block
+        scoped effect State (s : Type) =
+            get : Unit -> s
 
-result : String
+        let seed = (match (Some (block
+            generatedMapCount : Map String Int -> Int
+            let generatedMapCount values = 1
+
+            let item = 0
+            let values = { yield "item" : item }
+
+            generatedMapCount values))
+          case Some payload -> payload
+          case None -> 0)
+
+        let comp : Eff <[State : State Int]> Int =
+            do
+                let n <- State.get ()
+                n
+
+        let handled : Eff <[ ]> Int =
+            deep handle State comp with
+                case return x -> pure x
+                case get () k -> k seed
+
+        runPure handled
+
+result : Int
 let result = generated_1759
 
 --! assertNoErrors
---! assertType generated_1759 String
---! assertType result String
+--! assertType generated_1759 Int
+--! assertType result Int
 --! assertDeclKinds signature, let, signature, let

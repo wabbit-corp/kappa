@@ -3,11 +3,15 @@ module main
 generated_3946 : Int
 let generated_3946 =
     block
-        type RankedAlias = Int
+        trait RankedScore a =
+            rank : a -> Int
 
-        let aliased : RankedAlias = ((((((0 + ((0 + (((Some (0 + 0)) ?: 0) + 0)) + 0)) + 0) + 0) + 0) + 0) + 0)
+        instance RankedScore Int =
+            let rank x = x
 
-        (aliased + 1)
+        let dict = summon (RankedScore Int)
+
+        dict.rank (((Some (((\(n : Int) -> n) 0) + 1)) ?: (((\(n : Int) -> n) 0) + 2)) + 0)
 
 result : Int
 let result = generated_3946

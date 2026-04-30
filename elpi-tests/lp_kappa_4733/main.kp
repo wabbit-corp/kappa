@@ -1,14 +1,33 @@
 module main
 
-type GeneratedTuple = (Int, Int)
+generated_4733 : Int
+let generated_4733 =
+    block
+        scoped effect Ask =
+            ask : Unit -> Bool
 
-generated_4733 : GeneratedTuple
-let generated_4733 = (if True then (if True then (if False then (0, (0 + 0)) else (if True then (if True then (if (0 == 0) then (0, (0 + 0)) else ((1 + 1), 1)) else (0, (0 + 0))) else ((1 + 1), 1))) else (0, (0 + 0))) else (0, (0 + 0)))
+        let pkg = (label = Ask)
 
-result : GeneratedTuple
+        let seed = (match [((Some (0 + 1)) ?: (0 + 2)), (((Some (0 + 1)) ?: (0 + 2)) + 1)]
+          case head :: tail -> head
+          case Nil -> 0)
+
+        let comp : Eff <[Ask : Ask]> Int =
+            do
+                let b <- pkg.label.ask ()
+                if b then seed else (seed + 1)
+
+        let handled : Eff <[ ]> Int =
+            deep handle pkg.label comp with
+                case return x -> pure x
+                case ask () k -> k True
+
+        runPure handled
+
+result : Int
 let result = generated_4733
 
 --! assertNoErrors
---! assertType generated_4733 GeneratedTuple
---! assertType result GeneratedTuple
---! assertDeclKinds type, signature, let, signature, let
+--! assertType generated_4733 Int
+--! assertType result Int
+--! assertDeclKinds signature, let, signature, let

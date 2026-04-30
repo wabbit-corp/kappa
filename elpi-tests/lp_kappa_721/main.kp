@@ -1,14 +1,31 @@
 module main
 
-type GeneratedTuple = (Int, Int)
+generatedEcho : forall (a : Type). (this x : a) -> a
+let generatedEcho @a (this x : a) = x
 
-generated_721 : GeneratedTuple
-let generated_721 = (if True then (if True then (if True then (if False then (0, (0 + 0)) else (if (True && True) then (0, (0 + 0)) else ((1 + 1), 1))) else (0, (0 + 0))) else (0, (0 + 0))) else (0, (0 + 0)))
+generated_721 : Option Int
+let generated_721 = (Some ((block
+    generatedMapCount : Map String Int -> Int
+    let generatedMapCount values = 1
 
-result : GeneratedTuple
+    let item = (block
+        generatedListLength : List Int -> Int
+        let generatedListLength xs decreases structural xs =
+            match xs
+              case Nil -> 0
+              case _ :: tail -> 1 + generatedListLength tail
+
+        let item = 0
+
+        generatedListLength [item, (item + 1), 0])
+    let values = { yield "item" : item }
+
+    generatedMapCount values) + 0))?.generatedEcho
+
+result : Option Int
 let result = generated_721
 
 --! assertNoErrors
---! assertType generated_721 GeneratedTuple
---! assertType result GeneratedTuple
---! assertDeclKinds type, signature, let, signature, let
+--! assertType generated_721 Option Int
+--! assertType result Option Int
+--! assertDeclKinds signature, let, signature, let, signature, let

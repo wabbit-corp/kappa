@@ -3,8 +3,22 @@ module main
 generated_1898 : Int
 let generated_1898 =
     block
-        let base : (x : Int) = (x = (((((((((if False then 0 else 0) + (0 + 0)) + 0) + 0) + 0) + 0) + 0) + 0) + 0))
-        let extended = base.{ y := (((((((((if False then 0 else 0) + (0 + 0)) + 0) + 0) + 0) + 0) + 0) + 0) + 1) }
+        let base : (x : Int) = (x = (((\(n : Int) -> n) (block
+            generatedMapCount : Map String Int -> Int
+            let generatedMapCount values = 1
+
+            let item = 0
+            let values = { yield "item" : item }
+
+            generatedMapCount values)) + 0))
+        let extended = base.{ y := (((\(n : Int) -> n) (block
+            generatedMapCount : Map String Int -> Int
+            let generatedMapCount values = 1
+
+            let item = 0
+            let values = { yield "item" : item }
+
+            generatedMapCount values)) + 1) }
 
         (extended.x + extended.y)
 

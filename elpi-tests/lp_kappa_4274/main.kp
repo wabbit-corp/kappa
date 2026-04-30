@@ -3,15 +3,26 @@ module main
 generated_4274 : Int
 let generated_4274 =
     block
-        trait RankedScore a =
-            rank : a -> Int
+        let base : (x : Int) = (x = ((block
+            let pair = (x = (match (0 == 0)
+              case True -> 0
+              case False -> 0), y = ((match (0 == 0)
+              case True -> 0
+              case False -> 0) + 1))
+            let (x = captured, y = other) = pair
 
-        instance RankedScore Int =
-            let rank x = x
+            (captured + other)) + 0))
+        let extended = base.{ y := ((block
+            let pair = (x = (match (0 == 0)
+              case True -> 0
+              case False -> 0), y = ((match (0 == 0)
+              case True -> 0
+              case False -> 0) + 1))
+            let (x = captured, y = other) = pair
 
-        let dict = summon (RankedScore Int)
+            (captured + other)) + 1) }
 
-        dict.rank ((((((0 + ((if True then ((Some (0 + 0)) ?: 0) else 0) + 0)) + 0) + 0) + 0) + 0) + 0)
+        (extended.x + extended.y)
 
 result : Int
 let result = generated_4274

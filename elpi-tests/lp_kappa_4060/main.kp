@@ -1,10 +1,22 @@
 module main
 
+generatedNeed : (@x : Int) -> Int
+let generatedNeed (@x : Int) = x
+
 generated_4060 : IO Int
 let generated_4060 =
     do
-        value <- pure ((((((0 + ((if True then (if True then 0 else 0) else 0) + 0)) + 0) + 0) + 0) + 0) + 0)
-        pure (value + 2)
+        let (@x : Int) = ((block
+            generatedSetCount : Set Int -> Int
+            let generatedSetCount values = 2
+
+            let item = (match (0 == 0)
+              case True -> 0
+              case False -> 0)
+            let values = {|item, (item + 1)|}
+
+            generatedSetCount values) + 0)
+        pure generatedNeed
 
 result : IO Int
 let result = generated_4060
@@ -12,4 +24,4 @@ let result = generated_4060
 --! assertNoErrors
 --! assertType generated_4060 IO Int
 --! assertType result IO Int
---! assertDeclKinds signature, let, signature, let
+--! assertDeclKinds signature, let, signature, let, signature, let

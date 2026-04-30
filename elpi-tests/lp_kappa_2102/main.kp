@@ -1,12 +1,19 @@
 module main
 
-generated_2102 : Int
-let generated_2102 =
-    block
-        let base : (x : Int) = (x = (((((((((if False then 0 else ((if False then 0 else 0) + (0 + 0))) + (0 + 0)) + 0) + 0) + 0) + 0) + 0) + 0) + 0))
-        let extended = base.{ y := (((((((((if False then 0 else ((if False then 0 else 0) + (0 + 0))) + (0 + 0)) + 0) + 0) + 0) + 0) + 0) + 0) + 1) }
+generatedEcho : forall (a : Type). (this x : a) -> a
+let generatedEcho @a (this x : a) = x
 
-        (extended.x + extended.y)
+generated_2102 : Int
+let generated_2102 = ((block
+    generatedSetCount : Set Int -> Int
+    let generatedSetCount values = 2
+
+    let item = (match (Some 0)
+      case Some payload -> payload
+      case None -> 0)
+    let values = {|item, (item + 1)|}
+
+    generatedSetCount values) + 0).generatedEcho
 
 result : Int
 let result = generated_2102
@@ -14,4 +21,4 @@ let result = generated_2102
 --! assertNoErrors
 --! assertType generated_2102 Int
 --! assertType result Int
---! assertDeclKinds signature, let, signature, let
+--! assertDeclKinds signature, let, signature, let, signature, let

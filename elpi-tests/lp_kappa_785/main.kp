@@ -1,20 +1,23 @@
 module main
 
-generated_785 : Int
-let generated_785 =
-    block
-        data RankedBox : Type =
-            RankedBox (value : Int)
+generated_785 : List Int
+let generated_785 = [ for x in [1, 2, 3], order by x desc, yield (match (Some (block
+    generatedListLength : List Int -> Int
+    let generatedListLength xs decreases structural xs =
+        match xs
+          case Nil -> 0
+          case _ :: tail -> 1 + generatedListLength tail
 
-        let boxed = RankedBox ((((((((0 + (((left = (0 + 0), right = 0)).left + 0)) + 0) + 0) + 0) + 0) + 0) + 0) + 0)
+    let item = x
 
-        match boxed
-          case RankedBox value -> (value + 1)
+    generatedListLength [item, (item + 1), 0]))
+  case Some payload -> payload
+  case None -> 0) ]
 
-result : Int
+result : List Int
 let result = generated_785
 
 --! assertNoErrors
---! assertType generated_785 Int
---! assertType result Int
+--! assertType generated_785 List Int
+--! assertType result List Int
 --! assertDeclKinds signature, let, signature, let

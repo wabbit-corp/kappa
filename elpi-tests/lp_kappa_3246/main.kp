@@ -1,10 +1,40 @@
 module main
 
-generatedEcho : forall (a : Type). (this x : a) -> a
-let generatedEcho @a (this x : a) = x
-
 generated_3246 : Int
-let generated_3246 = ((((((0 + (0 + 0)) + 0) + 0) + 0) + 0) + 0).generatedEcho
+let generated_3246 =
+    match (((match [(block
+        let pair = (x = 0, y = (0 + 1))
+        let (x = captured, y = other) = pair
+
+        (captured + other)), ((block
+        let pair = (x = 0, y = (0 + 1))
+        let (x = captured, y = other) = pair
+
+        (captured + other)) + 1)]
+      case head :: tail -> head
+      case Nil -> 0) + 0) == ((match [(block
+        let pair = (x = 0, y = (0 + 1))
+        let (x = captured, y = other) = pair
+
+        (captured + other)), ((block
+        let pair = (x = 0, y = (0 + 1))
+        let (x = captured, y = other) = pair
+
+        (captured + other)) + 1)]
+      case head :: tail -> head
+      case Nil -> 0) + 0))
+      case True -> ((match [(block
+          let pair = (x = 0, y = (0 + 1))
+          let (x = captured, y = other) = pair
+
+          (captured + other)), ((block
+          let pair = (x = 0, y = (0 + 1))
+          let (x = captured, y = other) = pair
+
+          (captured + other)) + 1)]
+        case head :: tail -> head
+        case Nil -> 0) + 0)
+      case False -> 0
 
 result : Int
 let result = generated_3246
@@ -12,4 +42,4 @@ let result = generated_3246
 --! assertNoErrors
 --! assertType generated_3246 Int
 --! assertType result Int
---! assertDeclKinds signature, let, signature, let, signature, let
+--! assertDeclKinds signature, let, signature, let

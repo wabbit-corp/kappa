@@ -1,11 +1,12 @@
 module main
 
+generatedEcho : forall (a : Type). (this x : a) -> a
+let generatedEcho @a (this x : a) = x
+
 generated_3683 : Int
-let generated_3683 =
-    let
-        ranked : Int = (((((0 + ((0 + ((0 + (0 + 0)) + 0)) + 0)) + 0) + 0) + 0) + 0)
-in
-        (ranked + 0)
+let generated_3683 = ((.generatedEcho) ((match (Some ((\(n : Int) -> n) 0))
+  case Some payload -> payload
+  case None -> 0) + 0))
 
 result : Int
 let result = generated_3683
@@ -13,4 +14,4 @@ let result = generated_3683
 --! assertNoErrors
 --! assertType generated_3683 Int
 --! assertType result Int
---! assertDeclKinds signature, let, signature, let
+--! assertDeclKinds signature, let, signature, let, signature, let

@@ -1,14 +1,12 @@
 module main
 
-type GeneratedPair = (left : Int, right : Int)
+generated_460 : List Int
+let generated_460 = [ for x in [1, 2, 3], skip 1, take 2, yield ((\(n : Int) -> n) x) ]
 
-generated_460 : GeneratedPair
-let generated_460 = ((left = ((((((((((left = 0, right = (0 + 0))).right + 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0), right = 0)).{ right = (((((((((((left = 0, right = (0 + 0))).right + 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0) + 1) }
-
-result : GeneratedPair
+result : List Int
 let result = generated_460
 
 --! assertNoErrors
---! assertType generated_460 GeneratedPair
---! assertType result GeneratedPair
---! assertDeclKinds type, signature, let, signature, let
+--! assertType generated_460 List Int
+--! assertType result List Int
+--! assertDeclKinds signature, let, signature, let

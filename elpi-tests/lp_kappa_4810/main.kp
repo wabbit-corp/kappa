@@ -1,10 +1,17 @@
 module main
 
-generatedEcho : forall (a : Type). (this x : a) -> a
-let generatedEcho @a (this x : a) = x
-
 generated_4810 : Int
-let generated_4810 = ((((((0 + (((if True then ((if True then 0 else 0) + 0) else 0) + 0) + 0)) + 0) + 0) + 0) + 0) + 0).generatedEcho
+let generated_4810 =
+    block
+        trait RankedScore a =
+            rank : a -> Int
+
+        instance RankedScore Int =
+            let rank x = x
+
+        let dict = summon (RankedScore Int)
+
+        dict.rank (((\(n : Int) -> n) ((Some (0 + 1)) ?: (0 + 2))) + 0)
 
 result : Int
 let result = generated_4810
@@ -12,4 +19,4 @@ let result = generated_4810
 --! assertNoErrors
 --! assertType generated_4810 Int
 --! assertType result Int
---! assertDeclKinds signature, let, signature, let, signature, let
+--! assertDeclKinds signature, let, signature, let

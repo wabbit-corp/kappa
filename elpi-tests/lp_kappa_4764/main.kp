@@ -1,12 +1,16 @@
 module main
 
-generated_4764 : Int
-let generated_4764 = (((((0 + (((if True then (if False then 0 else 0) else 0) + 0) + 0)) + 0) + 0) + 0) + 0)
+generated_4764 : List Int
+let generated_4764 = [ yield ((block
+    let pair = (x = ((Some (0 + 1)) ?: (0 + 2)), y = (((Some (0 + 1)) ?: (0 + 2)) + 1))
+    let (x = captured, y = other) = pair
 
-result : Int
+    (captured + other)) + 0) ]
+
+result : List Int
 let result = generated_4764
 
 --! assertNoErrors
---! assertType generated_4764 Int
---! assertType result Int
+--! assertType generated_4764 List Int
+--! assertType result List Int
 --! assertDeclKinds signature, let, signature, let

@@ -1,12 +1,57 @@
 module main
 
-generated_3408 : Option Int
-let generated_3408 = (if True then (if True then (if False then None else (if True then (if (((Some (0 + 0)) ?: 0) == 1) then None else (Some (0 + 0))) else None)) else None) else None)
+generated_3408 : Int
+let generated_3408 =
+    match (((match ((block
+        let pair = (x = 0, y = (0 + 1))
+        let (x = captured, y = other) = pair
 
-result : Option Int
+        (captured + other)) == (block
+        let pair = (x = 0, y = (0 + 1))
+        let (x = captured, y = other) = pair
+
+        (captured + other)))
+      case True -> (block
+          let pair = (x = 0, y = (0 + 1))
+          let (x = captured, y = other) = pair
+
+          (captured + other))
+      case False -> 0) + 0) == ((match ((block
+        let pair = (x = 0, y = (0 + 1))
+        let (x = captured, y = other) = pair
+
+        (captured + other)) == (block
+        let pair = (x = 0, y = (0 + 1))
+        let (x = captured, y = other) = pair
+
+        (captured + other)))
+      case True -> (block
+          let pair = (x = 0, y = (0 + 1))
+          let (x = captured, y = other) = pair
+
+          (captured + other))
+      case False -> 0) + 0))
+      case True -> ((match ((block
+          let pair = (x = 0, y = (0 + 1))
+          let (x = captured, y = other) = pair
+
+          (captured + other)) == (block
+          let pair = (x = 0, y = (0 + 1))
+          let (x = captured, y = other) = pair
+
+          (captured + other)))
+        case True -> (block
+            let pair = (x = 0, y = (0 + 1))
+            let (x = captured, y = other) = pair
+
+            (captured + other))
+        case False -> 0) + 0)
+      case False -> 0
+
+result : Int
 let result = generated_3408
 
 --! assertNoErrors
---! assertType generated_3408 Option Int
---! assertType result Option Int
+--! assertType generated_3408 Int
+--! assertType result Int
 --! assertDeclKinds signature, let, signature, let

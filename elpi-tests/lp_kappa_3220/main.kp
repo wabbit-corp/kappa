@@ -3,15 +3,30 @@ module main
 generated_3220 : Int
 let generated_3220 =
     block
-        trait RankedScore a =
-            rank : a -> Int
+        scoped effect Ask =
+            ask : Unit -> Bool
 
-        instance RankedScore Int =
-            let rank x = x
+        let l = Ask
 
-        let dict = summon (RankedScore Int)
+        let seed = (match (Some (block
+            let pair = (x = 0, y = (0 + 1))
+            let (x = captured, y = other) = pair
 
-        dict.rank (((((((((Some (((Some (0 + 0)) ?: 0) + 0)) ?: 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0)
+            (captured + other)))
+          case Some payload -> payload
+          case None -> 0)
+
+        let comp : Eff <[Ask : Ask]> Int =
+            do
+                let b <- l.ask ()
+                if b then seed else (seed + 1)
+
+        let handled : Eff <[ ]> Int =
+            deep handle l comp with
+                case return x -> pure x
+                case ask () k -> k True
+
+        runPure handled
 
 result : Int
 let result = generated_3220

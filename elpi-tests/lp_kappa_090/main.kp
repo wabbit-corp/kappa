@@ -1,12 +1,33 @@
 module main
 
-generated_90 : Map String Int
-let generated_90 = { for x in [1, 2, 3], let y = x + 1, yield "k" : ((x + 0) + 0) }
+generated_90 : Int
+let generated_90 =
+    block
+        scoped effect Choice =
+            ω choose : Unit -> Bool
 
-result : Map String Int
+        let seed = 0
+
+        let comp : Eff <[Choice : Choice]> Int =
+            do
+                let b <- Choice.choose ()
+                if b then seed else (seed + 1)
+
+        let handled : Eff <[ ]> Int =
+            deep handle Choice comp with
+                case return x -> pure x
+                case choose () k ->
+                    do
+                        let a <- k True
+                        let b <- k False
+                        pure (a + b)
+
+        runPure handled
+
+result : Int
 let result = generated_90
 
 --! assertNoErrors
---! assertType generated_90 Map String Int
---! assertType result Map String Int
+--! assertType generated_90 Int
+--! assertType result Int
 --! assertDeclKinds signature, let, signature, let

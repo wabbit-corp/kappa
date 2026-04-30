@@ -2,11 +2,26 @@ module main
 
 generated_639 : Int
 let generated_639 =
-    block
-        let pair = (x = ((((((((0 + ((if True then 0 else 0) + 0)) + 0) + 0) + 0) + 0) + 0) + 0) + 0), y = ((((((((0 + ((if True then 0 else 0) + 0)) + 0) + 0) + 0) + 0) + 0) + 0) + 1))
-        let (x = captured, y = other) = pair
+    let
+        ranked : Int = (block
+            generatedSetCount : Set Int -> Int
+            let generatedSetCount values = 2
 
-        (captured + other)
+            let item = (block
+                generatedListLength : List Int -> Int
+                let generatedListLength xs decreases structural xs =
+                    match xs
+                      case Nil -> 0
+                      case _ :: tail -> 1 + generatedListLength tail
+
+                let item = 0
+
+                generatedListLength [item, (item + 1), 0])
+            let values = {|item, (item + 1)|}
+
+            generatedSetCount values)
+in
+        (ranked + 0)
 
 result : Int
 let result = generated_639

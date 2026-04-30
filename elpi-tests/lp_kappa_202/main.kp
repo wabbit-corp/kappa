@@ -1,12 +1,12 @@
 module main
 
-generated_202 : List Int
-let generated_202 = [ yield (((((((((0 + 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0) ]
+generated_202 : Unit
+let generated_202 = (if True then (if True then (if True then () else ()) else ()) else ())
 
-result : List Int
+result : Unit
 let result = generated_202
 
 --! assertNoErrors
---! assertType generated_202 List Int
---! assertType result List Int
+--! assertType generated_202 Unit
+--! assertType result Unit
 --! assertDeclKinds signature, let, signature, let

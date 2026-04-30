@@ -1,12 +1,24 @@
 module main
 
-generated_2665 : List Int
-let generated_2665 = [ for x in [1, 2, 3], let y = x + 1, yield ((((((((left = 0, right = ((if True then x else 0) + 0))).right + 0) + 0) + 0) + 0) + 0) + 0) ]
+generatedEcho : forall (a : Type). (this x : a) -> a
+let generatedEcho @a (this x : a) = x
 
-result : List Int
+generated_2665 : Option Int
+let generated_2665 = (Some ((block
+    generatedMapCount : Map String Int -> Int
+    let generatedMapCount values = 1
+
+    let item = (match [0, (0 + 1)]
+      case head :: tail -> head
+      case Nil -> 0)
+    let values = { yield "item" : item }
+
+    generatedMapCount values) + 0))?.generatedEcho
+
+result : Option Int
 let result = generated_2665
 
 --! assertNoErrors
---! assertType generated_2665 List Int
---! assertType result List Int
---! assertDeclKinds signature, let, signature, let
+--! assertType generated_2665 Option Int
+--! assertType result Option Int
+--! assertDeclKinds signature, let, signature, let, signature, let

@@ -1,15 +1,42 @@
 module main
 
-generated_199 : IO Int
+generated_199 : Int
 let generated_199 =
-    do
-        let staged = (((((((((0 + 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0)
-        pure (staged + 1)
+    block
+        scoped effect Choice =
+            ω choose : Unit -> Bool
 
-result : IO Int
+        let c = Choice
+
+        let seed = (block
+            generatedSetCount : Set Int -> Int
+            let generatedSetCount values = 2
+
+            let item = 0
+            let values = {|item, (item + 1)|}
+
+            generatedSetCount values)
+
+        let comp : Eff <[Choice : Choice]> Int =
+            do
+                let b <- c.choose ()
+                if b then seed else (seed + 1)
+
+        let handled : Eff <[ ]> Int =
+            deep handle Choice comp with
+                case return x -> pure x
+                case choose () k ->
+                    do
+                        let a <- k True
+                        let b <- k False
+                        pure (a + b)
+
+        runPure handled
+
+result : Int
 let result = generated_199
 
 --! assertNoErrors
---! assertType generated_199 IO Int
---! assertType result IO Int
+--! assertType generated_199 Int
+--! assertType result Int
 --! assertDeclKinds signature, let, signature, let

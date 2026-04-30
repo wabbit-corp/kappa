@@ -1,14 +1,18 @@
 module main
 
-type GeneratedPair = (left : Int, right : Int)
+generated_2296 : List Int
+let generated_2296 = [ for x in [1, 2, 3], skip 1, take 2, yield (match [(match (Some x)
+  case Some payload -> payload
+  case None -> 0), ((match (Some x)
+  case Some payload -> payload
+  case None -> 0) + 1)]
+  case head :: tail -> head
+  case Nil -> 0) ]
 
-generated_2296 : GeneratedPair
-let generated_2296 = ((left = ((((((((left = ((0 + (0 + 0)) + 0), right = 0)).left + 0) + 0) + 0) + 0) + 0) + 0), right = 0)).{ right = (((((((((left = ((0 + (0 + 0)) + 0), right = 0)).left + 0) + 0) + 0) + 0) + 0) + 0) + 1) }
-
-result : GeneratedPair
+result : List Int
 let result = generated_2296
 
 --! assertNoErrors
---! assertType generated_2296 GeneratedPair
---! assertType result GeneratedPair
---! assertDeclKinds type, signature, let, signature, let
+--! assertType generated_2296 List Int
+--! assertType result List Int
+--! assertDeclKinds signature, let, signature, let

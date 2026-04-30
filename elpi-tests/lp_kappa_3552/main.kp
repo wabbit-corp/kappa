@@ -1,15 +1,12 @@
 module main
 
-generatedEcho : forall (a : Type). (this x : a) -> a
-let generatedEcho @a (this x : a) = x
+generated_3552 : Option Int
+let generated_3552 = (if True then (if True then (if True then (if (((if True then (Some (0 + 0)) else None) ?: 0) == 1) then (Some (((if True then (Some (0 + 0)) else None) ?: 0) + 0)) else (if True then (Some (0 + 0)) else None)) else None) else None) else None)
 
-generated_3552 : Int
-let generated_3552 = ((((((0 + (((((left = 0, right = (0 + 0))).right + 0) + 0) + 0)) + 0) + 0) + 0) + 0) + 0).generatedEcho
-
-result : Int
+result : Option Int
 let result = generated_3552
 
 --! assertNoErrors
---! assertType generated_3552 Int
---! assertType result Int
---! assertDeclKinds signature, let, signature, let, signature, let
+--! assertType generated_3552 Option Int
+--! assertType result Option Int
+--! assertDeclKinds signature, let, signature, let

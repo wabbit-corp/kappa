@@ -1,17 +1,20 @@
 module main
 
-generated_2917 : Int
-let generated_2917 =
-    block
-        let pair = (x = (((((((((Some (0 + 0)) ?: 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0), y = (((((((((Some (0 + 0)) ?: 0) + 0) + 0) + 0) + 0) + 0) + 0) + 1))
-        let (x = captured, y = other) = pair
+generated_2917 : Set Int
+let generated_2917 = {| for x in [1, 2, 3], let y = x + 1, yield (match ((match [x, (x + 1)]
+  case head :: tail -> head
+  case Nil -> 0) == (match [x, (x + 1)]
+  case head :: tail -> head
+  case Nil -> 0))
+  case True -> (match [x, (x + 1)]
+    case head :: tail -> head
+    case Nil -> 0)
+  case False -> 0) |}
 
-        (captured + other)
-
-result : Int
+result : Set Int
 let result = generated_2917
 
 --! assertNoErrors
---! assertType generated_2917 Int
---! assertType result Int
+--! assertType generated_2917 Set Int
+--! assertType result Set Int
 --! assertDeclKinds signature, let, signature, let

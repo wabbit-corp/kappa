@@ -3,10 +3,26 @@ module main
 generated_520 : Int
 let generated_520 =
     block
-        ranked : Int
-        let ranked = (((((((0 + (0 + 0)) + 0) + 0) + 0) + 0) + 0) + 0)
+        scoped effect Ask =
+            ask : Unit -> Bool
 
-        (ranked + 0)
+        let l = Ask
+
+        let seed = (match (0 == 0)
+          case True -> 0
+          case False -> 0)
+
+        let comp : Eff <[Ask : Ask]> Int =
+            do
+                let b <- l.ask ()
+                if b then seed else (seed + 1)
+
+        let handled : Eff <[ ]> Int =
+            deep handle l comp with
+                case return x -> pure x
+                case ask () k -> k True
+
+        runPure handled
 
 result : Int
 let result = generated_520

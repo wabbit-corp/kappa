@@ -1,12 +1,37 @@
 module main
 
-generated_2182 : Unit
-let generated_2182 = (if True then (if True then (if True then (if (False || True) then ((\(u : Unit) -> if True then u else ()) ()) else ()) else ()) else ()) else ())
+type GeneratedTuple = (Int, Int)
 
-result : Unit
+generated_2182 : Int
+let generated_2182 =
+    block
+        let pair : GeneratedTuple = (((block
+            generatedMapCount : Map String Int -> Int
+            let generatedMapCount values = 1
+
+            let item = (match (Some 0)
+              case Some payload -> payload
+              case None -> 0)
+            let values = { yield "item" : item }
+
+            generatedMapCount values) + 0), ((block
+            generatedMapCount : Map String Int -> Int
+            let generatedMapCount values = 1
+
+            let item = (match (Some 0)
+              case Some payload -> payload
+              case None -> 0)
+            let values = { yield "item" : item }
+
+            generatedMapCount values) + 1))
+        let (left, right) = pair
+
+        (left + right)
+
+result : Int
 let result = generated_2182
 
 --! assertNoErrors
---! assertType generated_2182 Unit
---! assertType result Unit
---! assertDeclKinds signature, let, signature, let
+--! assertType generated_2182 Int
+--! assertType result Int
+--! assertDeclKinds type, signature, let, signature, let

@@ -1,17 +1,14 @@
 module main
 
-generated_4872 : Int
-let generated_4872 =
-    block
-        ranked : Int
-        let ranked = (((((0 + (((if True then ((left = (0 + 0), right = 0)).left else 0) + 0) + 0)) + 0) + 0) + 0) + 0)
+generated_4872 : List Int
+let generated_4872 = [ yield ((match (((Some (0 + 1)) ?: (0 + 2)) == ((Some (0 + 1)) ?: (0 + 2)))
+  case True -> ((Some (0 + 1)) ?: (0 + 2))
+  case False -> 0) + 0) ]
 
-        (ranked + 0)
-
-result : Int
+result : List Int
 let result = generated_4872
 
 --! assertNoErrors
---! assertType generated_4872 Int
---! assertType result Int
+--! assertType generated_4872 List Int
+--! assertType result List Int
 --! assertDeclKinds signature, let, signature, let

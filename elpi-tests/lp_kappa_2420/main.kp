@@ -1,12 +1,25 @@
 module main
 
-generated_2420 : Unit
-let generated_2420 = (if True then (if True then (if True then ((\(u : Unit) -> if False then () else u) (if (False || True) then () else ())) else ()) else ()) else ())
+generated_2420 : Int
+let generated_2420 =
+    block
+        ranked : Int
+        let ranked = (match ((match (Some 0)
+          case Some payload -> payload
+          case None -> 0) == (match (Some 0)
+          case Some payload -> payload
+          case None -> 0))
+          case True -> (match (Some 0)
+            case Some payload -> payload
+            case None -> 0)
+          case False -> 0)
 
-result : Unit
+        (ranked + 0)
+
+result : Int
 let result = generated_2420
 
 --! assertNoErrors
---! assertType generated_2420 Unit
---! assertType result Unit
+--! assertType generated_2420 Int
+--! assertType result Int
 --! assertDeclKinds signature, let, signature, let

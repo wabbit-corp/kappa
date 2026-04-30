@@ -1,20 +1,12 @@
 module main
 
-generated_309 : Int
-let generated_309 =
-    block
-        data RankedBox : Type =
-            RankedBox (value : Int)
+generated_309 : Bool
+let generated_309 = (if (if (if (if (if True then True else False) then True else False) then True else False) then True else False) then True else False)
 
-        let boxed = RankedBox ((((((((((if True then 0 else 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0)
-
-        match boxed
-          case RankedBox value -> (value + 1)
-
-result : Int
+result : Bool
 let result = generated_309
 
 --! assertNoErrors
---! assertType generated_309 Int
---! assertType result Int
+--! assertType generated_309 Bool
+--! assertType result Bool
 --! assertDeclKinds signature, let, signature, let

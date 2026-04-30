@@ -1,12 +1,17 @@
 module main
 
-generated_3884 : Option Int
-let generated_3884 = (if True then (if True then (if False then None else (if False then None else (if (False || True) then (Some (0 + 0)) else (Some (1 + 1))))) else None) else None)
+generatedEcho : forall (a : Type). (this x : a) -> a
+let generatedEcho @a (this x : a) = x
 
-result : Option Int
+generated_3884 : Int
+let generated_3884 = ((match (((\(n : Int) -> n) 0) == ((\(n : Int) -> n) 0))
+  case True -> ((\(n : Int) -> n) 0)
+  case False -> 0) + 0).generatedEcho
+
+result : Int
 let result = generated_3884
 
 --! assertNoErrors
---! assertType generated_3884 Option Int
---! assertType result Option Int
---! assertDeclKinds signature, let, signature, let
+--! assertType generated_3884 Int
+--! assertType result Int
+--! assertDeclKinds signature, let, signature, let, signature, let

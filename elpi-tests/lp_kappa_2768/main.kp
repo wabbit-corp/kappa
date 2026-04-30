@@ -1,15 +1,18 @@
 module main
 
-generated_2768 : IO Int
-let generated_2768 =
-    do
-        value <- pure (((((((((left = 0, right = (((if False then 0 else 0) + (0 + 0)) + 0))).right + 0) + 0) + 0) + 0) + 0) + 0) + 0)
-        pure (value + 2)
+generated_2768 : Map String Int
+let generated_2768 = { yield "only" : ((match [(match [0, (0 + 1)]
+  case head :: tail -> head
+  case Nil -> 0), ((match [0, (0 + 1)]
+  case head :: tail -> head
+  case Nil -> 0) + 1)]
+  case head :: tail -> head
+  case Nil -> 0) + 0) }
 
-result : IO Int
+result : Map String Int
 let result = generated_2768
 
 --! assertNoErrors
---! assertType generated_2768 IO Int
---! assertType result IO Int
+--! assertType generated_2768 Map String Int
+--! assertType result Map String Int
 --! assertDeclKinds signature, let, signature, let

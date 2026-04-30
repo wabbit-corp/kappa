@@ -1,14 +1,29 @@
 module main
 
-type GeneratedTuple = (Int, Int)
+generatedMakeConst : forall (a : Type). a -> Unit -> a
+let generatedMakeConst value = \() -> value
 
-generated_1537 : GeneratedTuple
-let generated_1537 = (if True then (if True then (if True then (if True then (if True then (0, (0 + 0)) else (0, (0 + 0))) else ((1 + 1), 1)) else (0, (0 + 0))) else (0, (0 + 0))) else (0, (0 + 0)))
+generated_1537 : Int
+let generated_1537 = ((generatedMakeConst @Int (((Some ((block
+    generatedSetCount : Set Int -> Int
+    let generatedSetCount values = 2
 
-result : GeneratedTuple
+    let item = 0
+    let values = {|item, (item + 1)|}
+
+    generatedSetCount values) + 1)) ?: ((block
+    generatedSetCount : Set Int -> Int
+    let generatedSetCount values = 2
+
+    let item = 0
+    let values = {|item, (item + 1)|}
+
+    generatedSetCount values) + 2)) + 0)) ())
+
+result : Int
 let result = generated_1537
 
 --! assertNoErrors
---! assertType generated_1537 GeneratedTuple
---! assertType result GeneratedTuple
---! assertDeclKinds type, signature, let, signature, let
+--! assertType generated_1537 Int
+--! assertType result Int
+--! assertDeclKinds signature, let, signature, let, signature, let

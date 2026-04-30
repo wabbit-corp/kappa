@@ -1,12 +1,38 @@
 module main
 
-generated_1467 : Bool
-let generated_1467 = (if (if (if (((if True then (0 + 1) else 1) == 1) || False) then True else False) then True else False) then True else False)
+generated_1467 : IO Int
+let generated_1467 =
+    do
+        let staged = ((match ((block
+            generatedSetCount : Set Int -> Int
+            let generatedSetCount values = 2
 
-result : Bool
+            let item = 0
+            let values = {|item, (item + 1)|}
+
+            generatedSetCount values) == (block
+            generatedSetCount : Set Int -> Int
+            let generatedSetCount values = 2
+
+            let item = 0
+            let values = {|item, (item + 1)|}
+
+            generatedSetCount values))
+          case True -> (block
+              generatedSetCount : Set Int -> Int
+              let generatedSetCount values = 2
+
+              let item = 0
+              let values = {|item, (item + 1)|}
+
+              generatedSetCount values)
+          case False -> 0) + 0)
+        pure (staged + 1)
+
+result : IO Int
 let result = generated_1467
 
 --! assertNoErrors
---! assertType generated_1467 Bool
---! assertType result Bool
+--! assertType generated_1467 IO Int
+--! assertType result IO Int
 --! assertDeclKinds signature, let, signature, let

@@ -1,12 +1,38 @@
 module main
 
-generated_4135 : Set Int
-let generated_4135 = {| for x in [1, 2, 3], yield (((((0 + ((if True then ((if True then x else 0) + 0) else 0) + 0)) + 0) + 0) + 0) + 0) |}
+generated_4135 : Int
+let generated_4135 =
+    block
+        scoped effect State (s : Type) =
+            get : Unit -> s
 
-result : Set Int
+        let seed = (block
+            generatedMapCount : Map String Int -> Int
+            let generatedMapCount values = 1
+
+            let item = (match (0 == 0)
+              case True -> 0
+              case False -> 0)
+            let values = { yield "item" : item }
+
+            generatedMapCount values)
+
+        let comp : Eff <[State : State Int]> Int =
+            do
+                let n <- State.get ()
+                n
+
+        let handled : Eff <[ ]> Int =
+            deep handle State comp with
+                case return x -> pure x
+                case get () k -> k seed
+
+        runPure handled
+
+result : Int
 let result = generated_4135
 
 --! assertNoErrors
---! assertType generated_4135 Set Int
---! assertType result Set Int
+--! assertType generated_4135 Int
+--! assertType result Int
 --! assertDeclKinds signature, let, signature, let

@@ -1,15 +1,12 @@
 module main
 
-generated_3970 : Int
-let generated_3970 =
-    match (((((((0 + ((if True then 0 else 0) + 0)) + 0) + 0) + 0) + 0) + 0) == ((((((0 + ((if True then 0 else 0) + 0)) + 0) + 0) + 0) + 0) + 0))
-      case True -> ((((((0 + ((if True then 0 else 0) + 0)) + 0) + 0) + 0) + 0) + 0)
-      case False -> 0
+generated_3970 : List Int
+let generated_3970 = [ for x in [1, 2, 3], skip 1, take 2, yield ((Some (((\(n : Int) -> n) x) + 1)) ?: (((\(n : Int) -> n) x) + 2)) ]
 
-result : Int
+result : List Int
 let result = generated_3970
 
 --! assertNoErrors
---! assertType generated_3970 Int
---! assertType result Int
+--! assertType generated_3970 List Int
+--! assertType result List Int
 --! assertDeclKinds signature, let, signature, let

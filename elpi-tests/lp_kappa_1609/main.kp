@@ -1,16 +1,12 @@
 module main
 
-generated_1609 : Int
-let generated_1609 =
-    let
-        ranked : Int = ((((((((if True then (0 + (0 + 0)) else 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0)
-in
-        (ranked + 0)
+generated_1609 : (Int -> Int)
+let generated_1609 = \(x : Int) -> ((\(x : Int) -> ((\(x : Int) -> ((\(x : Int) -> (0 + (((if False then \(x : Int) -> x else \(x : Int) -> x)) x))) x)) x)) x)
 
-result : Int
+result : (Int -> Int)
 let result = generated_1609
 
 --! assertNoErrors
---! assertType generated_1609 Int
---! assertType result Int
+--! assertType generated_1609 (Int -> Int)
+--! assertType result (Int -> Int)
 --! assertDeclKinds signature, let, signature, let

@@ -1,12 +1,30 @@
 module main
 
+type GeneratedTuple = (Int, Int)
+
 generated_3478 : Int
 let generated_3478 =
     block
-        ranked : Int
-        let ranked = (((((0 + (((((if False then 0 else 0) + (0 + 0)) + 0) + 0) + 0)) + 0) + 0) + 0) + 0)
+        let pair : GeneratedTuple = ((((Some ((block
+            let pair = (x = 0, y = (0 + 1))
+            let (x = captured, y = other) = pair
 
-        (ranked + 0)
+            (captured + other)) + 1)) ?: ((block
+            let pair = (x = 0, y = (0 + 1))
+            let (x = captured, y = other) = pair
+
+            (captured + other)) + 2)) + 0), (((Some ((block
+            let pair = (x = 0, y = (0 + 1))
+            let (x = captured, y = other) = pair
+
+            (captured + other)) + 1)) ?: ((block
+            let pair = (x = 0, y = (0 + 1))
+            let (x = captured, y = other) = pair
+
+            (captured + other)) + 2)) + 1))
+        let (left, right) = pair
+
+        (left + right)
 
 result : Int
 let result = generated_3478
@@ -14,4 +32,4 @@ let result = generated_3478
 --! assertNoErrors
 --! assertType generated_3478 Int
 --! assertType result Int
---! assertDeclKinds signature, let, signature, let
+--! assertDeclKinds type, signature, let, signature, let

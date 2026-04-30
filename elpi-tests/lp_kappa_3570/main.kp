@@ -1,12 +1,36 @@
 module main
 
-generated_3570 : Map String Int
-let generated_3570 = { yield "only" : ((((((0 + (((((left = 0, right = (0 + 0))).right + 0) + 0) + 0)) + 0) + 0) + 0) + 0) + 0) }
+generated_3570 : Int
+let generated_3570 =
+    match (((block
+        generatedSetCount : Set Int -> Int
+        let generatedSetCount values = 2
 
-result : Map String Int
+        let item = ((\(n : Int) -> n) 0)
+        let values = {|item, (item + 1)|}
+
+        generatedSetCount values) + 0) == ((block
+        generatedSetCount : Set Int -> Int
+        let generatedSetCount values = 2
+
+        let item = ((\(n : Int) -> n) 0)
+        let values = {|item, (item + 1)|}
+
+        generatedSetCount values) + 0))
+      case True -> ((block
+          generatedSetCount : Set Int -> Int
+          let generatedSetCount values = 2
+
+          let item = ((\(n : Int) -> n) 0)
+          let values = {|item, (item + 1)|}
+
+          generatedSetCount values) + 0)
+      case False -> 0
+
+result : Int
 let result = generated_3570
 
 --! assertNoErrors
---! assertType generated_3570 Map String Int
---! assertType result Map String Int
+--! assertType generated_3570 Int
+--! assertType result Int
 --! assertDeclKinds signature, let, signature, let

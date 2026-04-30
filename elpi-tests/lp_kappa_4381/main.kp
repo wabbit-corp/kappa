@@ -1,15 +1,33 @@
 module main
 
-generated_4381 : IO Int
+generated_4381 : Int
 let generated_4381 =
-    do
-        let staged = ((((((0 + ((if False then 0 else (0 + (0 + 0))) + 0)) + 0) + 0) + 0) + 0) + 0)
-        pure (staged + 1)
+    block
+        let pair = (x = ((match ((match (0 == 0)
+          case True -> 0
+          case False -> 0) == (match (0 == 0)
+          case True -> 0
+          case False -> 0))
+          case True -> (match (0 == 0)
+            case True -> 0
+            case False -> 0)
+          case False -> 0) + 0), y = ((match ((match (0 == 0)
+          case True -> 0
+          case False -> 0) == (match (0 == 0)
+          case True -> 0
+          case False -> 0))
+          case True -> (match (0 == 0)
+            case True -> 0
+            case False -> 0)
+          case False -> 0) + 1))
+        let (x = captured, y = other) = pair
 
-result : IO Int
+        (captured + other)
+
+result : Int
 let result = generated_4381
 
 --! assertNoErrors
---! assertType generated_4381 IO Int
---! assertType result IO Int
+--! assertType generated_4381 Int
+--! assertType result Int
 --! assertDeclKinds signature, let, signature, let

@@ -1,14 +1,16 @@
 module main
 
-type GeneratedPair = (left : Int, right : Int)
+generated_3350 : Map String Int
+let generated_3350 = { for x in [1, 2, 3], let y = x + 1, yield "k" : ((\(n : Int) -> n) (block
+    let pair = (x = x, y = (x + 1))
+    let (x = captured, y = other) = pair
 
-generated_3350 : GeneratedPair
-let generated_3350 = ((left = (((((0 + ((((0 + (0 + 0)) + 0) + 0) + 0)) + 0) + 0) + 0) + 0), right = 0)).{ right = ((((((0 + ((((0 + (0 + 0)) + 0) + 0) + 0)) + 0) + 0) + 0) + 0) + 1) }
+    (captured + other))) }
 
-result : GeneratedPair
+result : Map String Int
 let result = generated_3350
 
 --! assertNoErrors
---! assertType generated_3350 GeneratedPair
---! assertType result GeneratedPair
---! assertDeclKinds type, signature, let, signature, let
+--! assertType generated_3350 Map String Int
+--! assertType result Map String Int
+--! assertDeclKinds signature, let, signature, let

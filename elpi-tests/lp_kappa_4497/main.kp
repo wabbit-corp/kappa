@@ -1,12 +1,28 @@
 module main
 
-generated_4497 : (Int -> Int)
-let generated_4497 = \(x : Int) -> ((\(x : Int) -> ((\(x : Int) -> ((((if True then (if (0 == 0) then \(x : Int) -> x else \(x : Int) -> (x + 0)) else \(x : Int) -> x)) x) + 0)) x)) x)
+data GeneratedChoice : Type =
+    GeneratedLeft (value : Int)
+    GeneratedRight
 
-result : (Int -> Int)
+generated_4497 : Int
+let generated_4497 =
+    match GeneratedRight
+      case GeneratedLeft payload -> (payload + 0)
+      case GeneratedRight -> ((block
+          generatedListLength : List Int -> Int
+          let generatedListLength xs decreases structural xs =
+              match xs
+                case Nil -> 0
+                case _ :: tail -> 1 + generatedListLength tail
+
+          let item = ((Some (0 + 1)) ?: (0 + 2))
+
+          generatedListLength [item, (item + 1), 0]) + 0)
+
+result : Int
 let result = generated_4497
 
 --! assertNoErrors
---! assertType generated_4497 (Int -> Int)
---! assertType result (Int -> Int)
---! assertDeclKinds signature, let, signature, let
+--! assertType generated_4497 Int
+--! assertType result Int
+--! assertDeclKinds data, signature, let, signature, let

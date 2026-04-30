@@ -1,12 +1,23 @@
 module main
 
-generated_3455 : Set Int
-let generated_3455 = {| for x in [1, 2, 3], yield (((((0 + (((((if True then x else 0) + 0) + 0) + 0) + 0)) + 0) + 0) + 0) + 0) |}
+generatedResize : (image : Int) -> (width : Int) -> (height : Int) -> Int
+let generatedResize image width height = image + width * 10 + height
 
-result : Set Int
+generated_3455 : Int
+let generated_3455 = generatedResize { image = (((Some ((block
+    let pair = (x = 0, y = (0 + 1))
+    let (x = captured, y = other) = pair
+
+    (captured + other)) + 1)) ?: ((block
+    let pair = (x = 0, y = (0 + 1))
+    let (x = captured, y = other) = pair
+
+    (captured + other)) + 2)) + 0), height = 3, width = 2 }
+
+result : Int
 let result = generated_3455
 
 --! assertNoErrors
---! assertType generated_3455 Set Int
---! assertType result Set Int
---! assertDeclKinds signature, let, signature, let
+--! assertType generated_3455 Int
+--! assertType result Int
+--! assertDeclKinds signature, let, signature, let, signature, let

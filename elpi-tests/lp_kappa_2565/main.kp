@@ -1,22 +1,23 @@
 module main
 
-trait GeneratedScore a =
-    score : a -> Int
+generated_2565 : Map String Int
+let generated_2565 = { for x in [1, 2, 3], yield "k" : (block
+    generatedListLength : List Int -> Int
+    let generatedListLength xs decreases structural xs =
+        match xs
+          case Nil -> 0
+          case _ :: tail -> 1 + generatedListLength tail
 
-instance GeneratedScore Int =
-    let score x = x
+    let item = (match [x, (x + 1)]
+      case head :: tail -> head
+      case Nil -> 0)
 
-generated_2565 : Int
-let generated_2565 =
-    let
-        dict = summon (GeneratedScore Int)
-in
-        dict.score (((((((((left = 0, right = (0 + 0))).right + 0) + 0) + 0) + 0) + 0) + 0) + 0)
+    generatedListLength [item, (item + 1), 0]), on conflict keep first }
 
-result : Int
+result : Map String Int
 let result = generated_2565
 
 --! assertNoErrors
---! assertType generated_2565 Int
---! assertType result Int
---! assertDeclKinds trait, instance, signature, let, signature, let
+--! assertType generated_2565 Map String Int
+--! assertType result Map String Int
+--! assertDeclKinds signature, let, signature, let

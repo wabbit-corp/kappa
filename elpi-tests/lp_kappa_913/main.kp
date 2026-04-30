@@ -1,15 +1,31 @@
 module main
 
-generated_913 : IO Int
-let generated_913 =
-    do
-        let staged = ((((((((if True then ((0 + 0) + 0) else 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0)
-        pure (staged + 1)
+trait GeneratedScore a =
+    score : a -> Int
 
-result : IO Int
+instance GeneratedScore Int =
+    let score x = x
+
+generated_913 : Int
+let generated_913 =
+    let
+        dict = summon (GeneratedScore Int)
+in
+        dict.score (((\(n : Int) -> n) (block
+            generatedListLength : List Int -> Int
+            let generatedListLength xs decreases structural xs =
+                match xs
+                  case Nil -> 0
+                  case _ :: tail -> 1 + generatedListLength tail
+
+            let item = 0
+
+            generatedListLength [item, (item + 1), 0])) + 0)
+
+result : Int
 let result = generated_913
 
 --! assertNoErrors
---! assertType generated_913 IO Int
---! assertType result IO Int
---! assertDeclKinds signature, let, signature, let
+--! assertType generated_913 Int
+--! assertType result Int
+--! assertDeclKinds trait, instance, signature, let, signature, let

@@ -1,15 +1,24 @@
 module main
 
-generated_4075 : IO Int
-let generated_4075 =
-    do
-        let staged = ((((((0 + ((if True then (if True then 0 else 0) else 0) + 0)) + 0) + 0) + 0) + 0) + 0)
-        pure (staged + 1)
+generatedMakeConst : forall (a : Type). a -> Unit -> a
+let generatedMakeConst value = \() -> value
 
-result : IO Int
+generated_4075 : Int
+let generated_4075 = ((generatedMakeConst @Int ((block
+    generatedSetCount : Set Int -> Int
+    let generatedSetCount values = 2
+
+    let item = (match (0 == 0)
+      case True -> 0
+      case False -> 0)
+    let values = {|item, (item + 1)|}
+
+    generatedSetCount values) + 0)) ())
+
+result : Int
 let result = generated_4075
 
 --! assertNoErrors
---! assertType generated_4075 IO Int
---! assertType result IO Int
---! assertDeclKinds signature, let, signature, let
+--! assertType generated_4075 Int
+--! assertType result Int
+--! assertDeclKinds signature, let, signature, let, signature, let

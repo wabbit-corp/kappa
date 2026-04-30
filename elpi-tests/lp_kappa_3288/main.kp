@@ -1,22 +1,27 @@
 module main
 
-generated_3288 : Int
+generated_3288 : IO Int
 let generated_3288 =
-    block
-        trait RankedScore a =
-            rank : a -> Int
+    do
+        value <- pure ((block
+            let pair = (x = (block
+                let pair = (x = 0, y = (0 + 1))
+                let (x = captured, y = other) = pair
 
-        instance RankedScore Int =
-            let rank x = x
+                (captured + other)), y = ((block
+                let pair = (x = 0, y = (0 + 1))
+                let (x = captured, y = other) = pair
 
-        let dict = summon (RankedScore Int)
+                (captured + other)) + 1))
+            let (x = captured, y = other) = pair
 
-        dict.rank ((((((0 + (((0 + 0) + 0) + 0)) + 0) + 0) + 0) + 0) + 0)
+            (captured + other)) + 0)
+        pure (value + 2)
 
-result : Int
+result : IO Int
 let result = generated_3288
 
 --! assertNoErrors
---! assertType generated_3288 Int
---! assertType result Int
+--! assertType generated_3288 IO Int
+--! assertType result IO Int
 --! assertDeclKinds signature, let, signature, let

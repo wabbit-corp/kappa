@@ -1,16 +1,12 @@
 module main
 
-generated_4907 : Int
-let generated_4907 =
-    let
-        ranked : Int = (((((0 + (((if True then ((left = 0, right = (0 + 0))).right else 0) + 0) + 0)) + 0) + 0) + 0) + 0)
-in
-        (ranked + 0)
+generated_4907 : List Int
+let generated_4907 = [ for x in [1, 2, 3], if x > 0, yield ((Some (((Some (x + 1)) ?: (x + 2)) + 1)) ?: (((Some (x + 1)) ?: (x + 2)) + 2)) ]
 
-result : Int
+result : List Int
 let result = generated_4907
 
 --! assertNoErrors
---! assertType generated_4907 Int
---! assertType result Int
+--! assertType generated_4907 List Int
+--! assertType result List Int
 --! assertDeclKinds signature, let, signature, let

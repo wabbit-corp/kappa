@@ -1,12 +1,26 @@
 module main
 
+trait GeneratedScore a =
+    score : a -> Int
+
+instance GeneratedScore Int =
+    let score x = x
+
 generated_1723 : Int
 let generated_1723 =
-    block
-        rankedHelper : (Int -> Int)
-        let rankedHelper x = x + 1
+    let
+        dict = summon (GeneratedScore Int)
+in
+        dict.score ((match (Some (block
+            generatedMapCount : Map String Int -> Int
+            let generatedMapCount values = 1
 
-        rankedHelper (((((((((if True then ((if True then 0 else 0) + 0) else 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0)
+            let item = 0
+            let values = { yield "item" : item }
+
+            generatedMapCount values))
+          case Some payload -> payload
+          case None -> 0) + 0)
 
 result : Int
 let result = generated_1723
@@ -14,4 +28,4 @@ let result = generated_1723
 --! assertNoErrors
 --! assertType generated_1723 Int
 --! assertType result Int
---! assertDeclKinds signature, let, signature, let
+--! assertDeclKinds trait, instance, signature, let, signature, let

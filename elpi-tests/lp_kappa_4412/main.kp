@@ -1,10 +1,11 @@
 module main
 
 generated_4412 : Int
-let generated_4412 =
-    match (((((((0 + ((if False then 0 else (if True then 0 else 0)) + 0)) + 0) + 0) + 0) + 0) + 0) == ((((((0 + ((if False then 0 else (if True then 0 else 0)) + 0)) + 0) + 0) + 0) + 0) + 0))
-      case True -> ((((((0 + ((if False then 0 else (if True then 0 else 0)) + 0)) + 0) + 0) + 0) + 0) + 0)
-      case False -> 0
+let generated_4412 = ((Some ((match (0 == 0)
+  case True -> 0
+  case False -> 0) + 1)) ?: ((match (0 == 0)
+  case True -> 0
+  case False -> 0) + 2))
 
 result : Int
 let result = generated_4412

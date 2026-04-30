@@ -1,12 +1,20 @@
 module main
 
-generated_4419 : Set Int
-let generated_4419 = {| yield ((((((0 + ((if False then 0 else (if True then 0 else 0)) + 0)) + 0) + 0) + 0) + 0) + 0) |}
+generated_4419 : Int
+let generated_4419 =
+    let
+        ranked : Int = ((Some ((match (0 == 0)
+          case True -> 0
+          case False -> 0) + 1)) ?: ((match (0 == 0)
+          case True -> 0
+          case False -> 0) + 2))
+in
+        (ranked + 0)
 
-result : Set Int
+result : Int
 let result = generated_4419
 
 --! assertNoErrors
---! assertType generated_4419 Set Int
---! assertType result Set Int
+--! assertType generated_4419 Int
+--! assertType result Int
 --! assertDeclKinds signature, let, signature, let

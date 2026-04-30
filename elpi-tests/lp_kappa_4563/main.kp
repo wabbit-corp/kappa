@@ -1,14 +1,19 @@
 module main
 
-type GeneratedTuple = (Int, Int)
+generated_4563 : Map String Int
+let generated_4563 = { for x in [1, 2, 3], yield "k" : (block
+    generatedSetCount : Set Int -> Int
+    let generatedSetCount values = 2
 
-generated_4563 : GeneratedTuple
-let generated_4563 = (if True then (if True then (if False then (0, (0 + 0)) else (if (0 == 1) then (1, (1 + (1 + 1))) else (if (False || True) then (0, (0 + 0)) else ((2 + 2), 2)))) else (0, (0 + 0))) else (0, (0 + 0)))
+    let item = ((Some (x + 1)) ?: (x + 2))
+    let values = {|item, (item + 1)|}
 
-result : GeneratedTuple
+    generatedSetCount values), on conflict keep first }
+
+result : Map String Int
 let result = generated_4563
 
 --! assertNoErrors
---! assertType generated_4563 GeneratedTuple
---! assertType result GeneratedTuple
---! assertDeclKinds type, signature, let, signature, let
+--! assertType generated_4563 Map String Int
+--! assertType result Map String Int
+--! assertDeclKinds signature, let, signature, let

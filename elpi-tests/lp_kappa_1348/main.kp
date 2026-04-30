@@ -1,12 +1,50 @@
 module main
 
-generated_1348 : Map String Int
-let generated_1348 = { for x in [1, 2, 3], if x > 0, yield "k" : (((((((if False then 0 else (if False then 0 else x)) + 0) + 0) + 0) + 0) + 0) + 0) }
+type GeneratedPair = (left : Int, right : Int)
 
-result : Map String Int
+generated_1348 : GeneratedPair
+let generated_1348 = ((left = (block
+    let pair = (x = (block
+        generatedSetCount : Set Int -> Int
+        let generatedSetCount values = 2
+
+        let item = 0
+        let values = {|item, (item + 1)|}
+
+        generatedSetCount values), y = ((block
+        generatedSetCount : Set Int -> Int
+        let generatedSetCount values = 2
+
+        let item = 0
+        let values = {|item, (item + 1)|}
+
+        generatedSetCount values) + 1))
+    let (x = captured, y = other) = pair
+
+    (captured + other)), right = 0)).{ right = ((block
+    let pair = (x = (block
+        generatedSetCount : Set Int -> Int
+        let generatedSetCount values = 2
+
+        let item = 0
+        let values = {|item, (item + 1)|}
+
+        generatedSetCount values), y = ((block
+        generatedSetCount : Set Int -> Int
+        let generatedSetCount values = 2
+
+        let item = 0
+        let values = {|item, (item + 1)|}
+
+        generatedSetCount values) + 1))
+    let (x = captured, y = other) = pair
+
+    (captured + other)) + 1) }
+
+result : GeneratedPair
 let result = generated_1348
 
 --! assertNoErrors
---! assertType generated_1348 Map String Int
---! assertType result Map String Int
---! assertDeclKinds signature, let, signature, let
+--! assertType generated_1348 GeneratedPair
+--! assertType result GeneratedPair
+--! assertDeclKinds type, signature, let, signature, let

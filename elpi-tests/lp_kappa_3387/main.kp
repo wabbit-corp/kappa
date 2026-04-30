@@ -1,12 +1,12 @@
 module main
 
-generated_3387 : Set Int
-let generated_3387 = {| for x in [1, 2, 3], if x > 0, yield (((((0 + ((((if True then x else 0) + 0) + 0) + 0)) + 0) + 0) + 0) + 0) |}
+generated_3387 : Bool
+let generated_3387 = (if (if (if (if False then True else (((if True then (0 + 1) else 1) == 1) || False)) then True else False) then True else False) then True else False)
 
-result : Set Int
+result : Bool
 let result = generated_3387
 
 --! assertNoErrors
---! assertType generated_3387 Set Int
---! assertType result Set Int
+--! assertType generated_3387 Bool
+--! assertType result Bool
 --! assertDeclKinds signature, let, signature, let

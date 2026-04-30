@@ -1,12 +1,26 @@
 module main
 
-generated_2209 : Set Int
-let generated_2209 = {| yield (((((((((if False then 0 else ((Some (0 + 0)) ?: 0)) + (0 + 0)) + 0) + 0) + 0) + 0) + 0) + 0) + 0) |}
+trait GeneratedScore a =
+    score : a -> Int
 
-result : Set Int
+instance GeneratedScore Int =
+    let score x = x
+
+generated_2209 : Int
+let generated_2209 =
+    let
+        dict = summon (GeneratedScore Int)
+in
+        dict.score ((match (Some (match (Some 0)
+          case Some payload -> payload
+          case None -> 0))
+          case Some payload -> payload
+          case None -> 0) + 0)
+
+result : Int
 let result = generated_2209
 
 --! assertNoErrors
---! assertType generated_2209 Set Int
---! assertType result Set Int
---! assertDeclKinds signature, let, signature, let
+--! assertType generated_2209 Int
+--! assertType result Int
+--! assertDeclKinds trait, instance, signature, let, signature, let

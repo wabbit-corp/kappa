@@ -1,12 +1,25 @@
 module main
 
-generated_2283 : Bool
-let generated_2283 = (if (if (if ((if (if True then False else True) then 1 else 0) == 1) then True else False) then True else False) then True else False)
+data GeneratedChoice : Type =
+    GeneratedLeft (value : Int)
+    GeneratedRight
 
-result : Bool
+generated_2283 : Int
+let generated_2283 =
+    match GeneratedRight
+      case GeneratedLeft payload -> (payload + 0)
+      case GeneratedRight -> ((match [(match (Some 0)
+        case Some payload -> payload
+        case None -> 0), ((match (Some 0)
+        case Some payload -> payload
+        case None -> 0) + 1)]
+        case head :: tail -> head
+        case Nil -> 0) + 0)
+
+result : Int
 let result = generated_2283
 
 --! assertNoErrors
---! assertType generated_2283 Bool
---! assertType result Bool
---! assertDeclKinds signature, let, signature, let
+--! assertType generated_2283 Int
+--! assertType result Int
+--! assertDeclKinds data, signature, let, signature, let

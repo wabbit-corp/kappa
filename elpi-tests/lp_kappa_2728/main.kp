@@ -1,12 +1,16 @@
 module main
 
-generated_2728 : Option Int
-let generated_2728 = (if True then (if True then (if True then (if (False || True) then (Some ((Some (0 + 0)) ?: 0)) else (Some (1 + 1))) else None) else None) else None)
+generated_2728 : List Int
+let generated_2728 = [ for x in [1, 2, 3], skip 1, take 2, yield (match (Some (match [x, (x + 1)]
+  case head :: tail -> head
+  case Nil -> 0))
+  case Some payload -> payload
+  case None -> 0) ]
 
-result : Option Int
+result : List Int
 let result = generated_2728
 
 --! assertNoErrors
---! assertType generated_2728 Option Int
---! assertType result Option Int
+--! assertType generated_2728 List Int
+--! assertType result List Int
 --! assertDeclKinds signature, let, signature, let

@@ -1,12 +1,22 @@
 module main
 
-generated_3269 : Bool
-let generated_3269 = (if (if (if (if True then True else False) then False else True) then True else False) then True else False)
+generated_3269 : List Int
+let generated_3269 = [ for x in [1, 2, 3], order by x desc, yield (match [(block
+    let pair = (x = x, y = (x + 1))
+    let (x = captured, y = other) = pair
 
-result : Bool
+    (captured + other)), ((block
+    let pair = (x = x, y = (x + 1))
+    let (x = captured, y = other) = pair
+
+    (captured + other)) + 1)]
+  case head :: tail -> head
+  case Nil -> 0) ]
+
+result : List Int
 let result = generated_3269
 
 --! assertNoErrors
---! assertType generated_3269 Bool
---! assertType result Bool
+--! assertType generated_3269 List Int
+--! assertType result List Int
 --! assertDeclKinds signature, let, signature, let

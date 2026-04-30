@@ -1,15 +1,23 @@
 module main
 
-generatedResize : (image : Int) -> (width : Int) -> (height : Int) -> Int
-let generatedResize image width height = image + width * 10 + height
+generated_2331 : IO Int
+let generated_2331 =
+    do
+        let staged = ((block
+            let pair = (x = (match (Some 0)
+              case Some payload -> payload
+              case None -> 0), y = ((match (Some 0)
+              case Some payload -> payload
+              case None -> 0) + 1))
+            let (x = captured, y = other) = pair
 
-generated_2331 : Int
-let generated_2331 = generatedResize { image = (((((((((left = ((if True then 0 else 0) + 0), right = 0)).left + 0) + 0) + 0) + 0) + 0) + 0) + 0), height = 3, width = 2 }
+            (captured + other)) + 0)
+        pure (staged + 1)
 
-result : Int
+result : IO Int
 let result = generated_2331
 
 --! assertNoErrors
---! assertType generated_2331 Int
---! assertType result Int
---! assertDeclKinds signature, let, signature, let, signature, let
+--! assertType generated_2331 IO Int
+--! assertType result IO Int
+--! assertDeclKinds signature, let, signature, let

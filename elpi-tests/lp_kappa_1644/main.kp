@@ -1,14 +1,38 @@
 module main
 
-generatedNeed : (@x : Int) -> Int
-let generatedNeed (@x : Int) = x
-
 generated_1644 : Int
 let generated_1644 =
-    block
-        let (@x : Int) = ((((((((if True then (if True then 0 else 0) else 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0)
+    match [((block
+        generatedSetCount : Set Int -> Int
+        let generatedSetCount values = 2
 
-        if True then generatedNeed else 0
+        let item = (block
+            generatedMapCount : Map String Int -> Int
+            let generatedMapCount values = 1
+
+            let item = 0
+            let values = { yield "item" : item }
+
+            generatedMapCount values)
+        let values = {|item, (item + 1)|}
+
+        generatedSetCount values) + 0), (((block
+        generatedSetCount : Set Int -> Int
+        let generatedSetCount values = 2
+
+        let item = (block
+            generatedMapCount : Map String Int -> Int
+            let generatedMapCount values = 1
+
+            let item = 0
+            let values = { yield "item" : item }
+
+            generatedMapCount values)
+        let values = {|item, (item + 1)|}
+
+        generatedSetCount values) + 0) + 1)]
+      case head :: tail -> head
+      case Nil -> 0
 
 result : Int
 let result = generated_1644
@@ -16,4 +40,4 @@ let result = generated_1644
 --! assertNoErrors
 --! assertType generated_1644 Int
 --! assertType result Int
---! assertDeclKinds signature, let, signature, let, signature, let
+--! assertDeclKinds signature, let, signature, let

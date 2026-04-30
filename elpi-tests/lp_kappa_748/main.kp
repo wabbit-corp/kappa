@@ -1,12 +1,30 @@
 module main
 
-generated_748 : Map String Int
-let generated_748 = { yield "only" : ((((((((0 + (((if False then 0 else 0) + (0 + 0)) + 0)) + 0) + 0) + 0) + 0) + 0) + 0) + 0) }
+generatedNeed : (@x : Int) -> Int
+let generatedNeed (@x : Int) = x
 
-result : Map String Int
+generated_748 : Int
+let generated_748 =
+    block
+        let (@x : Int) = (match (Some (block
+            generatedListLength : List Int -> Int
+            let generatedListLength xs decreases structural xs =
+                match xs
+                  case Nil -> 0
+                  case _ :: tail -> 1 + generatedListLength tail
+
+            let item = 0
+
+            generatedListLength [item, (item + 1), 0]))
+          case Some payload -> payload
+          case None -> 0)
+
+        if True then generatedNeed else 0
+
+result : Int
 let result = generated_748
 
 --! assertNoErrors
---! assertType generated_748 Map String Int
---! assertType result Map String Int
---! assertDeclKinds signature, let, signature, let
+--! assertType generated_748 Int
+--! assertType result Int
+--! assertDeclKinds signature, let, signature, let, signature, let

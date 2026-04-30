@@ -1,12 +1,14 @@
 module main
 
-generated_4770 : Int
-let generated_4770 =
-    block
-        ranked : Int
-        let ranked = (((((0 + (((if True then (if False then 0 else 0) else 0) + 0) + 0)) + 0) + 0) + 0) + 0)
+generatedNeed : (@x : Int) -> Int
+let generatedNeed (@x : Int) = x
 
-        (ranked + 0)
+generated_4770 : Int
+let generated_4770 = generatedNeed @(((block
+    let pair = (x = ((Some (0 + 1)) ?: (0 + 2)), y = (((Some (0 + 1)) ?: (0 + 2)) + 1))
+    let (x = captured, y = other) = pair
+
+    (captured + other)) + 0))
 
 result : Int
 let result = generated_4770
@@ -14,4 +16,4 @@ let result = generated_4770
 --! assertNoErrors
 --! assertType generated_4770 Int
 --! assertType result Int
---! assertDeclKinds signature, let, signature, let
+--! assertDeclKinds signature, let, signature, let, signature, let

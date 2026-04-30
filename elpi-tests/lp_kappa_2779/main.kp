@@ -1,12 +1,21 @@
 module main
 
-generated_2779 : String
-let generated_2779 = (if (if (if (if ((if (if False then True else (True || False)) then (0 + 1) else 1) == 1) then True else False) then True else False) then True else False) then #"raw lambda-prolog"# else "fallback")
+generatedMakeConst : forall (a : Type). a -> Unit -> a
+let generatedMakeConst value = \() -> value
 
-result : String
+generated_2779 : Int
+let generated_2779 = ((generatedMakeConst @Int ((match [(match [0, (0 + 1)]
+  case head :: tail -> head
+  case Nil -> 0), ((match [0, (0 + 1)]
+  case head :: tail -> head
+  case Nil -> 0) + 1)]
+  case head :: tail -> head
+  case Nil -> 0) + 0)) ())
+
+result : Int
 let result = generated_2779
 
 --! assertNoErrors
---! assertType generated_2779 String
---! assertType result String
---! assertDeclKinds signature, let, signature, let
+--! assertType generated_2779 Int
+--! assertType result Int
+--! assertDeclKinds signature, let, signature, let, signature, let

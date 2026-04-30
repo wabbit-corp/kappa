@@ -1,12 +1,36 @@
 module main
 
-generated_1366 : Unit
-let generated_1366 = (if True then (if True then (if True then ((\(u : Unit) -> ()) (if (True && True) then () else ())) else ()) else ()) else ())
+generated_1366 : Int
+let generated_1366 =
+    block
+        type RankedAlias = Int
 
-result : Unit
+        let aliased : RankedAlias = ((block
+            let pair = (x = (block
+                generatedSetCount : Set Int -> Int
+                let generatedSetCount values = 2
+
+                let item = 0
+                let values = {|item, (item + 1)|}
+
+                generatedSetCount values), y = ((block
+                generatedSetCount : Set Int -> Int
+                let generatedSetCount values = 2
+
+                let item = 0
+                let values = {|item, (item + 1)|}
+
+                generatedSetCount values) + 1))
+            let (x = captured, y = other) = pair
+
+            (captured + other)) + 0)
+
+        (aliased + 1)
+
+result : Int
 let result = generated_1366
 
 --! assertNoErrors
---! assertType generated_1366 Unit
---! assertType result Unit
+--! assertType generated_1366 Int
+--! assertType result Int
 --! assertDeclKinds signature, let, signature, let

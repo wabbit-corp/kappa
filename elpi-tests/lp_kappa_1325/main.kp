@@ -1,12 +1,28 @@
 module main
 
-generated_1325 : Set Int
-let generated_1325 = {| yield ((((((((if False then 0 else (if True then 0 else 0)) + 0) + 0) + 0) + 0) + 0) + 0) + 0) |}
+generated_1325 : List Int
+let generated_1325 = [ for x in [1, 2, 3], order by x desc, yield (match [(block
+    generatedSetCount : Set Int -> Int
+    let generatedSetCount values = 2
 
-result : Set Int
+    let item = x
+    let values = {|item, (item + 1)|}
+
+    generatedSetCount values), ((block
+    generatedSetCount : Set Int -> Int
+    let generatedSetCount values = 2
+
+    let item = x
+    let values = {|item, (item + 1)|}
+
+    generatedSetCount values) + 1)]
+  case head :: tail -> head
+  case Nil -> 0) ]
+
+result : List Int
 let result = generated_1325
 
 --! assertNoErrors
---! assertType generated_1325 Set Int
---! assertType result Set Int
+--! assertType generated_1325 List Int
+--! assertType result List Int
 --! assertDeclKinds signature, let, signature, let

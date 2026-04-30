@@ -1,12 +1,20 @@
 module main
 
-generated_3258 : Int
-let generated_3258 =
-    block
-        let base : (x : Int) = (x = ((((((0 + (0 + 0)) + 0) + 0) + 0) + 0) + 0))
-        let extended = base.{ y := ((((((0 + (0 + 0)) + 0) + 0) + 0) + 0) + 1) }
+generatedNeed : (@x : Int) -> Int
+let generatedNeed (@x : Int) = x
 
-        (extended.x + extended.y)
+generated_3258 : Int
+let generated_3258 = generatedNeed @(((match [(block
+    let pair = (x = 0, y = (0 + 1))
+    let (x = captured, y = other) = pair
+
+    (captured + other)), ((block
+    let pair = (x = 0, y = (0 + 1))
+    let (x = captured, y = other) = pair
+
+    (captured + other)) + 1)]
+  case head :: tail -> head
+  case Nil -> 0) + 0))
 
 result : Int
 let result = generated_3258
@@ -14,4 +22,4 @@ let result = generated_3258
 --! assertNoErrors
 --! assertType generated_3258 Int
 --! assertType result Int
---! assertDeclKinds signature, let, signature, let
+--! assertDeclKinds signature, let, signature, let, signature, let

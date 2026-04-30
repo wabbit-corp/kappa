@@ -1,12 +1,35 @@
 module main
 
-generated_2412 : List Int
-let generated_2412 = [ yield (((((((((left = (((if True then 0 else 0) + 0) + 0), right = 0)).left + 0) + 0) + 0) + 0) + 0) + 0) + 0) ]
+generated_2412 : Int
+let generated_2412 =
+    block
+        scoped effect Choice =
+            ω choose : Unit -> Bool
 
-result : List Int
+        let seed = ((\(n : Int) -> n) (match (Some 0)
+          case Some payload -> payload
+          case None -> 0))
+
+        let comp : Eff <[Choice : Choice]> Int =
+            do
+                let b <- Choice.choose ()
+                if b then seed else (seed + 1)
+
+        let handled : Eff <[ ]> Int =
+            deep handle Choice comp with
+                case return x -> pure x
+                case choose () k ->
+                    do
+                        let a <- k True
+                        let b <- k False
+                        pure (a + b)
+
+        runPure handled
+
+result : Int
 let result = generated_2412
 
 --! assertNoErrors
---! assertType generated_2412 List Int
---! assertType result List Int
+--! assertType generated_2412 Int
+--! assertType result Int
 --! assertDeclKinds signature, let, signature, let

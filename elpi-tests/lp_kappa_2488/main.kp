@@ -1,12 +1,26 @@
 module main
 
-generated_2488 : Unit
-let generated_2488 = (if True then (if True then (if True then ((\(u : Unit) -> if False then () else u) (if (0 == 1) then () else ())) else ()) else ()) else ())
+generated_2488 : Int
+let generated_2488 =
+    block
+        trait RankedScore a =
+            rank : a -> Int
 
-result : Unit
+        instance RankedScore Int =
+            let rank x = x
+
+        let dict = summon (RankedScore Int)
+
+        dict.rank (((Some ((match (Some 0)
+          case Some payload -> payload
+          case None -> 0) + 1)) ?: ((match (Some 0)
+          case Some payload -> payload
+          case None -> 0) + 2)) + 0)
+
+result : Int
 let result = generated_2488
 
 --! assertNoErrors
---! assertType generated_2488 Unit
---! assertType result Unit
+--! assertType generated_2488 Int
+--! assertType result Int
 --! assertDeclKinds signature, let, signature, let

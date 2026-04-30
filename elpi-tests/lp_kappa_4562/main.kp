@@ -1,12 +1,26 @@
 module main
 
-generated_4562 : Unit
-let generated_4562 = (if True then (if True then (if False then () else ((\(u : Unit) -> ()) (if (0 == 1) then () else ()))) else ()) else ())
+generatedUseWidth : (width : Int) -> Int
+let generatedUseWidth width = width
 
-result : Unit
+generated_4562 : Int
+let generated_4562 =
+    block
+        let width = ((block
+            generatedSetCount : Set Int -> Int
+            let generatedSetCount values = 2
+
+            let item = ((Some (0 + 1)) ?: (0 + 2))
+            let values = {|item, (item + 1)|}
+
+            generatedSetCount values) + 0)
+
+        generatedUseWidth { width }
+
+result : Int
 let result = generated_4562
 
 --! assertNoErrors
---! assertType generated_4562 Unit
---! assertType result Unit
---! assertDeclKinds signature, let, signature, let
+--! assertType generated_4562 Int
+--! assertType result Int
+--! assertDeclKinds signature, let, signature, let, signature, let

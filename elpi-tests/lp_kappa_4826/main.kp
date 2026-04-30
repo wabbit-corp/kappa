@@ -1,12 +1,16 @@
 module main
 
-generated_4826 : List Int
-let generated_4826 = [ yield ((((((0 + (((if True then ((if True then 0 else 0) + 0) else 0) + 0) + 0)) + 0) + 0) + 0) + 0) + 0) ]
+generated_4826 : Int
+let generated_4826 =
+    block
+        let (captured : Int) = (((\(n : Int) -> n) ((Some (0 + 1)) ?: (0 + 2))) + 0)
 
-result : List Int
+        captured
+
+result : Int
 let result = generated_4826
 
 --! assertNoErrors
---! assertType generated_4826 List Int
---! assertType result List Int
+--! assertType generated_4826 Int
+--! assertType result Int
 --! assertDeclKinds signature, let, signature, let

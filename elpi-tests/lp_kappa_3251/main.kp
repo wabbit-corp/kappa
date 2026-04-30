@@ -1,12 +1,25 @@
 module main
 
-generated_3251 : Set Int
-let generated_3251 = {| for x in [1, 2, 3], if x > 0, yield (((((0 + (x + 0)) + 0) + 0) + 0) + 0) |}
+generatedEcho : forall (a : Type). (this x : a) -> a
+let generatedEcho @a (this x : a) = x
 
-result : Set Int
+generated_3251 : Int
+let generated_3251 = ((.generatedEcho) ((match [(block
+    let pair = (x = 0, y = (0 + 1))
+    let (x = captured, y = other) = pair
+
+    (captured + other)), ((block
+    let pair = (x = 0, y = (0 + 1))
+    let (x = captured, y = other) = pair
+
+    (captured + other)) + 1)]
+  case head :: tail -> head
+  case Nil -> 0) + 0))
+
+result : Int
 let result = generated_3251
 
 --! assertNoErrors
---! assertType generated_3251 Set Int
---! assertType result Set Int
---! assertDeclKinds signature, let, signature, let
+--! assertType generated_3251 Int
+--! assertType result Int
+--! assertDeclKinds signature, let, signature, let, signature, let

@@ -1,15 +1,32 @@
 module main
 
-generated_1287 : IO Int
+generated_1287 : Int
 let generated_1287 =
-    do
-        let staged = ((((((((if False then 0 else (0 + (0 + 0))) + 0) + 0) + 0) + 0) + 0) + 0) + 0)
-        pure (staged + 1)
+    let
+        ranked : Int = (match [(block
+            generatedSetCount : Set Int -> Int
+            let generatedSetCount values = 2
 
-result : IO Int
+            let item = 0
+            let values = {|item, (item + 1)|}
+
+            generatedSetCount values), ((block
+            generatedSetCount : Set Int -> Int
+            let generatedSetCount values = 2
+
+            let item = 0
+            let values = {|item, (item + 1)|}
+
+            generatedSetCount values) + 1)]
+          case head :: tail -> head
+          case Nil -> 0)
+in
+        (ranked + 0)
+
+result : Int
 let result = generated_1287
 
 --! assertNoErrors
---! assertType generated_1287 IO Int
---! assertType result IO Int
+--! assertType generated_1287 Int
+--! assertType result Int
 --! assertDeclKinds signature, let, signature, let

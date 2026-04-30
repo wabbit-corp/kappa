@@ -3,10 +3,20 @@ module main
 generated_1744 : Int
 let generated_1744 =
     block
-        ranked : Int
-        let ranked = ((((((((if True then ((if False then 0 else 0) + (0 + 0)) else 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0)
+        type RankedAlias = Int
 
-        (ranked + 0)
+        let aliased : RankedAlias = ((match (Some (block
+            generatedMapCount : Map String Int -> Int
+            let generatedMapCount values = 1
+
+            let item = 0
+            let values = { yield "item" : item }
+
+            generatedMapCount values))
+          case Some payload -> payload
+          case None -> 0) + 0)
+
+        (aliased + 1)
 
 result : Int
 let result = generated_1744

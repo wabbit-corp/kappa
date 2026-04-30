@@ -1,17 +1,26 @@
 module main
 
-generated_1676 : Int
-let generated_1676 =
-    block
-        ranked : Int
-        let ranked = ((((((((if True then (if False then 0 else 0) else 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0)
+generated_1676 : Map String Int
+let generated_1676 = { for x in [1, 2, 3], if x > 0, yield "k" : (block
+    generatedMapCount : Map String Int -> Int
+    let generatedMapCount values = 1
 
-        (ranked + 0)
+    let item = (block
+        generatedMapCount : Map String Int -> Int
+        let generatedMapCount values = 1
 
-result : Int
+        let item = x
+        let values = { yield "item" : item }
+
+        generatedMapCount values)
+    let values = { yield "item" : item }
+
+    generatedMapCount values) }
+
+result : Map String Int
 let result = generated_1676
 
 --! assertNoErrors
---! assertType generated_1676 Int
---! assertType result Int
+--! assertType generated_1676 Map String Int
+--! assertType result Map String Int
 --! assertDeclKinds signature, let, signature, let

@@ -1,14 +1,21 @@
 module main
 
-generatedNeed : (@x : Int) -> Int
-let generatedNeed (@x : Int) = x
-
 generated_4432 : Int
 let generated_4432 =
     block
-        let (@x : Int) = (((((0 + ((if False then 0 else (if False then 0 else 0)) + 0)) + 0) + 0) + 0) + 0)
+        trait RankedScore a =
+            rank : a -> Int
 
-        if True then generatedNeed else 0
+        instance RankedScore Int =
+            let rank x = x
+
+        let dict = summon (RankedScore Int)
+
+        dict.rank (((Some ((match (0 == 0)
+          case True -> 0
+          case False -> 0) + 1)) ?: ((match (0 == 0)
+          case True -> 0
+          case False -> 0) + 2)) + 0)
 
 result : Int
 let result = generated_4432
@@ -16,4 +23,4 @@ let result = generated_4432
 --! assertNoErrors
 --! assertType generated_4432 Int
 --! assertType result Int
---! assertDeclKinds signature, let, signature, let, signature, let
+--! assertDeclKinds signature, let, signature, let

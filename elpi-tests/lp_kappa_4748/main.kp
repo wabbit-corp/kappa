@@ -1,12 +1,19 @@
 module main
 
-generated_4748 : Map String Int
-let generated_4748 = { for x in [1, 2, 3], if x > 0, yield "k" : (((((0 + (((if True then (if True then x else 0) else 0) + 0) + 0)) + 0) + 0) + 0) + 0) }
+generatedEcho : forall (a : Type). (this x : a) -> a
+let generatedEcho @a (this x : a) = x
 
-result : Map String Int
+generated_4748 : Int
+let generated_4748 = ((block
+    let pair = (x = ((Some (0 + 1)) ?: (0 + 2)), y = (((Some (0 + 1)) ?: (0 + 2)) + 1))
+    let (x = captured, y = other) = pair
+
+    (captured + other)) + 0).generatedEcho
+
+result : Int
 let result = generated_4748
 
 --! assertNoErrors
---! assertType generated_4748 Map String Int
---! assertType result Map String Int
---! assertDeclKinds signature, let, signature, let
+--! assertType generated_4748 Int
+--! assertType result Int
+--! assertDeclKinds signature, let, signature, let, signature, let

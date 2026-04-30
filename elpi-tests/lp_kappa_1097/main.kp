@@ -1,12 +1,36 @@
 module main
 
-generated_1097 : (Int -> Int)
-let generated_1097 = \(x : Int) -> ((\(x : Int) -> ((\(x : Int) -> ((\(x : Int) -> (0 + (((if (0 == 1) then \(x : Int) -> (0 + x) else \(x : Int) -> x)) x))) x)) x)) x)
+generated_1097 : Int
+let generated_1097 =
+    block
+        data RankedBox : Type =
+            RankedBox (value : Int)
 
-result : (Int -> Int)
+        let boxed = RankedBox ((block
+            generatedListLength : List Int -> Int
+            let generatedListLength xs decreases structural xs =
+                match xs
+                  case Nil -> 0
+                  case _ :: tail -> 1 + generatedListLength tail
+
+            let item = (block
+                generatedSetCount : Set Int -> Int
+                let generatedSetCount values = 2
+
+                let item = 0
+                let values = {|item, (item + 1)|}
+
+                generatedSetCount values)
+
+            generatedListLength [item, (item + 1), 0]) + 0)
+
+        match boxed
+          case RankedBox value -> (value + 1)
+
+result : Int
 let result = generated_1097
 
 --! assertNoErrors
---! assertType generated_1097 (Int -> Int)
---! assertType result (Int -> Int)
+--! assertType generated_1097 Int
+--! assertType result Int
 --! assertDeclKinds signature, let, signature, let

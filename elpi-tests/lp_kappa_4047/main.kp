@@ -6,9 +6,27 @@ data GeneratedChoice : Type =
 
 generated_4047 : Int
 let generated_4047 =
-    match GeneratedRight
+    match (GeneratedLeft ((block
+        generatedSetCount : Set Int -> Int
+        let generatedSetCount values = 2
+
+        let item = (match (0 == 0)
+          case True -> 0
+          case False -> 0)
+        let values = {|item, (item + 1)|}
+
+        generatedSetCount values) + 0))
       case GeneratedLeft payload -> (payload + 0)
-      case GeneratedRight -> ((((((0 + ((if True then (0 + (0 + 0)) else 0) + 0)) + 0) + 0) + 0) + 0) + 0)
+      case GeneratedRight -> ((block
+          generatedSetCount : Set Int -> Int
+          let generatedSetCount values = 2
+
+          let item = (match (0 == 0)
+            case True -> 0
+            case False -> 0)
+          let values = {|item, (item + 1)|}
+
+          generatedSetCount values) + 0)
 
 result : Int
 let result = generated_4047

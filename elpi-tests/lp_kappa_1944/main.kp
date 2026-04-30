@@ -1,12 +1,38 @@
 module main
 
-generated_1944 : Unit
-let generated_1944 = (if True then (if True then (if True then (if (False || True) then (if False then () else ()) else ()) else ()) else ()) else ())
+generatedMakeConst : forall (a : Type). a -> Unit -> a
+let generatedMakeConst value = \() -> value
 
-result : Unit
+generated_1944 : Int
+let generated_1944 = ((generatedMakeConst ((match ((block
+    generatedMapCount : Map String Int -> Int
+    let generatedMapCount values = 1
+
+    let item = 0
+    let values = { yield "item" : item }
+
+    generatedMapCount values) == (block
+    generatedMapCount : Map String Int -> Int
+    let generatedMapCount values = 1
+
+    let item = 0
+    let values = { yield "item" : item }
+
+    generatedMapCount values))
+  case True -> (block
+      generatedMapCount : Map String Int -> Int
+      let generatedMapCount values = 1
+
+      let item = 0
+      let values = { yield "item" : item }
+
+      generatedMapCount values)
+  case False -> 0) + 0)) ())
+
+result : Int
 let result = generated_1944
 
 --! assertNoErrors
---! assertType generated_1944 Unit
---! assertType result Unit
---! assertDeclKinds signature, let, signature, let
+--! assertType generated_1944 Int
+--! assertType result Int
+--! assertDeclKinds signature, let, signature, let, signature, let

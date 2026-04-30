@@ -1,7 +1,9 @@
 module main
 
 generated_3728 : Map String Int
-let generated_3728 = { for x in [1, 2, 3], yield "k" : (((((0 + ((0 + ((if True then x else 0) + 0)) + 0)) + 0) + 0) + 0) + 0) }
+let generated_3728 = { for x in [1, 2, 3], yield "k" : (match [((\(n : Int) -> n) x), (((\(n : Int) -> n) x) + 1)]
+  case head :: tail -> head
+  case Nil -> 0) }
 
 result : Map String Int
 let result = generated_3728

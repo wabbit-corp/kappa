@@ -1,14 +1,21 @@
 module main
 
-type GeneratedPair = (left : Int, right : Int)
+generated_902 : Int
+let generated_902 = ((\(n : Int) -> n) (block
+    generatedListLength : List Int -> Int
+    let generatedListLength xs decreases structural xs =
+        match xs
+          case Nil -> 0
+          case _ :: tail -> 1 + generatedListLength tail
 
-generated_902 : GeneratedPair
-let generated_902 = ((left = (((((((if True then ((0 + 0) + 0) else 0) + 0) + 0) + 0) + 0) + 0) + 0), right = 0)).{ right = ((((((((if True then ((0 + 0) + 0) else 0) + 0) + 0) + 0) + 0) + 0) + 0) + 1) }
+    let item = 0
 
-result : GeneratedPair
+    generatedListLength [item, (item + 1), 0]))
+
+result : Int
 let result = generated_902
 
 --! assertNoErrors
---! assertType generated_902 GeneratedPair
---! assertType result GeneratedPair
---! assertDeclKinds type, signature, let, signature, let
+--! assertType generated_902 Int
+--! assertType result Int
+--! assertDeclKinds signature, let, signature, let

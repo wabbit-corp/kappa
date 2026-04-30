@@ -2,11 +2,27 @@ module main
 
 generated_4074 : Int
 let generated_4074 =
-    block
-        let base : (x : Int) = (x = ((((((0 + ((if True then (if True then 0 else 0) else 0) + 0)) + 0) + 0) + 0) + 0) + 0))
-        let extended = base.{ y := ((((((0 + ((if True then (if True then 0 else 0) else 0) + 0)) + 0) + 0) + 0) + 0) + 1) }
+    match [((block
+        generatedSetCount : Set Int -> Int
+        let generatedSetCount values = 2
 
-        (extended.x + extended.y)
+        let item = (match (0 == 0)
+          case True -> 0
+          case False -> 0)
+        let values = {|item, (item + 1)|}
+
+        generatedSetCount values) + 0), (((block
+        generatedSetCount : Set Int -> Int
+        let generatedSetCount values = 2
+
+        let item = (match (0 == 0)
+          case True -> 0
+          case False -> 0)
+        let values = {|item, (item + 1)|}
+
+        generatedSetCount values) + 0) + 1)]
+      case head :: tail -> head
+      case Nil -> 0
 
 result : Int
 let result = generated_4074

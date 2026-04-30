@@ -1,15 +1,17 @@
 module main
 
-generated_422 : IO Int
+generated_422 : Int
 let generated_422 =
-    do
-        value <- pure (((((((((((left = (0 + 0), right = 0)).left + 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0)
-        pure (value + 2)
+    block
+        ranked : Int
+        let ranked = ((\(n : Int) -> n) 0)
 
-result : IO Int
+        (ranked + 0)
+
+result : Int
 let result = generated_422
 
 --! assertNoErrors
---! assertType generated_422 IO Int
---! assertType result IO Int
+--! assertType generated_422 Int
+--! assertType result Int
 --! assertDeclKinds signature, let, signature, let

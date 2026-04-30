@@ -1,15 +1,16 @@
 module main
 
-generated_3361 : IO Int
-let generated_3361 =
-    do
-        let staged = ((((((0 + ((((0 + (0 + 0)) + 0) + 0) + 0)) + 0) + 0) + 0) + 0) + 0)
-        pure (staged + 1)
+generated_3361 : Set Int
+let generated_3361 = {| yield (((\(n : Int) -> n) (block
+    let pair = (x = 0, y = (0 + 1))
+    let (x = captured, y = other) = pair
 
-result : IO Int
+    (captured + other))) + 0) |}
+
+result : Set Int
 let result = generated_3361
 
 --! assertNoErrors
---! assertType generated_3361 IO Int
---! assertType result IO Int
+--! assertType generated_3361 Set Int
+--! assertType result Set Int
 --! assertDeclKinds signature, let, signature, let

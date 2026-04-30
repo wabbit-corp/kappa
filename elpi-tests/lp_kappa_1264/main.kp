@@ -1,12 +1,37 @@
 module main
 
-generated_1264 : Unit
-let generated_1264 = (if True then (if True then (if True then ((\(u : Unit) -> ()) (if False then () else ())) else ()) else ()) else ())
+type GeneratedTuple = (Int, Int)
 
-result : Unit
+generated_1264 : Int
+let generated_1264 =
+    block
+        let pair : GeneratedTuple = (((match (Some (block
+            generatedSetCount : Set Int -> Int
+            let generatedSetCount values = 2
+
+            let item = 0
+            let values = {|item, (item + 1)|}
+
+            generatedSetCount values))
+          case Some payload -> payload
+          case None -> 0) + 0), ((match (Some (block
+            generatedSetCount : Set Int -> Int
+            let generatedSetCount values = 2
+
+            let item = 0
+            let values = {|item, (item + 1)|}
+
+            generatedSetCount values))
+          case Some payload -> payload
+          case None -> 0) + 1))
+        let (left, right) = pair
+
+        (left + right)
+
+result : Int
 let result = generated_1264
 
 --! assertNoErrors
---! assertType generated_1264 Unit
---! assertType result Unit
---! assertDeclKinds signature, let, signature, let
+--! assertType generated_1264 Int
+--! assertType result Int
+--! assertDeclKinds type, signature, let, signature, let

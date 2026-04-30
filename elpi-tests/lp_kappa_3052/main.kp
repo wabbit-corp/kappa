@@ -1,15 +1,25 @@
 module main
 
-generated_3052 : Int
-let generated_3052 =
-    match ((((((((((Some ((if False then 0 else 0) + 0)) ?: 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0) == (((((((((Some ((if False then 0 else 0) + 0)) ?: 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0))
-      case True -> (((((((((Some ((if False then 0 else 0) + 0)) ?: 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0)
-      case False -> 0
+generated_3052 : List Int
+let generated_3052 = [ for x in [1, 2, 3], skip 1, take 2, yield (block
+    generatedListLength : List Int -> Int
+    let generatedListLength xs decreases structural xs =
+        match xs
+          case Nil -> 0
+          case _ :: tail -> 1 + generatedListLength tail
 
-result : Int
+    let item = (block
+        let pair = (x = x, y = (x + 1))
+        let (x = captured, y = other) = pair
+
+        (captured + other))
+
+    generatedListLength [item, (item + 1), 0]) ]
+
+result : List Int
 let result = generated_3052
 
 --! assertNoErrors
---! assertType generated_3052 Int
---! assertType result Int
+--! assertType generated_3052 List Int
+--! assertType result List Int
 --! assertDeclKinds signature, let, signature, let

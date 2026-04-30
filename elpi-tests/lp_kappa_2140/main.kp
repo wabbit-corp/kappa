@@ -1,12 +1,40 @@
 module main
 
-generated_2140 : List Int
-let generated_2140 = [ yield (((((((((if False then 0 else ((left = (0 + 0), right = 0)).left) + (0 + 0)) + 0) + 0) + 0) + 0) + 0) + 0) + 0) ]
+generated_2140 : Int
+let generated_2140 =
+    block
+        scoped effect Ask =
+            ask : Unit -> Bool
 
-result : List Int
+        let l = Ask
+
+        let seed = (block
+            generatedSetCount : Set Int -> Int
+            let generatedSetCount values = 2
+
+            let item = (match (Some 0)
+              case Some payload -> payload
+              case None -> 0)
+            let values = {|item, (item + 1)|}
+
+            generatedSetCount values)
+
+        let comp : Eff <[Ask : Ask]> Int =
+            do
+                let b <- l.ask ()
+                if b then seed else (seed + 1)
+
+        let handled : Eff <[ ]> Int =
+            deep handle l comp with
+                case return x -> pure x
+                case ask () k -> k True
+
+        runPure handled
+
+result : Int
 let result = generated_2140
 
 --! assertNoErrors
---! assertType generated_2140 List Int
---! assertType result List Int
+--! assertType generated_2140 Int
+--! assertType result Int
 --! assertDeclKinds signature, let, signature, let

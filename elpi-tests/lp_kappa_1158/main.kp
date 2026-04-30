@@ -2,12 +2,37 @@ module main
 
 generated_1158 : Int
 let generated_1158 =
-    block
-        type RankedAlias = Int
+    match [((block
+        generatedSetCount : Set Int -> Int
+        let generatedSetCount values = 2
 
-        let aliased : RankedAlias = ((((((((if True then ((left = 0, right = (0 + 0))).right else 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0)
+        let item = (block
+            generatedSetCount : Set Int -> Int
+            let generatedSetCount values = 2
 
-        (aliased + 1)
+            let item = 0
+            let values = {|item, (item + 1)|}
+
+            generatedSetCount values)
+        let values = {|item, (item + 1)|}
+
+        generatedSetCount values) + 0), (((block
+        generatedSetCount : Set Int -> Int
+        let generatedSetCount values = 2
+
+        let item = (block
+            generatedSetCount : Set Int -> Int
+            let generatedSetCount values = 2
+
+            let item = 0
+            let values = {|item, (item + 1)|}
+
+            generatedSetCount values)
+        let values = {|item, (item + 1)|}
+
+        generatedSetCount values) + 0) + 1)]
+      case head :: tail -> head
+      case Nil -> 0
 
 result : Int
 let result = generated_1158

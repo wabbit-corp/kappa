@@ -1,10 +1,30 @@
 module main
 
-generatedEcho : forall (a : Type). (this x : a) -> a
-let generatedEcho @a (this x : a) = x
-
 generated_3518 : Int
-let generated_3518 = ((((((0 + (((((left = (0 + 0), right = 0)).left + 0) + 0) + 0)) + 0) + 0) + 0) + 0) + 0).generatedEcho
+let generated_3518 =
+    block
+        let base : (x : Int) = (x = ((block
+            generatedListLength : List Int -> Int
+            let generatedListLength xs decreases structural xs =
+                match xs
+                  case Nil -> 0
+                  case _ :: tail -> 1 + generatedListLength tail
+
+            let item = ((\(n : Int) -> n) 0)
+
+            generatedListLength [item, (item + 1), 0]) + 0))
+        let extended = base.{ y := ((block
+            generatedListLength : List Int -> Int
+            let generatedListLength xs decreases structural xs =
+                match xs
+                  case Nil -> 0
+                  case _ :: tail -> 1 + generatedListLength tail
+
+            let item = ((\(n : Int) -> n) 0)
+
+            generatedListLength [item, (item + 1), 0]) + 1) }
+
+        (extended.x + extended.y)
 
 result : Int
 let result = generated_3518
@@ -12,4 +32,4 @@ let result = generated_3518
 --! assertNoErrors
 --! assertType generated_3518 Int
 --! assertType result Int
---! assertDeclKinds signature, let, signature, let, signature, let
+--! assertDeclKinds signature, let, signature, let

@@ -1,12 +1,24 @@
 module main
 
-generated_4068 : Map String Int
-let generated_4068 = { for x in [1, 2, 3], if x > 0, yield "k" : (((((0 + ((if True then (if True then x else 0) else 0) + 0)) + 0) + 0) + 0) + 0) }
+generatedNeed : (@x : Int) -> Int
+let generatedNeed (@x : Int) = x
 
-result : Map String Int
+generated_4068 : Int
+let generated_4068 = generatedNeed @(((block
+    generatedSetCount : Set Int -> Int
+    let generatedSetCount values = 2
+
+    let item = (match (0 == 0)
+      case True -> 0
+      case False -> 0)
+    let values = {|item, (item + 1)|}
+
+    generatedSetCount values) + 0))
+
+result : Int
 let result = generated_4068
 
 --! assertNoErrors
---! assertType generated_4068 Map String Int
---! assertType result Map String Int
---! assertDeclKinds signature, let, signature, let
+--! assertType generated_4068 Int
+--! assertType result Int
+--! assertDeclKinds signature, let, signature, let, signature, let

@@ -4,7 +4,9 @@ generatedEcho : forall (a : Type). (this x : a) -> a
 let generatedEcho @a (this x : a) = x
 
 generated_3722 : Int
-let generated_3722 = ((((((0 + ((0 + ((if True then 0 else 0) + 0)) + 0)) + 0) + 0) + 0) + 0) + 0).generatedEcho
+let generated_3722 = ((match [((\(n : Int) -> n) 0), (((\(n : Int) -> n) 0) + 1)]
+  case head :: tail -> head
+  case Nil -> 0) + 0).generatedEcho
 
 result : Int
 let result = generated_3722

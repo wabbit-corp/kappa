@@ -1,17 +1,33 @@
 module main
 
-generated_588 : Int
+generated_588 : IO Int
 let generated_588 =
-    block
-        ranked : Int
-        let ranked = (((((((0 + ((0 + (0 + 0)) + 0)) + 0) + 0) + 0) + 0) + 0) + 0)
+    do
+        value <- pure ((block
+            generatedListLength : List Int -> Int
+            let generatedListLength xs decreases structural xs =
+                match xs
+                  case Nil -> 0
+                  case _ :: tail -> 1 + generatedListLength tail
 
-        (ranked + 0)
+            let item = (block
+                generatedListLength : List Int -> Int
+                let generatedListLength xs decreases structural xs =
+                    match xs
+                      case Nil -> 0
+                      case _ :: tail -> 1 + generatedListLength tail
 
-result : Int
+                let item = 0
+
+                generatedListLength [item, (item + 1), 0])
+
+            generatedListLength [item, (item + 1), 0]) + 0)
+        pure (value + 2)
+
+result : IO Int
 let result = generated_588
 
 --! assertNoErrors
---! assertType generated_588 Int
---! assertType result Int
+--! assertType generated_588 IO Int
+--! assertType result IO Int
 --! assertDeclKinds signature, let, signature, let

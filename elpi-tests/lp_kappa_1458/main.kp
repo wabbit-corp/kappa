@@ -1,18 +1,38 @@
 module main
 
-generatedNeed : (@x : Int) -> Int
-let generatedNeed (@x : Int) = x
+generatedMakeConst : forall (a : Type). a -> Unit -> a
+let generatedMakeConst value = \() -> value
 
-generated_1458 : IO Int
-let generated_1458 =
-    do
-        let (@x : Int) = ((((((((if False then 0 else ((left = (0 + 0), right = 0)).left) + 0) + 0) + 0) + 0) + 0) + 0) + 0)
-        pure generatedNeed
+generated_1458 : Int
+let generated_1458 = ((generatedMakeConst ((match ((block
+    generatedSetCount : Set Int -> Int
+    let generatedSetCount values = 2
 
-result : IO Int
+    let item = 0
+    let values = {|item, (item + 1)|}
+
+    generatedSetCount values) == (block
+    generatedSetCount : Set Int -> Int
+    let generatedSetCount values = 2
+
+    let item = 0
+    let values = {|item, (item + 1)|}
+
+    generatedSetCount values))
+  case True -> (block
+      generatedSetCount : Set Int -> Int
+      let generatedSetCount values = 2
+
+      let item = 0
+      let values = {|item, (item + 1)|}
+
+      generatedSetCount values)
+  case False -> 0) + 0)) ())
+
+result : Int
 let result = generated_1458
 
 --! assertNoErrors
---! assertType generated_1458 IO Int
---! assertType result IO Int
+--! assertType generated_1458 Int
+--! assertType result Int
 --! assertDeclKinds signature, let, signature, let, signature, let

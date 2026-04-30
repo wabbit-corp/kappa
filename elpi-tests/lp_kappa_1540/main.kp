@@ -1,17 +1,26 @@
 module main
 
-generated_1540 : Int
-let generated_1540 =
-    block
-        ranked : Int
-        let ranked = ((((((((if True then 0 else 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0)
+generated_1540 : List Int
+let generated_1540 = [ for x in [1, 2, 3], skip 1, take 2, yield ((Some ((block
+    generatedSetCount : Set Int -> Int
+    let generatedSetCount values = 2
 
-        (ranked + 0)
+    let item = x
+    let values = {|item, (item + 1)|}
 
-result : Int
+    generatedSetCount values) + 1)) ?: ((block
+    generatedSetCount : Set Int -> Int
+    let generatedSetCount values = 2
+
+    let item = x
+    let values = {|item, (item + 1)|}
+
+    generatedSetCount values) + 2)) ]
+
+result : List Int
 let result = generated_1540
 
 --! assertNoErrors
---! assertType generated_1540 Int
---! assertType result Int
+--! assertType generated_1540 List Int
+--! assertType result List Int
 --! assertDeclKinds signature, let, signature, let

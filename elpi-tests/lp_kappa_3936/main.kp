@@ -1,15 +1,15 @@
 module main
 
-generated_3936 : Int
+generated_3936 : IO Int
 let generated_3936 =
-    match (((((((0 + ((0 + (((Some (0 + 0)) ?: 0) + 0)) + 0)) + 0) + 0) + 0) + 0) + 0) == ((((((0 + ((0 + (((Some (0 + 0)) ?: 0) + 0)) + 0)) + 0) + 0) + 0) + 0) + 0))
-      case True -> ((((((0 + ((0 + (((Some (0 + 0)) ?: 0) + 0)) + 0)) + 0) + 0) + 0) + 0) + 0)
-      case False -> 0
+    do
+        value <- pure (((Some (((\(n : Int) -> n) 0) + 1)) ?: (((\(n : Int) -> n) 0) + 2)) + 0)
+        pure (value + 2)
 
-result : Int
+result : IO Int
 let result = generated_3936
 
 --! assertNoErrors
---! assertType generated_3936 Int
---! assertType result Int
+--! assertType generated_3936 IO Int
+--! assertType result IO Int
 --! assertDeclKinds signature, let, signature, let

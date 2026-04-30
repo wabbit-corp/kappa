@@ -1,12 +1,25 @@
 module main
 
-generated_1233 : (Int -> Int)
-let generated_1233 = \(x : Int) -> ((\(x : Int) -> ((\(x : Int) -> (((if True then \(x : Int) -> ((\(x : Int) -> x) x) else \(x : Int) -> x)) x)) x)) x)
+generated_1233 : Int
+let generated_1233 =
+    let
+        ranked : Int = (match (Some (block
+            generatedSetCount : Set Int -> Int
+            let generatedSetCount values = 2
 
-result : (Int -> Int)
+            let item = 0
+            let values = {|item, (item + 1)|}
+
+            generatedSetCount values))
+          case Some payload -> payload
+          case None -> 0)
+in
+        (ranked + 0)
+
+result : Int
 let result = generated_1233
 
 --! assertNoErrors
---! assertType generated_1233 (Int -> Int)
---! assertType result (Int -> Int)
+--! assertType generated_1233 Int
+--! assertType result Int
 --! assertDeclKinds signature, let, signature, let

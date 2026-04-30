@@ -1,12 +1,35 @@
 module main
 
-generated_3264 : Map String Int
-let generated_3264 = { yield "only" : ((((((0 + (0 + 0)) + 0) + 0) + 0) + 0) + 0) }
+generated_3264 : Int
+let generated_3264 =
+    match [((match [(block
+        let pair = (x = 0, y = (0 + 1))
+        let (x = captured, y = other) = pair
 
-result : Map String Int
+        (captured + other)), ((block
+        let pair = (x = 0, y = (0 + 1))
+        let (x = captured, y = other) = pair
+
+        (captured + other)) + 1)]
+      case head :: tail -> head
+      case Nil -> 0) + 0), (((match [(block
+        let pair = (x = 0, y = (0 + 1))
+        let (x = captured, y = other) = pair
+
+        (captured + other)), ((block
+        let pair = (x = 0, y = (0 + 1))
+        let (x = captured, y = other) = pair
+
+        (captured + other)) + 1)]
+      case head :: tail -> head
+      case Nil -> 0) + 0) + 1)]
+      case head :: tail -> head
+      case Nil -> 0
+
+result : Int
 let result = generated_3264
 
 --! assertNoErrors
---! assertType generated_3264 Map String Int
---! assertType result Map String Int
+--! assertType generated_3264 Int
+--! assertType result Int
 --! assertDeclKinds signature, let, signature, let

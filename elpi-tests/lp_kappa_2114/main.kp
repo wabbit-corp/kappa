@@ -1,12 +1,35 @@
 module main
 
-generated_2114 : Unit
-let generated_2114 = (if True then (if True then (if True then (if (False || True) then ((\(u : Unit) -> if False then () else u) ()) else ()) else ()) else ()) else ())
+generated_2114 : Int
+let generated_2114 =
+    block
+        let base : (x : Int) = (x = ((block
+            generatedSetCount : Set Int -> Int
+            let generatedSetCount values = 2
 
-result : Unit
+            let item = (match (Some 0)
+              case Some payload -> payload
+              case None -> 0)
+            let values = {|item, (item + 1)|}
+
+            generatedSetCount values) + 0))
+        let extended = base.{ y := ((block
+            generatedSetCount : Set Int -> Int
+            let generatedSetCount values = 2
+
+            let item = (match (Some 0)
+              case Some payload -> payload
+              case None -> 0)
+            let values = {|item, (item + 1)|}
+
+            generatedSetCount values) + 1) }
+
+        (extended.x + extended.y)
+
+result : Int
 let result = generated_2114
 
 --! assertNoErrors
---! assertType generated_2114 Unit
---! assertType result Unit
+--! assertType generated_2114 Int
+--! assertType result Int
 --! assertDeclKinds signature, let, signature, let

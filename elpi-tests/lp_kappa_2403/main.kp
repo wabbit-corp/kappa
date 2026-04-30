@@ -1,17 +1,14 @@
 module main
 
-generated_2403 : Int
-let generated_2403 =
-    block
-        rankedHelper : (Int -> Int)
-        let rankedHelper x = x + 1
+generated_2403 : Map String Int
+let generated_2403 = { for x in [1, 2, 3], yield "k" : ((\(n : Int) -> n) (match (Some x)
+  case Some payload -> payload
+  case None -> 0)), on conflict keep first }
 
-        rankedHelper (((((((((left = (((if True then 0 else 0) + 0) + 0), right = 0)).left + 0) + 0) + 0) + 0) + 0) + 0) + 0)
-
-result : Int
+result : Map String Int
 let result = generated_2403
 
 --! assertNoErrors
---! assertType generated_2403 Int
---! assertType result Int
+--! assertType generated_2403 Map String Int
+--! assertType result Map String Int
 --! assertDeclKinds signature, let, signature, let

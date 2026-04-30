@@ -1,12 +1,23 @@
 module main
 
-generated_508 : List Int
-let generated_508 = [ yield (((((((((((Some (0 + 0)) ?: 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0) ]
+type GeneratedTuple = (Int, Int)
 
-result : List Int
+generated_508 : Int
+let generated_508 =
+    block
+        let pair : GeneratedTuple = (((match (0 == 0)
+          case True -> 0
+          case False -> 0) + 0), ((match (0 == 0)
+          case True -> 0
+          case False -> 0) + 1))
+        let (left, right) = pair
+
+        (left + right)
+
+result : Int
 let result = generated_508
 
 --! assertNoErrors
---! assertType generated_508 List Int
---! assertType result List Int
---! assertDeclKinds signature, let, signature, let
+--! assertType generated_508 Int
+--! assertType result Int
+--! assertDeclKinds type, signature, let, signature, let

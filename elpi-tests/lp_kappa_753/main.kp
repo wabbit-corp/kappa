@@ -1,12 +1,41 @@
 module main
 
-generated_753 : Bool
-let generated_753 = (if (if (if (if ((if True then 1 else 0) == 1) then False else True) then True else False) then True else False) then True else False)
+data GeneratedChoice : Type =
+    GeneratedLeft (value : Int)
+    GeneratedRight
 
-result : Bool
+generated_753 : Int
+let generated_753 =
+    match (GeneratedLeft ((match (Some (block
+        generatedListLength : List Int -> Int
+        let generatedListLength xs decreases structural xs =
+            match xs
+              case Nil -> 0
+              case _ :: tail -> 1 + generatedListLength tail
+
+        let item = 0
+
+        generatedListLength [item, (item + 1), 0]))
+      case Some payload -> payload
+      case None -> 0) + 0))
+      case GeneratedLeft payload -> (payload + 0)
+      case GeneratedRight -> ((match (Some (block
+          generatedListLength : List Int -> Int
+          let generatedListLength xs decreases structural xs =
+              match xs
+                case Nil -> 0
+                case _ :: tail -> 1 + generatedListLength tail
+
+          let item = 0
+
+          generatedListLength [item, (item + 1), 0]))
+        case Some payload -> payload
+        case None -> 0) + 0)
+
+result : Int
 let result = generated_753
 
 --! assertNoErrors
---! assertType generated_753 Bool
---! assertType result Bool
---! assertDeclKinds signature, let, signature, let
+--! assertType generated_753 Int
+--! assertType result Int
+--! assertDeclKinds data, signature, let, signature, let

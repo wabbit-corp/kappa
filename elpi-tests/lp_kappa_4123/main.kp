@@ -1,12 +1,24 @@
 module main
 
-generated_4123 : (Int -> Int)
-let generated_4123 = \(x : Int) -> ((\(x : Int) -> ((\(x : Int) -> (((\(x : Int) -> (0 + (((if False then \(x : Int) -> x else \(x : Int) -> x)) x))) x) + 0)) x)) x)
+generatedEcho : forall (a : Type). (this x : a) -> a
+let generatedEcho @a (this x : a) = x
 
-result : (Int -> Int)
+generated_4123 : Option Int
+let generated_4123 = (Some ((block
+    generatedMapCount : Map String Int -> Int
+    let generatedMapCount values = 1
+
+    let item = (match (0 == 0)
+      case True -> 0
+      case False -> 0)
+    let values = { yield "item" : item }
+
+    generatedMapCount values) + 0))?.generatedEcho
+
+result : Option Int
 let result = generated_4123
 
 --! assertNoErrors
---! assertType generated_4123 (Int -> Int)
---! assertType result (Int -> Int)
---! assertDeclKinds signature, let, signature, let
+--! assertType generated_4123 Option Int
+--! assertType result Option Int
+--! assertDeclKinds signature, let, signature, let, signature, let

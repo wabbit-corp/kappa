@@ -1,12 +1,33 @@
 module main
 
-generated_4679 : Set Int
-let generated_4679 = {| for x in [1, 2, 3], yield (((((0 + (((if True then ((x + 0) + 0) else 0) + 0) + 0)) + 0) + 0) + 0) + 0) |}
+generated_4679 : Int
+let generated_4679 =
+    block
+        scoped effect Ask =
+            ask : Unit -> Bool
 
-result : Set Int
+        let pkg = (label = Ask)
+
+        let seed = (match (Some ((Some (0 + 1)) ?: (0 + 2)))
+          case Some payload -> payload
+          case None -> 0)
+
+        let comp : Eff <[Ask : Ask]> Int =
+            do
+                let b <- pkg.label.ask ()
+                if b then seed else (seed + 1)
+
+        let handled : Eff <[ ]> Int =
+            deep handle pkg.label comp with
+                case return x -> pure x
+                case ask () k -> k True
+
+        runPure handled
+
+result : Int
 let result = generated_4679
 
 --! assertNoErrors
---! assertType generated_4679 Set Int
---! assertType result Set Int
+--! assertType generated_4679 Int
+--! assertType result Int
 --! assertDeclKinds signature, let, signature, let

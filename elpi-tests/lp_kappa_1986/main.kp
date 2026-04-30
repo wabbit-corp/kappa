@@ -1,15 +1,12 @@
 module main
 
-generated_1986 : IO Int
-let generated_1986 =
-    do
-        value <- pure (((((((((if False then 0 else (if True then 0 else 0)) + (0 + 0)) + 0) + 0) + 0) + 0) + 0) + 0) + 0)
-        pure (value + 2)
+generated_1986 : Option Int
+let generated_1986 = (if True then (if True then (if True then (if (((if False then None else (Some (0 + 0))) ?: 0) == 1) then None else (if False then None else (Some (0 + 0)))) else None) else None) else None)
 
-result : IO Int
+result : Option Int
 let result = generated_1986
 
 --! assertNoErrors
---! assertType generated_1986 IO Int
---! assertType result IO Int
+--! assertType generated_1986 Option Int
+--! assertType result Option Int
 --! assertDeclKinds signature, let, signature, let

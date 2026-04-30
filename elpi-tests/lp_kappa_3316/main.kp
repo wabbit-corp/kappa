@@ -1,14 +1,43 @@
 module main
 
-type GeneratedPair = (left : Int, right : Int)
+type GeneratedTuple = (Int, Int)
 
-generated_3316 : GeneratedPair
-let generated_3316 = ((left = (((((0 + (((((0 + 0) + 0) + 0) + 0) + 0)) + 0) + 0) + 0) + 0), right = 0)).{ right = ((((((0 + (((((0 + 0) + 0) + 0) + 0) + 0)) + 0) + 0) + 0) + 0) + 1) }
+generated_3316 : Int
+let generated_3316 =
+    block
+        let pair : GeneratedTuple = (((block
+            let pair = (x = (block
+                let pair = (x = 0, y = (0 + 1))
+                let (x = captured, y = other) = pair
 
-result : GeneratedPair
+                (captured + other)), y = ((block
+                let pair = (x = 0, y = (0 + 1))
+                let (x = captured, y = other) = pair
+
+                (captured + other)) + 1))
+            let (x = captured, y = other) = pair
+
+            (captured + other)) + 0), ((block
+            let pair = (x = (block
+                let pair = (x = 0, y = (0 + 1))
+                let (x = captured, y = other) = pair
+
+                (captured + other)), y = ((block
+                let pair = (x = 0, y = (0 + 1))
+                let (x = captured, y = other) = pair
+
+                (captured + other)) + 1))
+            let (x = captured, y = other) = pair
+
+            (captured + other)) + 1))
+        let (left, right) = pair
+
+        (left + right)
+
+result : Int
 let result = generated_3316
 
 --! assertNoErrors
---! assertType generated_3316 GeneratedPair
---! assertType result GeneratedPair
+--! assertType generated_3316 Int
+--! assertType result Int
 --! assertDeclKinds type, signature, let, signature, let

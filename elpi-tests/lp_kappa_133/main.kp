@@ -1,10 +1,19 @@
 module main
 
-generatedEcho : forall (a : Type). (this x : a) -> a
-let generatedEcho @a (this x : a) = x
+generatedMakeConst : forall (a : Type). a -> Unit -> a
+let generatedMakeConst value = \() -> value
 
 generated_133 : Int
-let generated_133 = ((.generatedEcho) (((((0 + 0) + 0) + 0) + 0) + 0))
+let generated_133 = ((generatedMakeConst @Int ((block
+    generatedListLength : List Int -> Int
+    let generatedListLength xs decreases structural xs =
+        match xs
+          case Nil -> 0
+          case _ :: tail -> 1 + generatedListLength tail
+
+    let item = 0
+
+    generatedListLength [item, (item + 1), 0]) + 0)) ())
 
 result : Int
 let result = generated_133

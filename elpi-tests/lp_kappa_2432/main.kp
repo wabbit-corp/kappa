@@ -1,14 +1,20 @@
 module main
 
-type GeneratedPair = (left : Int, right : Int)
+generated_2432 : Map String Int
+let generated_2432 = { for x in [1, 2, 3], yield "k" : (match ((match (Some x)
+  case Some payload -> payload
+  case None -> 0) == (match (Some x)
+  case Some payload -> payload
+  case None -> 0))
+  case True -> (match (Some x)
+    case Some payload -> payload
+    case None -> 0)
+  case False -> 0) }
 
-generated_2432 : GeneratedPair
-let generated_2432 = ((left = ((((((((left = (((if False then 0 else 0) + (0 + 0)) + 0), right = 0)).left + 0) + 0) + 0) + 0) + 0) + 0), right = 0)).{ right = (((((((((left = (((if False then 0 else 0) + (0 + 0)) + 0), right = 0)).left + 0) + 0) + 0) + 0) + 0) + 0) + 1) }
-
-result : GeneratedPair
+result : Map String Int
 let result = generated_2432
 
 --! assertNoErrors
---! assertType generated_2432 GeneratedPair
---! assertType result GeneratedPair
---! assertDeclKinds type, signature, let, signature, let
+--! assertType generated_2432 Map String Int
+--! assertType result Map String Int
+--! assertDeclKinds signature, let, signature, let

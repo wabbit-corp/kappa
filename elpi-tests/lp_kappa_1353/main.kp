@@ -3,10 +3,28 @@ module main
 generated_1353 : Int
 let generated_1353 =
     block
-        let pair = (x = ((((((((if False then 0 else (if False then 0 else 0)) + 0) + 0) + 0) + 0) + 0) + 0) + 0), y = ((((((((if False then 0 else (if False then 0 else 0)) + 0) + 0) + 0) + 0) + 0) + 0) + 1))
-        let (x = captured, y = other) = pair
+        rankedHelper : (Int -> Int)
+        let rankedHelper x = x + 1
 
-        (captured + other)
+        rankedHelper ((block
+            let pair = (x = (block
+                generatedSetCount : Set Int -> Int
+                let generatedSetCount values = 2
+
+                let item = 0
+                let values = {|item, (item + 1)|}
+
+                generatedSetCount values), y = ((block
+                generatedSetCount : Set Int -> Int
+                let generatedSetCount values = 2
+
+                let item = 0
+                let values = {|item, (item + 1)|}
+
+                generatedSetCount values) + 1))
+            let (x = captured, y = other) = pair
+
+            (captured + other)) + 0)
 
 result : Int
 let result = generated_1353

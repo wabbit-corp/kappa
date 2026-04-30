@@ -1,7 +1,21 @@
 module main
 
 generated_3472 : Int
-let generated_3472 = (((((0 + (((((if False then 0 else 0) + (0 + 0)) + 0) + 0) + 0)) + 0) + 0) + 0) + 0)
+let generated_3472 =
+    block
+        type RankedAlias = Int
+
+        let aliased : RankedAlias = (((Some ((block
+            let pair = (x = 0, y = (0 + 1))
+            let (x = captured, y = other) = pair
+
+            (captured + other)) + 1)) ?: ((block
+            let pair = (x = 0, y = (0 + 1))
+            let (x = captured, y = other) = pair
+
+            (captured + other)) + 2)) + 0)
+
+        (aliased + 1)
 
 result : Int
 let result = generated_3472

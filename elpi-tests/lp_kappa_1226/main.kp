@@ -2,12 +2,16 @@ module main
 
 generated_1226 : Int
 let generated_1226 =
-    block
-        type RankedAlias = Int
+    match (Some (block
+        generatedSetCount : Set Int -> Int
+        let generatedSetCount values = 2
 
-        let aliased : RankedAlias = ((((((((if False then 0 else 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0)
+        let item = 0
+        let values = {|item, (item + 1)|}
 
-        (aliased + 1)
+        generatedSetCount values))
+      case Some payload -> payload
+      case None -> 0
 
 result : Int
 let result = generated_1226

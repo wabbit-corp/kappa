@@ -4,11 +4,16 @@ generatedNeed : (@x : Int) -> Int
 let generatedNeed (@x : Int) = x
 
 generated_1746 : Int
-let generated_1746 =
-    block
-        let (@x : Int) = ((((((((if True then ((if False then 0 else 0) + (0 + 0)) else 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0)
+let generated_1746 = generatedNeed @(((match (Some (block
+    generatedMapCount : Map String Int -> Int
+    let generatedMapCount values = 1
 
-        if True then generatedNeed else 0
+    let item = 0
+    let values = { yield "item" : item }
+
+    generatedMapCount values))
+  case Some payload -> payload
+  case None -> 0) + 0))
 
 result : Int
 let result = generated_1746

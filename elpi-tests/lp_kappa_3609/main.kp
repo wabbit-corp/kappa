@@ -1,12 +1,23 @@
 module main
 
-generated_3609 : Bool
-let generated_3609 = (if (if (if (if True then False else True) then False else True) then True else False) then True else False)
+generated_3609 : Int
+let generated_3609 =
+    let
+        ranked : Int = (block
+            generatedMapCount : Map String Int -> Int
+            let generatedMapCount values = 1
 
-result : Bool
+            let item = ((\(n : Int) -> n) 0)
+            let values = { yield "item" : item }
+
+            generatedMapCount values)
+in
+        (ranked + 0)
+
+result : Int
 let result = generated_3609
 
 --! assertNoErrors
---! assertType generated_3609 Bool
---! assertType result Bool
+--! assertType generated_3609 Int
+--! assertType result Int
 --! assertDeclKinds signature, let, signature, let

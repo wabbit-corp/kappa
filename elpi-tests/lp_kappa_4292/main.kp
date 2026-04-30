@@ -1,12 +1,27 @@
 module main
 
-generated_4292 : Option Int
-let generated_4292 = (if True then (if True then (if False then None else (if (((Some (0 + 0)) ?: 0) == 1) then None else (Some (0 + 0)))) else None) else None)
+generatedUseWidth : (width : Int) -> Int
+let generatedUseWidth width = width
 
-result : Option Int
+generated_4292 : Int
+let generated_4292 =
+    block
+        let width = ((block
+            let pair = (x = (match (0 == 0)
+              case True -> 0
+              case False -> 0), y = ((match (0 == 0)
+              case True -> 0
+              case False -> 0) + 1))
+            let (x = captured, y = other) = pair
+
+            (captured + other)) + 0)
+
+        generatedUseWidth { width }
+
+result : Int
 let result = generated_4292
 
 --! assertNoErrors
---! assertType generated_4292 Option Int
---! assertType result Option Int
---! assertDeclKinds signature, let, signature, let
+--! assertType generated_4292 Int
+--! assertType result Int
+--! assertDeclKinds signature, let, signature, let, signature, let

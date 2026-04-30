@@ -1,12 +1,19 @@
 module main
 
-generated_4428 : Option Int
-let generated_4428 = (if True then (if True then (if False then None else (if (((if (((Some (0 + 0)) ?: 0) == 1) then None else (Some (0 + 0))) ?: 0) == 1) then None else (if (((Some (0 + 0)) ?: 0) == 1) then None else (Some (0 + 0))))) else None) else None)
+generatedMakeConst : forall (a : Type). a -> Unit -> a
+let generatedMakeConst value = \() -> value
 
-result : Option Int
+generated_4428 : Int
+let generated_4428 = ((generatedMakeConst (((Some ((match (0 == 0)
+  case True -> 0
+  case False -> 0) + 1)) ?: ((match (0 == 0)
+  case True -> 0
+  case False -> 0) + 2)) + 0)) ())
+
+result : Int
 let result = generated_4428
 
 --! assertNoErrors
---! assertType generated_4428 Option Int
---! assertType result Option Int
---! assertDeclKinds signature, let, signature, let
+--! assertType generated_4428 Int
+--! assertType result Int
+--! assertDeclKinds signature, let, signature, let, signature, let

@@ -1,12 +1,41 @@
 module main
 
-generated_999 : List Int
-let generated_999 = [ for x in [1, 2, 3], yield (((((((if True then (if False then 0 else x) else 0) + 0) + 0) + 0) + 0) + 0) + 0) ]
+generated_999 : Map String Int
+let generated_999 = { for x in [1, 2, 3], yield "k" : (match ((block
+    generatedListLength : List Int -> Int
+    let generatedListLength xs decreases structural xs =
+        match xs
+          case Nil -> 0
+          case _ :: tail -> 1 + generatedListLength tail
 
-result : List Int
+    let item = x
+
+    generatedListLength [item, (item + 1), 0]) == (block
+    generatedListLength : List Int -> Int
+    let generatedListLength xs decreases structural xs =
+        match xs
+          case Nil -> 0
+          case _ :: tail -> 1 + generatedListLength tail
+
+    let item = x
+
+    generatedListLength [item, (item + 1), 0]))
+  case True -> (block
+      generatedListLength : List Int -> Int
+      let generatedListLength xs decreases structural xs =
+          match xs
+            case Nil -> 0
+            case _ :: tail -> 1 + generatedListLength tail
+
+      let item = x
+
+      generatedListLength [item, (item + 1), 0])
+  case False -> 0), on conflict keep first }
+
+result : Map String Int
 let result = generated_999
 
 --! assertNoErrors
---! assertType generated_999 List Int
---! assertType result List Int
+--! assertType generated_999 Map String Int
+--! assertType result Map String Int
 --! assertDeclKinds signature, let, signature, let

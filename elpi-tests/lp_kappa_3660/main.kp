@@ -1,12 +1,12 @@
 module main
 
-generated_3660 : Map String Int
-let generated_3660 = { for x in [1, 2, 3], if x > 0, yield "k" : (((((0 + ((0 + (((x + 0) + 0) + 0)) + 0)) + 0) + 0) + 0) + 0) }
+generated_3660 : Option Int
+let generated_3660 = (if True then (if True then (if True then (if (((if (((Some (0 + 0)) ?: 0) == 0) then (Some (0 + 0)) else None) ?: 0) == 1) then (Some (((if (((Some (0 + 0)) ?: 0) == 0) then (Some (0 + 0)) else None) ?: 0) + 0)) else (if (((Some (0 + 0)) ?: 0) == 0) then (Some (0 + 0)) else None)) else None) else None) else None)
 
-result : Map String Int
+result : Option Int
 let result = generated_3660
 
 --! assertNoErrors
---! assertType generated_3660 Map String Int
---! assertType result Map String Int
+--! assertType generated_3660 Option Int
+--! assertType result Option Int
 --! assertDeclKinds signature, let, signature, let

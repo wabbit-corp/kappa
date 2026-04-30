@@ -1,12 +1,12 @@
 module main
 
-generated_3388 : Map String Int
-let generated_3388 = { for x in [1, 2, 3], if x > 0, yield "k" : (((((0 + ((((if True then x else 0) + 0) + 0) + 0)) + 0) + 0) + 0) + 0) }
+generated_3388 : Unit
+let generated_3388 = (if True then (if True then (if True then (if (False || True) then (if (0 == 1) then () else ()) else ()) else ()) else ()) else ())
 
-result : Map String Int
+result : Unit
 let result = generated_3388
 
 --! assertNoErrors
---! assertType generated_3388 Map String Int
---! assertType result Map String Int
+--! assertType generated_3388 Unit
+--! assertType result Unit
 --! assertDeclKinds signature, let, signature, let

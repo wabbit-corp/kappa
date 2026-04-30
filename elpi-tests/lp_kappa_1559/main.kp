@@ -1,15 +1,28 @@
 module main
 
-generated_1559 : IO Int
-let generated_1559 =
-    do
-        let staged = (((((((((if True then 0 else 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0)
-        pure (staged + 1)
+generated_1559 : List Int
+let generated_1559 = [ for x in [1, 2, 3], yield (block
+    generatedListLength : List Int -> Int
+    let generatedListLength xs decreases structural xs =
+        match xs
+          case Nil -> 0
+          case _ :: tail -> 1 + generatedListLength tail
 
-result : IO Int
+    let item = (block
+        generatedMapCount : Map String Int -> Int
+        let generatedMapCount values = 1
+
+        let item = x
+        let values = { yield "item" : item }
+
+        generatedMapCount values)
+
+    generatedListLength [item, (item + 1), 0]) ]
+
+result : List Int
 let result = generated_1559
 
 --! assertNoErrors
---! assertType generated_1559 IO Int
---! assertType result IO Int
+--! assertType generated_1559 List Int
+--! assertType result List Int
 --! assertDeclKinds signature, let, signature, let

@@ -2,11 +2,23 @@ module main
 
 generated_3015 : Int
 let generated_3015 =
-    block
-        rankedHelper : (Int -> Int)
-        let rankedHelper x = x + 1
+    let
+        ranked : Int = (block
+            generatedListLength : List Int -> Int
+            let generatedListLength xs decreases structural xs =
+                match xs
+                  case Nil -> 0
+                  case _ :: tail -> 1 + generatedListLength tail
 
-        rankedHelper (((((((((Some ((if True then 0 else 0) + 0)) ?: 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0)
+            let item = (block
+                let pair = (x = 0, y = (0 + 1))
+                let (x = captured, y = other) = pair
+
+                (captured + other))
+
+            generatedListLength [item, (item + 1), 0])
+in
+        (ranked + 0)
 
 result : Int
 let result = generated_3015

@@ -1,15 +1,14 @@
 module main
 
-generated_298 : Int
-let generated_298 =
-    match (((((((((((if True then 0 else 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0) == ((((((((((if True then 0 else 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0))
-      case True -> ((((((((((if True then 0 else 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0)
-      case False -> 0
+generated_298 : List Int
+let generated_298 = [ for x in [1, 2, 3], skip 1, take 2, yield (match (Some x)
+  case Some payload -> payload
+  case None -> 0) ]
 
-result : Int
+result : List Int
 let result = generated_298
 
 --! assertNoErrors
---! assertType generated_298 Int
---! assertType result Int
+--! assertType generated_298 List Int
+--! assertType result List Int
 --! assertDeclKinds signature, let, signature, let

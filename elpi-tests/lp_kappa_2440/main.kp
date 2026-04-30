@@ -1,15 +1,26 @@
 module main
 
-generated_2440 : Int
-let generated_2440 =
-    match ((((((((((left = (((if False then 0 else 0) + (0 + 0)) + 0), right = 0)).left + 0) + 0) + 0) + 0) + 0) + 0) + 0) == (((((((((left = (((if False then 0 else 0) + (0 + 0)) + 0), right = 0)).left + 0) + 0) + 0) + 0) + 0) + 0) + 0))
-      case True -> (((((((((left = (((if False then 0 else 0) + (0 + 0)) + 0), right = 0)).left + 0) + 0) + 0) + 0) + 0) + 0) + 0)
-      case False -> 0
+generatedNeed : (@x : Int) -> Int
+let generatedNeed (@x : Int) = x
 
-result : Int
+generated_2440 : IO Int
+let generated_2440 =
+    do
+        let (@x : Int) = ((match ((match (Some 0)
+          case Some payload -> payload
+          case None -> 0) == (match (Some 0)
+          case Some payload -> payload
+          case None -> 0))
+          case True -> (match (Some 0)
+            case Some payload -> payload
+            case None -> 0)
+          case False -> 0) + 0)
+        pure generatedNeed
+
+result : IO Int
 let result = generated_2440
 
 --! assertNoErrors
---! assertType generated_2440 Int
---! assertType result Int
---! assertDeclKinds signature, let, signature, let
+--! assertType generated_2440 IO Int
+--! assertType result IO Int
+--! assertDeclKinds signature, let, signature, let, signature, let

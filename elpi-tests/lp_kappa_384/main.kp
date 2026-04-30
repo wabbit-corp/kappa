@@ -2,11 +2,21 @@ module main
 
 generated_384 : Int
 let generated_384 =
-    block
-        ranked : Int
-        let ranked = ((((((((((if False then 0 else 0) + (0 + 0)) + 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0)
+    match (((block
+        let pair = (x = 0, y = (0 + 1))
+        let (x = captured, y = other) = pair
 
-        (ranked + 0)
+        (captured + other)) + 0) == ((block
+        let pair = (x = 0, y = (0 + 1))
+        let (x = captured, y = other) = pair
+
+        (captured + other)) + 0))
+      case True -> ((block
+          let pair = (x = 0, y = (0 + 1))
+          let (x = captured, y = other) = pair
+
+          (captured + other)) + 0)
+      case False -> 0
 
 result : Int
 let result = generated_384

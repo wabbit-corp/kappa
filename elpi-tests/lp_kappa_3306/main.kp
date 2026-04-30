@@ -1,12 +1,24 @@
 module main
 
-generated_3306 : Option Int
-let generated_3306 = (if True then (if True then (if False then None else (if True then (if True then (Some (0 + 0)) else None) else None)) else None) else None)
+generated_3306 : List Int
+let generated_3306 = [ yield ((block
+    let pair = (x = (block
+        let pair = (x = 0, y = (0 + 1))
+        let (x = captured, y = other) = pair
 
-result : Option Int
+        (captured + other)), y = ((block
+        let pair = (x = 0, y = (0 + 1))
+        let (x = captured, y = other) = pair
+
+        (captured + other)) + 1))
+    let (x = captured, y = other) = pair
+
+    (captured + other)) + 0) ]
+
+result : List Int
 let result = generated_3306
 
 --! assertNoErrors
---! assertType generated_3306 Option Int
---! assertType result Option Int
+--! assertType generated_3306 List Int
+--! assertType result List Int
 --! assertDeclKinds signature, let, signature, let

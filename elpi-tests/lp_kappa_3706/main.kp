@@ -1,12 +1,33 @@
 module main
 
-generated_3706 : Map String Int
-let generated_3706 = { yield "only" : ((((((0 + ((0 + ((0 + (0 + 0)) + 0)) + 0)) + 0) + 0) + 0) + 0) + 0) }
+generated_3706 : Int
+let generated_3706 =
+    block
+        scoped effect Ask =
+            ask : Unit -> Bool
 
-result : Map String Int
+        let l = Ask
+
+        let seed = (match (Some ((\(n : Int) -> n) 0))
+          case Some payload -> payload
+          case None -> 0)
+
+        let comp : Eff <[Ask : Ask]> Int =
+            do
+                let b <- l.ask ()
+                if b then seed else (seed + 1)
+
+        let handled : Eff <[ ]> Int =
+            deep handle l comp with
+                case return x -> pure x
+                case ask () k -> k True
+
+        runPure handled
+
+result : Int
 let result = generated_3706
 
 --! assertNoErrors
---! assertType generated_3706 Map String Int
---! assertType result Map String Int
+--! assertType generated_3706 Int
+--! assertType result Int
 --! assertDeclKinds signature, let, signature, let

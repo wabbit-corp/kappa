@@ -1,12 +1,16 @@
 module main
 
-generated_4765 : Bool
-let generated_4765 = (if (if (if (if True then ((True || False) && True) else False) then False else True) then True else False) then True else False)
+generated_4765 : Set Int
+let generated_4765 = {| yield ((block
+    let pair = (x = ((Some (0 + 1)) ?: (0 + 2)), y = (((Some (0 + 1)) ?: (0 + 2)) + 1))
+    let (x = captured, y = other) = pair
 
-result : Bool
+    (captured + other)) + 0) |}
+
+result : Set Int
 let result = generated_4765
 
 --! assertNoErrors
---! assertType generated_4765 Bool
---! assertType result Bool
+--! assertType generated_4765 Set Int
+--! assertType result Set Int
 --! assertDeclKinds signature, let, signature, let

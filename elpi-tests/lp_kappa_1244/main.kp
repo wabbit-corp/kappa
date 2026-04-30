@@ -1,15 +1,21 @@
 module main
 
-generatedMakeConst : forall (a : Type). a -> Unit -> a
-let generatedMakeConst value = \() -> value
+generated_1244 : Map String Int
+let generated_1244 = { for x in [1, 2, 3], if x > 0, yield "k" : (match (Some (block
+    generatedSetCount : Set Int -> Int
+    let generatedSetCount values = 2
 
-generated_1244 : Int
-let generated_1244 = ((generatedMakeConst ((((((((if False then 0 else ((0 + 0) + 0)) + 0) + 0) + 0) + 0) + 0) + 0) + 0)) ())
+    let item = x
+    let values = {|item, (item + 1)|}
 
-result : Int
+    generatedSetCount values))
+  case Some payload -> payload
+  case None -> 0) }
+
+result : Map String Int
 let result = generated_1244
 
 --! assertNoErrors
---! assertType generated_1244 Int
---! assertType result Int
---! assertDeclKinds signature, let, signature, let, signature, let
+--! assertType generated_1244 Map String Int
+--! assertType result Map String Int
+--! assertDeclKinds signature, let, signature, let

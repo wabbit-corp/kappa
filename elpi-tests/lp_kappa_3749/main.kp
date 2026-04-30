@@ -1,12 +1,17 @@
 module main
 
-generated_3749 : (Int -> Int)
-let generated_3749 = \(x : Int) -> ((\(x : Int) -> ((\(x : Int) -> (((\(x : Int) -> ((((if True then \(x : Int) -> x else \(x : Int) -> x)) x) + 0)) x) + 0)) x)) x)
+generated_3749 : Int
+let generated_3749 =
+    match (Some ((match [((\(n : Int) -> n) 0), (((\(n : Int) -> n) 0) + 1)]
+      case head :: tail -> head
+      case Nil -> 0) + 0))
+      case Some payload -> payload
+      case None -> 0
 
-result : (Int -> Int)
+result : Int
 let result = generated_3749
 
 --! assertNoErrors
---! assertType generated_3749 (Int -> Int)
---! assertType result (Int -> Int)
+--! assertType generated_3749 Int
+--! assertType result Int
 --! assertDeclKinds signature, let, signature, let

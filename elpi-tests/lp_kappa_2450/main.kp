@@ -3,11 +3,17 @@ module main
 generated_2450 : Int
 let generated_2450 =
     block
-        type RankedAlias = Int
+        let (captured : Int) = ((match ((match (Some 0)
+          case Some payload -> payload
+          case None -> 0) == (match (Some 0)
+          case Some payload -> payload
+          case None -> 0))
+          case True -> (match (Some 0)
+            case Some payload -> payload
+            case None -> 0)
+          case False -> 0) + 0)
 
-        let aliased : RankedAlias = (((((((((left = (((if False then 0 else 0) + (0 + 0)) + 0), right = 0)).left + 0) + 0) + 0) + 0) + 0) + 0) + 0)
-
-        (aliased + 1)
+        captured
 
 result : Int
 let result = generated_2450

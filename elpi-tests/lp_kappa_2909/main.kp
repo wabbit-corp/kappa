@@ -1,15 +1,20 @@
 module main
 
-generatedResize : (image : Int) -> (width : Int) -> (height : Int) -> Int
-let generatedResize image width height = image + width * 10 + height
+generated_2909 : List Int
+let generated_2909 = [ for x in [1, 2, 3], let y = x + 1, yield (match ((match [x, (x + 1)]
+  case head :: tail -> head
+  case Nil -> 0) == (match [x, (x + 1)]
+  case head :: tail -> head
+  case Nil -> 0))
+  case True -> (match [x, (x + 1)]
+    case head :: tail -> head
+    case Nil -> 0)
+  case False -> 0) ]
 
-generated_2909 : Int
-let generated_2909 = generatedResize { image = (((((((((Some (0 + 0)) ?: 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0), height = 3, width = 2 }
-
-result : Int
+result : List Int
 let result = generated_2909
 
 --! assertNoErrors
---! assertType generated_2909 Int
---! assertType result Int
---! assertDeclKinds signature, let, signature, let, signature, let
+--! assertType generated_2909 List Int
+--! assertType result List Int
+--! assertDeclKinds signature, let, signature, let

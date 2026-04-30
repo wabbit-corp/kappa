@@ -1,12 +1,18 @@
 module main
 
+data GeneratedChoice : Type =
+    GeneratedLeft (value : Int)
+    GeneratedRight
+
 generated_2985 : Int
 let generated_2985 =
-    block
-        let pair = (x = (((((((((Some ((0 + (0 + 0)) + 0)) ?: 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0), y = (((((((((Some ((0 + (0 + 0)) + 0)) ?: 0) + 0) + 0) + 0) + 0) + 0) + 0) + 1))
-        let (x = captured, y = other) = pair
-
-        (captured + other)
+    match GeneratedRight
+      case GeneratedLeft payload -> (payload + 0)
+      case GeneratedRight -> (((Some ((match [0, (0 + 1)]
+        case head :: tail -> head
+        case Nil -> 0) + 1)) ?: ((match [0, (0 + 1)]
+        case head :: tail -> head
+        case Nil -> 0) + 2)) + 0)
 
 result : Int
 let result = generated_2985
@@ -14,4 +20,4 @@ let result = generated_2985
 --! assertNoErrors
 --! assertType generated_2985 Int
 --! assertType result Int
---! assertDeclKinds signature, let, signature, let
+--! assertDeclKinds data, signature, let, signature, let

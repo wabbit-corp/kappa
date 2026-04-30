@@ -1,15 +1,25 @@
 module main
 
-generated_4041 : IO Int
+generated_4041 : Int
 let generated_4041 =
-    do
-        let staged = ((((((0 + ((if True then (0 + (0 + 0)) else 0) + 0)) + 0) + 0) + 0) + 0) + 0)
-        pure (staged + 1)
+    let
+        ranked : Int = (block
+            generatedSetCount : Set Int -> Int
+            let generatedSetCount values = 2
 
-result : IO Int
+            let item = (match (0 == 0)
+              case True -> 0
+              case False -> 0)
+            let values = {|item, (item + 1)|}
+
+            generatedSetCount values)
+in
+        (ranked + 0)
+
+result : Int
 let result = generated_4041
 
 --! assertNoErrors
---! assertType generated_4041 IO Int
---! assertType result IO Int
+--! assertType generated_4041 Int
+--! assertType result Int
 --! assertDeclKinds signature, let, signature, let

@@ -2,16 +2,13 @@ module main
 
 generated_3696 : Int
 let generated_3696 =
-    block
-        trait RankedScore a =
-            rank : a -> Int
-
-        instance RankedScore Int =
-            let rank x = x
-
-        let dict = summon (RankedScore Int)
-
-        dict.rank ((((((0 + ((0 + ((0 + (0 + 0)) + 0)) + 0)) + 0) + 0) + 0) + 0) + 0)
+    match [((match (Some ((\(n : Int) -> n) 0))
+      case Some payload -> payload
+      case None -> 0) + 0), (((match (Some ((\(n : Int) -> n) 0))
+      case Some payload -> payload
+      case None -> 0) + 0) + 1)]
+      case head :: tail -> head
+      case Nil -> 0
 
 result : Int
 let result = generated_3696

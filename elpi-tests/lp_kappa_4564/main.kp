@@ -1,12 +1,19 @@
 module main
 
-generated_4564 : Option Int
-let generated_4564 = (if True then (if True then (if False then None else (if (((if (False || True) then (Some (0 + 0)) else (Some (1 + 1))) ?: 0) == 1) then None else (if (False || True) then (Some (0 + 0)) else (Some (1 + 1))))) else None) else None)
+generated_4564 : List Int
+let generated_4564 = [ for x in [1, 2, 3], skip 1, take 2, yield (block
+    generatedSetCount : Set Int -> Int
+    let generatedSetCount values = 2
 
-result : Option Int
+    let item = ((Some (x + 1)) ?: (x + 2))
+    let values = {|item, (item + 1)|}
+
+    generatedSetCount values) ]
+
+result : List Int
 let result = generated_4564
 
 --! assertNoErrors
---! assertType generated_4564 Option Int
---! assertType result Option Int
+--! assertType generated_4564 List Int
+--! assertType result List Int
 --! assertDeclKinds signature, let, signature, let

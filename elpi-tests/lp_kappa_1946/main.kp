@@ -1,12 +1,35 @@
 module main
 
-generated_1946 : Option Int
-let generated_1946 = (if True then (if True then (if True then (if (((if False then None else (Some (0 + 0))) ?: 0) == 0) then (Some ((if False then None else (Some (0 + 0))) ?: 0)) else None) else None) else None) else None)
+generated_1946 : Map String Int
+let generated_1946 = { for x in [1, 2, 3], let y = x + 1, if y > 0, yield (if y > 1 then "hi" else "lo") : (match ((block
+    generatedMapCount : Map String Int -> Int
+    let generatedMapCount values = 1
 
-result : Option Int
+    let item = x
+    let values = { yield "item" : item }
+
+    generatedMapCount values) == (block
+    generatedMapCount : Map String Int -> Int
+    let generatedMapCount values = 1
+
+    let item = x
+    let values = { yield "item" : item }
+
+    generatedMapCount values))
+  case True -> (block
+      generatedMapCount : Map String Int -> Int
+      let generatedMapCount values = 1
+
+      let item = x
+      let values = { yield "item" : item }
+
+      generatedMapCount values)
+  case False -> 0) }
+
+result : Map String Int
 let result = generated_1946
 
 --! assertNoErrors
---! assertType generated_1946 Option Int
---! assertType result Option Int
+--! assertType generated_1946 Map String Int
+--! assertType result Map String Int
 --! assertDeclKinds signature, let, signature, let

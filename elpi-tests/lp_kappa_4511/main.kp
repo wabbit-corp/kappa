@@ -1,17 +1,21 @@
 module main
 
-generated_4511 : Int
-let generated_4511 =
-    block
-        rankedHelper : (Int -> Int)
-        let rankedHelper x = x + 1
+generated_4511 : List Int
+let generated_4511 = [ for x in [1, 2, 3], order by x desc, yield (block
+    generatedListLength : List Int -> Int
+    let generatedListLength xs decreases structural xs =
+        match xs
+          case Nil -> 0
+          case _ :: tail -> 1 + generatedListLength tail
 
-        rankedHelper ((((((0 + ((if False then 0 else ((if False then 0 else 0) + (0 + 0))) + 0)) + 0) + 0) + 0) + 0) + 0)
+    let item = ((Some (x + 1)) ?: (x + 2))
 
-result : Int
+    generatedListLength [item, (item + 1), 0]) ]
+
+result : List Int
 let result = generated_4511
 
 --! assertNoErrors
---! assertType generated_4511 Int
---! assertType result Int
+--! assertType generated_4511 List Int
+--! assertType result List Int
 --! assertDeclKinds signature, let, signature, let

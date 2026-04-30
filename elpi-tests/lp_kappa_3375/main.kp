@@ -1,12 +1,16 @@
 module main
 
-generated_3375 : (Int -> Int)
-let generated_3375 = \(x : Int) -> ((\(x : Int) -> ((\(x : Int) -> (((\(x : Int) -> ((\(x : Int) -> (0 + ((\(x : Int) -> x) x))) x)) x) + 0)) x)) x)
+generated_3375 : Map String Int
+let generated_3375 = { for x in [1, 2, 3], yield "k" : ((\(n : Int) -> n) (block
+    let pair = (x = x, y = (x + 1))
+    let (x = captured, y = other) = pair
 
-result : (Int -> Int)
+    (captured + other))), on conflict keep first }
+
+result : Map String Int
 let result = generated_3375
 
 --! assertNoErrors
---! assertType generated_3375 (Int -> Int)
---! assertType result (Int -> Int)
+--! assertType generated_3375 Map String Int
+--! assertType result Map String Int
 --! assertDeclKinds signature, let, signature, let

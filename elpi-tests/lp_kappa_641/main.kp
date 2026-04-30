@@ -1,15 +1,28 @@
 module main
 
-generated_641 : IO Int
-let generated_641 =
-    do
-        let staged = ((((((((0 + ((if True then 0 else 0) + 0)) + 0) + 0) + 0) + 0) + 0) + 0) + 0)
-        pure (staged + 1)
+generated_641 : List Int
+let generated_641 = [ for x in [1, 2, 3], let y = x + 1, if y > 0, yield (block
+    generatedSetCount : Set Int -> Int
+    let generatedSetCount values = 2
 
-result : IO Int
+    let item = (block
+        generatedListLength : List Int -> Int
+        let generatedListLength xs decreases structural xs =
+            match xs
+              case Nil -> 0
+              case _ :: tail -> 1 + generatedListLength tail
+
+        let item = x
+
+        generatedListLength [item, (item + 1), 0])
+    let values = {|item, (item + 1)|}
+
+    generatedSetCount values) ]
+
+result : List Int
 let result = generated_641
 
 --! assertNoErrors
---! assertType generated_641 IO Int
---! assertType result IO Int
+--! assertType generated_641 List Int
+--! assertType result List Int
 --! assertDeclKinds signature, let, signature, let

@@ -1,18 +1,14 @@
 module main
 
-generated_3674 : Int
-let generated_3674 =
-    block
-        type RankedAlias = Int
+generated_3674 : Map String Int
+let generated_3674 = { for x in [1, 2, 3], let y = x + 1, if y > 0, yield (if y > 1 then "hi" else "lo") : (match (Some ((\(n : Int) -> n) x))
+  case Some payload -> payload
+  case None -> 0) }
 
-        let aliased : RankedAlias = ((((((0 + ((0 + (((0 + 0) + 0) + 0)) + 0)) + 0) + 0) + 0) + 0) + 0)
-
-        (aliased + 1)
-
-result : Int
+result : Map String Int
 let result = generated_3674
 
 --! assertNoErrors
---! assertType generated_3674 Int
---! assertType result Int
+--! assertType generated_3674 Map String Int
+--! assertType result Map String Int
 --! assertDeclKinds signature, let, signature, let

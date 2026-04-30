@@ -1,15 +1,27 @@
 module main
 
-generated_4434 : IO Int
+generated_4434 : Int
 let generated_4434 =
-    do
-        value <- pure ((((((0 + ((if False then 0 else (if False then 0 else 0)) + 0)) + 0) + 0) + 0) + 0) + 0)
-        pure (value + 2)
+    match ((((Some ((match (0 == 0)
+      case True -> 0
+      case False -> 0) + 1)) ?: ((match (0 == 0)
+      case True -> 0
+      case False -> 0) + 2)) + 0) == (((Some ((match (0 == 0)
+      case True -> 0
+      case False -> 0) + 1)) ?: ((match (0 == 0)
+      case True -> 0
+      case False -> 0) + 2)) + 0))
+      case True -> (((Some ((match (0 == 0)
+        case True -> 0
+        case False -> 0) + 1)) ?: ((match (0 == 0)
+        case True -> 0
+        case False -> 0) + 2)) + 0)
+      case False -> 0
 
-result : IO Int
+result : Int
 let result = generated_4434
 
 --! assertNoErrors
---! assertType generated_4434 IO Int
---! assertType result IO Int
+--! assertType generated_4434 Int
+--! assertType result Int
 --! assertDeclKinds signature, let, signature, let

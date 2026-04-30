@@ -1,14 +1,34 @@
 module main
 
-type GeneratedTuple = (Int, Int)
+generated_585 : Int
+let generated_585 =
+    let
+        ranked : Int = (block
+            generatedListLength : List Int -> Int
+            let generatedListLength xs decreases structural xs =
+                match xs
+                  case Nil -> 0
+                  case _ :: tail -> 1 + generatedListLength tail
 
-generated_585 : GeneratedTuple
-let generated_585 = (if True then (if True then (if True then (if False then (0, (0 + 0)) else (if False then (0, (0 + 0)) else (0, (0 + 0)))) else (0, (0 + 0))) else (0, (0 + 0))) else (0, (0 + 0)))
+            let item = (block
+                generatedListLength : List Int -> Int
+                let generatedListLength xs decreases structural xs =
+                    match xs
+                      case Nil -> 0
+                      case _ :: tail -> 1 + generatedListLength tail
 
-result : GeneratedTuple
+                let item = 0
+
+                generatedListLength [item, (item + 1), 0])
+
+            generatedListLength [item, (item + 1), 0])
+in
+        (ranked + 0)
+
+result : Int
 let result = generated_585
 
 --! assertNoErrors
---! assertType generated_585 GeneratedTuple
---! assertType result GeneratedTuple
---! assertDeclKinds type, signature, let, signature, let
+--! assertType generated_585 Int
+--! assertType result Int
+--! assertDeclKinds signature, let, signature, let

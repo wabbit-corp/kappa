@@ -1,12 +1,12 @@
 module main
 
-generated_906 : Map String Int
-let generated_906 = { for x in [1, 2, 3], let y = x + 1, yield "k" : (((((((if True then ((x + 0) + 0) else 0) + 0) + 0) + 0) + 0) + 0) + 0) }
+generated_906 : Option Int
+let generated_906 = (if True then (if True then (if True then (if False then None else (if False then None else (Some (0 + 0)))) else None) else None) else None)
 
-result : Map String Int
+result : Option Int
 let result = generated_906
 
 --! assertNoErrors
---! assertType generated_906 Map String Int
---! assertType result Map String Int
+--! assertType generated_906 Option Int
+--! assertType result Option Int
 --! assertDeclKinds signature, let, signature, let

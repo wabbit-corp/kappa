@@ -1,17 +1,12 @@
 module main
 
-generated_1825 : Int
-let generated_1825 =
-    block
-        rankedHelper : (Int -> Int)
-        let rankedHelper x = x + 1
+generated_1825 : (Int -> Int)
+let generated_1825 = \(x : Int) -> ((\(x : Int) -> ((\(x : Int) -> ((\(x : Int) -> (0 + ((\(x : Int) -> if (x == 0) then x else ((\(x : Int) -> x) x)) x))) x)) x)) x)
 
-        rankedHelper (((((((((if True then ((left = 0, right = (0 + 0))).right else 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0)
-
-result : Int
+result : (Int -> Int)
 let result = generated_1825
 
 --! assertNoErrors
---! assertType generated_1825 Int
---! assertType result Int
+--! assertType generated_1825 (Int -> Int)
+--! assertType result (Int -> Int)
 --! assertDeclKinds signature, let, signature, let

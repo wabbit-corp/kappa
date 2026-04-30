@@ -1,14 +1,14 @@
 module main
 
-generatedNeed : (@x : Int) -> Int
-let generatedNeed (@x : Int) = x
+type GeneratedTuple = (Int, Int)
 
 generated_454 : Int
 let generated_454 =
     block
-        let (@x : Int) = ((((((((((left = 0, right = (0 + 0))).right + 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0)
+        let pair : GeneratedTuple = ((((\(n : Int) -> n) 0) + 0), (((\(n : Int) -> n) 0) + 1))
+        let (left, right) = pair
 
-        if True then generatedNeed else 0
+        (left + right)
 
 result : Int
 let result = generated_454
@@ -16,4 +16,4 @@ let result = generated_454
 --! assertNoErrors
 --! assertType generated_454 Int
 --! assertType result Int
---! assertDeclKinds signature, let, signature, let, signature, let
+--! assertDeclKinds type, signature, let, signature, let

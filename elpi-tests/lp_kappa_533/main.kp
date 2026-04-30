@@ -1,17 +1,12 @@
 module main
 
-generated_533 : Int
-let generated_533 =
-    block
-        rankedHelper : (Int -> Int)
-        let rankedHelper x = x + 1
+generated_533 : List Int
+let generated_533 = [ for x in [1, 2, 3], let y = x + 1, yield ((Some (x + 1)) ?: (x + 2)) ]
 
-        rankedHelper ((((((((0 + (0 + 0)) + 0) + 0) + 0) + 0) + 0) + 0) + 0)
-
-result : Int
+result : List Int
 let result = generated_533
 
 --! assertNoErrors
---! assertType generated_533 Int
---! assertType result Int
+--! assertType generated_533 List Int
+--! assertType result List Int
 --! assertDeclKinds signature, let, signature, let

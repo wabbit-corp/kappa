@@ -1,22 +1,25 @@
 module main
 
-generated_3628 : Int
+generatedNeed : (@x : Int) -> Int
+let generatedNeed (@x : Int) = x
+
+generated_3628 : IO Int
 let generated_3628 =
-    block
-        trait RankedScore a =
-            rank : a -> Int
+    do
+        let (@x : Int) = ((block
+            generatedMapCount : Map String Int -> Int
+            let generatedMapCount values = 1
 
-        instance RankedScore Int =
-            let rank x = x
+            let item = ((\(n : Int) -> n) 0)
+            let values = { yield "item" : item }
 
-        let dict = summon (RankedScore Int)
+            generatedMapCount values) + 0)
+        pure generatedNeed
 
-        dict.rank ((((((0 + ((0 + (0 + 0)) + 0)) + 0) + 0) + 0) + 0) + 0)
-
-result : Int
+result : IO Int
 let result = generated_3628
 
 --! assertNoErrors
---! assertType generated_3628 Int
---! assertType result Int
---! assertDeclKinds signature, let, signature, let
+--! assertType generated_3628 IO Int
+--! assertType result IO Int
+--! assertDeclKinds signature, let, signature, let, signature, let

@@ -1,17 +1,12 @@
 module main
 
-generated_96 : Int
-let generated_96 =
-    block
-        let base : (x : Int) = (x = (((0 + 0) + 0) + 0))
-        let extended = base.{ y := (((0 + 0) + 0) + 1) }
+generated_96 : Option Int
+let generated_96 = (if True then (Some (0 + 0)) else None)
 
-        (extended.x + extended.y)
-
-result : Int
+result : Option Int
 let result = generated_96
 
 --! assertNoErrors
---! assertType generated_96 Int
---! assertType result Int
+--! assertType generated_96 Option Int
+--! assertType result Option Int
 --! assertDeclKinds signature, let, signature, let

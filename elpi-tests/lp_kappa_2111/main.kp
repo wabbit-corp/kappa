@@ -1,20 +1,12 @@
 module main
 
-generated_2111 : Int
-let generated_2111 =
-    block
-        data RankedBox : Type =
-            RankedBox (value : Int)
+generated_2111 : String
+let generated_2111 = (if (if (if (if ((True || False) || False) then True else False) then True else False) then True else False) then #"raw lambda-prolog"# else "fallback")
 
-        let boxed = RankedBox (((((((((if False then 0 else ((if False then 0 else 0) + (0 + 0))) + (0 + 0)) + 0) + 0) + 0) + 0) + 0) + 0) + 0)
-
-        match boxed
-          case RankedBox value -> (value + 1)
-
-result : Int
+result : String
 let result = generated_2111
 
 --! assertNoErrors
---! assertType generated_2111 Int
---! assertType result Int
+--! assertType generated_2111 String
+--! assertType result String
 --! assertDeclKinds signature, let, signature, let

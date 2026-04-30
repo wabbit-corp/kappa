@@ -1,18 +1,12 @@
 module main
 
-generatedNeed : (@x : Int) -> Int
-let generatedNeed (@x : Int) = x
+generated_3498 : Option Int
+let generated_3498 = (if True then (if True then (if True then (if (((Some (0 + 0)) ?: 0) == 1) then (Some (((Some (0 + 0)) ?: 0) + 0)) else (Some (0 + 0))) else None) else None) else None)
 
-generated_3498 : IO Int
-let generated_3498 =
-    do
-        let (@x : Int) = ((((((0 + (((((if False then 0 else 0) + (0 + 0)) + 0) + 0) + 0)) + 0) + 0) + 0) + 0) + 0)
-        pure generatedNeed
-
-result : IO Int
+result : Option Int
 let result = generated_3498
 
 --! assertNoErrors
---! assertType generated_3498 IO Int
---! assertType result IO Int
---! assertDeclKinds signature, let, signature, let, signature, let
+--! assertType generated_3498 Option Int
+--! assertType result Option Int
+--! assertDeclKinds signature, let, signature, let

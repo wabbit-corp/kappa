@@ -1,12 +1,23 @@
 module main
 
-generated_2053 : List Int
-let generated_2053 = [ for x in [1, 2, 3], let y = x + 1, if y > 0, yield ((((((((if False then 0 else ((if True then x else 0) + 0)) + (0 + 0)) + 0) + 0) + 0) + 0) + 0) + 0) ]
+generated_2053 : Set Int
+let generated_2053 = {| for x in [1, 2, 3], let y = x + 1, yield (block
+    generatedListLength : List Int -> Int
+    let generatedListLength xs decreases structural xs =
+        match xs
+          case Nil -> 0
+          case _ :: tail -> 1 + generatedListLength tail
 
-result : List Int
+    let item = (match (Some x)
+      case Some payload -> payload
+      case None -> 0)
+
+    generatedListLength [item, (item + 1), 0]) |}
+
+result : Set Int
 let result = generated_2053
 
 --! assertNoErrors
---! assertType generated_2053 List Int
---! assertType result List Int
+--! assertType generated_2053 Set Int
+--! assertType result Set Int
 --! assertDeclKinds signature, let, signature, let

@@ -1,15 +1,33 @@
 module main
 
-generated_3463 : IO Int
+generated_3463 : Int
 let generated_3463 =
-    do
-        let staged = ((((((0 + (((((if True then 0 else 0) + 0) + 0) + 0) + 0)) + 0) + 0) + 0) + 0) + 0)
-        pure (staged + 1)
+    block
+        let pair = (x = (((Some ((block
+            let pair = (x = 0, y = (0 + 1))
+            let (x = captured, y = other) = pair
 
-result : IO Int
+            (captured + other)) + 1)) ?: ((block
+            let pair = (x = 0, y = (0 + 1))
+            let (x = captured, y = other) = pair
+
+            (captured + other)) + 2)) + 0), y = (((Some ((block
+            let pair = (x = 0, y = (0 + 1))
+            let (x = captured, y = other) = pair
+
+            (captured + other)) + 1)) ?: ((block
+            let pair = (x = 0, y = (0 + 1))
+            let (x = captured, y = other) = pair
+
+            (captured + other)) + 2)) + 1))
+        let (x = captured, y = other) = pair
+
+        (captured + other)
+
+result : Int
 let result = generated_3463
 
 --! assertNoErrors
---! assertType generated_3463 IO Int
---! assertType result IO Int
+--! assertType generated_3463 Int
+--! assertType result Int
 --! assertDeclKinds signature, let, signature, let

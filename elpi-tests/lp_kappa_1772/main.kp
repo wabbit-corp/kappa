@@ -1,7 +1,28 @@
 module main
 
 generated_1772 : Int
-let generated_1772 = ((((((((if True then ((left = (0 + 0), right = 0)).left else 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0)
+let generated_1772 =
+    block
+        ranked : Int
+        let ranked = (match [(block
+            generatedMapCount : Map String Int -> Int
+            let generatedMapCount values = 1
+
+            let item = 0
+            let values = { yield "item" : item }
+
+            generatedMapCount values), ((block
+            generatedMapCount : Map String Int -> Int
+            let generatedMapCount values = 1
+
+            let item = 0
+            let values = { yield "item" : item }
+
+            generatedMapCount values) + 1)]
+          case head :: tail -> head
+          case Nil -> 0)
+
+        (ranked + 0)
 
 result : Int
 let result = generated_1772

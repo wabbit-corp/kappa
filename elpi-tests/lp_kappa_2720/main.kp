@@ -1,12 +1,20 @@
 module main
 
-generated_2720 : Map String Int
-let generated_2720 = { yield "only" : (((((((((left = 0, right = ((if False then 0 else 0) + 0))).right + 0) + 0) + 0) + 0) + 0) + 0) + 0) }
+generated_2720 : Int
+let generated_2720 =
+    block
+        let (captured : Int) = ((match (Some (match [0, (0 + 1)]
+          case head :: tail -> head
+          case Nil -> 0))
+          case Some payload -> payload
+          case None -> 0) + 0)
 
-result : Map String Int
+        captured
+
+result : Int
 let result = generated_2720
 
 --! assertNoErrors
---! assertType generated_2720 Map String Int
---! assertType result Map String Int
+--! assertType generated_2720 Int
+--! assertType result Int
 --! assertDeclKinds signature, let, signature, let

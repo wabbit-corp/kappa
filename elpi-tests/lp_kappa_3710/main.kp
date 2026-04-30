@@ -1,7 +1,10 @@
 module main
 
 generated_3710 : Int
-let generated_3710 = (((((0 + ((0 + ((if True then 0 else 0) + 0)) + 0)) + 0) + 0) + 0) + 0)
+let generated_3710 =
+    match [((\(n : Int) -> n) 0), (((\(n : Int) -> n) 0) + 1)]
+      case head :: tail -> head
+      case Nil -> 0
 
 result : Int
 let result = generated_3710

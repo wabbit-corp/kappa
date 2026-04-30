@@ -1,12 +1,32 @@
 module main
 
-generated_838 : Map String Int
-let generated_838 = { for x in [1, 2, 3], let y = x + 1, if y > 0, yield (if y > 1 then "hi" else "lo") : (((((((0 + (((Some (x + 0)) ?: 0) + 0)) + 0) + 0) + 0) + 0) + 0) + 0) }
+generated_838 : List Int
+let generated_838 = [ for x in [1, 2, 3], skip 1, take 2, yield (match [(block
+    generatedListLength : List Int -> Int
+    let generatedListLength xs decreases structural xs =
+        match xs
+          case Nil -> 0
+          case _ :: tail -> 1 + generatedListLength tail
 
-result : Map String Int
+    let item = x
+
+    generatedListLength [item, (item + 1), 0]), ((block
+    generatedListLength : List Int -> Int
+    let generatedListLength xs decreases structural xs =
+        match xs
+          case Nil -> 0
+          case _ :: tail -> 1 + generatedListLength tail
+
+    let item = x
+
+    generatedListLength [item, (item + 1), 0]) + 1)]
+  case head :: tail -> head
+  case Nil -> 0) ]
+
+result : List Int
 let result = generated_838
 
 --! assertNoErrors
---! assertType generated_838 Map String Int
---! assertType result Map String Int
+--! assertType generated_838 List Int
+--! assertType result List Int
 --! assertDeclKinds signature, let, signature, let

@@ -1,15 +1,21 @@
 module main
 
-generatedResize : (image : Int) -> (width : Int) -> (height : Int) -> Int
-let generatedResize image width height = image + width * 10 + height
+generated_2161 : Set Int
+let generated_2161 = {| for x in [1, 2, 3], let y = x + 1, if y > 0, yield (block
+    generatedMapCount : Map String Int -> Int
+    let generatedMapCount values = 1
 
-generated_2161 : Int
-let generated_2161 = generatedResize { image = (((((((((if False then 0 else ((left = 0, right = (0 + 0))).right) + (0 + 0)) + 0) + 0) + 0) + 0) + 0) + 0) + 0), height = 3, width = 2 }
+    let item = (match (Some x)
+      case Some payload -> payload
+      case None -> 0)
+    let values = { yield "item" : item }
 
-result : Int
+    generatedMapCount values) |}
+
+result : Set Int
 let result = generated_2161
 
 --! assertNoErrors
---! assertType generated_2161 Int
---! assertType result Int
---! assertDeclKinds signature, let, signature, let, signature, let
+--! assertType generated_2161 Set Int
+--! assertType result Set Int
+--! assertDeclKinds signature, let, signature, let

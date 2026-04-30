@@ -1,12 +1,20 @@
 module main
 
-generated_2350 : Int
-let generated_2350 = ((((((((left = ((if False then 0 else 0) + 0), right = 0)).left + 0) + 0) + 0) + 0) + 0) + 0)
+generated_2350 : List Int
+let generated_2350 = [ for x in [1, 2, 3], skip 1, take 2, yield (block
+    let pair = (x = (match (Some x)
+      case Some payload -> payload
+      case None -> 0), y = ((match (Some x)
+      case Some payload -> payload
+      case None -> 0) + 1))
+    let (x = captured, y = other) = pair
 
-result : Int
+    (captured + other)) ]
+
+result : List Int
 let result = generated_2350
 
 --! assertNoErrors
---! assertType generated_2350 Int
---! assertType result Int
+--! assertType generated_2350 List Int
+--! assertType result List Int
 --! assertDeclKinds signature, let, signature, let

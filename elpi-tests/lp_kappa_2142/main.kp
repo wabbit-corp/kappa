@@ -1,12 +1,42 @@
 module main
 
-generated_2142 : Map String Int
-let generated_2142 = { yield "only" : (((((((((if False then 0 else ((left = (0 + 0), right = 0)).left) + (0 + 0)) + 0) + 0) + 0) + 0) + 0) + 0) + 0) }
+generated_2142 : Int
+let generated_2142 =
+    block
+        scoped effect Choice =
+            ω choose : Unit -> Bool
 
-result : Map String Int
+        let seed = (block
+            generatedSetCount : Set Int -> Int
+            let generatedSetCount values = 2
+
+            let item = (match (Some 0)
+              case Some payload -> payload
+              case None -> 0)
+            let values = {|item, (item + 1)|}
+
+            generatedSetCount values)
+
+        let comp : Eff <[Choice : Choice]> Int =
+            do
+                let b <- Choice.choose ()
+                if b then seed else (seed + 1)
+
+        let handled : Eff <[ ]> Int =
+            deep handle Choice comp with
+                case return x -> pure x
+                case choose () k ->
+                    do
+                        let a <- k True
+                        let b <- k False
+                        pure (a + b)
+
+        runPure handled
+
+result : Int
 let result = generated_2142
 
 --! assertNoErrors
---! assertType generated_2142 Map String Int
---! assertType result Map String Int
+--! assertType generated_2142 Int
+--! assertType result Int
 --! assertDeclKinds signature, let, signature, let

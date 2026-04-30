@@ -1,15 +1,26 @@
 module main
 
-generated_3992 : IO Int
-let generated_3992 =
-    do
-        value <- pure ((((((0 + ((if True then ((0 + 0) + 0) else 0) + 0)) + 0) + 0) + 0) + 0) + 0)
-        pure (value + 2)
+generatedEcho : forall (a : Type). (this x : a) -> a
+let generatedEcho @a (this x : a) = x
 
-result : IO Int
+generated_3992 : Int
+let generated_3992 = ((block
+    generatedListLength : List Int -> Int
+    let generatedListLength xs decreases structural xs =
+        match xs
+          case Nil -> 0
+          case _ :: tail -> 1 + generatedListLength tail
+
+    let item = (match (0 == 0)
+      case True -> 0
+      case False -> 0)
+
+    generatedListLength [item, (item + 1), 0]) + 0).generatedEcho
+
+result : Int
 let result = generated_3992
 
 --! assertNoErrors
---! assertType generated_3992 IO Int
---! assertType result IO Int
---! assertDeclKinds signature, let, signature, let
+--! assertType generated_3992 Int
+--! assertType result Int
+--! assertDeclKinds signature, let, signature, let, signature, let

@@ -1,12 +1,33 @@
 module main
 
-generated_4612 : Map String Int
-let generated_4612 = { for x in [1, 2, 3], if x > 0, yield "k" : (((((0 + ((if False then 0 else ((Some (x + 0)) ?: 0)) + 0)) + 0) + 0) + 0) + 0) }
+type GeneratedTuple = (Int, Int)
 
-result : Map String Int
+generated_4612 : Int
+let generated_4612 =
+    block
+        let pair : GeneratedTuple = (((block
+            generatedMapCount : Map String Int -> Int
+            let generatedMapCount values = 1
+
+            let item = ((Some (0 + 1)) ?: (0 + 2))
+            let values = { yield "item" : item }
+
+            generatedMapCount values) + 0), ((block
+            generatedMapCount : Map String Int -> Int
+            let generatedMapCount values = 1
+
+            let item = ((Some (0 + 1)) ?: (0 + 2))
+            let values = { yield "item" : item }
+
+            generatedMapCount values) + 1))
+        let (left, right) = pair
+
+        (left + right)
+
+result : Int
 let result = generated_4612
 
 --! assertNoErrors
---! assertType generated_4612 Map String Int
---! assertType result Map String Int
---! assertDeclKinds signature, let, signature, let
+--! assertType generated_4612 Int
+--! assertType result Int
+--! assertDeclKinds type, signature, let, signature, let

@@ -1,12 +1,20 @@
 module main
 
-generated_557 : List Int
-let generated_557 = [ for x in [1, 2, 3], let y = x + 1, if y > 0, yield (((((((0 + (((x + 0) + 0) + 0)) + 0) + 0) + 0) + 0) + 0) + 0) ]
+generated_557 : Int
+let generated_557 =
+    block
+        data RankedBox : Type =
+            RankedBox (value : Int)
 
-result : List Int
+        let boxed = RankedBox (((Some (0 + 1)) ?: (0 + 2)) + 0)
+
+        match boxed
+          case RankedBox value -> (value + 1)
+
+result : Int
 let result = generated_557
 
 --! assertNoErrors
---! assertType generated_557 List Int
---! assertType result List Int
+--! assertType generated_557 Int
+--! assertType result Int
 --! assertDeclKinds signature, let, signature, let

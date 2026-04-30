@@ -1,15 +1,12 @@
 module main
 
-generatedMakeConst : forall (a : Type). a -> Unit -> a
-let generatedMakeConst value = \() -> value
+generated_3862 : List Int
+let generated_3862 = [ for x in [1, 2, 3], skip 1, take 2, yield ((\(n : Int) -> n) ((\(n : Int) -> n) x)) ]
 
-generated_3862 : Int
-let generated_3862 = ((generatedMakeConst ((((((0 + ((0 + (((left = (0 + 0), right = 0)).left + 0)) + 0)) + 0) + 0) + 0) + 0) + 0)) ())
-
-result : Int
+result : List Int
 let result = generated_3862
 
 --! assertNoErrors
---! assertType generated_3862 Int
---! assertType result Int
---! assertDeclKinds signature, let, signature, let, signature, let
+--! assertType generated_3862 List Int
+--! assertType result List Int
+--! assertDeclKinds signature, let, signature, let

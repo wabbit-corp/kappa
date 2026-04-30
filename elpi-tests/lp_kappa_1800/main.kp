@@ -1,12 +1,31 @@
 module main
 
-generated_1800 : List Int
-let generated_1800 = [ yield (((((((((if True then ((left = (0 + 0), right = 0)).left else 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0) ]
+generatedNeed : (@x : Int) -> Int
+let generatedNeed (@x : Int) = x
 
-result : List Int
+generated_1800 : Int
+let generated_1800 = generatedNeed @(((match [(block
+    generatedMapCount : Map String Int -> Int
+    let generatedMapCount values = 1
+
+    let item = 0
+    let values = { yield "item" : item }
+
+    generatedMapCount values), ((block
+    generatedMapCount : Map String Int -> Int
+    let generatedMapCount values = 1
+
+    let item = 0
+    let values = { yield "item" : item }
+
+    generatedMapCount values) + 1)]
+  case head :: tail -> head
+  case Nil -> 0) + 0))
+
+result : Int
 let result = generated_1800
 
 --! assertNoErrors
---! assertType generated_1800 List Int
---! assertType result List Int
---! assertDeclKinds signature, let, signature, let
+--! assertType generated_1800 Int
+--! assertType result Int
+--! assertDeclKinds signature, let, signature, let, signature, let

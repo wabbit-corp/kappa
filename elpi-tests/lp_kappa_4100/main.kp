@@ -1,10 +1,19 @@
 module main
 
-generatedMakeConst : forall (a : Type). a -> Unit -> a
-let generatedMakeConst value = \() -> value
+generatedEcho : forall (a : Type). (this x : a) -> a
+let generatedEcho @a (this x : a) = x
 
 generated_4100 : Int
-let generated_4100 = ((generatedMakeConst ((((((0 + ((if True then (if False then 0 else 0) else 0) + 0)) + 0) + 0) + 0) + 0) + 0)) ())
+let generated_4100 = ((block
+    generatedMapCount : Map String Int -> Int
+    let generatedMapCount values = 1
+
+    let item = (match (0 == 0)
+      case True -> 0
+      case False -> 0)
+    let values = { yield "item" : item }
+
+    generatedMapCount values) + 0).generatedEcho
 
 result : Int
 let result = generated_4100

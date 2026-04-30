@@ -1,17 +1,12 @@
 module main
 
-generated_4362 : Int
-let generated_4362 =
-    block
-        ranked : Int
-        let ranked = (((((0 + ((if False then 0 else (0 + (0 + 0))) + 0)) + 0) + 0) + 0) + 0)
+generated_4362 : Option Int
+let generated_4362 = (if True then (if True then (if True then (if (False || True) then (if (((Some (0 + 0)) ?: 0) == 0) then (Some ((Some (0 + 0)) ?: 0)) else None) else (Some (1 + 1))) else None) else None) else None)
 
-        (ranked + 0)
-
-result : Int
+result : Option Int
 let result = generated_4362
 
 --! assertNoErrors
---! assertType generated_4362 Int
---! assertType result Int
+--! assertType generated_4362 Option Int
+--! assertType result Option Int
 --! assertDeclKinds signature, let, signature, let

@@ -1,17 +1,18 @@
 module main
 
-generated_4924 : Int
+generatedNeed : (@x : Int) -> Int
+let generatedNeed (@x : Int) = x
+
+generated_4924 : IO Int
 let generated_4924 =
-    block
-        let base : (x : Int) = (x = ((((((0 + (((if True then ((left = 0, right = (0 + 0))).right else 0) + 0) + 0)) + 0) + 0) + 0) + 0) + 0))
-        let extended = base.{ y := ((((((0 + (((if True then ((left = 0, right = (0 + 0))).right else 0) + 0) + 0)) + 0) + 0) + 0) + 0) + 1) }
+    do
+        let (@x : Int) = (((Some (((Some (0 + 1)) ?: (0 + 2)) + 1)) ?: (((Some (0 + 1)) ?: (0 + 2)) + 2)) + 0)
+        pure generatedNeed
 
-        (extended.x + extended.y)
-
-result : Int
+result : IO Int
 let result = generated_4924
 
 --! assertNoErrors
---! assertType generated_4924 Int
---! assertType result Int
---! assertDeclKinds signature, let, signature, let
+--! assertType generated_4924 IO Int
+--! assertType result IO Int
+--! assertDeclKinds signature, let, signature, let, signature, let

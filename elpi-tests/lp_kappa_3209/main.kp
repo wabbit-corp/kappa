@@ -1,12 +1,21 @@
 module main
 
-generated_3209 : List Int
-let generated_3209 = [ for x in [1, 2, 3], let y = x + 1, yield ((((((((Some (((Some (x + 0)) ?: 0) + 0)) ?: 0) + 0) + 0) + 0) + 0) + 0) + 0) ]
+generated_3209 : Int
+let generated_3209 =
+    match (Some ((match (Some (block
+        let pair = (x = 0, y = (0 + 1))
+        let (x = captured, y = other) = pair
 
-result : List Int
+        (captured + other)))
+      case Some payload -> payload
+      case None -> 0) + 0))
+      case Some payload -> payload
+      case None -> 0
+
+result : Int
 let result = generated_3209
 
 --! assertNoErrors
---! assertType generated_3209 List Int
---! assertType result List Int
+--! assertType generated_3209 Int
+--! assertType result Int
 --! assertDeclKinds signature, let, signature, let

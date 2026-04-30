@@ -1,12 +1,25 @@
 module main
 
-generated_4760 : Map String Int
-let generated_4760 = { yield "only" : ((((((0 + (((if True then (if True then 0 else 0) else 0) + 0) + 0)) + 0) + 0) + 0) + 0) + 0) }
+generated_4760 : Int
+let generated_4760 =
+    block
+        let base : (x : Int) = (x = ((block
+            let pair = (x = ((Some (0 + 1)) ?: (0 + 2)), y = (((Some (0 + 1)) ?: (0 + 2)) + 1))
+            let (x = captured, y = other) = pair
 
-result : Map String Int
+            (captured + other)) + 0))
+        let extended = base.{ y := ((block
+            let pair = (x = ((Some (0 + 1)) ?: (0 + 2)), y = (((Some (0 + 1)) ?: (0 + 2)) + 1))
+            let (x = captured, y = other) = pair
+
+            (captured + other)) + 1) }
+
+        (extended.x + extended.y)
+
+result : Int
 let result = generated_4760
 
 --! assertNoErrors
---! assertType generated_4760 Map String Int
---! assertType result Map String Int
+--! assertType generated_4760 Int
+--! assertType result Int
 --! assertDeclKinds signature, let, signature, let

@@ -1,12 +1,23 @@
 module main
 
-generated_2439 : String
-let generated_2439 = (if (if (if (if ((if (if False then True else (True || False)) then 1 else 0) == 1) then True else False) then True else False) then True else False) then #"raw lambda-prolog"# else "fallback")
+generated_2439 : IO Int
+let generated_2439 =
+    do
+        let staged = ((match ((match (Some 0)
+          case Some payload -> payload
+          case None -> 0) == (match (Some 0)
+          case Some payload -> payload
+          case None -> 0))
+          case True -> (match (Some 0)
+            case Some payload -> payload
+            case None -> 0)
+          case False -> 0) + 0)
+        pure (staged + 1)
 
-result : String
+result : IO Int
 let result = generated_2439
 
 --! assertNoErrors
---! assertType generated_2439 String
---! assertType result String
+--! assertType generated_2439 IO Int
+--! assertType result IO Int
 --! assertDeclKinds signature, let, signature, let

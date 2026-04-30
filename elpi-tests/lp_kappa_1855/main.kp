@@ -1,15 +1,33 @@
 module main
 
-generatedResize : (image : Int) -> (width : Int) -> (height : Int) -> Int
-let generatedResize image width height = image + width * 10 + height
+generatedEcho : forall (a : Type). (this x : a) -> a
+let generatedEcho @a (this x : a) = x
 
-generated_1855 : Int
-let generated_1855 = generatedResize { image = (((((((((if True then ((Some (0 + 0)) ?: 0) else 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0), height = 3, width = 2 }
+generated_1855 : Option Int
+let generated_1855 = (Some ((block
+    let pair = (x = (block
+        generatedMapCount : Map String Int -> Int
+        let generatedMapCount values = 1
 
-result : Int
+        let item = 0
+        let values = { yield "item" : item }
+
+        generatedMapCount values), y = ((block
+        generatedMapCount : Map String Int -> Int
+        let generatedMapCount values = 1
+
+        let item = 0
+        let values = { yield "item" : item }
+
+        generatedMapCount values) + 1))
+    let (x = captured, y = other) = pair
+
+    (captured + other)) + 0))?.generatedEcho
+
+result : Option Int
 let result = generated_1855
 
 --! assertNoErrors
---! assertType generated_1855 Int
---! assertType result Int
+--! assertType generated_1855 Option Int
+--! assertType result Option Int
 --! assertDeclKinds signature, let, signature, let, signature, let

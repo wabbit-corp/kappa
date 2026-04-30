@@ -1,12 +1,12 @@
 module main
 
-generated_1339 : List Int
-let generated_1339 = [ for x in [1, 2, 3], if x > 0, yield (((((((if False then 0 else (if False then 0 else x)) + 0) + 0) + 0) + 0) + 0) + 0) ]
+generated_1339 : (Int -> Int)
+let generated_1339 = \(x : Int) -> ((\(x : Int) -> ((\(x : Int) -> ((\(x : Int) -> (0 + ((\(x : Int) -> x) x))) x)) x)) x)
 
-result : List Int
+result : (Int -> Int)
 let result = generated_1339
 
 --! assertNoErrors
---! assertType generated_1339 List Int
---! assertType result List Int
+--! assertType generated_1339 (Int -> Int)
+--! assertType result (Int -> Int)
 --! assertDeclKinds signature, let, signature, let

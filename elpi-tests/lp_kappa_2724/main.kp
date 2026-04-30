@@ -1,7 +1,18 @@
 module main
 
 generated_2724 : Int
-let generated_2724 = ((((((((left = 0, right = (((if True then 0 else 0) + 0) + 0))).right + 0) + 0) + 0) + 0) + 0) + 0)
+let generated_2724 =
+    match [((match (Some (match [0, (0 + 1)]
+      case head :: tail -> head
+      case Nil -> 0))
+      case Some payload -> payload
+      case None -> 0) + 0), (((match (Some (match [0, (0 + 1)]
+      case head :: tail -> head
+      case Nil -> 0))
+      case Some payload -> payload
+      case None -> 0) + 0) + 1)]
+      case head :: tail -> head
+      case Nil -> 0
 
 result : Int
 let result = generated_2724

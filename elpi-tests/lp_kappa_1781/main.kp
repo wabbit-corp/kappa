@@ -1,12 +1,31 @@
 module main
 
-generated_1781 : List Int
-let generated_1781 = [ for x in [1, 2, 3], let y = x + 1, if y > 0, yield ((((((((if True then ((left = (x + 0), right = 0)).left else 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0) ]
+generatedResize : (image : Int) -> (width : Int) -> (height : Int) -> Int
+let generatedResize image width height = image + width * 10 + height
 
-result : List Int
+generated_1781 : Int
+let generated_1781 = generatedResize { image = ((match [(block
+    generatedMapCount : Map String Int -> Int
+    let generatedMapCount values = 1
+
+    let item = 0
+    let values = { yield "item" : item }
+
+    generatedMapCount values), ((block
+    generatedMapCount : Map String Int -> Int
+    let generatedMapCount values = 1
+
+    let item = 0
+    let values = { yield "item" : item }
+
+    generatedMapCount values) + 1)]
+  case head :: tail -> head
+  case Nil -> 0) + 0), height = 3, width = 2 }
+
+result : Int
 let result = generated_1781
 
 --! assertNoErrors
---! assertType generated_1781 List Int
---! assertType result List Int
---! assertDeclKinds signature, let, signature, let
+--! assertType generated_1781 Int
+--! assertType result Int
+--! assertDeclKinds signature, let, signature, let, signature, let

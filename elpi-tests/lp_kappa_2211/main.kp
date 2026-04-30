@@ -6,9 +6,17 @@ data GeneratedChoice : Type =
 
 generated_2211 : Int
 let generated_2211 =
-    match GeneratedRight
+    match (GeneratedLeft ((match (Some (match (Some 0)
+      case Some payload -> payload
+      case None -> 0))
+      case Some payload -> payload
+      case None -> 0) + 0))
       case GeneratedLeft payload -> (payload + 0)
-      case GeneratedRight -> (((((((((if False then 0 else ((Some (0 + 0)) ?: 0)) + (0 + 0)) + 0) + 0) + 0) + 0) + 0) + 0) + 0)
+      case GeneratedRight -> ((match (Some (match (Some 0)
+        case Some payload -> payload
+        case None -> 0))
+        case Some payload -> payload
+        case None -> 0) + 0)
 
 result : Int
 let result = generated_2211

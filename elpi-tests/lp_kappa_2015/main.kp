@@ -1,12 +1,34 @@
 module main
 
-generated_2015 : (Int -> Int)
-let generated_2015 = \(x : Int) -> ((\(x : Int) -> ((\(x : Int) -> (((if (0 == 0) then (if True then \(x : Int) -> x else \(x : Int) -> x) else \(x : Int) -> (x + 0))) x)) x)) x)
+generated_2015 : Int
+let generated_2015 =
+    block
+        data RankedBox : Type =
+            RankedBox (value : Int)
 
-result : (Int -> Int)
+        let boxed = RankedBox (((Some ((block
+            generatedMapCount : Map String Int -> Int
+            let generatedMapCount values = 1
+
+            let item = 0
+            let values = { yield "item" : item }
+
+            generatedMapCount values) + 1)) ?: ((block
+            generatedMapCount : Map String Int -> Int
+            let generatedMapCount values = 1
+
+            let item = 0
+            let values = { yield "item" : item }
+
+            generatedMapCount values) + 2)) + 0)
+
+        match boxed
+          case RankedBox value -> (value + 1)
+
+result : Int
 let result = generated_2015
 
 --! assertNoErrors
---! assertType generated_2015 (Int -> Int)
---! assertType result (Int -> Int)
+--! assertType generated_2015 Int
+--! assertType result Int
 --! assertDeclKinds signature, let, signature, let

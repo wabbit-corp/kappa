@@ -1,19 +1,20 @@
 module main
 
-data GeneratedChoice : Type =
-    GeneratedLeft (value : Int)
-    GeneratedRight
+generated_4387 : Set Int
+let generated_4387 = {| yield ((match ((match (0 == 0)
+  case True -> 0
+  case False -> 0) == (match (0 == 0)
+  case True -> 0
+  case False -> 0))
+  case True -> (match (0 == 0)
+    case True -> 0
+    case False -> 0)
+  case False -> 0) + 0) |}
 
-generated_4387 : Int
-let generated_4387 =
-    match GeneratedRight
-      case GeneratedLeft payload -> (payload + 0)
-      case GeneratedRight -> ((((((0 + ((if False then 0 else (0 + (0 + 0))) + 0)) + 0) + 0) + 0) + 0) + 0)
-
-result : Int
+result : Set Int
 let result = generated_4387
 
 --! assertNoErrors
---! assertType generated_4387 Int
---! assertType result Int
---! assertDeclKinds data, signature, let, signature, let
+--! assertType generated_4387 Set Int
+--! assertType result Set Int
+--! assertDeclKinds signature, let, signature, let

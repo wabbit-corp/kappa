@@ -1,12 +1,24 @@
 module main
 
-generated_4044 : List Int
-let generated_4044 = [ yield ((((((0 + ((if True then (0 + (0 + 0)) else 0) + 0)) + 0) + 0) + 0) + 0) + 0) ]
+generated_4044 : IO Int
+let generated_4044 =
+    do
+        value <- pure ((block
+            generatedSetCount : Set Int -> Int
+            let generatedSetCount values = 2
 
-result : List Int
+            let item = (match (0 == 0)
+              case True -> 0
+              case False -> 0)
+            let values = {|item, (item + 1)|}
+
+            generatedSetCount values) + 0)
+        pure (value + 2)
+
+result : IO Int
 let result = generated_4044
 
 --! assertNoErrors
---! assertType generated_4044 List Int
---! assertType result List Int
+--! assertType generated_4044 IO Int
+--! assertType result IO Int
 --! assertDeclKinds signature, let, signature, let

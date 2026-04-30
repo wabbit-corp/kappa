@@ -1,12 +1,33 @@
 module main
 
-generated_4782 : Map String Int
-let generated_4782 = { for x in [1, 2, 3], let y = x + 1, if y > 0, yield (if y > 1 then "hi" else "lo") : (((((0 + (((if True then (if False then 0 else x) else 0) + 0) + 0)) + 0) + 0) + 0) + 0) }
+generated_4782 : Int
+let generated_4782 =
+    block
+        scoped effect Ask =
+            ask : Unit -> Bool
 
-result : Map String Int
+        let seed = (block
+            let pair = (x = ((Some (0 + 1)) ?: (0 + 2)), y = (((Some (0 + 1)) ?: (0 + 2)) + 1))
+            let (x = captured, y = other) = pair
+
+            (captured + other))
+
+        let comp : Eff <[Ask : Ask]> Int =
+            do
+                let b <- Ask.ask ()
+                if b then seed else (seed + 1)
+
+        let handled : Eff <[ ]> Int =
+            deep handle Ask comp with
+                case return x -> pure x
+                case ask () k -> k True
+
+        runPure handled
+
+result : Int
 let result = generated_4782
 
 --! assertNoErrors
---! assertType generated_4782 Map String Int
---! assertType result Map String Int
+--! assertType generated_4782 Int
+--! assertType result Int
 --! assertDeclKinds signature, let, signature, let

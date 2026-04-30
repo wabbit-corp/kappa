@@ -1,12 +1,33 @@
 module main
 
-generated_3000 : Option Int
-let generated_3000 = (if True then (if True then (if True then (if (True && True) then (if False then None else (if (((Some (0 + 0)) ?: 0) == 0) then (Some (0 + 0)) else None)) else (Some 2)) else None) else None) else None)
+generated_3000 : Int
+let generated_3000 =
+    block
+        scoped effect Ask =
+            ask : Unit -> Bool
 
-result : Option Int
+        let seed = ((Some ((match [0, (0 + 1)]
+          case head :: tail -> head
+          case Nil -> 0) + 1)) ?: ((match [0, (0 + 1)]
+          case head :: tail -> head
+          case Nil -> 0) + 2))
+
+        let comp : Eff <[Ask : Ask]> Int =
+            do
+                let b <- Ask.ask ()
+                if b then seed else (seed + 1)
+
+        let handled : Eff <[ ]> Int =
+            deep handle Ask comp with
+                case return x -> pure x
+                case ask () k -> k True
+
+        runPure handled
+
+result : Int
 let result = generated_3000
 
 --! assertNoErrors
---! assertType generated_3000 Option Int
---! assertType result Option Int
+--! assertType generated_3000 Int
+--! assertType result Int
 --! assertDeclKinds signature, let, signature, let

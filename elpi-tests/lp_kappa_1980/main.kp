@@ -1,12 +1,56 @@
 module main
 
-generated_1980 : Option Int
-let generated_1980 = (if True then (if True then (if True then (if (((if (((Some (0 + 0)) ?: 0) == 0) then (Some (0 + 0)) else None) ?: 0) == 0) then (Some ((if (((Some (0 + 0)) ?: 0) == 0) then (Some (0 + 0)) else None) ?: 0)) else None) else None) else None) else None)
+generated_1980 : Int
+let generated_1980 =
+    block
+        scoped effect Choice =
+            ω choose : Unit -> Bool
 
-result : Option Int
+        let seed = (match ((block
+            generatedMapCount : Map String Int -> Int
+            let generatedMapCount values = 1
+
+            let item = 0
+            let values = { yield "item" : item }
+
+            generatedMapCount values) == (block
+            generatedMapCount : Map String Int -> Int
+            let generatedMapCount values = 1
+
+            let item = 0
+            let values = { yield "item" : item }
+
+            generatedMapCount values))
+          case True -> (block
+              generatedMapCount : Map String Int -> Int
+              let generatedMapCount values = 1
+
+              let item = 0
+              let values = { yield "item" : item }
+
+              generatedMapCount values)
+          case False -> 0)
+
+        let comp : Eff <[Choice : Choice]> Int =
+            do
+                let b <- Choice.choose ()
+                if b then seed else (seed + 1)
+
+        let handled : Eff <[ ]> Int =
+            deep handle Choice comp with
+                case return x -> pure x
+                case choose () k ->
+                    do
+                        let a <- k True
+                        let b <- k False
+                        pure (a + b)
+
+        runPure handled
+
+result : Int
 let result = generated_1980
 
 --! assertNoErrors
---! assertType generated_1980 Option Int
---! assertType result Option Int
+--! assertType generated_1980 Int
+--! assertType result Int
 --! assertDeclKinds signature, let, signature, let

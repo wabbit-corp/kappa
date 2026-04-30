@@ -1,12 +1,23 @@
 module main
 
-generated_2912 : Map String Int
-let generated_2912 = { for x in [1, 2, 3], yield "k" : ((((((((Some (x + 0)) ?: 0) + 0) + 0) + 0) + 0) + 0) + 0) }
+generatedEcho : forall (a : Type). (this x : a) -> a
+let generatedEcho @a (this x : a) = x
 
-result : Map String Int
+generated_2912 : Int
+let generated_2912 = ((match ((match [0, (0 + 1)]
+  case head :: tail -> head
+  case Nil -> 0) == (match [0, (0 + 1)]
+  case head :: tail -> head
+  case Nil -> 0))
+  case True -> (match [0, (0 + 1)]
+    case head :: tail -> head
+    case Nil -> 0)
+  case False -> 0) + 0).generatedEcho
+
+result : Int
 let result = generated_2912
 
 --! assertNoErrors
---! assertType generated_2912 Map String Int
---! assertType result Map String Int
---! assertDeclKinds signature, let, signature, let
+--! assertType generated_2912 Int
+--! assertType result Int
+--! assertDeclKinds signature, let, signature, let, signature, let

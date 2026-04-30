@@ -1,17 +1,19 @@
 module main
 
+generatedNeed : (@x : Int) -> Int
+let generatedNeed (@x : Int) = x
+
 generated_126 : Int
-let generated_126 =
-    block
-        trait RankedScore a =
-            rank : a -> Int
+let generated_126 = generatedNeed @(((block
+    generatedListLength : List Int -> Int
+    let generatedListLength xs decreases structural xs =
+        match xs
+          case Nil -> 0
+          case _ :: tail -> 1 + generatedListLength tail
 
-        instance RankedScore Int =
-            let rank x = x
+    let item = 0
 
-        let dict = summon (RankedScore Int)
-
-        dict.rank (((((0 + 0) + 0) + 0) + 0) + 0)
+    generatedListLength [item, (item + 1), 0]) + 0))
 
 result : Int
 let result = generated_126
@@ -19,4 +21,4 @@ let result = generated_126
 --! assertNoErrors
 --! assertType generated_126 Int
 --! assertType result Int
---! assertDeclKinds signature, let, signature, let
+--! assertDeclKinds signature, let, signature, let, signature, let

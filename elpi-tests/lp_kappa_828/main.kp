@@ -4,11 +4,27 @@ generatedNeed : (@x : Int) -> Int
 let generatedNeed (@x : Int) = x
 
 generated_828 : Int
-let generated_828 =
-    block
-        let (@x : Int) = (((((((0 + (((Some (0 + 0)) ?: 0) + 0)) + 0) + 0) + 0) + 0) + 0) + 0)
+let generated_828 = generatedNeed @(((match [(block
+    generatedListLength : List Int -> Int
+    let generatedListLength xs decreases structural xs =
+        match xs
+          case Nil -> 0
+          case _ :: tail -> 1 + generatedListLength tail
 
-        if True then generatedNeed else 0
+    let item = 0
+
+    generatedListLength [item, (item + 1), 0]), ((block
+    generatedListLength : List Int -> Int
+    let generatedListLength xs decreases structural xs =
+        match xs
+          case Nil -> 0
+          case _ :: tail -> 1 + generatedListLength tail
+
+    let item = 0
+
+    generatedListLength [item, (item + 1), 0]) + 1)]
+  case head :: tail -> head
+  case Nil -> 0) + 0))
 
 result : Int
 let result = generated_828

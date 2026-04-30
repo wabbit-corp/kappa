@@ -1,15 +1,32 @@
 module main
 
-generatedEcho : forall (a : Type). (this x : a) -> a
-let generatedEcho @a (this x : a) = x
+type GeneratedPair = (left : Int, right : Int)
 
-generated_1240 : Int
-let generated_1240 = ((((((((if False then 0 else ((0 + 0) + 0)) + 0) + 0) + 0) + 0) + 0) + 0) + 0).generatedEcho
+generated_1240 : GeneratedPair
+let generated_1240 = ((left = (match (Some (block
+    generatedSetCount : Set Int -> Int
+    let generatedSetCount values = 2
 
-result : Int
+    let item = 0
+    let values = {|item, (item + 1)|}
+
+    generatedSetCount values))
+  case Some payload -> payload
+  case None -> 0), right = 0)).{ right = ((match (Some (block
+    generatedSetCount : Set Int -> Int
+    let generatedSetCount values = 2
+
+    let item = 0
+    let values = {|item, (item + 1)|}
+
+    generatedSetCount values))
+  case Some payload -> payload
+  case None -> 0) + 1) }
+
+result : GeneratedPair
 let result = generated_1240
 
 --! assertNoErrors
---! assertType generated_1240 Int
---! assertType result Int
---! assertDeclKinds signature, let, signature, let, signature, let
+--! assertType generated_1240 GeneratedPair
+--! assertType result GeneratedPair
+--! assertDeclKinds type, signature, let, signature, let

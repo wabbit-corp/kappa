@@ -2,14 +2,16 @@ module main
 
 generated_3641 : Int
 let generated_3641 =
-    block
-        data RankedBox : Type =
-            RankedBox (value : Int)
+    match (Some ((block
+        generatedMapCount : Map String Int -> Int
+        let generatedMapCount values = 1
 
-        let boxed = RankedBox ((((((0 + ((0 + (0 + 0)) + 0)) + 0) + 0) + 0) + 0) + 0)
+        let item = ((\(n : Int) -> n) 0)
+        let values = { yield "item" : item }
 
-        match boxed
-          case RankedBox value -> (value + 1)
+        generatedMapCount values) + 0))
+      case Some payload -> payload
+      case None -> 0
 
 result : Int
 let result = generated_3641

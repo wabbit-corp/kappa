@@ -1,12 +1,42 @@
 module main
 
-generated_1970 : List Int
-let generated_1970 = [ yield (((((((((if False then 0 else (0 + (0 + 0))) + (0 + 0)) + 0) + 0) + 0) + 0) + 0) + 0) + 0) ]
+generatedUseWidth : (width : Int) -> Int
+let generatedUseWidth width = width
 
-result : List Int
+generated_1970 : Int
+let generated_1970 =
+    block
+        let width = ((match ((block
+            generatedMapCount : Map String Int -> Int
+            let generatedMapCount values = 1
+
+            let item = 0
+            let values = { yield "item" : item }
+
+            generatedMapCount values) == (block
+            generatedMapCount : Map String Int -> Int
+            let generatedMapCount values = 1
+
+            let item = 0
+            let values = { yield "item" : item }
+
+            generatedMapCount values))
+          case True -> (block
+              generatedMapCount : Map String Int -> Int
+              let generatedMapCount values = 1
+
+              let item = 0
+              let values = { yield "item" : item }
+
+              generatedMapCount values)
+          case False -> 0) + 0)
+
+        generatedUseWidth { width }
+
+result : Int
 let result = generated_1970
 
 --! assertNoErrors
---! assertType generated_1970 List Int
---! assertType result List Int
---! assertDeclKinds signature, let, signature, let
+--! assertType generated_1970 Int
+--! assertType result Int
+--! assertDeclKinds signature, let, signature, let, signature, let

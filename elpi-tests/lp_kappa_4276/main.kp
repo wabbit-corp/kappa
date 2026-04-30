@@ -1,15 +1,26 @@
 module main
 
-generated_4276 : Int
-let generated_4276 =
-    match (((((((0 + ((if True then ((Some (0 + 0)) ?: 0) else 0) + 0)) + 0) + 0) + 0) + 0) + 0) == ((((((0 + ((if True then ((Some (0 + 0)) ?: 0) else 0) + 0)) + 0) + 0) + 0) + 0) + 0))
-      case True -> ((((((0 + ((if True then ((Some (0 + 0)) ?: 0) else 0) + 0)) + 0) + 0) + 0) + 0) + 0)
-      case False -> 0
+generatedNeed : (@x : Int) -> Int
+let generatedNeed (@x : Int) = x
 
-result : Int
+generated_4276 : IO Int
+let generated_4276 =
+    do
+        let (@x : Int) = ((block
+            let pair = (x = (match (0 == 0)
+              case True -> 0
+              case False -> 0), y = ((match (0 == 0)
+              case True -> 0
+              case False -> 0) + 1))
+            let (x = captured, y = other) = pair
+
+            (captured + other)) + 0)
+        pure generatedNeed
+
+result : IO Int
 let result = generated_4276
 
 --! assertNoErrors
---! assertType generated_4276 Int
---! assertType result Int
---! assertDeclKinds signature, let, signature, let
+--! assertType generated_4276 IO Int
+--! assertType result IO Int
+--! assertDeclKinds signature, let, signature, let, signature, let

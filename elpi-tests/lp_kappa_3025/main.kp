@@ -1,7 +1,20 @@
 module main
 
 generated_3025 : Set Int
-let generated_3025 = {| yield (((((((((Some ((if True then 0 else 0) + 0)) ?: 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0) |}
+let generated_3025 = {| for x in [1, 2, 3], let y = x + 1, if y > 0, yield (block
+    generatedListLength : List Int -> Int
+    let generatedListLength xs decreases structural xs =
+        match xs
+          case Nil -> 0
+          case _ :: tail -> 1 + generatedListLength tail
+
+    let item = (block
+        let pair = (x = x, y = (x + 1))
+        let (x = captured, y = other) = pair
+
+        (captured + other))
+
+    generatedListLength [item, (item + 1), 0]) |}
 
 result : Set Int
 let result = generated_3025

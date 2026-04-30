@@ -1,12 +1,12 @@
 module main
 
-generated_4807 : List Int
-let generated_4807 = [ for x in [1, 2, 3], yield (((((0 + (((if True then ((if True then x else 0) + 0) else 0) + 0) + 0)) + 0) + 0) + 0) + 0) ]
+generated_4807 : Set Int
+let generated_4807 = {| for x in [1, 2, 3], yield ((\(n : Int) -> n) ((Some (x + 1)) ?: (x + 2))) |}
 
-result : List Int
+result : Set Int
 let result = generated_4807
 
 --! assertNoErrors
---! assertType generated_4807 List Int
---! assertType result List Int
+--! assertType generated_4807 Set Int
+--! assertType result Set Int
 --! assertDeclKinds signature, let, signature, let

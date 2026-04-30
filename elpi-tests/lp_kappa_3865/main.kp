@@ -3,10 +3,22 @@ module main
 generated_3865 : Int
 let generated_3865 =
     block
-        rankedHelper : (Int -> Int)
-        let rankedHelper x = x + 1
+        scoped effect State (s : Type) =
+            get : Unit -> s
 
-        rankedHelper ((((((0 + ((0 + (((left = (0 + 0), right = 0)).left + 0)) + 0)) + 0) + 0) + 0) + 0) + 0)
+        let seed = ((\(n : Int) -> n) ((\(n : Int) -> n) 0))
+
+        let comp : Eff <[State : State Int]> Int =
+            do
+                let n <- State.get ()
+                n
+
+        let handled : Eff <[ ]> Int =
+            deep handle State comp with
+                case return x -> pure x
+                case get () k -> k seed
+
+        runPure handled
 
 result : Int
 let result = generated_3865

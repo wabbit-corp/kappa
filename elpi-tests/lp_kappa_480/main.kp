@@ -1,12 +1,17 @@
 module main
 
-generated_480 : Int
-let generated_480 = ((((((((((Some (0 + 0)) ?: 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0)
+generated_480 : IO Int
+let generated_480 =
+    do
+        value <- pure ((match (0 == 0)
+          case True -> 0
+          case False -> 0) + 0)
+        pure (value + 2)
 
-result : Int
+result : IO Int
 let result = generated_480
 
 --! assertNoErrors
---! assertType generated_480 Int
---! assertType result Int
+--! assertType generated_480 IO Int
+--! assertType result IO Int
 --! assertDeclKinds signature, let, signature, let

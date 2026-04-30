@@ -1,12 +1,21 @@
 module main
 
-generated_4868 : Unit
-let generated_4868 = (if True then (if True then (if False then () else (if (True && True) then ((\(u : Unit) -> if False then () else u) ()) else ())) else ()) else ())
+generated_4868 : Int
+let generated_4868 =
+    block
+        let base : (x : Int) = (x = ((match (((Some (0 + 1)) ?: (0 + 2)) == ((Some (0 + 1)) ?: (0 + 2)))
+          case True -> ((Some (0 + 1)) ?: (0 + 2))
+          case False -> 0) + 0))
+        let extended = base.{ y := ((match (((Some (0 + 1)) ?: (0 + 2)) == ((Some (0 + 1)) ?: (0 + 2)))
+          case True -> ((Some (0 + 1)) ?: (0 + 2))
+          case False -> 0) + 1) }
 
-result : Unit
+        (extended.x + extended.y)
+
+result : Int
 let result = generated_4868
 
 --! assertNoErrors
---! assertType generated_4868 Unit
---! assertType result Unit
+--! assertType generated_4868 Int
+--! assertType result Int
 --! assertDeclKinds signature, let, signature, let

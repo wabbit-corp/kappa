@@ -1,14 +1,49 @@
 module main
 
-type GeneratedTuple = (Int, Int)
+generated_1061 : Int
+let generated_1061 =
+    block
+        scoped effect Ask =
+            ask : Unit -> Bool
 
-generated_1061 : GeneratedTuple
-let generated_1061 = (if True then (if True then (if True then (if (0 == 0) then (if (True && True) then (0, (0 + 0)) else ((1 + 1), 1)) else ((1 + 1), 1)) else (0, (0 + 0))) else (0, (0 + 0))) else (0, (0 + 0)))
+        let pkg = (label = Ask)
 
-result : GeneratedTuple
+        let seed = ((Some ((block
+            generatedListLength : List Int -> Int
+            let generatedListLength xs decreases structural xs =
+                match xs
+                  case Nil -> 0
+                  case _ :: tail -> 1 + generatedListLength tail
+
+            let item = 0
+
+            generatedListLength [item, (item + 1), 0]) + 1)) ?: ((block
+            generatedListLength : List Int -> Int
+            let generatedListLength xs decreases structural xs =
+                match xs
+                  case Nil -> 0
+                  case _ :: tail -> 1 + generatedListLength tail
+
+            let item = 0
+
+            generatedListLength [item, (item + 1), 0]) + 2))
+
+        let comp : Eff <[Ask : Ask]> Int =
+            do
+                let b <- pkg.label.ask ()
+                if b then seed else (seed + 1)
+
+        let handled : Eff <[ ]> Int =
+            deep handle pkg.label comp with
+                case return x -> pure x
+                case ask () k -> k True
+
+        runPure handled
+
+result : Int
 let result = generated_1061
 
 --! assertNoErrors
---! assertType generated_1061 GeneratedTuple
---! assertType result GeneratedTuple
---! assertDeclKinds type, signature, let, signature, let
+--! assertType generated_1061 Int
+--! assertType result Int
+--! assertDeclKinds signature, let, signature, let

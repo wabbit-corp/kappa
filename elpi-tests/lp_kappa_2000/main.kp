@@ -1,17 +1,26 @@
 module main
 
-generated_2000 : Int
-let generated_2000 =
-    block
-        let base : (x : Int) = (x = (((((((((if False then 0 else (if True then 0 else 0)) + (0 + 0)) + 0) + 0) + 0) + 0) + 0) + 0) + 0))
-        let extended = base.{ y := (((((((((if False then 0 else (if True then 0 else 0)) + (0 + 0)) + 0) + 0) + 0) + 0) + 0) + 0) + 1) }
+generated_2000 : Map String Int
+let generated_2000 = { for x in [1, 2, 3], yield "k" : ((Some ((block
+    generatedMapCount : Map String Int -> Int
+    let generatedMapCount values = 1
 
-        (extended.x + extended.y)
+    let item = x
+    let values = { yield "item" : item }
 
-result : Int
+    generatedMapCount values) + 1)) ?: ((block
+    generatedMapCount : Map String Int -> Int
+    let generatedMapCount values = 1
+
+    let item = x
+    let values = { yield "item" : item }
+
+    generatedMapCount values) + 2)) }
+
+result : Map String Int
 let result = generated_2000
 
 --! assertNoErrors
---! assertType generated_2000 Int
---! assertType result Int
+--! assertType generated_2000 Map String Int
+--! assertType result Map String Int
 --! assertDeclKinds signature, let, signature, let

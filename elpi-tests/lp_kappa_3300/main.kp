@@ -2,12 +2,45 @@ module main
 
 generated_3300 : Int
 let generated_3300 =
-    block
-        type RankedAlias = Int
+    match (((block
+        let pair = (x = (block
+            let pair = (x = 0, y = (0 + 1))
+            let (x = captured, y = other) = pair
 
-        let aliased : RankedAlias = ((((((0 + (((0 + 0) + 0) + 0)) + 0) + 0) + 0) + 0) + 0)
+            (captured + other)), y = ((block
+            let pair = (x = 0, y = (0 + 1))
+            let (x = captured, y = other) = pair
 
-        (aliased + 1)
+            (captured + other)) + 1))
+        let (x = captured, y = other) = pair
+
+        (captured + other)) + 0) == ((block
+        let pair = (x = (block
+            let pair = (x = 0, y = (0 + 1))
+            let (x = captured, y = other) = pair
+
+            (captured + other)), y = ((block
+            let pair = (x = 0, y = (0 + 1))
+            let (x = captured, y = other) = pair
+
+            (captured + other)) + 1))
+        let (x = captured, y = other) = pair
+
+        (captured + other)) + 0))
+      case True -> ((block
+          let pair = (x = (block
+              let pair = (x = 0, y = (0 + 1))
+              let (x = captured, y = other) = pair
+
+              (captured + other)), y = ((block
+              let pair = (x = 0, y = (0 + 1))
+              let (x = captured, y = other) = pair
+
+              (captured + other)) + 1))
+          let (x = captured, y = other) = pair
+
+          (captured + other)) + 0)
+      case False -> 0
 
 result : Int
 let result = generated_3300

@@ -4,7 +4,15 @@ generatedEcho : forall (a : Type). (this x : a) -> a
 let generatedEcho @a (this x : a) = x
 
 generated_2819 : Int
-let generated_2819 = ((.generatedEcho) (((((((((left = 0, right = (((left = (0 + 0), right = 0)).left + 0))).right + 0) + 0) + 0) + 0) + 0) + 0) + 0))
+let generated_2819 = ((.generatedEcho) ((block
+    let pair = (x = (match [0, (0 + 1)]
+      case head :: tail -> head
+      case Nil -> 0), y = ((match [0, (0 + 1)]
+      case head :: tail -> head
+      case Nil -> 0) + 1))
+    let (x = captured, y = other) = pair
+
+    (captured + other)) + 0))
 
 result : Int
 let result = generated_2819

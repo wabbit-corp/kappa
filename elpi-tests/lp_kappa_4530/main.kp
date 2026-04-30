@@ -1,12 +1,22 @@
 module main
 
-generated_4530 : Option Int
-let generated_4530 = (if True then (if True then (if False then None else (if (((if (((Some (0 + 0)) ?: 0) == 1) then (Some (((Some (0 + 0)) ?: 0) + 0)) else (Some (0 + 0))) ?: 0) == 1) then None else (if (((Some (0 + 0)) ?: 0) == 1) then (Some (((Some (0 + 0)) ?: 0) + 0)) else (Some (0 + 0))))) else None) else None)
+generated_4530 : IO Int
+let generated_4530 =
+    do
+        value <- pure ((block
+            generatedSetCount : Set Int -> Int
+            let generatedSetCount values = 2
 
-result : Option Int
+            let item = ((Some (0 + 1)) ?: (0 + 2))
+            let values = {|item, (item + 1)|}
+
+            generatedSetCount values) + 0)
+        pure (value + 2)
+
+result : IO Int
 let result = generated_4530
 
 --! assertNoErrors
---! assertType generated_4530 Option Int
---! assertType result Option Int
+--! assertType generated_4530 IO Int
+--! assertType result IO Int
 --! assertDeclKinds signature, let, signature, let

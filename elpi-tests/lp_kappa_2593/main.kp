@@ -1,12 +1,21 @@
 module main
 
-generated_2593 : (Int -> Int)
-let generated_2593 = \(x : Int) -> ((\(x : Int) -> ((\(x : Int) -> ((\(x : Int) -> if (x == 0) then ((\(x : Int) -> ((\(x : Int) -> x) x)) x) else x) x)) x)) x)
+generated_2593 : Set Int
+let generated_2593 = {| for x in [1, 2, 3], let y = x + 1, if y > 0, yield (block
+    generatedSetCount : Set Int -> Int
+    let generatedSetCount values = 2
 
-result : (Int -> Int)
+    let item = (match [x, (x + 1)]
+      case head :: tail -> head
+      case Nil -> 0)
+    let values = {|item, (item + 1)|}
+
+    generatedSetCount values) |}
+
+result : Set Int
 let result = generated_2593
 
 --! assertNoErrors
---! assertType generated_2593 (Int -> Int)
---! assertType result (Int -> Int)
+--! assertType generated_2593 Set Int
+--! assertType result Set Int
 --! assertDeclKinds signature, let, signature, let

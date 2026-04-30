@@ -1,12 +1,32 @@
 module main
 
-generated_2014 : Option Int
-let generated_2014 = (if True then (if True then (if True then (if (((if (((Some (0 + 0)) ?: 0) == 1) then None else (Some (0 + 0))) ?: 0) == 0) then (Some ((if (((Some (0 + 0)) ?: 0) == 1) then None else (Some (0 + 0))) ?: 0)) else None) else None) else None) else None)
+generated_2014 : Int
+let generated_2014 =
+    block
+        type RankedAlias = Int
 
-result : Option Int
+        let aliased : RankedAlias = (((Some ((block
+            generatedMapCount : Map String Int -> Int
+            let generatedMapCount values = 1
+
+            let item = 0
+            let values = { yield "item" : item }
+
+            generatedMapCount values) + 1)) ?: ((block
+            generatedMapCount : Map String Int -> Int
+            let generatedMapCount values = 1
+
+            let item = 0
+            let values = { yield "item" : item }
+
+            generatedMapCount values) + 2)) + 0)
+
+        (aliased + 1)
+
+result : Int
 let result = generated_2014
 
 --! assertNoErrors
---! assertType generated_2014 Option Int
---! assertType result Option Int
+--! assertType generated_2014 Int
+--! assertType result Int
 --! assertDeclKinds signature, let, signature, let

@@ -1,7 +1,20 @@
 module main
 
 generated_1262 : Int
-let generated_1262 = (((((((if False then 0 else (0 + (0 + 0))) + 0) + 0) + 0) + 0) + 0) + 0)
+let generated_1262 =
+    block
+        let (captured : Int) = ((match (Some (block
+            generatedSetCount : Set Int -> Int
+            let generatedSetCount values = 2
+
+            let item = 0
+            let values = {|item, (item + 1)|}
+
+            generatedSetCount values))
+          case Some payload -> payload
+          case None -> 0) + 0)
+
+        captured
 
 result : Int
 let result = generated_1262

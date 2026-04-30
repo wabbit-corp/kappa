@@ -1,12 +1,42 @@
 module main
 
-generated_924 : Unit
-let generated_924 = (if True then (if True then (if True then ((\(u : Unit) -> u) (if False then () else ())) else ()) else ()) else ())
+generated_924 : Int
+let generated_924 =
+    match ((((\(n : Int) -> n) (block
+        generatedListLength : List Int -> Int
+        let generatedListLength xs decreases structural xs =
+            match xs
+              case Nil -> 0
+              case _ :: tail -> 1 + generatedListLength tail
 
-result : Unit
+        let item = 0
+
+        generatedListLength [item, (item + 1), 0])) + 0) == (((\(n : Int) -> n) (block
+        generatedListLength : List Int -> Int
+        let generatedListLength xs decreases structural xs =
+            match xs
+              case Nil -> 0
+              case _ :: tail -> 1 + generatedListLength tail
+
+        let item = 0
+
+        generatedListLength [item, (item + 1), 0])) + 0))
+      case True -> (((\(n : Int) -> n) (block
+          generatedListLength : List Int -> Int
+          let generatedListLength xs decreases structural xs =
+              match xs
+                case Nil -> 0
+                case _ :: tail -> 1 + generatedListLength tail
+
+          let item = 0
+
+          generatedListLength [item, (item + 1), 0])) + 0)
+      case False -> 0
+
+result : Int
 let result = generated_924
 
 --! assertNoErrors
---! assertType generated_924 Unit
---! assertType result Unit
+--! assertType generated_924 Int
+--! assertType result Int
 --! assertDeclKinds signature, let, signature, let

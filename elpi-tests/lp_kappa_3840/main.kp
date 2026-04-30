@@ -1,12 +1,15 @@
 module main
 
-generated_3840 : List Int
-let generated_3840 = [ yield ((((((0 + ((0 + (((if False then 0 else 0) + (0 + 0)) + 0)) + 0)) + 0) + 0) + 0) + 0) + 0) ]
+generated_3840 : Int
+let generated_3840 =
+    match ((((\(n : Int) -> n) ((\(n : Int) -> n) 0)) + 0) == (((\(n : Int) -> n) ((\(n : Int) -> n) 0)) + 0))
+      case True -> (((\(n : Int) -> n) ((\(n : Int) -> n) 0)) + 0)
+      case False -> 0
 
-result : List Int
+result : Int
 let result = generated_3840
 
 --! assertNoErrors
---! assertType generated_3840 List Int
---! assertType result List Int
+--! assertType generated_3840 Int
+--! assertType result Int
 --! assertDeclKinds signature, let, signature, let

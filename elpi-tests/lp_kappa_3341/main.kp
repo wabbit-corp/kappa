@@ -1,12 +1,16 @@
 module main
 
-generated_3341 : (Int -> Int)
-let generated_3341 = \(x : Int) -> ((\(x : Int) -> ((\(x : Int) -> (((\(x : Int) -> ((\(x : Int) -> (((\(x : Int) -> x) x) + 0)) x)) x) + 0)) x)) x)
+generated_3341 : List Int
+let generated_3341 = [ for x in [1, 2, 3], let y = x + 1, yield ((\(n : Int) -> n) (block
+    let pair = (x = x, y = (x + 1))
+    let (x = captured, y = other) = pair
 
-result : (Int -> Int)
+    (captured + other))) ]
+
+result : List Int
 let result = generated_3341
 
 --! assertNoErrors
---! assertType generated_3341 (Int -> Int)
---! assertType result (Int -> Int)
+--! assertType generated_3341 List Int
+--! assertType result List Int
 --! assertDeclKinds signature, let, signature, let

@@ -1,12 +1,44 @@
 module main
 
-generated_995 : (Int -> Int)
-let generated_995 = \(x : Int) -> ((\(x : Int) -> ((\(x : Int) -> ((\(x : Int) -> (0 + (((if True then \(x : Int) -> x else \(x : Int) -> x)) x))) x)) x)) x)
+generated_995 : Int
+let generated_995 =
+    match (Some ((match ((block
+        generatedListLength : List Int -> Int
+        let generatedListLength xs decreases structural xs =
+            match xs
+              case Nil -> 0
+              case _ :: tail -> 1 + generatedListLength tail
 
-result : (Int -> Int)
+        let item = 0
+
+        generatedListLength [item, (item + 1), 0]) == (block
+        generatedListLength : List Int -> Int
+        let generatedListLength xs decreases structural xs =
+            match xs
+              case Nil -> 0
+              case _ :: tail -> 1 + generatedListLength tail
+
+        let item = 0
+
+        generatedListLength [item, (item + 1), 0]))
+      case True -> (block
+          generatedListLength : List Int -> Int
+          let generatedListLength xs decreases structural xs =
+              match xs
+                case Nil -> 0
+                case _ :: tail -> 1 + generatedListLength tail
+
+          let item = 0
+
+          generatedListLength [item, (item + 1), 0])
+      case False -> 0) + 0))
+      case Some payload -> payload
+      case None -> 0
+
+result : Int
 let result = generated_995
 
 --! assertNoErrors
---! assertType generated_995 (Int -> Int)
---! assertType result (Int -> Int)
+--! assertType generated_995 Int
+--! assertType result Int
 --! assertDeclKinds signature, let, signature, let

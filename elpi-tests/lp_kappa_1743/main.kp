@@ -1,12 +1,28 @@
 module main
 
-generated_1743 : (Int -> Int)
-let generated_1743 = \(x : Int) -> ((\(x : Int) -> ((\(x : Int) -> (((if False then \(x : Int) -> x else (if (0 == 0) then \(x : Int) -> x else \(x : Int) -> (x + 0)))) x)) x)) x)
+data GeneratedChoice : Type =
+    GeneratedLeft (value : Int)
+    GeneratedRight
 
-result : (Int -> Int)
+generated_1743 : Int
+let generated_1743 =
+    match GeneratedRight
+      case GeneratedLeft payload -> (payload + 0)
+      case GeneratedRight -> ((match (Some (block
+          generatedMapCount : Map String Int -> Int
+          let generatedMapCount values = 1
+
+          let item = 0
+          let values = { yield "item" : item }
+
+          generatedMapCount values))
+        case Some payload -> payload
+        case None -> 0) + 0)
+
+result : Int
 let result = generated_1743
 
 --! assertNoErrors
---! assertType generated_1743 (Int -> Int)
---! assertType result (Int -> Int)
---! assertDeclKinds signature, let, signature, let
+--! assertType generated_1743 Int
+--! assertType result Int
+--! assertDeclKinds data, signature, let, signature, let

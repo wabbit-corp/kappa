@@ -1,12 +1,14 @@
 module main
 
-generated_263 : String
-let generated_263 = (if (if (if (if (if (if True then False else True) then True else False) then True else False) then True else False) then True else False) then #"raw lambda-prolog"# else "fallback")
+generated_263 : List Int
+let generated_263 = [ for x in [1, 2, 3], yield (match (Some x)
+  case Some payload -> payload
+  case None -> 0) ]
 
-result : String
+result : List Int
 let result = generated_263
 
 --! assertNoErrors
---! assertType generated_263 String
---! assertType result String
+--! assertType generated_263 List Int
+--! assertType result List Int
 --! assertDeclKinds signature, let, signature, let

@@ -1,11 +1,14 @@
 module main
 
+data GeneratedChoice : Type =
+    GeneratedLeft (value : Int)
+    GeneratedRight
+
 generated_555 : Int
 let generated_555 =
-    let
-        ranked : Int = (((((((0 + (((0 + 0) + 0) + 0)) + 0) + 0) + 0) + 0) + 0) + 0)
-in
-        (ranked + 0)
+    match GeneratedRight
+      case GeneratedLeft payload -> (payload + 0)
+      case GeneratedRight -> (((Some (0 + 1)) ?: (0 + 2)) + 0)
 
 result : Int
 let result = generated_555
@@ -13,4 +16,4 @@ let result = generated_555
 --! assertNoErrors
 --! assertType generated_555 Int
 --! assertType result Int
---! assertDeclKinds signature, let, signature, let
+--! assertDeclKinds data, signature, let, signature, let

@@ -1,12 +1,26 @@
 module main
 
-generated_2556 : Unit
-let generated_2556 = (if True then (if True then (if True then (if (0 == 1) then () else ()) else ()) else ()) else ())
+generatedNeed : (@x : Int) -> Int
+let generatedNeed (@x : Int) = x
 
-result : Unit
+generated_2556 : Int
+let generated_2556 = generatedNeed @(((block
+    generatedListLength : List Int -> Int
+    let generatedListLength xs decreases structural xs =
+        match xs
+          case Nil -> 0
+          case _ :: tail -> 1 + generatedListLength tail
+
+    let item = (match [0, (0 + 1)]
+      case head :: tail -> head
+      case Nil -> 0)
+
+    generatedListLength [item, (item + 1), 0]) + 0))
+
+result : Int
 let result = generated_2556
 
 --! assertNoErrors
---! assertType generated_2556 Unit
---! assertType result Unit
---! assertDeclKinds signature, let, signature, let
+--! assertType generated_2556 Int
+--! assertType result Int
+--! assertDeclKinds signature, let, signature, let, signature, let

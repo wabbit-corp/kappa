@@ -1,12 +1,25 @@
 module main
 
-generated_4377 : String
-let generated_4377 = (if (if (if (if ((if True then False else True) || False) then False else True) then True else False) then True else False) then #"raw lambda-prolog"# else "fallback")
+generated_4377 : Int
+let generated_4377 =
+    block
+        rankedHelper : (Int -> Int)
+        let rankedHelper x = x + 1
 
-result : String
+        rankedHelper ((match ((match (0 == 0)
+          case True -> 0
+          case False -> 0) == (match (0 == 0)
+          case True -> 0
+          case False -> 0))
+          case True -> (match (0 == 0)
+            case True -> 0
+            case False -> 0)
+          case False -> 0) + 0)
+
+result : Int
 let result = generated_4377
 
 --! assertNoErrors
---! assertType generated_4377 String
---! assertType result String
+--! assertType generated_4377 Int
+--! assertType result Int
 --! assertDeclKinds signature, let, signature, let

@@ -1,12 +1,35 @@
 module main
 
-generated_2344 : List Int
-let generated_2344 = [ yield (((((((((left = ((if True then 0 else 0) + 0), right = 0)).left + 0) + 0) + 0) + 0) + 0) + 0) + 0) ]
+type GeneratedTuple = (Int, Int)
 
-result : List Int
+generated_2344 : Int
+let generated_2344 =
+    block
+        let pair : GeneratedTuple = (((block
+            let pair = (x = (match (Some 0)
+              case Some payload -> payload
+              case None -> 0), y = ((match (Some 0)
+              case Some payload -> payload
+              case None -> 0) + 1))
+            let (x = captured, y = other) = pair
+
+            (captured + other)) + 0), ((block
+            let pair = (x = (match (Some 0)
+              case Some payload -> payload
+              case None -> 0), y = ((match (Some 0)
+              case Some payload -> payload
+              case None -> 0) + 1))
+            let (x = captured, y = other) = pair
+
+            (captured + other)) + 1))
+        let (left, right) = pair
+
+        (left + right)
+
+result : Int
 let result = generated_2344
 
 --! assertNoErrors
---! assertType generated_2344 List Int
---! assertType result List Int
---! assertDeclKinds signature, let, signature, let
+--! assertType generated_2344 Int
+--! assertType result Int
+--! assertDeclKinds type, signature, let, signature, let

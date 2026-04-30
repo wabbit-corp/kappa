@@ -1,12 +1,16 @@
 module main
 
+generatedUseWidth : (width : Int) -> Int
+let generatedUseWidth width = width
+
 generated_350 : Int
 let generated_350 =
     block
-        ranked : Int
-        let ranked = ((((((((((if True then 0 else 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0)
+        let width = ((match [0, (0 + 1)]
+          case head :: tail -> head
+          case Nil -> 0) + 0)
 
-        (ranked + 0)
+        generatedUseWidth { width }
 
 result : Int
 let result = generated_350
@@ -14,4 +18,4 @@ let result = generated_350
 --! assertNoErrors
 --! assertType generated_350 Int
 --! assertType result Int
---! assertDeclKinds signature, let, signature, let
+--! assertDeclKinds signature, let, signature, let, signature, let

@@ -1,12 +1,21 @@
 module main
 
-generated_2854 : List Int
-let generated_2854 = [ yield (((((((((left = 0, right = (((left = 0, right = (0 + 0))).right + 0))).right + 0) + 0) + 0) + 0) + 0) + 0) + 0) ]
+generatedNeed : (@x : Int) -> Int
+let generatedNeed (@x : Int) = x
 
-result : List Int
+generated_2854 : Int
+let generated_2854 =
+    block
+        let (@x : Int) = ((\(n : Int) -> n) (match [0, (0 + 1)]
+          case head :: tail -> head
+          case Nil -> 0))
+
+        if True then generatedNeed else 0
+
+result : Int
 let result = generated_2854
 
 --! assertNoErrors
---! assertType generated_2854 List Int
---! assertType result List Int
---! assertDeclKinds signature, let, signature, let
+--! assertType generated_2854 Int
+--! assertType result Int
+--! assertDeclKinds signature, let, signature, let, signature, let

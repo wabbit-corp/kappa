@@ -1,12 +1,14 @@
 module main
 
-generated_2890 : Map String Int
-let generated_2890 = { yield "only" : (((((((((left = 0, right = (((Some (0 + 0)) ?: 0) + 0))).right + 0) + 0) + 0) + 0) + 0) + 0) + 0) }
+generated_2890 : List Int
+let generated_2890 = [ for x in [1, 2, 3], skip 1, take 2, yield ((\(n : Int) -> n) (match [x, (x + 1)]
+  case head :: tail -> head
+  case Nil -> 0)) ]
 
-result : Map String Int
+result : List Int
 let result = generated_2890
 
 --! assertNoErrors
---! assertType generated_2890 Map String Int
---! assertType result Map String Int
+--! assertType generated_2890 List Int
+--! assertType result List Int
 --! assertDeclKinds signature, let, signature, let

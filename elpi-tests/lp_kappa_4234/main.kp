@@ -1,14 +1,31 @@
 module main
 
-type GeneratedPair = (left : Int, right : Int)
+type GeneratedTuple = (Int, Int)
 
-generated_4234 : GeneratedPair
-let generated_4234 = ((left = (((((0 + ((if True then ((left = 0, right = (0 + 0))).right else 0) + 0)) + 0) + 0) + 0) + 0), right = 0)).{ right = ((((((0 + ((if True then ((left = 0, right = (0 + 0))).right else 0) + 0)) + 0) + 0) + 0) + 0) + 1) }
+generated_4234 : Int
+let generated_4234 =
+    block
+        let pair : GeneratedTuple = (((match [(match (0 == 0)
+          case True -> 0
+          case False -> 0), ((match (0 == 0)
+          case True -> 0
+          case False -> 0) + 1)]
+          case head :: tail -> head
+          case Nil -> 0) + 0), ((match [(match (0 == 0)
+          case True -> 0
+          case False -> 0), ((match (0 == 0)
+          case True -> 0
+          case False -> 0) + 1)]
+          case head :: tail -> head
+          case Nil -> 0) + 1))
+        let (left, right) = pair
 
-result : GeneratedPair
+        (left + right)
+
+result : Int
 let result = generated_4234
 
 --! assertNoErrors
---! assertType generated_4234 GeneratedPair
---! assertType result GeneratedPair
+--! assertType generated_4234 Int
+--! assertType result Int
 --! assertDeclKinds type, signature, let, signature, let

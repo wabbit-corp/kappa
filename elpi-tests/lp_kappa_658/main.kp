@@ -3,17 +3,32 @@ module main
 generatedNeed : (@x : Int) -> Int
 let generatedNeed (@x : Int) = x
 
-generated_658 : Int
+generated_658 : IO Int
 let generated_658 =
-    block
-        let (@x : Int) = (((((((0 + ((if False then 0 else 0) + 0)) + 0) + 0) + 0) + 0) + 0) + 0)
+    do
+        let (@x : Int) = ((block
+            generatedSetCount : Set Int -> Int
+            let generatedSetCount values = 2
 
-        if True then generatedNeed else 0
+            let item = (block
+                generatedListLength : List Int -> Int
+                let generatedListLength xs decreases structural xs =
+                    match xs
+                      case Nil -> 0
+                      case _ :: tail -> 1 + generatedListLength tail
 
-result : Int
+                let item = 0
+
+                generatedListLength [item, (item + 1), 0])
+            let values = {|item, (item + 1)|}
+
+            generatedSetCount values) + 0)
+        pure generatedNeed
+
+result : IO Int
 let result = generated_658
 
 --! assertNoErrors
---! assertType generated_658 Int
---! assertType result Int
+--! assertType generated_658 IO Int
+--! assertType result IO Int
 --! assertDeclKinds signature, let, signature, let, signature, let

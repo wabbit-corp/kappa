@@ -1,12 +1,40 @@
 module main
 
-generated_142 : Unit
-let generated_142 = (if True then (if True then (if True then () else ()) else ()) else ())
+generated_142 : Int
+let generated_142 =
+    block
+        scoped effect Ask =
+            ask : Unit -> Bool
 
-result : Unit
+        let l = Ask
+
+        let seed = (block
+            generatedListLength : List Int -> Int
+            let generatedListLength xs decreases structural xs =
+                match xs
+                  case Nil -> 0
+                  case _ :: tail -> 1 + generatedListLength tail
+
+            let item = 0
+
+            generatedListLength [item, (item + 1), 0])
+
+        let comp : Eff <[Ask : Ask]> Int =
+            do
+                let b <- l.ask ()
+                if b then seed else (seed + 1)
+
+        let handled : Eff <[ ]> Int =
+            deep handle l comp with
+                case return x -> pure x
+                case ask () k -> k True
+
+        runPure handled
+
+result : Int
 let result = generated_142
 
 --! assertNoErrors
---! assertType generated_142 Unit
---! assertType result Unit
+--! assertType generated_142 Int
+--! assertType result Int
 --! assertDeclKinds signature, let, signature, let

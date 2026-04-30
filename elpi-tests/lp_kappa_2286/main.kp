@@ -1,12 +1,21 @@
 module main
 
-generated_2286 : Option Int
-let generated_2286 = (if True then (if True then (if True then (if (((if False then None else (Some (0 + 0))) ?: 0) == 1) then (Some (((if False then None else (Some (0 + 0))) ?: 0) + 0)) else (if False then None else (Some (0 + 0)))) else None) else None) else None)
+generatedNeed : (@x : Int) -> Int
+let generatedNeed (@x : Int) = x
 
-result : Option Int
+generated_2286 : Int
+let generated_2286 = generatedNeed @(((match [(match (Some 0)
+  case Some payload -> payload
+  case None -> 0), ((match (Some 0)
+  case Some payload -> payload
+  case None -> 0) + 1)]
+  case head :: tail -> head
+  case Nil -> 0) + 0))
+
+result : Int
 let result = generated_2286
 
 --! assertNoErrors
---! assertType generated_2286 Option Int
---! assertType result Option Int
---! assertDeclKinds signature, let, signature, let
+--! assertType generated_2286 Int
+--! assertType result Int
+--! assertDeclKinds signature, let, signature, let, signature, let

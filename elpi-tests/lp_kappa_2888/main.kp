@@ -1,12 +1,21 @@
 module main
 
-generated_2888 : List Int
-let generated_2888 = [ yield (((((((((left = 0, right = (((Some (0 + 0)) ?: 0) + 0))).right + 0) + 0) + 0) + 0) + 0) + 0) + 0) ]
+generatedUseWidth : (width : Int) -> Int
+let generatedUseWidth width = width
 
-result : List Int
+generated_2888 : Int
+let generated_2888 =
+    block
+        let width = (((\(n : Int) -> n) (match [0, (0 + 1)]
+          case head :: tail -> head
+          case Nil -> 0)) + 0)
+
+        generatedUseWidth { width }
+
+result : Int
 let result = generated_2888
 
 --! assertNoErrors
---! assertType generated_2888 List Int
---! assertType result List Int
---! assertDeclKinds signature, let, signature, let
+--! assertType generated_2888 Int
+--! assertType result Int
+--! assertDeclKinds signature, let, signature, let, signature, let

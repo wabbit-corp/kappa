@@ -1,17 +1,19 @@
 module main
 
-generated_4447 : Int
-let generated_4447 =
-    block
-        let pair = (x = ((((((0 + ((if False then 0 else (if False then 0 else 0)) + 0)) + 0) + 0) + 0) + 0) + 0), y = ((((((0 + ((if False then 0 else (if False then 0 else 0)) + 0)) + 0) + 0) + 0) + 0) + 1))
-        let (x = captured, y = other) = pair
+generatedEcho : forall (a : Type). (this x : a) -> a
+let generatedEcho @a (this x : a) = x
 
-        (captured + other)
+generated_4447 : Option Int
+let generated_4447 = (Some (((Some ((match (0 == 0)
+  case True -> 0
+  case False -> 0) + 1)) ?: ((match (0 == 0)
+  case True -> 0
+  case False -> 0) + 2)) + 0))?.generatedEcho
 
-result : Int
+result : Option Int
 let result = generated_4447
 
 --! assertNoErrors
---! assertType generated_4447 Int
---! assertType result Int
---! assertDeclKinds signature, let, signature, let
+--! assertType generated_4447 Option Int
+--! assertType result Option Int
+--! assertDeclKinds signature, let, signature, let, signature, let

@@ -1,12 +1,25 @@
 module main
 
-generated_178 : Option Int
-let generated_178 = (if True then (if True then (if True then (if True then (Some (0 + 0)) else None) else None) else None) else None)
+generated_178 : Int
+let generated_178 =
+    block
+        type RankedAlias = Int
 
-result : Option Int
+        let aliased : RankedAlias = ((block
+            generatedSetCount : Set Int -> Int
+            let generatedSetCount values = 2
+
+            let item = 0
+            let values = {|item, (item + 1)|}
+
+            generatedSetCount values) + 0)
+
+        (aliased + 1)
+
+result : Int
 let result = generated_178
 
 --! assertNoErrors
---! assertType generated_178 Option Int
---! assertType result Option Int
+--! assertType generated_178 Int
+--! assertType result Int
 --! assertDeclKinds signature, let, signature, let

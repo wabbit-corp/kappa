@@ -1,14 +1,26 @@
 module main
 
-type GeneratedPair = (left : Int, right : Int)
+generatedUseWidth : (width : Int) -> Int
+let generatedUseWidth width = width
 
-generated_188 : GeneratedPair
-let generated_188 = ((left = ((((((((0 + 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0), right = 0)).{ right = (((((((((0 + 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0) + 1) }
+generated_188 : Int
+let generated_188 =
+    block
+        let width = ((block
+            generatedSetCount : Set Int -> Int
+            let generatedSetCount values = 2
 
-result : GeneratedPair
+            let item = 0
+            let values = {|item, (item + 1)|}
+
+            generatedSetCount values) + 0)
+
+        generatedUseWidth { width }
+
+result : Int
 let result = generated_188
 
 --! assertNoErrors
---! assertType generated_188 GeneratedPair
---! assertType result GeneratedPair
---! assertDeclKinds type, signature, let, signature, let
+--! assertType generated_188 Int
+--! assertType result Int
+--! assertDeclKinds signature, let, signature, let, signature, let

@@ -1,15 +1,17 @@
 module main
 
-generated_3837 : IO Int
+generated_3837 : Int
 let generated_3837 =
-    do
-        let staged = ((((((0 + ((0 + (((if False then 0 else 0) + (0 + 0)) + 0)) + 0)) + 0) + 0) + 0) + 0) + 0)
-        pure (staged + 1)
+    block
+        rankedHelper : (Int -> Int)
+        let rankedHelper x = x + 1
 
-result : IO Int
+        rankedHelper (((\(n : Int) -> n) ((\(n : Int) -> n) 0)) + 0)
+
+result : Int
 let result = generated_3837
 
 --! assertNoErrors
---! assertType generated_3837 IO Int
---! assertType result IO Int
+--! assertType generated_3837 Int
+--! assertType result Int
 --! assertDeclKinds signature, let, signature, let

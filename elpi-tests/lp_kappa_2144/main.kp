@@ -3,11 +3,15 @@ module main
 generated_2144 : Int
 let generated_2144 =
     block
-        type RankedAlias = Int
+        generatedMapCount : Map String Int -> Int
+        let generatedMapCount values = 1
 
-        let aliased : RankedAlias = (((((((((if False then 0 else ((left = (0 + 0), right = 0)).left) + (0 + 0)) + 0) + 0) + 0) + 0) + 0) + 0) + 0)
+        let item = (match (Some 0)
+          case Some payload -> payload
+          case None -> 0)
+        let values = { yield "item" : item }
 
-        (aliased + 1)
+        generatedMapCount values
 
 result : Int
 let result = generated_2144

@@ -4,7 +4,9 @@ generated_3716 : Int
 let generated_3716 =
     block
         ranked : Int
-        let ranked = (((((0 + ((0 + ((if True then 0 else 0) + 0)) + 0)) + 0) + 0) + 0) + 0)
+        let ranked = (match [((\(n : Int) -> n) 0), (((\(n : Int) -> n) 0) + 1)]
+          case head :: tail -> head
+          case Nil -> 0)
 
         (ranked + 0)
 

@@ -1,13 +1,46 @@
 module main
 
+type GeneratedTuple = (Int, Int)
+
 generated_1804 : Int
 let generated_1804 =
     block
-        type RankedAlias = Int
+        let pair : GeneratedTuple = (((match [(block
+            generatedMapCount : Map String Int -> Int
+            let generatedMapCount values = 1
 
-        let aliased : RankedAlias = (((((((((if True then ((left = (0 + 0), right = 0)).left else 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0)
+            let item = 0
+            let values = { yield "item" : item }
 
-        (aliased + 1)
+            generatedMapCount values), ((block
+            generatedMapCount : Map String Int -> Int
+            let generatedMapCount values = 1
+
+            let item = 0
+            let values = { yield "item" : item }
+
+            generatedMapCount values) + 1)]
+          case head :: tail -> head
+          case Nil -> 0) + 0), ((match [(block
+            generatedMapCount : Map String Int -> Int
+            let generatedMapCount values = 1
+
+            let item = 0
+            let values = { yield "item" : item }
+
+            generatedMapCount values), ((block
+            generatedMapCount : Map String Int -> Int
+            let generatedMapCount values = 1
+
+            let item = 0
+            let values = { yield "item" : item }
+
+            generatedMapCount values) + 1)]
+          case head :: tail -> head
+          case Nil -> 0) + 1))
+        let (left, right) = pair
+
+        (left + right)
 
 result : Int
 let result = generated_1804
@@ -15,4 +48,4 @@ let result = generated_1804
 --! assertNoErrors
 --! assertType generated_1804 Int
 --! assertType result Int
---! assertDeclKinds signature, let, signature, let
+--! assertDeclKinds type, signature, let, signature, let

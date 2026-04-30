@@ -1,14 +1,20 @@
 module main
 
-type GeneratedPair = (left : Int, right : Int)
+generated_4336 : Int
+let generated_4336 =
+    block
+        type RankedAlias = Int
 
-generated_4336 : GeneratedPair
-let generated_4336 = ((left = (((((0 + ((if False then 0 else ((0 + 0) + 0)) + 0)) + 0) + 0) + 0) + 0), right = 0)).{ right = ((((((0 + ((if False then 0 else ((0 + 0) + 0)) + 0)) + 0) + 0) + 0) + 0) + 1) }
+        let aliased : RankedAlias = (((\(n : Int) -> n) (match (0 == 0)
+          case True -> 0
+          case False -> 0)) + 0)
 
-result : GeneratedPair
+        (aliased + 1)
+
+result : Int
 let result = generated_4336
 
 --! assertNoErrors
---! assertType generated_4336 GeneratedPair
---! assertType result GeneratedPair
---! assertDeclKinds type, signature, let, signature, let
+--! assertType generated_4336 Int
+--! assertType result Int
+--! assertDeclKinds signature, let, signature, let

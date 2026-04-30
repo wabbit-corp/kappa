@@ -1,12 +1,27 @@
 module main
 
-generated_4120 : Unit
-let generated_4120 = (if True then (if True then (if False then () else ((\(u : Unit) -> u) (if (True && True) then () else ()))) else ()) else ())
+generated_4120 : Int
+let generated_4120 =
+    block
+        type RankedAlias = Int
 
-result : Unit
+        let aliased : RankedAlias = ((block
+            generatedMapCount : Map String Int -> Int
+            let generatedMapCount values = 1
+
+            let item = (match (0 == 0)
+              case True -> 0
+              case False -> 0)
+            let values = { yield "item" : item }
+
+            generatedMapCount values) + 0)
+
+        (aliased + 1)
+
+result : Int
 let result = generated_4120
 
 --! assertNoErrors
---! assertType generated_4120 Unit
---! assertType result Unit
+--! assertType generated_4120 Int
+--! assertType result Int
 --! assertDeclKinds signature, let, signature, let

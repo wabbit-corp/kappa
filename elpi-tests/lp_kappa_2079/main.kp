@@ -1,12 +1,23 @@
 module main
 
-generated_2079 : Bool
-let generated_2079 = (if (if (if (if False then True else ((if False then True else (True || False)) || False)) then True else False) then True else False) then True else False)
+generated_2079 : Map String Int
+let generated_2079 = { for x in [1, 2, 3], yield "k" : (block
+    generatedListLength : List Int -> Int
+    let generatedListLength xs decreases structural xs =
+        match xs
+          case Nil -> 0
+          case _ :: tail -> 1 + generatedListLength tail
 
-result : Bool
+    let item = (match (Some x)
+      case Some payload -> payload
+      case None -> 0)
+
+    generatedListLength [item, (item + 1), 0]), on conflict keep first }
+
+result : Map String Int
 let result = generated_2079
 
 --! assertNoErrors
---! assertType generated_2079 Bool
---! assertType result Bool
+--! assertType generated_2079 Map String Int
+--! assertType result Map String Int
 --! assertDeclKinds signature, let, signature, let

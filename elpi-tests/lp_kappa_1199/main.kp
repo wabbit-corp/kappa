@@ -1,12 +1,29 @@
 module main
 
-generated_1199 : (Int -> Int)
-let generated_1199 = \(x : Int) -> ((\(x : Int) -> ((\(x : Int) -> (((if True then \(x : Int) -> x else \(x : Int) -> x)) x)) x)) x)
+generatedEcho : forall (a : Type). (this x : a) -> a
+let generatedEcho @a (this x : a) = x
 
-result : (Int -> Int)
+generated_1199 : Int
+let generated_1199 = ((.generatedEcho) ((block
+    generatedMapCount : Map String Int -> Int
+    let generatedMapCount values = 1
+
+    let item = (block
+        generatedSetCount : Set Int -> Int
+        let generatedSetCount values = 2
+
+        let item = 0
+        let values = {|item, (item + 1)|}
+
+        generatedSetCount values)
+    let values = { yield "item" : item }
+
+    generatedMapCount values) + 0))
+
+result : Int
 let result = generated_1199
 
 --! assertNoErrors
---! assertType generated_1199 (Int -> Int)
---! assertType result (Int -> Int)
---! assertDeclKinds signature, let, signature, let
+--! assertType generated_1199 Int
+--! assertType result Int
+--! assertDeclKinds signature, let, signature, let, signature, let

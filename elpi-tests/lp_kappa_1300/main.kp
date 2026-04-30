@@ -1,12 +1,38 @@
 module main
 
-generated_1300 : Option Int
-let generated_1300 = (if True then (if True then (if True then (if (((if (((Some (0 + 0)) ?: 0) == 0) then (Some (0 + 0)) else None) ?: 0) == 1) then None else (if (((Some (0 + 0)) ?: 0) == 0) then (Some (0 + 0)) else None)) else None) else None) else None)
+generated_1300 : Int
+let generated_1300 =
+    block
+        trait RankedScore a =
+            rank : a -> Int
 
-result : Option Int
+        instance RankedScore Int =
+            let rank x = x
+
+        let dict = summon (RankedScore Int)
+
+        dict.rank ((match [(block
+            generatedSetCount : Set Int -> Int
+            let generatedSetCount values = 2
+
+            let item = 0
+            let values = {|item, (item + 1)|}
+
+            generatedSetCount values), ((block
+            generatedSetCount : Set Int -> Int
+            let generatedSetCount values = 2
+
+            let item = 0
+            let values = {|item, (item + 1)|}
+
+            generatedSetCount values) + 1)]
+          case head :: tail -> head
+          case Nil -> 0) + 0)
+
+result : Int
 let result = generated_1300
 
 --! assertNoErrors
---! assertType generated_1300 Option Int
---! assertType result Option Int
+--! assertType generated_1300 Int
+--! assertType result Int
 --! assertDeclKinds signature, let, signature, let

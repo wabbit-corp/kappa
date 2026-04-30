@@ -1,17 +1,27 @@
 module main
 
-generated_928 : Int
+generatedNeed : (@x : Int) -> Int
+let generatedNeed (@x : Int) = x
+
+generated_928 : IO Int
 let generated_928 =
-    block
-        ranked : Int
-        let ranked = (((((((if True then (0 + (0 + 0)) else 0) + 0) + 0) + 0) + 0) + 0) + 0)
+    do
+        let (@x : Int) = (((\(n : Int) -> n) (block
+            generatedListLength : List Int -> Int
+            let generatedListLength xs decreases structural xs =
+                match xs
+                  case Nil -> 0
+                  case _ :: tail -> 1 + generatedListLength tail
 
-        (ranked + 0)
+            let item = 0
 
-result : Int
+            generatedListLength [item, (item + 1), 0])) + 0)
+        pure generatedNeed
+
+result : IO Int
 let result = generated_928
 
 --! assertNoErrors
---! assertType generated_928 Int
---! assertType result Int
---! assertDeclKinds signature, let, signature, let
+--! assertType generated_928 IO Int
+--! assertType result IO Int
+--! assertDeclKinds signature, let, signature, let, signature, let

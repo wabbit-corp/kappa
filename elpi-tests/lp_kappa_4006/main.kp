@@ -1,17 +1,29 @@
 module main
 
-generated_4006 : Int
+generatedNeed : (@x : Int) -> Int
+let generatedNeed (@x : Int) = x
+
+generated_4006 : IO Int
 let generated_4006 =
-    block
-        let base : (x : Int) = (x = ((((((0 + ((if True then ((0 + 0) + 0) else 0) + 0)) + 0) + 0) + 0) + 0) + 0))
-        let extended = base.{ y := ((((((0 + ((if True then ((0 + 0) + 0) else 0) + 0)) + 0) + 0) + 0) + 0) + 1) }
+    do
+        let (@x : Int) = ((block
+            generatedListLength : List Int -> Int
+            let generatedListLength xs decreases structural xs =
+                match xs
+                  case Nil -> 0
+                  case _ :: tail -> 1 + generatedListLength tail
 
-        (extended.x + extended.y)
+            let item = (match (0 == 0)
+              case True -> 0
+              case False -> 0)
 
-result : Int
+            generatedListLength [item, (item + 1), 0]) + 0)
+        pure generatedNeed
+
+result : IO Int
 let result = generated_4006
 
 --! assertNoErrors
---! assertType generated_4006 Int
---! assertType result Int
---! assertDeclKinds signature, let, signature, let
+--! assertType generated_4006 IO Int
+--! assertType result IO Int
+--! assertDeclKinds signature, let, signature, let, signature, let

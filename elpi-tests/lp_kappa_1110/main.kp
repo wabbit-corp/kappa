@@ -1,12 +1,45 @@
 module main
 
-generated_1110 : Map String Int
-let generated_1110 = { for x in [1, 2, 3], let y = x + 1, if y > 0, yield (if y > 1 then "hi" else "lo") : (((((((if True then ((left = (x + 0), right = 0)).left else 0) + 0) + 0) + 0) + 0) + 0) + 0) }
+generated_1110 : Int
+let generated_1110 =
+    block
+        scoped effect Ask =
+            ask : Unit -> Bool
 
-result : Map String Int
+        let seed = (block
+            generatedListLength : List Int -> Int
+            let generatedListLength xs decreases structural xs =
+                match xs
+                  case Nil -> 0
+                  case _ :: tail -> 1 + generatedListLength tail
+
+            let item = (block
+                generatedSetCount : Set Int -> Int
+                let generatedSetCount values = 2
+
+                let item = 0
+                let values = {|item, (item + 1)|}
+
+                generatedSetCount values)
+
+            generatedListLength [item, (item + 1), 0])
+
+        let comp : Eff <[Ask : Ask]> Int =
+            do
+                let b <- Ask.ask ()
+                if b then seed else (seed + 1)
+
+        let handled : Eff <[ ]> Int =
+            deep handle Ask comp with
+                case return x -> pure x
+                case ask () k -> k True
+
+        runPure handled
+
+result : Int
 let result = generated_1110
 
 --! assertNoErrors
---! assertType generated_1110 Map String Int
---! assertType result Map String Int
+--! assertType generated_1110 Int
+--! assertType result Int
 --! assertDeclKinds signature, let, signature, let

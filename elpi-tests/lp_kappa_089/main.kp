@@ -1,12 +1,31 @@
 module main
 
-generated_89 : Set Int
-let generated_89 = {| for x in [1, 2, 3], let y = x + 1, yield ((x + 0) + 0) |}
+generated_89 : Int
+let generated_89 =
+    block
+        scoped effect Ask =
+            ask : Unit -> Bool
 
-result : Set Int
+        let pkg = (label = Ask)
+
+        let seed = 0
+
+        let comp : Eff <[Ask : Ask]> Int =
+            do
+                let b <- pkg.label.ask ()
+                if b then seed else (seed + 1)
+
+        let handled : Eff <[ ]> Int =
+            deep handle pkg.label comp with
+                case return x -> pure x
+                case ask () k -> k True
+
+        runPure handled
+
+result : Int
 let result = generated_89
 
 --! assertNoErrors
---! assertType generated_89 Set Int
---! assertType result Set Int
+--! assertType generated_89 Int
+--! assertType result Int
 --! assertDeclKinds signature, let, signature, let

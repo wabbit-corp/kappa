@@ -3,15 +3,13 @@ module main
 generated_2234 : Int
 let generated_2234 =
     block
-        trait RankedScore a =
-            rank : a -> Int
+        let (captured : Int) = ((match (Some (match (Some 0)
+          case Some payload -> payload
+          case None -> 0))
+          case Some payload -> payload
+          case None -> 0) + 0)
 
-        instance RankedScore Int =
-            let rank x = x
-
-        let dict = summon (RankedScore Int)
-
-        dict.rank (((((((((left = (0 + 0), right = 0)).left + 0) + 0) + 0) + 0) + 0) + 0) + 0)
+        captured
 
 result : Int
 let result = generated_2234

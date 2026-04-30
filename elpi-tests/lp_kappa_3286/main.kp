@@ -1,12 +1,31 @@
 module main
 
-generated_3286 : Map String Int
-let generated_3286 = { for x in [1, 2, 3], let y = x + 1, if y > 0, yield (if y > 1 then "hi" else "lo") : (((((0 + (((x + 0) + 0) + 0)) + 0) + 0) + 0) + 0) }
+generatedNeed : (@x : Int) -> Int
+let generatedNeed (@x : Int) = x
 
-result : Map String Int
+generated_3286 : Int
+let generated_3286 =
+    block
+        let (@x : Int) = (block
+            let pair = (x = (block
+                let pair = (x = 0, y = (0 + 1))
+                let (x = captured, y = other) = pair
+
+                (captured + other)), y = ((block
+                let pair = (x = 0, y = (0 + 1))
+                let (x = captured, y = other) = pair
+
+                (captured + other)) + 1))
+            let (x = captured, y = other) = pair
+
+            (captured + other))
+
+        if True then generatedNeed else 0
+
+result : Int
 let result = generated_3286
 
 --! assertNoErrors
---! assertType generated_3286 Map String Int
---! assertType result Map String Int
---! assertDeclKinds signature, let, signature, let
+--! assertType generated_3286 Int
+--! assertType result Int
+--! assertDeclKinds signature, let, signature, let, signature, let

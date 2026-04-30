@@ -1,12 +1,61 @@
 module main
 
-generated_1977 : Bool
-let generated_1977 = (if (if (if (if False then True else ((True && False) || False)) then True else False) then True else False) then True else False)
+generated_1977 : Int
+let generated_1977 =
+    block
+        scoped effect Ask =
+            ask : Unit -> Bool
 
-result : Bool
+        scoped effect Other =
+            other : Unit -> Int
+
+        let seed = (match ((block
+            generatedMapCount : Map String Int -> Int
+            let generatedMapCount values = 1
+
+            let item = 0
+            let values = { yield "item" : item }
+
+            generatedMapCount values) == (block
+            generatedMapCount : Map String Int -> Int
+            let generatedMapCount values = 1
+
+            let item = 0
+            let values = { yield "item" : item }
+
+            generatedMapCount values))
+          case True -> (block
+              generatedMapCount : Map String Int -> Int
+              let generatedMapCount values = 1
+
+              let item = 0
+              let values = { yield "item" : item }
+
+              generatedMapCount values)
+          case False -> 0)
+
+        let comp : Eff <[Ask : Ask, Other : Other]> Int =
+            do
+                let b <- Ask.ask ()
+                let n <- Other.other ()
+                if b then (n + seed) else seed
+
+        let askHandled : Eff <[Other : Other]> Int =
+            deep handle Ask comp with
+                case return x -> pure x
+                case ask () k -> k True
+
+        let handled : Eff <[ ]> Int =
+            deep handle Other askHandled with
+                case return x -> pure x
+                case other () k -> k 1
+
+        runPure handled
+
+result : Int
 let result = generated_1977
 
 --! assertNoErrors
---! assertType generated_1977 Bool
---! assertType result Bool
+--! assertType generated_1977 Int
+--! assertType result Int
 --! assertDeclKinds signature, let, signature, let

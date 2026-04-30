@@ -1,12 +1,25 @@
 module main
 
-generated_4256 : Unit
-let generated_4256 = (if True then (if True then (if False then () else ((\(u : Unit) -> u) ((\(u : Unit) -> if True then u else ()) ()))) else ()) else ())
+generated_4256 : Int
+let generated_4256 =
+    block
+        ranked : Int
+        let ranked = (block
+            let pair = (x = (match (0 == 0)
+              case True -> 0
+              case False -> 0), y = ((match (0 == 0)
+              case True -> 0
+              case False -> 0) + 1))
+            let (x = captured, y = other) = pair
 
-result : Unit
+            (captured + other))
+
+        (ranked + 0)
+
+result : Int
 let result = generated_4256
 
 --! assertNoErrors
---! assertType generated_4256 Unit
---! assertType result Unit
+--! assertType generated_4256 Int
+--! assertType result Int
 --! assertDeclKinds signature, let, signature, let

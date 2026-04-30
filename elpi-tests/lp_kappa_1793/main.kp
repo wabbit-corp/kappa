@@ -1,12 +1,31 @@
 module main
 
-generated_1793 : String
-let generated_1793 = (if (if (if (if (if True then (((if True then 1 else 0) == 1) && True) else False) then True else False) then True else False) then True else False) then #"raw lambda-prolog"# else "fallback")
+generatedEcho : forall (a : Type). (this x : a) -> a
+let generatedEcho @a (this x : a) = x
 
-result : String
+generated_1793 : Int
+let generated_1793 = ((.generatedEcho) ((match [(block
+    generatedMapCount : Map String Int -> Int
+    let generatedMapCount values = 1
+
+    let item = 0
+    let values = { yield "item" : item }
+
+    generatedMapCount values), ((block
+    generatedMapCount : Map String Int -> Int
+    let generatedMapCount values = 1
+
+    let item = 0
+    let values = { yield "item" : item }
+
+    generatedMapCount values) + 1)]
+  case head :: tail -> head
+  case Nil -> 0) + 0))
+
+result : Int
 let result = generated_1793
 
 --! assertNoErrors
---! assertType generated_1793 String
---! assertType result String
---! assertDeclKinds signature, let, signature, let
+--! assertType generated_1793 Int
+--! assertType result Int
+--! assertDeclKinds signature, let, signature, let, signature, let

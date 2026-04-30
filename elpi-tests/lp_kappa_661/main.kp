@@ -1,22 +1,28 @@
 module main
 
-trait GeneratedScore a =
-    score : a -> Int
+generated_661 : Set Int
+let generated_661 = {| yield ((block
+    generatedSetCount : Set Int -> Int
+    let generatedSetCount values = 2
 
-instance GeneratedScore Int =
-    let score x = x
+    let item = (block
+        generatedListLength : List Int -> Int
+        let generatedListLength xs decreases structural xs =
+            match xs
+              case Nil -> 0
+              case _ :: tail -> 1 + generatedListLength tail
 
-generated_661 : Int
-let generated_661 =
-    let
-        dict = summon (GeneratedScore Int)
-in
-        dict.score ((((((((0 + ((if False then 0 else 0) + 0)) + 0) + 0) + 0) + 0) + 0) + 0) + 0)
+        let item = 0
 
-result : Int
+        generatedListLength [item, (item + 1), 0])
+    let values = {|item, (item + 1)|}
+
+    generatedSetCount values) + 0) |}
+
+result : Set Int
 let result = generated_661
 
 --! assertNoErrors
---! assertType generated_661 Int
---! assertType result Int
---! assertDeclKinds trait, instance, signature, let, signature, let
+--! assertType generated_661 Set Int
+--! assertType result Set Int
+--! assertDeclKinds signature, let, signature, let

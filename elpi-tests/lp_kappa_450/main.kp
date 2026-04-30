@@ -1,12 +1,15 @@
 module main
 
-generated_450 : Option Int
-let generated_450 = (if True then (if True then (if True then (if True then (if (False || True) then (Some (0 + 0)) else (Some (1 + 1))) else None) else None) else None) else None)
+generatedNeed : (@x : Int) -> Int
+let generatedNeed (@x : Int) = x
 
-result : Option Int
+generated_450 : Int
+let generated_450 = generatedNeed @((((\(n : Int) -> n) 0) + 0))
+
+result : Int
 let result = generated_450
 
 --! assertNoErrors
---! assertType generated_450 Option Int
---! assertType result Option Int
---! assertDeclKinds signature, let, signature, let
+--! assertType generated_450 Int
+--! assertType result Int
+--! assertDeclKinds signature, let, signature, let, signature, let

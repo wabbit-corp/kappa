@@ -1,10 +1,24 @@
 module main
 
-generatedEcho : forall (a : Type). (this x : a) -> a
-let generatedEcho @a (this x : a) = x
-
 generated_84 : Int
-let generated_84 = (((0 + 0) + 0) + 0).generatedEcho
+let generated_84 =
+    block
+        scoped effect Ask =
+            ask : Unit -> Bool
+
+        let seed = 0
+
+        let comp : Eff <[Ask : Ask]> Int =
+            do
+                let b <- Ask.ask ()
+                if b then seed else (seed + 1)
+
+        let handled : Eff <[ ]> Int =
+            deep handle Ask comp with
+                case return x -> pure x
+                case ask () k -> k True
+
+        runPure handled
 
 result : Int
 let result = generated_84
@@ -12,4 +26,4 @@ let result = generated_84
 --! assertNoErrors
 --! assertType generated_84 Int
 --! assertType result Int
---! assertDeclKinds signature, let, signature, let, signature, let
+--! assertDeclKinds signature, let, signature, let

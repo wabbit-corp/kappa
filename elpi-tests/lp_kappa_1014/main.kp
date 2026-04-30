@@ -1,17 +1,12 @@
 module main
 
-generated_1014 : Int
-let generated_1014 =
-    block
-        let base : (x : Int) = (x = ((((((((if True then (if False then 0 else 0) else 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0))
-        let extended = base.{ y := ((((((((if True then (if False then 0 else 0) else 0) + 0) + 0) + 0) + 0) + 0) + 0) + 1) }
+generated_1014 : Option Int
+let generated_1014 = (if True then (if True then (if True then (if False then None else (if (((Some (0 + 0)) ?: 0) == 1) then None else (Some (0 + 0)))) else None) else None) else None)
 
-        (extended.x + extended.y)
-
-result : Int
+result : Option Int
 let result = generated_1014
 
 --! assertNoErrors
---! assertType generated_1014 Int
---! assertType result Int
+--! assertType generated_1014 Option Int
+--! assertType result Option Int
 --! assertDeclKinds signature, let, signature, let

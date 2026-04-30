@@ -1,12 +1,21 @@
 module main
 
-generated_277 : Bool
-let generated_277 = (if (if (if (if (True && False) then True else False) then True else False) then True else False) then True else False)
+generated_277 : Int
+let generated_277 =
+    block
+        let pair = (x = ((match (Some 0)
+          case Some payload -> payload
+          case None -> 0) + 0), y = ((match (Some 0)
+          case Some payload -> payload
+          case None -> 0) + 1))
+        let (x = captured, y = other) = pair
 
-result : Bool
+        (captured + other)
+
+result : Int
 let result = generated_277
 
 --! assertNoErrors
---! assertType generated_277 Bool
---! assertType result Bool
+--! assertType generated_277 Int
+--! assertType result Int
 --! assertDeclKinds signature, let, signature, let

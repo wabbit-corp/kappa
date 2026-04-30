@@ -1,15 +1,16 @@
 module main
 
-generatedEcho : forall (a : Type). (this x : a) -> a
-let generatedEcho @a (this x : a) = x
+generated_2207 : List Int
+let generated_2207 = [ for x in [1, 2, 3], yield (match (Some (match (Some x)
+  case Some payload -> payload
+  case None -> 0))
+  case Some payload -> payload
+  case None -> 0) ]
 
-generated_2207 : Int
-let generated_2207 = ((.generatedEcho) (((((((((if False then 0 else ((Some (0 + 0)) ?: 0)) + (0 + 0)) + 0) + 0) + 0) + 0) + 0) + 0) + 0))
-
-result : Int
+result : List Int
 let result = generated_2207
 
 --! assertNoErrors
---! assertType generated_2207 Int
---! assertType result Int
---! assertDeclKinds signature, let, signature, let, signature, let
+--! assertType generated_2207 List Int
+--! assertType result List Int
+--! assertDeclKinds signature, let, signature, let

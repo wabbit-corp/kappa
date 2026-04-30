@@ -1,12 +1,16 @@
 module main
 
-generated_4429 : (Int -> Int)
-let generated_4429 = \(x : Int) -> ((\(x : Int) -> ((\(x : Int) -> ((((if True then (if True then \(x : Int) -> x else \(x : Int) -> x) else \(x : Int) -> x)) x) + 0)) x)) x)
+generated_4429 : Set Int
+let generated_4429 = {| for x in [1, 2, 3], let y = x + 1, yield ((Some ((match (x == x)
+  case True -> x
+  case False -> 0) + 1)) ?: ((match (x == x)
+  case True -> x
+  case False -> 0) + 2)) |}
 
-result : (Int -> Int)
+result : Set Int
 let result = generated_4429
 
 --! assertNoErrors
---! assertType generated_4429 (Int -> Int)
---! assertType result (Int -> Int)
+--! assertType generated_4429 Set Int
+--! assertType result Set Int
 --! assertDeclKinds signature, let, signature, let

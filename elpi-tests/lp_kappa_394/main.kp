@@ -1,10 +1,17 @@
 module main
 
-generatedMakeConst : forall (a : Type). a -> Unit -> a
-let generatedMakeConst value = \() -> value
-
 generated_394 : Int
-let generated_394 = ((generatedMakeConst (((((((((((if False then 0 else 0) + (0 + 0)) + 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0)) ())
+let generated_394 =
+    block
+        type RankedAlias = Int
+
+        let aliased : RankedAlias = ((block
+            let pair = (x = 0, y = (0 + 1))
+            let (x = captured, y = other) = pair
+
+            (captured + other)) + 0)
+
+        (aliased + 1)
 
 result : Int
 let result = generated_394
@@ -12,4 +19,4 @@ let result = generated_394
 --! assertNoErrors
 --! assertType generated_394 Int
 --! assertType result Int
---! assertDeclKinds signature, let, signature, let, signature, let
+--! assertDeclKinds signature, let, signature, let

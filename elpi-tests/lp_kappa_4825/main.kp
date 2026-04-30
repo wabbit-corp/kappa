@@ -3,13 +3,13 @@ module main
 generatedEcho : forall (a : Type). (this x : a) -> a
 let generatedEcho @a (this x : a) = x
 
-generated_4825 : Int
-let generated_4825 = ((.generatedEcho) ((((((0 + (((if True then ((if True then 0 else 0) + 0) else 0) + 0) + 0)) + 0) + 0) + 0) + 0) + 0))
+generated_4825 : Option Int
+let generated_4825 = (Some (((\(n : Int) -> n) ((Some (0 + 1)) ?: (0 + 2))) + 0))?.generatedEcho
 
-result : Int
+result : Option Int
 let result = generated_4825
 
 --! assertNoErrors
---! assertType generated_4825 Int
---! assertType result Int
+--! assertType generated_4825 Option Int
+--! assertType result Option Int
 --! assertDeclKinds signature, let, signature, let, signature, let

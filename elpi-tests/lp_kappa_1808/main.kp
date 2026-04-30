@@ -1,12 +1,35 @@
 module main
 
-generated_1808 : Unit
-let generated_1808 = (if True then (if True then (if True then (if (True && True) then (if (0 == 1) then () else ()) else ()) else ()) else ()) else ())
+generatedUseWidth : (width : Int) -> Int
+let generatedUseWidth width = width
 
-result : Unit
+generated_1808 : Int
+let generated_1808 =
+    block
+        let width = ((match [(block
+            generatedMapCount : Map String Int -> Int
+            let generatedMapCount values = 1
+
+            let item = 0
+            let values = { yield "item" : item }
+
+            generatedMapCount values), ((block
+            generatedMapCount : Map String Int -> Int
+            let generatedMapCount values = 1
+
+            let item = 0
+            let values = { yield "item" : item }
+
+            generatedMapCount values) + 1)]
+          case head :: tail -> head
+          case Nil -> 0) + 0)
+
+        generatedUseWidth { width }
+
+result : Int
 let result = generated_1808
 
 --! assertNoErrors
---! assertType generated_1808 Unit
---! assertType result Unit
---! assertDeclKinds signature, let, signature, let
+--! assertType generated_1808 Int
+--! assertType result Int
+--! assertDeclKinds signature, let, signature, let, signature, let

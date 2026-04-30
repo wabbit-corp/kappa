@@ -1,7 +1,16 @@
 module main
 
 generated_3524 : Map String Int
-let generated_3524 = { for x in [1, 2, 3], if x > 0, yield "k" : (((((0 + (((((left = (x + 0), right = 0)).left + 0) + 0) + 0)) + 0) + 0) + 0) + 0) }
+let generated_3524 = { yield "only" : ((block
+    generatedListLength : List Int -> Int
+    let generatedListLength xs decreases structural xs =
+        match xs
+          case Nil -> 0
+          case _ :: tail -> 1 + generatedListLength tail
+
+    let item = ((\(n : Int) -> n) 0)
+
+    generatedListLength [item, (item + 1), 0]) + 0) }
 
 result : Map String Int
 let result = generated_3524

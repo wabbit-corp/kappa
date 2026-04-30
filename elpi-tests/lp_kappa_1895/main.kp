@@ -1,7 +1,7 @@
 module main
 
 generated_1895 : String
-let generated_1895 = (if (if (if (if (if False then True else (True || False)) then True else False) then True else False) then True else False) then #"raw lambda-prolog"# else "fallback")
+let generated_1895 = (if (if (if (if (True || False) then True else False) then True else False) then True else False) then #"raw lambda-prolog"# else "fallback")
 
 result : String
 let result = generated_1895

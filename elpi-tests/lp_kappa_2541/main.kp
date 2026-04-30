@@ -1,12 +1,28 @@
 module main
 
-generated_2541 : String
-let generated_2541 = (if (if (if (if ((if ((if True then True else False) && True) then 1 else 0) == 1) then True else False) then True else False) then True else False) then #"raw lambda-prolog"# else "fallback")
+generated_2541 : Int
+let generated_2541 =
+    block
+        rankedHelper : (Int -> Int)
+        let rankedHelper x = x + 1
 
-result : String
+        rankedHelper ((block
+            generatedListLength : List Int -> Int
+            let generatedListLength xs decreases structural xs =
+                match xs
+                  case Nil -> 0
+                  case _ :: tail -> 1 + generatedListLength tail
+
+            let item = (match [0, (0 + 1)]
+              case head :: tail -> head
+              case Nil -> 0)
+
+            generatedListLength [item, (item + 1), 0]) + 0)
+
+result : Int
 let result = generated_2541
 
 --! assertNoErrors
---! assertType generated_2541 String
---! assertType result String
+--! assertType generated_2541 Int
+--! assertType result Int
 --! assertDeclKinds signature, let, signature, let

@@ -1,12 +1,24 @@
 module main
 
-generated_4122 : Option Int
-let generated_4122 = (if True then (if True then (if False then None else (if (((Some ((Some (0 + 0)) ?: 0)) ?: 0) == 0) then (Some ((Some (0 + 0)) ?: 0)) else None)) else None) else None)
+generatedNeed : (@x : Int) -> Int
+let generatedNeed (@x : Int) = x
 
-result : Option Int
+generated_4122 : Int
+let generated_4122 = generatedNeed @(((block
+    generatedMapCount : Map String Int -> Int
+    let generatedMapCount values = 1
+
+    let item = (match (0 == 0)
+      case True -> 0
+      case False -> 0)
+    let values = { yield "item" : item }
+
+    generatedMapCount values) + 0))
+
+result : Int
 let result = generated_4122
 
 --! assertNoErrors
---! assertType generated_4122 Option Int
---! assertType result Option Int
---! assertDeclKinds signature, let, signature, let
+--! assertType generated_4122 Int
+--! assertType result Int
+--! assertDeclKinds signature, let, signature, let, signature, let

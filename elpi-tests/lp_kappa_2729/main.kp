@@ -1,12 +1,16 @@
 module main
 
-generated_2729 : (Int -> Int)
-let generated_2729 = \(x : Int) -> ((\(x : Int) -> ((\(x : Int) -> ((\(x : Int) -> if (x == 0) then (((if False then \(x : Int) -> x else \(x : Int) -> x)) x) else x) x)) x)) x)
+generated_2729 : List Int
+let generated_2729 = [ for x in [1, 2, 3], order by x desc, yield (match (Some (match [x, (x + 1)]
+  case head :: tail -> head
+  case Nil -> 0))
+  case Some payload -> payload
+  case None -> 0) ]
 
-result : (Int -> Int)
+result : List Int
 let result = generated_2729
 
 --! assertNoErrors
---! assertType generated_2729 (Int -> Int)
---! assertType result (Int -> Int)
+--! assertType generated_2729 List Int
+--! assertType result List Int
 --! assertDeclKinds signature, let, signature, let

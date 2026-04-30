@@ -2,14 +2,13 @@ module main
 
 generated_2723 : Int
 let generated_2723 =
-    block
-        data RankedBox : Type =
-            RankedBox (value : Int)
-
-        let boxed = RankedBox (((((((((left = 0, right = ((if False then 0 else 0) + 0))).right + 0) + 0) + 0) + 0) + 0) + 0) + 0)
-
-        match boxed
-          case RankedBox value -> (value + 1)
+    match (Some ((match (Some (match [0, (0 + 1)]
+      case head :: tail -> head
+      case Nil -> 0))
+      case Some payload -> payload
+      case None -> 0) + 0))
+      case Some payload -> payload
+      case None -> 0
 
 result : Int
 let result = generated_2723

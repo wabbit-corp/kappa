@@ -1,12 +1,19 @@
 module main
 
-generated_2694 : Option Int
-let generated_2694 = (if True then (if True then (if True then (if (False || True) then (if (((Some (0 + 0)) ?: 0) == 1) then None else (Some (0 + 0))) else (Some (1 + 1))) else None) else None) else None)
+generated_2694 : IO Int
+let generated_2694 =
+    do
+        value <- pure ((match (Some (match [0, (0 + 1)]
+          case head :: tail -> head
+          case Nil -> 0))
+          case Some payload -> payload
+          case None -> 0) + 0)
+        pure (value + 2)
 
-result : Option Int
+result : IO Int
 let result = generated_2694
 
 --! assertNoErrors
---! assertType generated_2694 Option Int
---! assertType result Option Int
+--! assertType generated_2694 IO Int
+--! assertType result IO Int
 --! assertDeclKinds signature, let, signature, let

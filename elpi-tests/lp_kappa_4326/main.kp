@@ -1,12 +1,21 @@
 module main
 
-generated_4326 : Option Int
-let generated_4326 = (if True then (if True then (if False then None else (if (((if True then (Some (0 + 0)) else None) ?: 0) == 1) then None else (if True then (Some (0 + 0)) else None))) else None) else None)
+generated_4326 : Int
+let generated_4326 =
+    match ((((\(n : Int) -> n) (match (0 == 0)
+      case True -> 0
+      case False -> 0)) + 0) == (((\(n : Int) -> n) (match (0 == 0)
+      case True -> 0
+      case False -> 0)) + 0))
+      case True -> (((\(n : Int) -> n) (match (0 == 0)
+        case True -> 0
+        case False -> 0)) + 0)
+      case False -> 0
 
-result : Option Int
+result : Int
 let result = generated_4326
 
 --! assertNoErrors
---! assertType generated_4326 Option Int
---! assertType result Option Int
+--! assertType generated_4326 Int
+--! assertType result Int
 --! assertDeclKinds signature, let, signature, let

@@ -1,19 +1,23 @@
 module main
 
-data GeneratedChoice : Type =
-    GeneratedLeft (value : Int)
-    GeneratedRight
-
-generated_2925 : Int
+generated_2925 : IO Int
 let generated_2925 =
-    match GeneratedRight
-      case GeneratedLeft payload -> (payload + 0)
-      case GeneratedRight -> (((((((((Some (0 + 0)) ?: 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0)
+    do
+        let staged = ((match ((match [0, (0 + 1)]
+          case head :: tail -> head
+          case Nil -> 0) == (match [0, (0 + 1)]
+          case head :: tail -> head
+          case Nil -> 0))
+          case True -> (match [0, (0 + 1)]
+            case head :: tail -> head
+            case Nil -> 0)
+          case False -> 0) + 0)
+        pure (staged + 1)
 
-result : Int
+result : IO Int
 let result = generated_2925
 
 --! assertNoErrors
---! assertType generated_2925 Int
---! assertType result Int
---! assertDeclKinds data, signature, let, signature, let
+--! assertType generated_2925 IO Int
+--! assertType result IO Int
+--! assertDeclKinds signature, let, signature, let

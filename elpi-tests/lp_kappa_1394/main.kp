@@ -1,12 +1,24 @@
 module main
 
-generated_1394 : Map String Int
-let generated_1394 = { yield "only" : ((((((((if False then 0 else ((if True then 0 else 0) + 0)) + 0) + 0) + 0) + 0) + 0) + 0) + 0) }
+generated_1394 : Int
+let generated_1394 =
+    block
+        ranked : Int
+        let ranked = ((\(n : Int) -> n) (block
+            generatedSetCount : Set Int -> Int
+            let generatedSetCount values = 2
 
-result : Map String Int
+            let item = 0
+            let values = {|item, (item + 1)|}
+
+            generatedSetCount values))
+
+        (ranked + 0)
+
+result : Int
 let result = generated_1394
 
 --! assertNoErrors
---! assertType generated_1394 Map String Int
---! assertType result Map String Int
+--! assertType generated_1394 Int
+--! assertType result Int
 --! assertDeclKinds signature, let, signature, let

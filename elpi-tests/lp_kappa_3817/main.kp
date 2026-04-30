@@ -1,12 +1,39 @@
 module main
 
-generated_3817 : (Int -> Int)
-let generated_3817 = \(x : Int) -> ((\(x : Int) -> ((\(x : Int) -> (((\(x : Int) -> ((((if (0 == 0) then \(x : Int) -> x else \(x : Int) -> (x + 0))) x) + 0)) x) + 0)) x)) x)
+generated_3817 : Int
+let generated_3817 =
+    block
+        scoped effect Choice =
+            ω choose : Unit -> Bool
 
-result : (Int -> Int)
+        let c = Choice
+
+        let seed = (block
+            let pair = (x = ((\(n : Int) -> n) 0), y = (((\(n : Int) -> n) 0) + 1))
+            let (x = captured, y = other) = pair
+
+            (captured + other))
+
+        let comp : Eff <[Choice : Choice]> Int =
+            do
+                let b <- c.choose ()
+                if b then seed else (seed + 1)
+
+        let handled : Eff <[ ]> Int =
+            deep handle Choice comp with
+                case return x -> pure x
+                case choose () k ->
+                    do
+                        let a <- k True
+                        let b <- k False
+                        pure (a + b)
+
+        runPure handled
+
+result : Int
 let result = generated_3817
 
 --! assertNoErrors
---! assertType generated_3817 (Int -> Int)
---! assertType result (Int -> Int)
+--! assertType generated_3817 Int
+--! assertType result Int
 --! assertDeclKinds signature, let, signature, let

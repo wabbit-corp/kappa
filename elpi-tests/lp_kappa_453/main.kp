@@ -2,10 +2,11 @@ module main
 
 generated_453 : Int
 let generated_453 =
-    let
-        ranked : Int = ((((((((((left = 0, right = (0 + 0))).right + 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0)
-in
-        (ranked + 0)
+    block
+        let pair = (x = (((\(n : Int) -> n) 0) + 0), y = (((\(n : Int) -> n) 0) + 1))
+        let whole@(x = captured, y = other) = pair
+
+        (whole.x + (captured + other))
 
 result : Int
 let result = generated_453

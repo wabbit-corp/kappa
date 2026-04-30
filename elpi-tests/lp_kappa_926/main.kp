@@ -1,12 +1,35 @@
 module main
 
-generated_926 : Option Int
-let generated_926 = (if True then (if True then (if True then (if (((if False then None else (Some (0 + 0))) ?: 0) == 0) then (if False then None else (Some (0 + 0))) else None) else None) else None) else None)
+generated_926 : Int
+let generated_926 =
+    block
+        let base : (x : Int) = (x = (((\(n : Int) -> n) (block
+            generatedListLength : List Int -> Int
+            let generatedListLength xs decreases structural xs =
+                match xs
+                  case Nil -> 0
+                  case _ :: tail -> 1 + generatedListLength tail
 
-result : Option Int
+            let item = 0
+
+            generatedListLength [item, (item + 1), 0])) + 0))
+        let extended = base.{ y := (((\(n : Int) -> n) (block
+            generatedListLength : List Int -> Int
+            let generatedListLength xs decreases structural xs =
+                match xs
+                  case Nil -> 0
+                  case _ :: tail -> 1 + generatedListLength tail
+
+            let item = 0
+
+            generatedListLength [item, (item + 1), 0])) + 1) }
+
+        (extended.x + extended.y)
+
+result : Int
 let result = generated_926
 
 --! assertNoErrors
---! assertType generated_926 Option Int
---! assertType result Option Int
+--! assertType generated_926 Int
+--! assertType result Int
 --! assertDeclKinds signature, let, signature, let

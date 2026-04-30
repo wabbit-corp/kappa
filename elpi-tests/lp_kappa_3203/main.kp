@@ -1,14 +1,26 @@
 module main
 
-type GeneratedTuple = (Int, Int)
+generated_3203 : Int
+let generated_3203 =
+    block
+        data RankedBox : Type =
+            RankedBox (value : Int)
 
-generated_3203 : GeneratedTuple
-let generated_3203 = (if True then (if True then (if True then (if (True && True) then (if False then (3, (3 + 3)) else (if (True && True) then (if False then (3, (3 + 3)) else (0, (0 + 0))) else (4, (4 + 4)))) else (4, (4 + 4))) else (0, (0 + 0))) else (0, (0 + 0))) else (0, (0 + 0)))
+        let boxed = RankedBox ((match (Some (block
+            let pair = (x = 0, y = (0 + 1))
+            let (x = captured, y = other) = pair
 
-result : GeneratedTuple
+            (captured + other)))
+          case Some payload -> payload
+          case None -> 0) + 0)
+
+        match boxed
+          case RankedBox value -> (value + 1)
+
+result : Int
 let result = generated_3203
 
 --! assertNoErrors
---! assertType generated_3203 GeneratedTuple
---! assertType result GeneratedTuple
---! assertDeclKinds type, signature, let, signature, let
+--! assertType generated_3203 Int
+--! assertType result Int
+--! assertDeclKinds signature, let, signature, let

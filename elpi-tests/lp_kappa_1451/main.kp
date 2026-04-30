@@ -1,17 +1,35 @@
 module main
 
-generated_1451 : Int
-let generated_1451 =
-    block
-        rankedHelper : (Int -> Int)
-        let rankedHelper x = x + 1
+generated_1451 : List Int
+let generated_1451 = [ for x in [1, 2, 3], if x > 0, yield (match ((block
+    generatedSetCount : Set Int -> Int
+    let generatedSetCount values = 2
 
-        rankedHelper ((((((((if False then 0 else ((left = (0 + 0), right = 0)).left) + 0) + 0) + 0) + 0) + 0) + 0) + 0)
+    let item = x
+    let values = {|item, (item + 1)|}
 
-result : Int
+    generatedSetCount values) == (block
+    generatedSetCount : Set Int -> Int
+    let generatedSetCount values = 2
+
+    let item = x
+    let values = {|item, (item + 1)|}
+
+    generatedSetCount values))
+  case True -> (block
+      generatedSetCount : Set Int -> Int
+      let generatedSetCount values = 2
+
+      let item = x
+      let values = {|item, (item + 1)|}
+
+      generatedSetCount values)
+  case False -> 0) ]
+
+result : List Int
 let result = generated_1451
 
 --! assertNoErrors
---! assertType generated_1451 Int
---! assertType result Int
+--! assertType generated_1451 List Int
+--! assertType result List Int
 --! assertDeclKinds signature, let, signature, let

@@ -1,12 +1,21 @@
 module main
 
-generated_2658 : Unit
-let generated_2658 = (if True then (if True then (if True then (if (0 == 1) then () else ((\(u : Unit) -> u) ())) else ()) else ()) else ())
+generated_2658 : List Int
+let generated_2658 = [ yield ((block
+    generatedMapCount : Map String Int -> Int
+    let generatedMapCount values = 1
 
-result : Unit
+    let item = (match [0, (0 + 1)]
+      case head :: tail -> head
+      case Nil -> 0)
+    let values = { yield "item" : item }
+
+    generatedMapCount values) + 0) ]
+
+result : List Int
 let result = generated_2658
 
 --! assertNoErrors
---! assertType generated_2658 Unit
---! assertType result Unit
+--! assertType generated_2658 List Int
+--! assertType result List Int
 --! assertDeclKinds signature, let, signature, let

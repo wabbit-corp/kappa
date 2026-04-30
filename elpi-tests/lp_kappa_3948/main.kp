@@ -1,7 +1,10 @@
 module main
 
 generated_3948 : Int
-let generated_3948 = (((((0 + ((if True then 0 else 0) + 0)) + 0) + 0) + 0) + 0)
+let generated_3948 =
+    match ((((Some (((\(n : Int) -> n) 0) + 1)) ?: (((\(n : Int) -> n) 0) + 2)) + 0) == (((Some (((\(n : Int) -> n) 0) + 1)) ?: (((\(n : Int) -> n) 0) + 2)) + 0))
+      case True -> (((Some (((\(n : Int) -> n) 0) + 1)) ?: (((\(n : Int) -> n) 0) + 2)) + 0)
+      case False -> 0
 
 result : Int
 let result = generated_3948

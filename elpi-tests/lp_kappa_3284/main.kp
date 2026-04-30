@@ -1,10 +1,24 @@
 module main
 
-generatedMakeConst : forall (a : Type). a -> Unit -> a
-let generatedMakeConst value = \() -> value
-
 generated_3284 : Int
-let generated_3284 = ((generatedMakeConst ((((((0 + (((0 + 0) + 0) + 0)) + 0) + 0) + 0) + 0) + 0)) ())
+let generated_3284 =
+    block
+        ranked : Int
+        let ranked = (block
+            let pair = (x = (block
+                let pair = (x = 0, y = (0 + 1))
+                let (x = captured, y = other) = pair
+
+                (captured + other)), y = ((block
+                let pair = (x = 0, y = (0 + 1))
+                let (x = captured, y = other) = pair
+
+                (captured + other)) + 1))
+            let (x = captured, y = other) = pair
+
+            (captured + other))
+
+        (ranked + 0)
 
 result : Int
 let result = generated_3284
@@ -12,4 +26,4 @@ let result = generated_3284
 --! assertNoErrors
 --! assertType generated_3284 Int
 --! assertType result Int
---! assertDeclKinds signature, let, signature, let, signature, let
+--! assertDeclKinds signature, let, signature, let

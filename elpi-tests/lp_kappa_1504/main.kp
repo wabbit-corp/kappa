@@ -1,12 +1,33 @@
 module main
 
-generated_1504 : Option Int
-let generated_1504 = (if True then (if True then (if True then (if (((if (True && True) then (if False then None else (Some (0 + 0))) else (Some 2)) ?: 0) == 1) then None else (if (True && True) then (if False then None else (Some (0 + 0))) else (Some 2))) else None) else None) else None)
+generatedNeed : (@x : Int) -> Int
+let generatedNeed (@x : Int) = x
 
-result : Option Int
+generated_1504 : Int
+let generated_1504 =
+    block
+        let (@x : Int) = ((Some ((block
+            generatedSetCount : Set Int -> Int
+            let generatedSetCount values = 2
+
+            let item = 0
+            let values = {|item, (item + 1)|}
+
+            generatedSetCount values) + 1)) ?: ((block
+            generatedSetCount : Set Int -> Int
+            let generatedSetCount values = 2
+
+            let item = 0
+            let values = {|item, (item + 1)|}
+
+            generatedSetCount values) + 2))
+
+        if True then generatedNeed else 0
+
+result : Int
 let result = generated_1504
 
 --! assertNoErrors
---! assertType generated_1504 Option Int
---! assertType result Option Int
---! assertDeclKinds signature, let, signature, let
+--! assertType generated_1504 Int
+--! assertType result Int
+--! assertDeclKinds signature, let, signature, let, signature, let

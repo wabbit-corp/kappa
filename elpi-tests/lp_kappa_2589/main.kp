@@ -1,12 +1,37 @@
 module main
 
-generated_2589 : Bool
-let generated_2589 = (if (if (if ((if (if True then True else False) then (0 + 1) else 1) == 1) then True else False) then True else False) then True else False)
+data GeneratedChoice : Type =
+    GeneratedLeft (value : Int)
+    GeneratedRight
 
-result : Bool
+generated_2589 : Int
+let generated_2589 =
+    match (GeneratedLeft ((block
+        generatedSetCount : Set Int -> Int
+        let generatedSetCount values = 2
+
+        let item = (match [0, (0 + 1)]
+          case head :: tail -> head
+          case Nil -> 0)
+        let values = {|item, (item + 1)|}
+
+        generatedSetCount values) + 0))
+      case GeneratedLeft payload -> (payload + 0)
+      case GeneratedRight -> ((block
+          generatedSetCount : Set Int -> Int
+          let generatedSetCount values = 2
+
+          let item = (match [0, (0 + 1)]
+            case head :: tail -> head
+            case Nil -> 0)
+          let values = {|item, (item + 1)|}
+
+          generatedSetCount values) + 0)
+
+result : Int
 let result = generated_2589
 
 --! assertNoErrors
---! assertType generated_2589 Bool
---! assertType result Bool
---! assertDeclKinds signature, let, signature, let
+--! assertType generated_2589 Int
+--! assertType result Int
+--! assertDeclKinds data, signature, let, signature, let

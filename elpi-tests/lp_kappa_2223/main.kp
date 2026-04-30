@@ -1,12 +1,19 @@
 module main
 
-generated_2223 : List Int
-let generated_2223 = [ for x in [1, 2, 3], yield ((((((((left = (x + 0), right = 0)).left + 0) + 0) + 0) + 0) + 0) + 0) ]
+generated_2223 : IO Int
+let generated_2223 =
+    do
+        let staged = ((match (Some (match (Some 0)
+          case Some payload -> payload
+          case None -> 0))
+          case Some payload -> payload
+          case None -> 0) + 0)
+        pure (staged + 1)
 
-result : List Int
+result : IO Int
 let result = generated_2223
 
 --! assertNoErrors
---! assertType generated_2223 List Int
---! assertType result List Int
+--! assertType generated_2223 IO Int
+--! assertType result IO Int
 --! assertDeclKinds signature, let, signature, let

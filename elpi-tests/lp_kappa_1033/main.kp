@@ -1,12 +1,53 @@
 module main
 
-generated_1033 : List Int
-let generated_1033 = [ for x in [1, 2, 3], let y = x + 1, yield (((((((if True then ((if True then x else 0) + 0) else 0) + 0) + 0) + 0) + 0) + 0) + 0) ]
+generated_1033 : Int
+let generated_1033 =
+    block
+        let pair = (x = (((Some ((block
+            generatedListLength : List Int -> Int
+            let generatedListLength xs decreases structural xs =
+                match xs
+                  case Nil -> 0
+                  case _ :: tail -> 1 + generatedListLength tail
 
-result : List Int
+            let item = 0
+
+            generatedListLength [item, (item + 1), 0]) + 1)) ?: ((block
+            generatedListLength : List Int -> Int
+            let generatedListLength xs decreases structural xs =
+                match xs
+                  case Nil -> 0
+                  case _ :: tail -> 1 + generatedListLength tail
+
+            let item = 0
+
+            generatedListLength [item, (item + 1), 0]) + 2)) + 0), y = (((Some ((block
+            generatedListLength : List Int -> Int
+            let generatedListLength xs decreases structural xs =
+                match xs
+                  case Nil -> 0
+                  case _ :: tail -> 1 + generatedListLength tail
+
+            let item = 0
+
+            generatedListLength [item, (item + 1), 0]) + 1)) ?: ((block
+            generatedListLength : List Int -> Int
+            let generatedListLength xs decreases structural xs =
+                match xs
+                  case Nil -> 0
+                  case _ :: tail -> 1 + generatedListLength tail
+
+            let item = 0
+
+            generatedListLength [item, (item + 1), 0]) + 2)) + 1))
+        let (x = captured, y = other) = pair
+
+        (captured + other)
+
+result : Int
 let result = generated_1033
 
 --! assertNoErrors
---! assertType generated_1033 List Int
---! assertType result List Int
+--! assertType generated_1033 Int
+--! assertType result Int
 --! assertDeclKinds signature, let, signature, let

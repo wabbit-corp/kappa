@@ -1,7 +1,36 @@
 module main
 
 generated_973 : Set Int
-let generated_973 = {| for x in [1, 2, 3], let y = x + 1, if y > 0, yield (((((((if True then (if True then x else 0) else 0) + 0) + 0) + 0) + 0) + 0) + 0) |}
+let generated_973 = {| for x in [1, 2, 3], let y = x + 1, yield (match ((block
+    generatedListLength : List Int -> Int
+    let generatedListLength xs decreases structural xs =
+        match xs
+          case Nil -> 0
+          case _ :: tail -> 1 + generatedListLength tail
+
+    let item = x
+
+    generatedListLength [item, (item + 1), 0]) == (block
+    generatedListLength : List Int -> Int
+    let generatedListLength xs decreases structural xs =
+        match xs
+          case Nil -> 0
+          case _ :: tail -> 1 + generatedListLength tail
+
+    let item = x
+
+    generatedListLength [item, (item + 1), 0]))
+  case True -> (block
+      generatedListLength : List Int -> Int
+      let generatedListLength xs decreases structural xs =
+          match xs
+            case Nil -> 0
+            case _ :: tail -> 1 + generatedListLength tail
+
+      let item = x
+
+      generatedListLength [item, (item + 1), 0])
+  case False -> 0) |}
 
 result : Set Int
 let result = generated_973

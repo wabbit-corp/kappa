@@ -1,14 +1,21 @@
 module main
 
-type GeneratedTuple = (Int, Int)
+generated_381 : Int
+let generated_381 =
+    block
+        rankedHelper : (Int -> Int)
+        let rankedHelper x = x + 1
 
-generated_381 : GeneratedTuple
-let generated_381 = (if True then (if True then (if True then (if True then (if (True && True) then (0, (0 + 0)) else ((1 + 1), 1)) else (0, (0 + 0))) else (0, (0 + 0))) else (0, (0 + 0))) else (0, (0 + 0)))
+        rankedHelper ((block
+            let pair = (x = 0, y = (0 + 1))
+            let (x = captured, y = other) = pair
 
-result : GeneratedTuple
+            (captured + other)) + 0)
+
+result : Int
 let result = generated_381
 
 --! assertNoErrors
---! assertType generated_381 GeneratedTuple
---! assertType result GeneratedTuple
---! assertDeclKinds type, signature, let, signature, let
+--! assertType generated_381 Int
+--! assertType result Int
+--! assertDeclKinds signature, let, signature, let

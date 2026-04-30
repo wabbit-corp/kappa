@@ -1,12 +1,28 @@
 module main
 
-generated_4216 : Map String Int
-let generated_4216 = { yield "only" : ((((((0 + ((if True then ((left = (0 + 0), right = 0)).left else 0) + 0)) + 0) + 0) + 0) + 0) + 0) }
+generated_4216 : Int
+let generated_4216 =
+    block
+        trait RankedScore a =
+            rank : a -> Int
 
-result : Map String Int
+        instance RankedScore Int =
+            let rank x = x
+
+        let dict = summon (RankedScore Int)
+
+        dict.rank ((match [(match (0 == 0)
+          case True -> 0
+          case False -> 0), ((match (0 == 0)
+          case True -> 0
+          case False -> 0) + 1)]
+          case head :: tail -> head
+          case Nil -> 0) + 0)
+
+result : Int
 let result = generated_4216
 
 --! assertNoErrors
---! assertType generated_4216 Map String Int
---! assertType result Map String Int
+--! assertType generated_4216 Int
+--! assertType result Int
 --! assertDeclKinds signature, let, signature, let

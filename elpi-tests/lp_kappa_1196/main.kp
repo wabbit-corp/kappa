@@ -1,12 +1,45 @@
 module main
 
-generated_1196 : Unit
-let generated_1196 = (if True then (if True then (if True then ((\(u : Unit) -> ()) ()) else ()) else ()) else ())
+generated_1196 : Int
+let generated_1196 =
+    block
+        let base : (x : Int) = (x = ((block
+            generatedMapCount : Map String Int -> Int
+            let generatedMapCount values = 1
 
-result : Unit
+            let item = (block
+                generatedSetCount : Set Int -> Int
+                let generatedSetCount values = 2
+
+                let item = 0
+                let values = {|item, (item + 1)|}
+
+                generatedSetCount values)
+            let values = { yield "item" : item }
+
+            generatedMapCount values) + 0))
+        let extended = base.{ y := ((block
+            generatedMapCount : Map String Int -> Int
+            let generatedMapCount values = 1
+
+            let item = (block
+                generatedSetCount : Set Int -> Int
+                let generatedSetCount values = 2
+
+                let item = 0
+                let values = {|item, (item + 1)|}
+
+                generatedSetCount values)
+            let values = { yield "item" : item }
+
+            generatedMapCount values) + 1) }
+
+        (extended.x + extended.y)
+
+result : Int
 let result = generated_1196
 
 --! assertNoErrors
---! assertType generated_1196 Unit
---! assertType result Unit
+--! assertType generated_1196 Int
+--! assertType result Int
 --! assertDeclKinds signature, let, signature, let

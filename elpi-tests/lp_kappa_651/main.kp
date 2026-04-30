@@ -1,12 +1,33 @@
 module main
 
-generated_651 : Bool
-let generated_651 = (if (if (if (if (True || False) then False else True) then True else False) then True else False) then True else False)
+generated_651 : Int
+let generated_651 =
+    block
+        rankedHelper : (Int -> Int)
+        let rankedHelper x = x + 1
 
-result : Bool
+        rankedHelper ((block
+            generatedSetCount : Set Int -> Int
+            let generatedSetCount values = 2
+
+            let item = (block
+                generatedListLength : List Int -> Int
+                let generatedListLength xs decreases structural xs =
+                    match xs
+                      case Nil -> 0
+                      case _ :: tail -> 1 + generatedListLength tail
+
+                let item = 0
+
+                generatedListLength [item, (item + 1), 0])
+            let values = {|item, (item + 1)|}
+
+            generatedSetCount values) + 0)
+
+result : Int
 let result = generated_651
 
 --! assertNoErrors
---! assertType generated_651 Bool
---! assertType result Bool
+--! assertType generated_651 Int
+--! assertType result Int
 --! assertDeclKinds signature, let, signature, let

@@ -1,15 +1,28 @@
 module main
 
-generated_660 : IO Int
-let generated_660 =
-    do
-        value <- pure ((((((((0 + ((if False then 0 else 0) + 0)) + 0) + 0) + 0) + 0) + 0) + 0) + 0)
-        pure (value + 2)
+generated_660 : List Int
+let generated_660 = [ yield ((block
+    generatedSetCount : Set Int -> Int
+    let generatedSetCount values = 2
 
-result : IO Int
+    let item = (block
+        generatedListLength : List Int -> Int
+        let generatedListLength xs decreases structural xs =
+            match xs
+              case Nil -> 0
+              case _ :: tail -> 1 + generatedListLength tail
+
+        let item = 0
+
+        generatedListLength [item, (item + 1), 0])
+    let values = {|item, (item + 1)|}
+
+    generatedSetCount values) + 0) ]
+
+result : List Int
 let result = generated_660
 
 --! assertNoErrors
---! assertType generated_660 IO Int
---! assertType result IO Int
+--! assertType generated_660 List Int
+--! assertType result List Int
 --! assertDeclKinds signature, let, signature, let

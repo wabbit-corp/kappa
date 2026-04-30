@@ -1,12 +1,39 @@
 module main
 
-generated_4017 : Bool
-let generated_4017 = (if (if (if ((if True then False else True) && False) then False else True) then True else False) then True else False)
+generated_4017 : Int
+let generated_4017 =
+    block
+        let pair = (x = ((block
+            generatedListLength : List Int -> Int
+            let generatedListLength xs decreases structural xs =
+                match xs
+                  case Nil -> 0
+                  case _ :: tail -> 1 + generatedListLength tail
 
-result : Bool
+            let item = (match (0 == 0)
+              case True -> 0
+              case False -> 0)
+
+            generatedListLength [item, (item + 1), 0]) + 0), y = ((block
+            generatedListLength : List Int -> Int
+            let generatedListLength xs decreases structural xs =
+                match xs
+                  case Nil -> 0
+                  case _ :: tail -> 1 + generatedListLength tail
+
+            let item = (match (0 == 0)
+              case True -> 0
+              case False -> 0)
+
+            generatedListLength [item, (item + 1), 0]) + 1))
+        let whole@(x = captured, y = other) = pair
+
+        (whole.x + (captured + other))
+
+result : Int
 let result = generated_4017
 
 --! assertNoErrors
---! assertType generated_4017 Bool
---! assertType result Bool
+--! assertType generated_4017 Int
+--! assertType result Int
 --! assertDeclKinds signature, let, signature, let

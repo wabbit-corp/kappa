@@ -3,13 +3,14 @@ module main
 generated_2383 : Int
 let generated_2383 =
     block
-        data RankedBox : Type =
-            RankedBox (value : Int)
+        let pair = (x = (((\(n : Int) -> n) (match (Some 0)
+          case Some payload -> payload
+          case None -> 0)) + 0), y = (((\(n : Int) -> n) (match (Some 0)
+          case Some payload -> payload
+          case None -> 0)) + 1))
+        let (x = captured, y = other) = pair
 
-        let boxed = RankedBox (((((((((left = ((if False then 0 else 0) + 0), right = 0)).left + 0) + 0) + 0) + 0) + 0) + 0) + 0)
-
-        match boxed
-          case RankedBox value -> (value + 1)
+        (captured + other)
 
 result : Int
 let result = generated_2383

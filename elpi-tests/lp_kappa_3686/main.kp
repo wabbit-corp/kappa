@@ -1,15 +1,14 @@
 module main
 
-generated_3686 : IO Int
-let generated_3686 =
-    do
-        value <- pure ((((((0 + ((0 + ((0 + (0 + 0)) + 0)) + 0)) + 0) + 0) + 0) + 0) + 0)
-        pure (value + 2)
+generated_3686 : Map String Int
+let generated_3686 = { yield "only" : ((match (Some ((\(n : Int) -> n) 0))
+  case Some payload -> payload
+  case None -> 0) + 0) }
 
-result : IO Int
+result : Map String Int
 let result = generated_3686
 
 --! assertNoErrors
---! assertType generated_3686 IO Int
---! assertType result IO Int
+--! assertType generated_3686 Map String Int
+--! assertType result Map String Int
 --! assertDeclKinds signature, let, signature, let

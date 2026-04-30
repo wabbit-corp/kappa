@@ -1,12 +1,32 @@
 module main
 
-generated_3235 : Bool
-let generated_3235 = (if (if (if True then False else True) then True else False) then True else False)
+trait GeneratedScore a =
+    score : a -> Int
 
-result : Bool
+instance GeneratedScore Int =
+    let score x = x
+
+generated_3235 : Int
+let generated_3235 =
+    let
+        dict = summon (GeneratedScore Int)
+in
+        dict.score ((match [(block
+            let pair = (x = 0, y = (0 + 1))
+            let (x = captured, y = other) = pair
+
+            (captured + other)), ((block
+            let pair = (x = 0, y = (0 + 1))
+            let (x = captured, y = other) = pair
+
+            (captured + other)) + 1)]
+          case head :: tail -> head
+          case Nil -> 0) + 0)
+
+result : Int
 let result = generated_3235
 
 --! assertNoErrors
---! assertType generated_3235 Bool
---! assertType result Bool
---! assertDeclKinds signature, let, signature, let
+--! assertType generated_3235 Int
+--! assertType result Int
+--! assertDeclKinds trait, instance, signature, let, signature, let

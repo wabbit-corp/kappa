@@ -1,18 +1,12 @@
 module main
 
-generatedNeed : (@x : Int) -> Int
-let generatedNeed (@x : Int) = x
+generated_4144 : Unit
+let generated_4144 = (if True then (if True then (if True then (if (0 == 1) then () else (if False then () else ())) else ()) else ()) else ())
 
-generated_4144 : IO Int
-let generated_4144 =
-    do
-        let (@x : Int) = ((((((0 + ((if True then ((if True then 0 else 0) + 0) else 0) + 0)) + 0) + 0) + 0) + 0) + 0)
-        pure generatedNeed
-
-result : IO Int
+result : Unit
 let result = generated_4144
 
 --! assertNoErrors
---! assertType generated_4144 IO Int
---! assertType result IO Int
---! assertDeclKinds signature, let, signature, let, signature, let
+--! assertType generated_4144 Unit
+--! assertType result Unit
+--! assertDeclKinds signature, let, signature, let

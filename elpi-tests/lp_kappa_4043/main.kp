@@ -1,15 +1,21 @@
 module main
 
-generatedEcho : forall (a : Type). (this x : a) -> a
-let generatedEcho @a (this x : a) = x
+generated_4043 : List Int
+let generated_4043 = [ for x in [1, 2, 3], if x > 0, yield (block
+    generatedSetCount : Set Int -> Int
+    let generatedSetCount values = 2
 
-generated_4043 : Int
-let generated_4043 = ((.generatedEcho) ((((((0 + ((if True then (0 + (0 + 0)) else 0) + 0)) + 0) + 0) + 0) + 0) + 0))
+    let item = (match (x == x)
+      case True -> x
+      case False -> 0)
+    let values = {|item, (item + 1)|}
 
-result : Int
+    generatedSetCount values) ]
+
+result : List Int
 let result = generated_4043
 
 --! assertNoErrors
---! assertType generated_4043 Int
---! assertType result Int
---! assertDeclKinds signature, let, signature, let, signature, let
+--! assertType generated_4043 List Int
+--! assertType result List Int
+--! assertDeclKinds signature, let, signature, let

@@ -1,10 +1,20 @@
 module main
 
-generatedMakeConst : forall (a : Type). a -> Unit -> a
-let generatedMakeConst value = \() -> value
-
 generated_938 : Int
-let generated_938 = ((generatedMakeConst ((((((((if True then (0 + (0 + 0)) else 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0)) ())
+let generated_938 =
+    block
+        let (captured : Int) = (((\(n : Int) -> n) (block
+            generatedListLength : List Int -> Int
+            let generatedListLength xs decreases structural xs =
+                match xs
+                  case Nil -> 0
+                  case _ :: tail -> 1 + generatedListLength tail
+
+            let item = 0
+
+            generatedListLength [item, (item + 1), 0])) + 0)
+
+        captured
 
 result : Int
 let result = generated_938
@@ -12,4 +22,4 @@ let result = generated_938
 --! assertNoErrors
 --! assertType generated_938 Int
 --! assertType result Int
---! assertDeclKinds signature, let, signature, let, signature, let
+--! assertDeclKinds signature, let, signature, let

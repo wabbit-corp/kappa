@@ -1,18 +1,26 @@
 module main
 
-generatedNeed : (@x : Int) -> Int
-let generatedNeed (@x : Int) = x
-
-generated_3260 : IO Int
+generated_3260 : Int
 let generated_3260 =
-    do
-        let (@x : Int) = ((((((0 + (0 + 0)) + 0) + 0) + 0) + 0) + 0)
-        pure generatedNeed
+    block
+        let (captured : Int) = ((match [(block
+            let pair = (x = 0, y = (0 + 1))
+            let (x = captured, y = other) = pair
 
-result : IO Int
+            (captured + other)), ((block
+            let pair = (x = 0, y = (0 + 1))
+            let (x = captured, y = other) = pair
+
+            (captured + other)) + 1)]
+          case head :: tail -> head
+          case Nil -> 0) + 0)
+
+        captured
+
+result : Int
 let result = generated_3260
 
 --! assertNoErrors
---! assertType generated_3260 IO Int
---! assertType result IO Int
---! assertDeclKinds signature, let, signature, let, signature, let
+--! assertType generated_3260 Int
+--! assertType result Int
+--! assertDeclKinds signature, let, signature, let

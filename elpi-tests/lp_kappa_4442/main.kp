@@ -1,7 +1,11 @@
 module main
 
 generated_4442 : Map String Int
-let generated_4442 = { for x in [1, 2, 3], let y = x + 1, yield "k" : (((((0 + ((if False then 0 else (if False then 0 else x)) + 0)) + 0) + 0) + 0) + 0) }
+let generated_4442 = { yield "only" : (((Some ((match (0 == 0)
+  case True -> 0
+  case False -> 0) + 1)) ?: ((match (0 == 0)
+  case True -> 0
+  case False -> 0) + 2)) + 0) }
 
 result : Map String Int
 let result = generated_4442

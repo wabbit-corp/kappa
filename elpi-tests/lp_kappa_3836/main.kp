@@ -1,17 +1,12 @@
 module main
 
-generated_3836 : Int
-let generated_3836 =
-    block
-        let base : (x : Int) = (x = ((((((0 + ((0 + (((if False then 0 else 0) + (0 + 0)) + 0)) + 0)) + 0) + 0) + 0) + 0) + 0))
-        let extended = base.{ y := ((((((0 + ((0 + (((if False then 0 else 0) + (0 + 0)) + 0)) + 0)) + 0) + 0) + 0) + 0) + 1) }
+generated_3836 : Map String Int
+let generated_3836 = { for x in [1, 2, 3], if x > 0, yield "k" : ((\(n : Int) -> n) ((\(n : Int) -> n) x)) }
 
-        (extended.x + extended.y)
-
-result : Int
+result : Map String Int
 let result = generated_3836
 
 --! assertNoErrors
---! assertType generated_3836 Int
---! assertType result Int
+--! assertType generated_3836 Map String Int
+--! assertType result Map String Int
 --! assertDeclKinds signature, let, signature, let

@@ -1,15 +1,19 @@
 module main
 
-generated_3565 : IO Int
-let generated_3565 =
-    do
-        let staged = ((((((0 + (((((left = 0, right = (0 + 0))).right + 0) + 0) + 0)) + 0) + 0) + 0) + 0) + 0)
-        pure (staged + 1)
+generated_3565 : Set Int
+let generated_3565 = {| for x in [1, 2, 3], let y = x + 1, yield (block
+    generatedSetCount : Set Int -> Int
+    let generatedSetCount values = 2
 
-result : IO Int
+    let item = ((\(n : Int) -> n) x)
+    let values = {|item, (item + 1)|}
+
+    generatedSetCount values) |}
+
+result : Set Int
 let result = generated_3565
 
 --! assertNoErrors
---! assertType generated_3565 IO Int
---! assertType result IO Int
+--! assertType generated_3565 Set Int
+--! assertType result Set Int
 --! assertDeclKinds signature, let, signature, let

@@ -1,12 +1,24 @@
 module main
 
-generated_1722 : Map String Int
-let generated_1722 = { for x in [1, 2, 3], let y = x + 1, yield "k" : ((((((((if True then ((if True then x else 0) + 0) else 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0) }
+generated_1722 : IO Int
+let generated_1722 =
+    do
+        value <- pure ((match (Some (block
+            generatedMapCount : Map String Int -> Int
+            let generatedMapCount values = 1
 
-result : Map String Int
+            let item = 0
+            let values = { yield "item" : item }
+
+            generatedMapCount values))
+          case Some payload -> payload
+          case None -> 0) + 0)
+        pure (value + 2)
+
+result : IO Int
 let result = generated_1722
 
 --! assertNoErrors
---! assertType generated_1722 Map String Int
---! assertType result Map String Int
+--! assertType generated_1722 IO Int
+--! assertType result IO Int
 --! assertDeclKinds signature, let, signature, let

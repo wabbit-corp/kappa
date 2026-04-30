@@ -1,12 +1,26 @@
 module main
 
-generated_2932 : Option Int
-let generated_2932 = (if True then (if True then (if True then (if (True && True) then (if False then None else (if True then (Some (0 + 0)) else None)) else (Some 2)) else None) else None) else None)
+generated_2932 : Int
+let generated_2932 =
+    block
+        type RankedAlias = Int
 
-result : Option Int
+        let aliased : RankedAlias = ((match ((match [0, (0 + 1)]
+          case head :: tail -> head
+          case Nil -> 0) == (match [0, (0 + 1)]
+          case head :: tail -> head
+          case Nil -> 0))
+          case True -> (match [0, (0 + 1)]
+            case head :: tail -> head
+            case Nil -> 0)
+          case False -> 0) + 0)
+
+        (aliased + 1)
+
+result : Int
 let result = generated_2932
 
 --! assertNoErrors
---! assertType generated_2932 Option Int
---! assertType result Option Int
+--! assertType generated_2932 Int
+--! assertType result Int
 --! assertDeclKinds signature, let, signature, let

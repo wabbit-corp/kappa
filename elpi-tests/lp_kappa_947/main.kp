@@ -1,15 +1,21 @@
 module main
 
-generated_947 : IO Int
-let generated_947 =
-    do
-        let staged = ((((((((if True then (0 + (0 + 0)) else 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0)
-        pure (staged + 1)
+generated_947 : List Int
+let generated_947 = [ for x in [1, 2, 3], order by x desc, yield ((\(n : Int) -> n) (block
+    generatedListLength : List Int -> Int
+    let generatedListLength xs decreases structural xs =
+        match xs
+          case Nil -> 0
+          case _ :: tail -> 1 + generatedListLength tail
 
-result : IO Int
+    let item = x
+
+    generatedListLength [item, (item + 1), 0])) ]
+
+result : List Int
 let result = generated_947
 
 --! assertNoErrors
---! assertType generated_947 IO Int
---! assertType result IO Int
+--! assertType generated_947 List Int
+--! assertType result List Int
 --! assertDeclKinds signature, let, signature, let

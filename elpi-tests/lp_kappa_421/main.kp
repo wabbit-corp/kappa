@@ -1,12 +1,12 @@
 module main
 
-generated_421 : List Int
-let generated_421 = [ for x in [1, 2, 3], let y = x + 1, if y > 0, yield ((((((((((left = (x + 0), right = 0)).left + 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0) ]
+generated_421 : (Int -> Int)
+let generated_421 = \(x : Int) -> ((\(x : Int) -> ((\(x : Int) -> ((\(x : Int) -> ((\(x : Int) -> (0 + ((\(x : Int) -> x) x))) x)) x)) x)) x)
 
-result : List Int
+result : (Int -> Int)
 let result = generated_421
 
 --! assertNoErrors
---! assertType generated_421 List Int
---! assertType result List Int
+--! assertType generated_421 (Int -> Int)
+--! assertType result (Int -> Int)
 --! assertDeclKinds signature, let, signature, let

@@ -1,12 +1,28 @@
 module main
 
-generated_134 : List Int
-let generated_134 = [ yield (((((0 + 0) + 0) + 0) + 0) + 0) ]
+generatedUseWidth : (width : Int) -> Int
+let generatedUseWidth width = width
 
-result : List Int
+generated_134 : Int
+let generated_134 =
+    block
+        let width = ((block
+            generatedListLength : List Int -> Int
+            let generatedListLength xs decreases structural xs =
+                match xs
+                  case Nil -> 0
+                  case _ :: tail -> 1 + generatedListLength tail
+
+            let item = 0
+
+            generatedListLength [item, (item + 1), 0]) + 0)
+
+        generatedUseWidth { width }
+
+result : Int
 let result = generated_134
 
 --! assertNoErrors
---! assertType generated_134 List Int
---! assertType result List Int
---! assertDeclKinds signature, let, signature, let
+--! assertType generated_134 Int
+--! assertType result Int
+--! assertDeclKinds signature, let, signature, let, signature, let

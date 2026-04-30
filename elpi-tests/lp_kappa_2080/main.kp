@@ -1,12 +1,23 @@
 module main
 
-generated_2080 : Unit
-let generated_2080 = (if True then (if True then (if True then (if (False || True) then (if (False || True) then () else ()) else ()) else ()) else ()) else ())
+generated_2080 : List Int
+let generated_2080 = [ for x in [1, 2, 3], skip 1, take 2, yield (block
+    generatedListLength : List Int -> Int
+    let generatedListLength xs decreases structural xs =
+        match xs
+          case Nil -> 0
+          case _ :: tail -> 1 + generatedListLength tail
 
-result : Unit
+    let item = (match (Some x)
+      case Some payload -> payload
+      case None -> 0)
+
+    generatedListLength [item, (item + 1), 0]) ]
+
+result : List Int
 let result = generated_2080
 
 --! assertNoErrors
---! assertType generated_2080 Unit
---! assertType result Unit
+--! assertType generated_2080 List Int
+--! assertType result List Int
 --! assertDeclKinds signature, let, signature, let

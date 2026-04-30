@@ -1,12 +1,38 @@
 module main
 
-generated_1570 : Unit
-let generated_1570 = (if True then (if True then (if True then (if (True && True) then (if True then () else ()) else ()) else ()) else ()) else ())
+generated_1570 : Int
+let generated_1570 =
+    block
+        trait RankedScore a =
+            rank : a -> Int
 
-result : Unit
+        instance RankedScore Int =
+            let rank x = x
+
+        let dict = summon (RankedScore Int)
+
+        dict.rank ((block
+            generatedListLength : List Int -> Int
+            let generatedListLength xs decreases structural xs =
+                match xs
+                  case Nil -> 0
+                  case _ :: tail -> 1 + generatedListLength tail
+
+            let item = (block
+                generatedMapCount : Map String Int -> Int
+                let generatedMapCount values = 1
+
+                let item = 0
+                let values = { yield "item" : item }
+
+                generatedMapCount values)
+
+            generatedListLength [item, (item + 1), 0]) + 0)
+
+result : Int
 let result = generated_1570
 
 --! assertNoErrors
---! assertType generated_1570 Unit
---! assertType result Unit
+--! assertType generated_1570 Int
+--! assertType result Int
 --! assertDeclKinds signature, let, signature, let

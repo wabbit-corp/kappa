@@ -3,10 +3,13 @@ module main
 generated_3904 : Int
 let generated_3904 =
     block
-        let base : (x : Int) = (x = ((((((0 + ((0 + (((left = 0, right = (0 + 0))).right + 0)) + 0)) + 0) + 0) + 0) + 0) + 0))
-        let extended = base.{ y := ((((((0 + ((0 + (((left = 0, right = (0 + 0))).right + 0)) + 0)) + 0) + 0) + 0) + 0) + 1) }
+        type RankedAlias = Int
 
-        (extended.x + extended.y)
+        let aliased : RankedAlias = ((match (((\(n : Int) -> n) 0) == ((\(n : Int) -> n) 0))
+          case True -> ((\(n : Int) -> n) 0)
+          case False -> 0) + 0)
+
+        (aliased + 1)
 
 result : Int
 let result = generated_3904

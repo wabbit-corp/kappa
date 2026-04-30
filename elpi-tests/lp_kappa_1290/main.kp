@@ -1,12 +1,31 @@
 module main
 
-generated_1290 : List Int
-let generated_1290 = [ yield ((((((((if False then 0 else (0 + (0 + 0))) + 0) + 0) + 0) + 0) + 0) + 0) + 0) ]
+generated_1290 : IO Int
+let generated_1290 =
+    do
+        value <- pure ((match [(block
+            generatedSetCount : Set Int -> Int
+            let generatedSetCount values = 2
 
-result : List Int
+            let item = 0
+            let values = {|item, (item + 1)|}
+
+            generatedSetCount values), ((block
+            generatedSetCount : Set Int -> Int
+            let generatedSetCount values = 2
+
+            let item = 0
+            let values = {|item, (item + 1)|}
+
+            generatedSetCount values) + 1)]
+          case head :: tail -> head
+          case Nil -> 0) + 0)
+        pure (value + 2)
+
+result : IO Int
 let result = generated_1290
 
 --! assertNoErrors
---! assertType generated_1290 List Int
---! assertType result List Int
+--! assertType generated_1290 IO Int
+--! assertType result IO Int
 --! assertDeclKinds signature, let, signature, let

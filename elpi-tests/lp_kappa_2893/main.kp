@@ -3,13 +3,24 @@ module main
 generated_2893 : Int
 let generated_2893 =
     block
-        data RankedBox : Type =
-            RankedBox (value : Int)
+        scoped effect State (s : Type) =
+            get : Unit -> s
 
-        let boxed = RankedBox (((((((((left = 0, right = (((Some (0 + 0)) ?: 0) + 0))).right + 0) + 0) + 0) + 0) + 0) + 0) + 0)
+        let seed = ((\(n : Int) -> n) (match [0, (0 + 1)]
+          case head :: tail -> head
+          case Nil -> 0))
 
-        match boxed
-          case RankedBox value -> (value + 1)
+        let comp : Eff <[State : State Int]> Int =
+            do
+                let n <- State.get ()
+                n
+
+        let handled : Eff <[ ]> Int =
+            deep handle State comp with
+                case return x -> pure x
+                case get () k -> k seed
+
+        runPure handled
 
 result : Int
 let result = generated_2893

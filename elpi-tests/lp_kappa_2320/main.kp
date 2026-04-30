@@ -1,12 +1,30 @@
 module main
 
-generated_2320 : Option Int
-let generated_2320 = (if True then (if True then (if True then (if (((if (((Some (0 + 0)) ?: 0) == 0) then (Some (0 + 0)) else None) ?: 0) == 1) then (Some (((if (((Some (0 + 0)) ?: 0) == 0) then (Some (0 + 0)) else None) ?: 0) + 0)) else (if (((Some (0 + 0)) ?: 0) == 0) then (Some (0 + 0)) else None)) else None) else None) else None)
+type GeneratedPair = (left : Int, right : Int)
 
-result : Option Int
+generated_2320 : GeneratedPair
+let generated_2320 = ((left = (block
+    let pair = (x = (match (Some 0)
+      case Some payload -> payload
+      case None -> 0), y = ((match (Some 0)
+      case Some payload -> payload
+      case None -> 0) + 1))
+    let (x = captured, y = other) = pair
+
+    (captured + other)), right = 0)).{ right = ((block
+    let pair = (x = (match (Some 0)
+      case Some payload -> payload
+      case None -> 0), y = ((match (Some 0)
+      case Some payload -> payload
+      case None -> 0) + 1))
+    let (x = captured, y = other) = pair
+
+    (captured + other)) + 1) }
+
+result : GeneratedPair
 let result = generated_2320
 
 --! assertNoErrors
---! assertType generated_2320 Option Int
---! assertType result Option Int
---! assertDeclKinds signature, let, signature, let
+--! assertType generated_2320 GeneratedPair
+--! assertType result GeneratedPair
+--! assertDeclKinds type, signature, let, signature, let

@@ -1,14 +1,21 @@
 module main
 
-type GeneratedTuple = (Int, Int)
+generated_1741 : Set Int
+let generated_1741 = {| yield ((match (Some (block
+    generatedMapCount : Map String Int -> Int
+    let generatedMapCount values = 1
 
-generated_1741 : GeneratedTuple
-let generated_1741 = (if True then (if True then (if True then (if True then (if True then (if (True && True) then (0, (0 + 0)) else ((1 + 1), 1)) else (0, (0 + 0))) else ((1 + 1), 1)) else (0, (0 + 0))) else (0, (0 + 0))) else (0, (0 + 0)))
+    let item = 0
+    let values = { yield "item" : item }
 
-result : GeneratedTuple
+    generatedMapCount values))
+  case Some payload -> payload
+  case None -> 0) + 0) |}
+
+result : Set Int
 let result = generated_1741
 
 --! assertNoErrors
---! assertType generated_1741 GeneratedTuple
---! assertType result GeneratedTuple
---! assertDeclKinds type, signature, let, signature, let
+--! assertType generated_1741 Set Int
+--! assertType result Set Int
+--! assertDeclKinds signature, let, signature, let

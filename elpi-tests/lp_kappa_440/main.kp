@@ -1,12 +1,17 @@
 module main
 
-generated_440 : List Int
-let generated_440 = [ yield (((((((((((left = (0 + 0), right = 0)).left + 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0) ]
+generated_440 : Int
+let generated_440 =
+    block
+        let base : (x : Int) = (x = (((\(n : Int) -> n) 0) + 0))
+        let extended = base.{ y := (((\(n : Int) -> n) 0) + 1) }
 
-result : List Int
+        (extended.x + extended.y)
+
+result : Int
 let result = generated_440
 
 --! assertNoErrors
---! assertType generated_440 List Int
---! assertType result List Int
+--! assertType generated_440 Int
+--! assertType result Int
 --! assertDeclKinds signature, let, signature, let

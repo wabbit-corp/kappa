@@ -1,12 +1,22 @@
 module main
 
-generated_4535 : List Int
-let generated_4535 = [ for x in [1, 2, 3], yield (((((0 + ((if False then 0 else ((left = (x + 0), right = 0)).left) + 0)) + 0) + 0) + 0) + 0) ]
+generatedResize : (image : Int) -> (width : Int) -> (height : Int) -> Int
+let generatedResize image width height = image + width * 10 + height
 
-result : List Int
+generated_4535 : Int
+let generated_4535 = generatedResize { image = ((block
+    generatedSetCount : Set Int -> Int
+    let generatedSetCount values = 2
+
+    let item = ((Some (0 + 1)) ?: (0 + 2))
+    let values = {|item, (item + 1)|}
+
+    generatedSetCount values) + 0), height = 3, width = 2 }
+
+result : Int
 let result = generated_4535
 
 --! assertNoErrors
---! assertType generated_4535 List Int
---! assertType result List Int
---! assertDeclKinds signature, let, signature, let
+--! assertType generated_4535 Int
+--! assertType result Int
+--! assertDeclKinds signature, let, signature, let, signature, let

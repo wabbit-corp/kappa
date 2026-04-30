@@ -1,16 +1,20 @@
 module main
 
-generated_2323 : Int
-let generated_2323 =
-    let
-        ranked : Int = ((((((((left = ((if True then 0 else 0) + 0), right = 0)).left + 0) + 0) + 0) + 0) + 0) + 0)
-in
-        (ranked + 0)
+generated_2323 : Set Int
+let generated_2323 = {| for x in [1, 2, 3], if x > 0, yield (block
+    let pair = (x = (match (Some x)
+      case Some payload -> payload
+      case None -> 0), y = ((match (Some x)
+      case Some payload -> payload
+      case None -> 0) + 1))
+    let (x = captured, y = other) = pair
 
-result : Int
+    (captured + other)) |}
+
+result : Set Int
 let result = generated_2323
 
 --! assertNoErrors
---! assertType generated_2323 Int
---! assertType result Int
+--! assertType generated_2323 Set Int
+--! assertType result Set Int
 --! assertDeclKinds signature, let, signature, let

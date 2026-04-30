@@ -1,12 +1,33 @@
 module main
 
-generated_1861 : String
-let generated_1861 = (if (if (if (if (if True then (((if True then True else False) && True) && True) else False) then True else False) then True else False) then True else False) then #"raw lambda-prolog"# else "fallback")
+generatedMakeConst : forall (a : Type). a -> Unit -> a
+let generatedMakeConst value = \() -> value
 
-result : String
+generated_1861 : Int
+let generated_1861 = ((generatedMakeConst @Int ((block
+    let pair = (x = (block
+        generatedMapCount : Map String Int -> Int
+        let generatedMapCount values = 1
+
+        let item = 0
+        let values = { yield "item" : item }
+
+        generatedMapCount values), y = ((block
+        generatedMapCount : Map String Int -> Int
+        let generatedMapCount values = 1
+
+        let item = 0
+        let values = { yield "item" : item }
+
+        generatedMapCount values) + 1))
+    let (x = captured, y = other) = pair
+
+    (captured + other)) + 0)) ())
+
+result : Int
 let result = generated_1861
 
 --! assertNoErrors
---! assertType generated_1861 String
---! assertType result String
---! assertDeclKinds signature, let, signature, let
+--! assertType generated_1861 Int
+--! assertType result Int
+--! assertDeclKinds signature, let, signature, let, signature, let

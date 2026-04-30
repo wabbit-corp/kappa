@@ -1,15 +1,26 @@
 module main
 
-generated_3395 : IO Int
-let generated_3395 =
-    do
-        let staged = ((((((0 + ((((if True then 0 else 0) + 0) + 0) + 0)) + 0) + 0) + 0) + 0) + 0)
-        pure (staged + 1)
+generated_3395 : List Int
+let generated_3395 = [ for x in [1, 2, 3], if x > 0, yield (match ((block
+    let pair = (x = x, y = (x + 1))
+    let (x = captured, y = other) = pair
 
-result : IO Int
+    (captured + other)) == (block
+    let pair = (x = x, y = (x + 1))
+    let (x = captured, y = other) = pair
+
+    (captured + other)))
+  case True -> (block
+      let pair = (x = x, y = (x + 1))
+      let (x = captured, y = other) = pair
+
+      (captured + other))
+  case False -> 0) ]
+
+result : List Int
 let result = generated_3395
 
 --! assertNoErrors
---! assertType generated_3395 IO Int
---! assertType result IO Int
+--! assertType generated_3395 List Int
+--! assertType result List Int
 --! assertDeclKinds signature, let, signature, let

@@ -1,14 +1,16 @@
 module main
 
-generatedNeed : (@x : Int) -> Int
-let generatedNeed (@x : Int) = x
+generatedUseWidth : (width : Int) -> Int
+let generatedUseWidth width = width
 
 generated_3752 : Int
 let generated_3752 =
     block
-        let (@x : Int) = (((((0 + ((0 + ((if False then 0 else 0) + 0)) + 0)) + 0) + 0) + 0) + 0)
+        let width = ((match [((\(n : Int) -> n) 0), (((\(n : Int) -> n) 0) + 1)]
+          case head :: tail -> head
+          case Nil -> 0) + 0)
 
-        if True then generatedNeed else 0
+        generatedUseWidth { width }
 
 result : Int
 let result = generated_3752

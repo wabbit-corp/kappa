@@ -1,12 +1,17 @@
 module main
 
-generated_3855 : List Int
-let generated_3855 = [ for x in [1, 2, 3], yield (((((0 + ((0 + (((left = (x + 0), right = 0)).left + 0)) + 0)) + 0) + 0) + 0) + 0) ]
+generated_3855 : Int
+let generated_3855 =
+    block
+        let pair = (x = (((\(n : Int) -> n) ((\(n : Int) -> n) 0)) + 0), y = (((\(n : Int) -> n) ((\(n : Int) -> n) 0)) + 1))
+        let whole@(x = captured, y = other) = pair
 
-result : List Int
+        (whole.x + (captured + other))
+
+result : Int
 let result = generated_3855
 
 --! assertNoErrors
---! assertType generated_3855 List Int
---! assertType result List Int
+--! assertType generated_3855 Int
+--! assertType result Int
 --! assertDeclKinds signature, let, signature, let

@@ -1,12 +1,24 @@
 module main
 
-generated_3427 : Int
-let generated_3427 =
-    block
-        let pair = (x = ((((((0 + ((((if False then 0 else 0) + 0) + 0) + 0)) + 0) + 0) + 0) + 0) + 0), y = ((((((0 + ((((if False then 0 else 0) + 0) + 0) + 0)) + 0) + 0) + 0) + 0) + 1))
-        let (x = captured, y = other) = pair
+generatedMakeConst : forall (a : Type). a -> Unit -> a
+let generatedMakeConst value = \() -> value
 
-        (captured + other)
+generated_3427 : Int
+let generated_3427 = ((generatedMakeConst @Int ((match ((block
+    let pair = (x = 0, y = (0 + 1))
+    let (x = captured, y = other) = pair
+
+    (captured + other)) == (block
+    let pair = (x = 0, y = (0 + 1))
+    let (x = captured, y = other) = pair
+
+    (captured + other)))
+  case True -> (block
+      let pair = (x = 0, y = (0 + 1))
+      let (x = captured, y = other) = pair
+
+      (captured + other))
+  case False -> 0) + 0)) ())
 
 result : Int
 let result = generated_3427
@@ -14,4 +26,4 @@ let result = generated_3427
 --! assertNoErrors
 --! assertType generated_3427 Int
 --! assertType result Int
---! assertDeclKinds signature, let, signature, let
+--! assertDeclKinds signature, let, signature, let, signature, let

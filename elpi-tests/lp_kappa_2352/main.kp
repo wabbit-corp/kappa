@@ -1,12 +1,37 @@
 module main
 
-generated_2352 : Unit
-let generated_2352 = (if True then (if True then (if True then ((\(u : Unit) -> if False then () else u) ((\(u : Unit) -> ()) ())) else ()) else ()) else ())
+generated_2352 : Int
+let generated_2352 =
+    block
+        scoped effect Ask =
+            ask : Unit -> Bool
 
-result : Unit
+        let seed = (block
+            let pair = (x = (match (Some 0)
+              case Some payload -> payload
+              case None -> 0), y = ((match (Some 0)
+              case Some payload -> payload
+              case None -> 0) + 1))
+            let (x = captured, y = other) = pair
+
+            (captured + other))
+
+        let comp : Eff <[Ask : Ask]> Int =
+            do
+                let b <- Ask.ask ()
+                if b then seed else (seed + 1)
+
+        let handled : Eff <[ ]> Int =
+            deep handle Ask comp with
+                case return x -> pure x
+                case ask () k -> k True
+
+        runPure handled
+
+result : Int
 let result = generated_2352
 
 --! assertNoErrors
---! assertType generated_2352 Unit
---! assertType result Unit
+--! assertType generated_2352 Int
+--! assertType result Int
 --! assertDeclKinds signature, let, signature, let

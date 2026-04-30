@@ -1,12 +1,26 @@
 module main
 
-generated_1539 : (Int -> Int)
-let generated_1539 = \(x : Int) -> ((\(x : Int) -> ((\(x : Int) -> (((if False then \(x : Int) -> x else \(x : Int) -> x)) x)) x)) x)
+generated_1539 : Map String Int
+let generated_1539 = { for x in [1, 2, 3], yield "k" : ((Some ((block
+    generatedSetCount : Set Int -> Int
+    let generatedSetCount values = 2
 
-result : (Int -> Int)
+    let item = x
+    let values = {|item, (item + 1)|}
+
+    generatedSetCount values) + 1)) ?: ((block
+    generatedSetCount : Set Int -> Int
+    let generatedSetCount values = 2
+
+    let item = x
+    let values = {|item, (item + 1)|}
+
+    generatedSetCount values) + 2)), on conflict keep first }
+
+result : Map String Int
 let result = generated_1539
 
 --! assertNoErrors
---! assertType generated_1539 (Int -> Int)
---! assertType result (Int -> Int)
+--! assertType generated_1539 Map String Int
+--! assertType result Map String Int
 --! assertDeclKinds signature, let, signature, let

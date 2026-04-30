@@ -1,7 +1,16 @@
 module main
 
 generated_2690 : Int
-let generated_2690 = ((((((((left = 0, right = ((if False then 0 else 0) + 0))).right + 0) + 0) + 0) + 0) + 0) + 0)
+let generated_2690 =
+    block
+        ranked : Int
+        let ranked = (match (Some (match [0, (0 + 1)]
+          case head :: tail -> head
+          case Nil -> 0))
+          case Some payload -> payload
+          case None -> 0)
+
+        (ranked + 0)
 
 result : Int
 let result = generated_2690

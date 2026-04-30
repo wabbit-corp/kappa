@@ -1,22 +1,41 @@
 module main
 
-trait GeneratedScore a =
-    score : a -> Int
+generated_1001 : List Int
+let generated_1001 = [ for x in [1, 2, 3], order by x desc, yield (match ((block
+    generatedListLength : List Int -> Int
+    let generatedListLength xs decreases structural xs =
+        match xs
+          case Nil -> 0
+          case _ :: tail -> 1 + generatedListLength tail
 
-instance GeneratedScore Int =
-    let score x = x
+    let item = x
 
-generated_1001 : Int
-let generated_1001 =
-    let
-        dict = summon (GeneratedScore Int)
-in
-        dict.score ((((((((if True then (if False then 0 else 0) else 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0)
+    generatedListLength [item, (item + 1), 0]) == (block
+    generatedListLength : List Int -> Int
+    let generatedListLength xs decreases structural xs =
+        match xs
+          case Nil -> 0
+          case _ :: tail -> 1 + generatedListLength tail
 
-result : Int
+    let item = x
+
+    generatedListLength [item, (item + 1), 0]))
+  case True -> (block
+      generatedListLength : List Int -> Int
+      let generatedListLength xs decreases structural xs =
+          match xs
+            case Nil -> 0
+            case _ :: tail -> 1 + generatedListLength tail
+
+      let item = x
+
+      generatedListLength [item, (item + 1), 0])
+  case False -> 0) ]
+
+result : List Int
 let result = generated_1001
 
 --! assertNoErrors
---! assertType generated_1001 Int
---! assertType result Int
---! assertDeclKinds trait, instance, signature, let, signature, let
+--! assertType generated_1001 List Int
+--! assertType result List Int
+--! assertDeclKinds signature, let, signature, let

@@ -1,12 +1,31 @@
 module main
 
-generated_2776 : Map String Int
-let generated_2776 = { for x in [1, 2, 3], yield "k" : ((((((((left = 0, right = (((if False then 0 else x) + (0 + 0)) + 0))).right + 0) + 0) + 0) + 0) + 0) + 0) }
+type GeneratedTuple = (Int, Int)
 
-result : Map String Int
+generated_2776 : Int
+let generated_2776 =
+    block
+        let pair : GeneratedTuple = (((match [(match [0, (0 + 1)]
+          case head :: tail -> head
+          case Nil -> 0), ((match [0, (0 + 1)]
+          case head :: tail -> head
+          case Nil -> 0) + 1)]
+          case head :: tail -> head
+          case Nil -> 0) + 0), ((match [(match [0, (0 + 1)]
+          case head :: tail -> head
+          case Nil -> 0), ((match [0, (0 + 1)]
+          case head :: tail -> head
+          case Nil -> 0) + 1)]
+          case head :: tail -> head
+          case Nil -> 0) + 1))
+        let (left, right) = pair
+
+        (left + right)
+
+result : Int
 let result = generated_2776
 
 --! assertNoErrors
---! assertType generated_2776 Map String Int
---! assertType result Map String Int
---! assertDeclKinds signature, let, signature, let
+--! assertType generated_2776 Int
+--! assertType result Int
+--! assertDeclKinds type, signature, let, signature, let

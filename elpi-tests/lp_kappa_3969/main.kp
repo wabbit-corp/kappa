@@ -1,12 +1,12 @@
 module main
 
-generated_3969 : String
-let generated_3969 = (if (if (if (if (True && False) then False else True) then True else False) then True else False) then #"raw lambda-prolog"# else "fallback")
+generated_3969 : Map String Int
+let generated_3969 = { for x in [1, 2, 3], yield "k" : ((Some (((\(n : Int) -> n) x) + 1)) ?: (((\(n : Int) -> n) x) + 2)), on conflict keep first }
 
-result : String
+result : Map String Int
 let result = generated_3969
 
 --! assertNoErrors
---! assertType generated_3969 String
---! assertType result String
+--! assertType generated_3969 Map String Int
+--! assertType result Map String Int
 --! assertDeclKinds signature, let, signature, let

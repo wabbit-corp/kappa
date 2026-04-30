@@ -1,13 +1,22 @@
 module main
 
+type GeneratedTuple = (Int, Int)
+
 generated_2722 : Int
 let generated_2722 =
     block
-        type RankedAlias = Int
+        let pair : GeneratedTuple = (((match (Some (match [0, (0 + 1)]
+          case head :: tail -> head
+          case Nil -> 0))
+          case Some payload -> payload
+          case None -> 0) + 0), ((match (Some (match [0, (0 + 1)]
+          case head :: tail -> head
+          case Nil -> 0))
+          case Some payload -> payload
+          case None -> 0) + 1))
+        let (left, right) = pair
 
-        let aliased : RankedAlias = (((((((((left = 0, right = ((if False then 0 else 0) + 0))).right + 0) + 0) + 0) + 0) + 0) + 0) + 0)
-
-        (aliased + 1)
+        (left + right)
 
 result : Int
 let result = generated_2722
@@ -15,4 +24,4 @@ let result = generated_2722
 --! assertNoErrors
 --! assertType generated_2722 Int
 --! assertType result Int
---! assertDeclKinds signature, let, signature, let
+--! assertDeclKinds type, signature, let, signature, let

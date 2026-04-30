@@ -1,12 +1,38 @@
 module main
 
-generated_1291 : Set Int
-let generated_1291 = {| yield ((((((((if False then 0 else (0 + (0 + 0))) + 0) + 0) + 0) + 0) + 0) + 0) + 0) |}
+trait GeneratedScore a =
+    score : a -> Int
 
-result : Set Int
+instance GeneratedScore Int =
+    let score x = x
+
+generated_1291 : Int
+let generated_1291 =
+    let
+        dict = summon (GeneratedScore Int)
+in
+        dict.score ((match [(block
+            generatedSetCount : Set Int -> Int
+            let generatedSetCount values = 2
+
+            let item = 0
+            let values = {|item, (item + 1)|}
+
+            generatedSetCount values), ((block
+            generatedSetCount : Set Int -> Int
+            let generatedSetCount values = 2
+
+            let item = 0
+            let values = {|item, (item + 1)|}
+
+            generatedSetCount values) + 1)]
+          case head :: tail -> head
+          case Nil -> 0) + 0)
+
+result : Int
 let result = generated_1291
 
 --! assertNoErrors
---! assertType generated_1291 Set Int
---! assertType result Set Int
---! assertDeclKinds signature, let, signature, let
+--! assertType generated_1291 Int
+--! assertType result Int
+--! assertDeclKinds trait, instance, signature, let, signature, let

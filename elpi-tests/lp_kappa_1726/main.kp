@@ -1,15 +1,32 @@
 module main
 
-generated_1726 : Int
-let generated_1726 =
-    match ((((((((((if True then ((if True then 0 else 0) + 0) else 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0) == (((((((((if True then ((if True then 0 else 0) + 0) else 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0))
-      case True -> (((((((((if True then ((if True then 0 else 0) + 0) else 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0)
-      case False -> 0
+type GeneratedPair = (left : Int, right : Int)
 
-result : Int
+generated_1726 : GeneratedPair
+let generated_1726 = ((left = (match (Some (block
+    generatedMapCount : Map String Int -> Int
+    let generatedMapCount values = 1
+
+    let item = 0
+    let values = { yield "item" : item }
+
+    generatedMapCount values))
+  case Some payload -> payload
+  case None -> 0), right = 0)).{ right = ((match (Some (block
+    generatedMapCount : Map String Int -> Int
+    let generatedMapCount values = 1
+
+    let item = 0
+    let values = { yield "item" : item }
+
+    generatedMapCount values))
+  case Some payload -> payload
+  case None -> 0) + 1) }
+
+result : GeneratedPair
 let result = generated_1726
 
 --! assertNoErrors
---! assertType generated_1726 Int
---! assertType result Int
---! assertDeclKinds signature, let, signature, let
+--! assertType generated_1726 GeneratedPair
+--! assertType result GeneratedPair
+--! assertDeclKinds type, signature, let, signature, let

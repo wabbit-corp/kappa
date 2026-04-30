@@ -1,12 +1,19 @@
 module main
 
-generated_314 : Option Int
-let generated_314 = (if True then (if True then (if True then (if True then (if (((Some (0 + 0)) ?: 0) == 1) then None else (Some (0 + 0))) else None) else None) else None) else None)
+generated_314 : Int
+let generated_314 =
+    block
+        ranked : Int
+        let ranked = (match [0, (0 + 1)]
+          case head :: tail -> head
+          case Nil -> 0)
 
-result : Option Int
+        (ranked + 0)
+
+result : Int
 let result = generated_314
 
 --! assertNoErrors
---! assertType generated_314 Option Int
---! assertType result Option Int
+--! assertType generated_314 Int
+--! assertType result Int
 --! assertDeclKinds signature, let, signature, let

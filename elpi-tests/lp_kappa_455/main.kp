@@ -1,12 +1,15 @@
 module main
 
-generated_455 : List Int
-let generated_455 = [ for x in [1, 2, 3], yield ((((((((((left = 0, right = (x + 0))).right + 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0) ]
+generated_455 : Int
+let generated_455 =
+    match (Some (((\(n : Int) -> n) 0) + 0))
+      case Some payload -> payload
+      case None -> 0
 
-result : List Int
+result : Int
 let result = generated_455
 
 --! assertNoErrors
---! assertType generated_455 List Int
---! assertType result List Int
+--! assertType generated_455 Int
+--! assertType result Int
 --! assertDeclKinds signature, let, signature, let

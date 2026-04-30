@@ -3,13 +3,35 @@ module main
 generated_2247 : Int
 let generated_2247 =
     block
-        data RankedBox : Type =
-            RankedBox (value : Int)
+        scoped effect Ask =
+            ask : Unit -> Bool
 
-        let boxed = RankedBox (((((((((left = (0 + 0), right = 0)).left + 0) + 0) + 0) + 0) + 0) + 0) + 0)
+        scoped effect Other =
+            other : Unit -> Int
 
-        match boxed
-          case RankedBox value -> (value + 1)
+        let seed = (match (Some (match (Some 0)
+          case Some payload -> payload
+          case None -> 0))
+          case Some payload -> payload
+          case None -> 0)
+
+        let comp : Eff <[Ask : Ask, Other : Other]> Int =
+            do
+                let b <- Ask.ask ()
+                let n <- Other.other ()
+                if b then (n + seed) else seed
+
+        let askHandled : Eff <[Other : Other]> Int =
+            deep handle Ask comp with
+                case return x -> pure x
+                case ask () k -> k True
+
+        let handled : Eff <[ ]> Int =
+            deep handle Other askHandled with
+                case return x -> pure x
+                case other () k -> k 1
+
+        runPure handled
 
 result : Int
 let result = generated_2247

@@ -1,12 +1,29 @@
 module main
 
-generated_1535 : Bool
-let generated_1535 = (if (if (if (if True then (True && True) else False) then True else False) then True else False) then True else False)
+generated_1535 : Int
+let generated_1535 =
+    match (Some (((Some ((block
+        generatedSetCount : Set Int -> Int
+        let generatedSetCount values = 2
 
-result : Bool
+        let item = 0
+        let values = {|item, (item + 1)|}
+
+        generatedSetCount values) + 1)) ?: ((block
+        generatedSetCount : Set Int -> Int
+        let generatedSetCount values = 2
+
+        let item = 0
+        let values = {|item, (item + 1)|}
+
+        generatedSetCount values) + 2)) + 0))
+      case Some payload -> payload
+      case None -> 0
+
+result : Int
 let result = generated_1535
 
 --! assertNoErrors
---! assertType generated_1535 Bool
---! assertType result Bool
+--! assertType generated_1535 Int
+--! assertType result Int
 --! assertDeclKinds signature, let, signature, let

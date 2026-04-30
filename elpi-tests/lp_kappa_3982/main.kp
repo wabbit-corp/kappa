@@ -1,12 +1,12 @@
 module main
 
-generated_3982 : Int
-let generated_3982 = (((((0 + ((if True then ((0 + 0) + 0) else 0) + 0)) + 0) + 0) + 0) + 0)
+generated_3982 : Unit
+let generated_3982 = (if True then (if True then (if True then ((\(u : Unit) -> if False then () else u) ((\(u : Unit) -> if True then u else ()) ())) else ()) else ()) else ())
 
-result : Int
+result : Unit
 let result = generated_3982
 
 --! assertNoErrors
---! assertType generated_3982 Int
---! assertType result Int
+--! assertType generated_3982 Unit
+--! assertType result Unit
 --! assertDeclKinds signature, let, signature, let

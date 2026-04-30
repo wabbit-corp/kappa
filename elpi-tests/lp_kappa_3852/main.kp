@@ -1,12 +1,10 @@
 module main
 
-generated_3852 : Int
-let generated_3852 =
-    block
-        ranked : Int
-        let ranked = (((((0 + ((0 + (((left = (0 + 0), right = 0)).left + 0)) + 0)) + 0) + 0) + 0) + 0)
+generatedNeed : (@x : Int) -> Int
+let generatedNeed (@x : Int) = x
 
-        (ranked + 0)
+generated_3852 : Int
+let generated_3852 = generatedNeed @((((\(n : Int) -> n) ((\(n : Int) -> n) 0)) + 0))
 
 result : Int
 let result = generated_3852
@@ -14,4 +12,4 @@ let result = generated_3852
 --! assertNoErrors
 --! assertType generated_3852 Int
 --! assertType result Int
---! assertDeclKinds signature, let, signature, let
+--! assertDeclKinds signature, let, signature, let, signature, let

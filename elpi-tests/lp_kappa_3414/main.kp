@@ -1,15 +1,26 @@
 module main
 
-generated_3414 : IO Int
-let generated_3414 =
-    do
-        value <- pure ((((((0 + ((((if False then 0 else 0) + 0) + 0) + 0)) + 0) + 0) + 0) + 0) + 0)
-        pure (value + 2)
+generated_3414 : List Int
+let generated_3414 = [ yield ((match ((block
+    let pair = (x = 0, y = (0 + 1))
+    let (x = captured, y = other) = pair
 
-result : IO Int
+    (captured + other)) == (block
+    let pair = (x = 0, y = (0 + 1))
+    let (x = captured, y = other) = pair
+
+    (captured + other)))
+  case True -> (block
+      let pair = (x = 0, y = (0 + 1))
+      let (x = captured, y = other) = pair
+
+      (captured + other))
+  case False -> 0) + 0) ]
+
+result : List Int
 let result = generated_3414
 
 --! assertNoErrors
---! assertType generated_3414 IO Int
---! assertType result IO Int
+--! assertType generated_3414 List Int
+--! assertType result List Int
 --! assertDeclKinds signature, let, signature, let

@@ -1,18 +1,12 @@
 module main
 
-generatedNeed : (@x : Int) -> Int
-let generatedNeed (@x : Int) = x
+generated_4926 : List Int
+let generated_4926 = [ yield (((Some (((Some (0 + 1)) ?: (0 + 2)) + 1)) ?: (((Some (0 + 1)) ?: (0 + 2)) + 2)) + 0) ]
 
-generated_4926 : IO Int
-let generated_4926 =
-    do
-        let (@x : Int) = ((((((0 + (((if True then ((left = 0, right = (0 + 0))).right else 0) + 0) + 0)) + 0) + 0) + 0) + 0) + 0)
-        pure generatedNeed
-
-result : IO Int
+result : List Int
 let result = generated_4926
 
 --! assertNoErrors
---! assertType generated_4926 IO Int
---! assertType result IO Int
---! assertDeclKinds signature, let, signature, let, signature, let
+--! assertType generated_4926 List Int
+--! assertType result List Int
+--! assertDeclKinds signature, let, signature, let

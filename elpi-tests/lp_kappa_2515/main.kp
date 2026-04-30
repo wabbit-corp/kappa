@@ -1,12 +1,33 @@
 module main
 
-generated_2515 : Set Int
-let generated_2515 = {| yield (((((((((left = (((left = 0, right = (0 + 0))).right + 0), right = 0)).left + 0) + 0) + 0) + 0) + 0) + 0) + 0) |}
+generated_2515 : Int
+let generated_2515 =
+    block
+        scoped effect State (s : Type) =
+            get : Unit -> s
 
-result : Set Int
+        let seed = ((Some ((match (Some 0)
+          case Some payload -> payload
+          case None -> 0) + 1)) ?: ((match (Some 0)
+          case Some payload -> payload
+          case None -> 0) + 2))
+
+        let comp : Eff <[State : State Int]> Int =
+            do
+                let n <- State.get ()
+                n
+
+        let handled : Eff <[ ]> Int =
+            deep handle State comp with
+                case return x -> pure x
+                case get () k -> k seed
+
+        runPure handled
+
+result : Int
 let result = generated_2515
 
 --! assertNoErrors
---! assertType generated_2515 Set Int
---! assertType result Set Int
+--! assertType generated_2515 Int
+--! assertType result Int
 --! assertDeclKinds signature, let, signature, let

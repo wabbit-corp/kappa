@@ -1,12 +1,12 @@
 module main
 
-generated_4902 : Unit
-let generated_4902 = (if True then (if True then (if False then () else (if (True && True) then (if (0 == 1) then () else ()) else ())) else ()) else ())
+generated_4902 : Option Int
+let generated_4902 = (if True then (if True then (if True then (if (True && True) then (if False then None else (if (((Some (0 + 0)) ?: 0) == 0) then (Some ((Some (0 + 0)) ?: 0)) else None)) else (Some 2)) else None) else None) else None)
 
-result : Unit
+result : Option Int
 let result = generated_4902
 
 --! assertNoErrors
---! assertType generated_4902 Unit
---! assertType result Unit
+--! assertType generated_4902 Option Int
+--! assertType result Option Int
 --! assertDeclKinds signature, let, signature, let

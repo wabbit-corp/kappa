@@ -3,11 +3,21 @@ module main
 generated_2042 : Int
 let generated_2042 =
     block
-        type RankedAlias = Int
+        ranked : Int
+        let ranked = (block
+            generatedListLength : List Int -> Int
+            let generatedListLength xs decreases structural xs =
+                match xs
+                  case Nil -> 0
+                  case _ :: tail -> 1 + generatedListLength tail
 
-        let aliased : RankedAlias = (((((((((if False then 0 else (if False then 0 else 0)) + (0 + 0)) + 0) + 0) + 0) + 0) + 0) + 0) + 0)
+            let item = (match (Some 0)
+              case Some payload -> payload
+              case None -> 0)
 
-        (aliased + 1)
+            generatedListLength [item, (item + 1), 0])
+
+        (ranked + 0)
 
 result : Int
 let result = generated_2042

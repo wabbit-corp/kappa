@@ -1,12 +1,31 @@
 module main
 
-generated_3183 : Set Int
-let generated_3183 = {| for x in [1, 2, 3], yield ((((((((Some (((left = 0, right = (x + 0))).right + 0)) ?: 0) + 0) + 0) + 0) + 0) + 0) + 0) |}
+data GeneratedChoice : Type =
+    GeneratedLeft (value : Int)
+    GeneratedRight
 
-result : Set Int
+generated_3183 : Int
+let generated_3183 =
+    match (GeneratedLeft ((match (Some (block
+        let pair = (x = 0, y = (0 + 1))
+        let (x = captured, y = other) = pair
+
+        (captured + other)))
+      case Some payload -> payload
+      case None -> 0) + 0))
+      case GeneratedLeft payload -> (payload + 0)
+      case GeneratedRight -> ((match (Some (block
+          let pair = (x = 0, y = (0 + 1))
+          let (x = captured, y = other) = pair
+
+          (captured + other)))
+        case Some payload -> payload
+        case None -> 0) + 0)
+
+result : Int
 let result = generated_3183
 
 --! assertNoErrors
---! assertType generated_3183 Set Int
---! assertType result Set Int
---! assertDeclKinds signature, let, signature, let
+--! assertType generated_3183 Int
+--! assertType result Int
+--! assertDeclKinds data, signature, let, signature, let

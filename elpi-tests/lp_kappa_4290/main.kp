@@ -1,12 +1,31 @@
 module main
 
-generated_4290 : Unit
-let generated_4290 = (if True then (if True then (if False then () else ((\(u : Unit) -> ()) ())) else ()) else ())
+generated_4290 : Int
+let generated_4290 =
+    match [((block
+        let pair = (x = (match (0 == 0)
+          case True -> 0
+          case False -> 0), y = ((match (0 == 0)
+          case True -> 0
+          case False -> 0) + 1))
+        let (x = captured, y = other) = pair
 
-result : Unit
+        (captured + other)) + 0), (((block
+        let pair = (x = (match (0 == 0)
+          case True -> 0
+          case False -> 0), y = ((match (0 == 0)
+          case True -> 0
+          case False -> 0) + 1))
+        let (x = captured, y = other) = pair
+
+        (captured + other)) + 0) + 1)]
+      case head :: tail -> head
+      case Nil -> 0
+
+result : Int
 let result = generated_4290
 
 --! assertNoErrors
---! assertType generated_4290 Unit
---! assertType result Unit
+--! assertType generated_4290 Int
+--! assertType result Int
 --! assertDeclKinds signature, let, signature, let

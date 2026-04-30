@@ -1,19 +1,12 @@
 module main
 
-data GeneratedChoice : Type =
-    GeneratedLeft (value : Int)
-    GeneratedRight
+generated_2975 : String
+let generated_2975 = (if (if (if (if (if False then True else (True || False)) then True else False) then True else False) then True else False) then #"raw lambda-prolog"# else "fallback")
 
-generated_2975 : Int
-let generated_2975 =
-    match (GeneratedLeft (((((((((Some ((0 + (0 + 0)) + 0)) ?: 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0))
-      case GeneratedLeft payload -> (payload + 0)
-      case GeneratedRight -> (((((((((Some ((0 + (0 + 0)) + 0)) ?: 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0)
-
-result : Int
+result : String
 let result = generated_2975
 
 --! assertNoErrors
---! assertType generated_2975 Int
---! assertType result Int
---! assertDeclKinds data, signature, let, signature, let
+--! assertType generated_2975 String
+--! assertType result String
+--! assertDeclKinds signature, let, signature, let

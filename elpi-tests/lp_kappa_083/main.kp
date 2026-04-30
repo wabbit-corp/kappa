@@ -1,22 +1,12 @@
 module main
 
-trait GeneratedScore a =
-    score : a -> Int
+generated_83 : List Int
+let generated_83 = [ for x in [1, 2, 3], order by x desc, yield x ]
 
-instance GeneratedScore Int =
-    let score x = x
-
-generated_83 : Int
-let generated_83 =
-    let
-        dict = summon (GeneratedScore Int)
-in
-        dict.score (((0 + 0) + 0) + 0)
-
-result : Int
+result : List Int
 let result = generated_83
 
 --! assertNoErrors
---! assertType generated_83 Int
---! assertType result Int
---! assertDeclKinds trait, instance, signature, let, signature, let
+--! assertType generated_83 List Int
+--! assertType result List Int
+--! assertDeclKinds signature, let, signature, let

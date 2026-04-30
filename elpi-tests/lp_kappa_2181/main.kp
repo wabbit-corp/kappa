@@ -1,12 +1,35 @@
 module main
 
-generated_2181 : Bool
-let generated_2181 = (if (if (if (if False then True else (((if True then True else False) && True) || False)) then True else False) then True else False) then True else False)
+generated_2181 : Int
+let generated_2181 =
+    block
+        let pair = (x = ((block
+            generatedMapCount : Map String Int -> Int
+            let generatedMapCount values = 1
 
-result : Bool
+            let item = (match (Some 0)
+              case Some payload -> payload
+              case None -> 0)
+            let values = { yield "item" : item }
+
+            generatedMapCount values) + 0), y = ((block
+            generatedMapCount : Map String Int -> Int
+            let generatedMapCount values = 1
+
+            let item = (match (Some 0)
+              case Some payload -> payload
+              case None -> 0)
+            let values = { yield "item" : item }
+
+            generatedMapCount values) + 1))
+        let whole@(x = captured, y = other) = pair
+
+        (whole.x + (captured + other))
+
+result : Int
 let result = generated_2181
 
 --! assertNoErrors
---! assertType generated_2181 Bool
---! assertType result Bool
+--! assertType generated_2181 Int
+--! assertType result Int
 --! assertDeclKinds signature, let, signature, let

@@ -1,12 +1,35 @@
 module main
 
-generated_115 : List Int
-let generated_115 = [ for x in [1, 2, 3], if x > 0, yield ((((x + 0) + 0) + 0) + 0) ]
+generated_115 : Int
+let generated_115 =
+    block
+        let pair = (x = ((block
+            generatedListLength : List Int -> Int
+            let generatedListLength xs decreases structural xs =
+                match xs
+                  case Nil -> 0
+                  case _ :: tail -> 1 + generatedListLength tail
 
-result : List Int
+            let item = 0
+
+            generatedListLength [item, (item + 1), 0]) + 0), y = ((block
+            generatedListLength : List Int -> Int
+            let generatedListLength xs decreases structural xs =
+                match xs
+                  case Nil -> 0
+                  case _ :: tail -> 1 + generatedListLength tail
+
+            let item = 0
+
+            generatedListLength [item, (item + 1), 0]) + 1))
+        let (x = captured, y = other) = pair
+
+        (captured + other)
+
+result : Int
 let result = generated_115
 
 --! assertNoErrors
---! assertType generated_115 List Int
---! assertType result List Int
+--! assertType generated_115 Int
+--! assertType result Int
 --! assertDeclKinds signature, let, signature, let

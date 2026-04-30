@@ -1,12 +1,35 @@
 module main
 
-generated_2898 : Option Int
-let generated_2898 = (if True then (if True then (if True then (if (True && True) then (if False then None else (Some (0 + 0))) else (Some 2)) else None) else None) else None)
+generated_2898 : Int
+let generated_2898 =
+    block
+        scoped effect Choice =
+            ω choose : Unit -> Bool
 
-result : Option Int
+        let seed = ((\(n : Int) -> n) (match [0, (0 + 1)]
+          case head :: tail -> head
+          case Nil -> 0))
+
+        let comp : Eff <[Choice : Choice]> Int =
+            do
+                let b <- Choice.choose ()
+                if b then seed else (seed + 1)
+
+        let handled : Eff <[ ]> Int =
+            deep handle Choice comp with
+                case return x -> pure x
+                case choose () k ->
+                    do
+                        let a <- k True
+                        let b <- k False
+                        pure (a + b)
+
+        runPure handled
+
+result : Int
 let result = generated_2898
 
 --! assertNoErrors
---! assertType generated_2898 Option Int
---! assertType result Option Int
+--! assertType generated_2898 Int
+--! assertType result Int
 --! assertDeclKinds signature, let, signature, let

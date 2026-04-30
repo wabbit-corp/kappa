@@ -1,16 +1,14 @@
 module main
 
-generated_283 : Int
-let generated_283 =
-    let
-        ranked : Int = (((((((((if True then 0 else 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0)
-in
-        (ranked + 0)
+generated_283 : Set Int
+let generated_283 = {| yield ((match (Some 0)
+  case Some payload -> payload
+  case None -> 0) + 0) |}
 
-result : Int
+result : Set Int
 let result = generated_283
 
 --! assertNoErrors
---! assertType generated_283 Int
---! assertType result Int
+--! assertType generated_283 Set Int
+--! assertType result Set Int
 --! assertDeclKinds signature, let, signature, let

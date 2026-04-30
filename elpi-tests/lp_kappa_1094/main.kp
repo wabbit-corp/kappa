@@ -1,12 +1,28 @@
 module main
 
-generated_1094 : Unit
-let generated_1094 = (if True then (if True then (if True then ((\(u : Unit) -> u) ((\(u : Unit) -> if False then () else u) ())) else ()) else ()) else ())
+generated_1094 : Map String Int
+let generated_1094 = { yield "only" : ((block
+    generatedListLength : List Int -> Int
+    let generatedListLength xs decreases structural xs =
+        match xs
+          case Nil -> 0
+          case _ :: tail -> 1 + generatedListLength tail
 
-result : Unit
+    let item = (block
+        generatedSetCount : Set Int -> Int
+        let generatedSetCount values = 2
+
+        let item = 0
+        let values = {|item, (item + 1)|}
+
+        generatedSetCount values)
+
+    generatedListLength [item, (item + 1), 0]) + 0) }
+
+result : Map String Int
 let result = generated_1094
 
 --! assertNoErrors
---! assertType generated_1094 Unit
---! assertType result Unit
+--! assertType generated_1094 Map String Int
+--! assertType result Map String Int
 --! assertDeclKinds signature, let, signature, let

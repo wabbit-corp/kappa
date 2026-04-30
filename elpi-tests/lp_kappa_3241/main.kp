@@ -1,16 +1,22 @@
 module main
 
-generated_3241 : Int
-let generated_3241 =
-    let
-        ranked : Int = (((((0 + (0 + 0)) + 0) + 0) + 0) + 0)
-in
-        (ranked + 0)
+generated_3241 : Set Int
+let generated_3241 = {| for x in [1, 2, 3], let y = x + 1, if y > 0, yield (match [(block
+    let pair = (x = x, y = (x + 1))
+    let (x = captured, y = other) = pair
 
-result : Int
+    (captured + other)), ((block
+    let pair = (x = x, y = (x + 1))
+    let (x = captured, y = other) = pair
+
+    (captured + other)) + 1)]
+  case head :: tail -> head
+  case Nil -> 0) |}
+
+result : Set Int
 let result = generated_3241
 
 --! assertNoErrors
---! assertType generated_3241 Int
---! assertType result Int
+--! assertType generated_3241 Set Int
+--! assertType result Set Int
 --! assertDeclKinds signature, let, signature, let

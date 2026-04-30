@@ -3,10 +3,21 @@ module main
 generated_3122 : Int
 let generated_3122 =
     block
-        let base : (x : Int) = (x = (((((((((Some (((if False then 0 else 0) + (0 + 0)) + 0)) ?: 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0))
-        let extended = base.{ y := (((((((((Some (((if False then 0 else 0) + (0 + 0)) + 0)) ?: 0) + 0) + 0) + 0) + 0) + 0) + 0) + 1) }
+        ranked : Int
+        let ranked = (block
+            generatedMapCount : Map String Int -> Int
+            let generatedMapCount values = 1
 
-        (extended.x + extended.y)
+            let item = (block
+                let pair = (x = 0, y = (0 + 1))
+                let (x = captured, y = other) = pair
+
+                (captured + other))
+            let values = { yield "item" : item }
+
+            generatedMapCount values)
+
+        (ranked + 0)
 
 result : Int
 let result = generated_3122

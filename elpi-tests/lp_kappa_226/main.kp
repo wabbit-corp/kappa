@@ -1,12 +1,25 @@
 module main
 
-generated_226 : Map String Int
-let generated_226 = { for x in [1, 2, 3], let y = x + 1, yield "k" : ((((((((((x + 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0) }
+generatedNeed : (@x : Int) -> Int
+let generatedNeed (@x : Int) = x
 
-result : Map String Int
+generated_226 : IO Int
+let generated_226 =
+    do
+        let (@x : Int) = ((block
+            generatedMapCount : Map String Int -> Int
+            let generatedMapCount values = 1
+
+            let item = 0
+            let values = { yield "item" : item }
+
+            generatedMapCount values) + 0)
+        pure generatedNeed
+
+result : IO Int
 let result = generated_226
 
 --! assertNoErrors
---! assertType generated_226 Map String Int
---! assertType result Map String Int
---! assertDeclKinds signature, let, signature, let
+--! assertType generated_226 IO Int
+--! assertType result IO Int
+--! assertDeclKinds signature, let, signature, let, signature, let

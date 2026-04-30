@@ -1,12 +1,33 @@
 module main
 
-generated_408 : Map String Int
-let generated_408 = { yield "only" : (((((((((((if False then 0 else 0) + (0 + 0)) + 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0) }
+generated_408 : Int
+let generated_408 =
+    block
+        scoped effect Ask =
+            ask : Unit -> Bool
 
-result : Map String Int
+        let seed = (block
+            let pair = (x = 0, y = (0 + 1))
+            let (x = captured, y = other) = pair
+
+            (captured + other))
+
+        let comp : Eff <[Ask : Ask]> Int =
+            do
+                let b <- Ask.ask ()
+                if b then seed else (seed + 1)
+
+        let handled : Eff <[ ]> Int =
+            deep handle Ask comp with
+                case return x -> pure x
+                case ask () k -> k True
+
+        runPure handled
+
+result : Int
 let result = generated_408
 
 --! assertNoErrors
---! assertType generated_408 Map String Int
---! assertType result Map String Int
+--! assertType generated_408 Int
+--! assertType result Int
 --! assertDeclKinds signature, let, signature, let

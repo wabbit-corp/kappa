@@ -1,12 +1,17 @@
 module main
 
-generated_227 : Int
-let generated_227 =
-    block
-        rankedHelper : (Int -> Int)
-        let rankedHelper x = x + 1
+generatedEcho : forall (a : Type). (this x : a) -> a
+let generatedEcho @a (this x : a) = x
 
-        rankedHelper (((((((((((0 + 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0)
+generated_227 : Int
+let generated_227 = ((.generatedEcho) ((block
+    generatedMapCount : Map String Int -> Int
+    let generatedMapCount values = 1
+
+    let item = 0
+    let values = { yield "item" : item }
+
+    generatedMapCount values) + 0))
 
 result : Int
 let result = generated_227
@@ -14,4 +19,4 @@ let result = generated_227
 --! assertNoErrors
 --! assertType generated_227 Int
 --! assertType result Int
---! assertDeclKinds signature, let, signature, let
+--! assertDeclKinds signature, let, signature, let, signature, let

@@ -1,12 +1,40 @@
 module main
 
-generated_1926 : Map String Int
-let generated_1926 = { for x in [1, 2, 3], let y = x + 1, if y > 0, yield (if y > 1 then "hi" else "lo") : ((((((((if False then 0 else ((x + 0) + 0)) + (0 + 0)) + 0) + 0) + 0) + 0) + 0) + 0) }
+generated_1926 : Int
+let generated_1926 =
+    block
+        scoped effect Choice =
+            ω choose : Unit -> Bool
 
-result : Map String Int
+        let seed = ((\(n : Int) -> n) (block
+            generatedMapCount : Map String Int -> Int
+            let generatedMapCount values = 1
+
+            let item = 0
+            let values = { yield "item" : item }
+
+            generatedMapCount values))
+
+        let comp : Eff <[Choice : Choice]> Int =
+            do
+                let b <- Choice.choose ()
+                if b then seed else (seed + 1)
+
+        let handled : Eff <[ ]> Int =
+            deep handle Choice comp with
+                case return x -> pure x
+                case choose () k ->
+                    do
+                        let a <- k True
+                        let b <- k False
+                        pure (a + b)
+
+        runPure handled
+
+result : Int
 let result = generated_1926
 
 --! assertNoErrors
---! assertType generated_1926 Map String Int
---! assertType result Map String Int
+--! assertType generated_1926 Int
+--! assertType result Int
 --! assertDeclKinds signature, let, signature, let

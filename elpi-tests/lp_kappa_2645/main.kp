@@ -1,12 +1,19 @@
 module main
 
-generated_2645 : Int
-let generated_2645 =
-    block
-        let pair = (x = (((((((((left = 0, right = ((0 + (0 + 0)) + 0))).right + 0) + 0) + 0) + 0) + 0) + 0) + 0), y = (((((((((left = 0, right = ((0 + (0 + 0)) + 0))).right + 0) + 0) + 0) + 0) + 0) + 0) + 1))
-        let (x = captured, y = other) = pair
+generatedResize : (image : Int) -> (width : Int) -> (height : Int) -> Int
+let generatedResize image width height = image + width * 10 + height
 
-        (captured + other)
+generated_2645 : Int
+let generated_2645 = generatedResize { image = ((block
+    generatedMapCount : Map String Int -> Int
+    let generatedMapCount values = 1
+
+    let item = (match [0, (0 + 1)]
+      case head :: tail -> head
+      case Nil -> 0)
+    let values = { yield "item" : item }
+
+    generatedMapCount values) + 0), height = 3, width = 2 }
 
 result : Int
 let result = generated_2645
@@ -14,4 +21,4 @@ let result = generated_2645
 --! assertNoErrors
 --! assertType generated_2645 Int
 --! assertType result Int
---! assertDeclKinds signature, let, signature, let
+--! assertDeclKinds signature, let, signature, let, signature, let

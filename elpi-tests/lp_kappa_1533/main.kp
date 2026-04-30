@@ -3,13 +3,38 @@ module main
 generated_1533 : Int
 let generated_1533 =
     block
-        data RankedBox : Type =
-            RankedBox (value : Int)
+        let pair = (x = (((Some ((block
+            generatedSetCount : Set Int -> Int
+            let generatedSetCount values = 2
 
-        let boxed = RankedBox ((((((((if False then 0 else ((Some (0 + 0)) ?: 0)) + 0) + 0) + 0) + 0) + 0) + 0) + 0)
+            let item = 0
+            let values = {|item, (item + 1)|}
 
-        match boxed
-          case RankedBox value -> (value + 1)
+            generatedSetCount values) + 1)) ?: ((block
+            generatedSetCount : Set Int -> Int
+            let generatedSetCount values = 2
+
+            let item = 0
+            let values = {|item, (item + 1)|}
+
+            generatedSetCount values) + 2)) + 0), y = (((Some ((block
+            generatedSetCount : Set Int -> Int
+            let generatedSetCount values = 2
+
+            let item = 0
+            let values = {|item, (item + 1)|}
+
+            generatedSetCount values) + 1)) ?: ((block
+            generatedSetCount : Set Int -> Int
+            let generatedSetCount values = 2
+
+            let item = 0
+            let values = {|item, (item + 1)|}
+
+            generatedSetCount values) + 2)) + 1))
+        let whole@(x = captured, y = other) = pair
+
+        (whole.x + (captured + other))
 
 result : Int
 let result = generated_1533

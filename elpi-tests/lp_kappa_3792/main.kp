@@ -1,14 +1,16 @@
 module main
 
-type GeneratedPair = (left : Int, right : Int)
+generated_3792 : List Int
+let generated_3792 = [ yield ((block
+    let pair = (x = ((\(n : Int) -> n) 0), y = (((\(n : Int) -> n) 0) + 1))
+    let (x = captured, y = other) = pair
 
-generated_3792 : GeneratedPair
-let generated_3792 = ((left = (((((0 + ((0 + (((if True then 0 else 0) + 0) + 0)) + 0)) + 0) + 0) + 0) + 0), right = 0)).{ right = ((((((0 + ((0 + (((if True then 0 else 0) + 0) + 0)) + 0)) + 0) + 0) + 0) + 0) + 1) }
+    (captured + other)) + 0) ]
 
-result : GeneratedPair
+result : List Int
 let result = generated_3792
 
 --! assertNoErrors
---! assertType generated_3792 GeneratedPair
---! assertType result GeneratedPair
---! assertDeclKinds type, signature, let, signature, let
+--! assertType generated_3792 List Int
+--! assertType result List Int
+--! assertDeclKinds signature, let, signature, let

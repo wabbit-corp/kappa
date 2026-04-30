@@ -1,12 +1,41 @@
 module main
 
-generated_2844 : Map String Int
-let generated_2844 = { for x in [1, 2, 3], if x > 0, yield "k" : ((((((((left = 0, right = (((left = 0, right = (x + 0))).right + 0))).right + 0) + 0) + 0) + 0) + 0) + 0) }
+generated_2844 : Int
+let generated_2844 =
+    block
+        scoped effect Choice =
+            ω choose : Unit -> Bool
 
-result : Map String Int
+        let seed = (block
+            let pair = (x = (match [0, (0 + 1)]
+              case head :: tail -> head
+              case Nil -> 0), y = ((match [0, (0 + 1)]
+              case head :: tail -> head
+              case Nil -> 0) + 1))
+            let (x = captured, y = other) = pair
+
+            (captured + other))
+
+        let comp : Eff <[Choice : Choice]> Int =
+            do
+                let b <- Choice.choose ()
+                if b then seed else (seed + 1)
+
+        let handled : Eff <[ ]> Int =
+            deep handle Choice comp with
+                case return x -> pure x
+                case choose () k ->
+                    do
+                        let a <- k True
+                        let b <- k False
+                        pure (a + b)
+
+        runPure handled
+
+result : Int
 let result = generated_2844
 
 --! assertNoErrors
---! assertType generated_2844 Map String Int
---! assertType result Map String Int
+--! assertType generated_2844 Int
+--! assertType result Int
 --! assertDeclKinds signature, let, signature, let

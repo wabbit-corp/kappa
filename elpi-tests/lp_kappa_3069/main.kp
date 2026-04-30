@@ -1,12 +1,27 @@
 module main
 
-generated_3069 : (Int -> Int)
-let generated_3069 = \(x : Int) -> ((\(x : Int) -> ((\(x : Int) -> ((\(x : Int) -> if (x == 0) then x else (((if False then \(x : Int) -> x else \(x : Int) -> x)) x)) x)) x)) x)
+generated_3069 : Int
+let generated_3069 =
+    let
+        ranked : Int = (block
+            generatedSetCount : Set Int -> Int
+            let generatedSetCount values = 2
 
-result : (Int -> Int)
+            let item = (block
+                let pair = (x = 0, y = (0 + 1))
+                let (x = captured, y = other) = pair
+
+                (captured + other))
+            let values = {|item, (item + 1)|}
+
+            generatedSetCount values)
+in
+        (ranked + 0)
+
+result : Int
 let result = generated_3069
 
 --! assertNoErrors
---! assertType generated_3069 (Int -> Int)
---! assertType result (Int -> Int)
+--! assertType generated_3069 Int
+--! assertType result Int
 --! assertDeclKinds signature, let, signature, let

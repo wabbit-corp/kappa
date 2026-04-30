@@ -1,12 +1,29 @@
 module main
 
-generated_2775 : Set Int
-let generated_2775 = {| for x in [1, 2, 3], yield ((((((((left = 0, right = (((if False then 0 else x) + (0 + 0)) + 0))).right + 0) + 0) + 0) + 0) + 0) + 0) |}
+generated_2775 : Int
+let generated_2775 =
+    block
+        let pair = (x = ((match [(match [0, (0 + 1)]
+          case head :: tail -> head
+          case Nil -> 0), ((match [0, (0 + 1)]
+          case head :: tail -> head
+          case Nil -> 0) + 1)]
+          case head :: tail -> head
+          case Nil -> 0) + 0), y = ((match [(match [0, (0 + 1)]
+          case head :: tail -> head
+          case Nil -> 0), ((match [0, (0 + 1)]
+          case head :: tail -> head
+          case Nil -> 0) + 1)]
+          case head :: tail -> head
+          case Nil -> 0) + 1))
+        let whole@(x = captured, y = other) = pair
 
-result : Set Int
+        (whole.x + (captured + other))
+
+result : Int
 let result = generated_2775
 
 --! assertNoErrors
---! assertType generated_2775 Set Int
---! assertType result Set Int
+--! assertType generated_2775 Int
+--! assertType result Int
 --! assertDeclKinds signature, let, signature, let

@@ -1,12 +1,12 @@
 module main
 
-generated_2631 : List Int
-let generated_2631 = [ for x in [1, 2, 3], yield ((((((((left = 0, right = ((0 + (x + 0)) + 0))).right + 0) + 0) + 0) + 0) + 0) + 0) ]
+generated_2631 : Bool
+let generated_2631 = (if (if (if (if True then ((True || False) && True) else False) then True else False) then True else False) then True else False)
 
-result : List Int
+result : Bool
 let result = generated_2631
 
 --! assertNoErrors
---! assertType generated_2631 List Int
---! assertType result List Int
+--! assertType generated_2631 Bool
+--! assertType result Bool
 --! assertDeclKinds signature, let, signature, let

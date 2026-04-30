@@ -1,12 +1,12 @@
 module main
 
-generated_204 : Map String Int
-let generated_204 = { yield "only" : (((((((((0 + 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0) }
+generated_204 : Option Int
+let generated_204 = (if True then (if True then (if True then (Some (0 + 0)) else None) else None) else None)
 
-result : Map String Int
+result : Option Int
 let result = generated_204
 
 --! assertNoErrors
---! assertType generated_204 Map String Int
---! assertType result Map String Int
+--! assertType generated_204 Option Int
+--! assertType result Option Int
 --! assertDeclKinds signature, let, signature, let

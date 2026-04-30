@@ -1,15 +1,23 @@
 module main
 
-generated_2054 : IO Int
-let generated_2054 =
-    do
-        value <- pure (((((((((if False then 0 else ((if True then 0 else 0) + 0)) + (0 + 0)) + 0) + 0) + 0) + 0) + 0) + 0) + 0)
-        pure (value + 2)
+generated_2054 : Map String Int
+let generated_2054 = { for x in [1, 2, 3], let y = x + 1, yield "k" : (block
+    generatedListLength : List Int -> Int
+    let generatedListLength xs decreases structural xs =
+        match xs
+          case Nil -> 0
+          case _ :: tail -> 1 + generatedListLength tail
 
-result : IO Int
+    let item = (match (Some x)
+      case Some payload -> payload
+      case None -> 0)
+
+    generatedListLength [item, (item + 1), 0]) }
+
+result : Map String Int
 let result = generated_2054
 
 --! assertNoErrors
---! assertType generated_2054 IO Int
---! assertType result IO Int
+--! assertType generated_2054 Map String Int
+--! assertType result Map String Int
 --! assertDeclKinds signature, let, signature, let

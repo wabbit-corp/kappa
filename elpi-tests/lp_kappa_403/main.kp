@@ -1,15 +1,19 @@
 module main
 
-generated_403 : IO Int
-let generated_403 =
-    do
-        let staged = (((((((((((if False then 0 else 0) + (0 + 0)) + 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0)
-        pure (staged + 1)
+generatedMakeConst : forall (a : Type). a -> Unit -> a
+let generatedMakeConst value = \() -> value
 
-result : IO Int
+generated_403 : Int
+let generated_403 = ((generatedMakeConst @Int ((block
+    let pair = (x = 0, y = (0 + 1))
+    let (x = captured, y = other) = pair
+
+    (captured + other)) + 0)) ())
+
+result : Int
 let result = generated_403
 
 --! assertNoErrors
---! assertType generated_403 IO Int
---! assertType result IO Int
---! assertDeclKinds signature, let, signature, let
+--! assertType generated_403 Int
+--! assertType result Int
+--! assertDeclKinds signature, let, signature, let, signature, let

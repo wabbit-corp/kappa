@@ -1,12 +1,12 @@
 module main
 
-generated_259 : Set Int
-let generated_259 = {| for x in [1, 2, 3], if x > 0, yield (((((((((0 + (x + 0)) + 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0) |}
+generated_259 : (Int -> Int)
+let generated_259 = \(x : Int) -> ((\(x : Int) -> ((\(x : Int) -> ((\(x : Int) -> ((\(x : Int) -> x) x)) x)) x)) x)
 
-result : Set Int
+result : (Int -> Int)
 let result = generated_259
 
 --! assertNoErrors
---! assertType generated_259 Set Int
---! assertType result Set Int
+--! assertType generated_259 (Int -> Int)
+--! assertType result (Int -> Int)
 --! assertDeclKinds signature, let, signature, let

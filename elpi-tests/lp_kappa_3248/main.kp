@@ -1,14 +1,37 @@
 module main
 
-type GeneratedPair = (left : Int, right : Int)
+generated_3248 : Int
+let generated_3248 =
+    block
+        let base : (x : Int) = (x = ((match [(block
+            let pair = (x = 0, y = (0 + 1))
+            let (x = captured, y = other) = pair
 
-generated_3248 : GeneratedPair
-let generated_3248 = ((left = (((((0 + (0 + 0)) + 0) + 0) + 0) + 0), right = 0)).{ right = ((((((0 + (0 + 0)) + 0) + 0) + 0) + 0) + 1) }
+            (captured + other)), ((block
+            let pair = (x = 0, y = (0 + 1))
+            let (x = captured, y = other) = pair
 
-result : GeneratedPair
+            (captured + other)) + 1)]
+          case head :: tail -> head
+          case Nil -> 0) + 0))
+        let extended = base.{ y := ((match [(block
+            let pair = (x = 0, y = (0 + 1))
+            let (x = captured, y = other) = pair
+
+            (captured + other)), ((block
+            let pair = (x = 0, y = (0 + 1))
+            let (x = captured, y = other) = pair
+
+            (captured + other)) + 1)]
+          case head :: tail -> head
+          case Nil -> 0) + 1) }
+
+        (extended.x + extended.y)
+
+result : Int
 let result = generated_3248
 
 --! assertNoErrors
---! assertType generated_3248 GeneratedPair
---! assertType result GeneratedPair
---! assertDeclKinds type, signature, let, signature, let
+--! assertType generated_3248 Int
+--! assertType result Int
+--! assertDeclKinds signature, let, signature, let

@@ -1,14 +1,19 @@
 module main
 
-type GeneratedTuple = (Int, Int)
+generated_3577 : Set Int
+let generated_3577 = {| yield ((block
+    generatedSetCount : Set Int -> Int
+    let generatedSetCount values = 2
 
-generated_3577 : GeneratedTuple
-let generated_3577 = (if True then (if True then (if False then (0, (0 + 0)) else (if True then (if (True && True) then (if False then (3, (3 + 3)) else (0, (0 + 0))) else (4, (4 + 4))) else (0, (0 + 0)))) else (0, (0 + 0))) else (0, (0 + 0)))
+    let item = ((\(n : Int) -> n) 0)
+    let values = {|item, (item + 1)|}
 
-result : GeneratedTuple
+    generatedSetCount values) + 0) |}
+
+result : Set Int
 let result = generated_3577
 
 --! assertNoErrors
---! assertType generated_3577 GeneratedTuple
---! assertType result GeneratedTuple
---! assertDeclKinds type, signature, let, signature, let
+--! assertType generated_3577 Set Int
+--! assertType result Set Int
+--! assertDeclKinds signature, let, signature, let

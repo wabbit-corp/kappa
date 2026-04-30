@@ -1,12 +1,22 @@
 module main
 
-generated_4554 : List Int
-let generated_4554 = [ yield ((((((0 + ((if False then 0 else ((left = (0 + 0), right = 0)).left) + 0)) + 0) + 0) + 0) + 0) + 0) ]
+generatedNeed : (@x : Int) -> Int
+let generatedNeed (@x : Int) = x
 
-result : List Int
+generated_4554 : Int
+let generated_4554 = generatedNeed @(((block
+    generatedSetCount : Set Int -> Int
+    let generatedSetCount values = 2
+
+    let item = ((Some (0 + 1)) ?: (0 + 2))
+    let values = {|item, (item + 1)|}
+
+    generatedSetCount values) + 0))
+
+result : Int
 let result = generated_4554
 
 --! assertNoErrors
---! assertType generated_4554 List Int
---! assertType result List Int
---! assertDeclKinds signature, let, signature, let
+--! assertType generated_4554 Int
+--! assertType result Int
+--! assertDeclKinds signature, let, signature, let, signature, let

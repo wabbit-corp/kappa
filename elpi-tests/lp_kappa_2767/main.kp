@@ -1,12 +1,18 @@
 module main
 
-generated_2767 : List Int
-let generated_2767 = [ for x in [1, 2, 3], yield ((((((((left = 0, right = (((if False then 0 else x) + (0 + 0)) + 0))).right + 0) + 0) + 0) + 0) + 0) + 0) ]
+generated_2767 : Set Int
+let generated_2767 = {| yield ((match [(match [0, (0 + 1)]
+  case head :: tail -> head
+  case Nil -> 0), ((match [0, (0 + 1)]
+  case head :: tail -> head
+  case Nil -> 0) + 1)]
+  case head :: tail -> head
+  case Nil -> 0) + 0) |}
 
-result : List Int
+result : Set Int
 let result = generated_2767
 
 --! assertNoErrors
---! assertType generated_2767 List Int
---! assertType result List Int
+--! assertType generated_2767 Set Int
+--! assertType result Set Int
 --! assertDeclKinds signature, let, signature, let

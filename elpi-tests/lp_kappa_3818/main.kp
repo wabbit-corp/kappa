@@ -1,12 +1,7 @@
 module main
 
 generated_3818 : Int
-let generated_3818 =
-    block
-        ranked : Int
-        let ranked = (((((0 + ((0 + (((if False then 0 else 0) + (0 + 0)) + 0)) + 0)) + 0) + 0) + 0) + 0)
-
-        (ranked + 0)
+let generated_3818 = ((\(n : Int) -> n) ((\(n : Int) -> n) 0))
 
 result : Int
 let result = generated_3818

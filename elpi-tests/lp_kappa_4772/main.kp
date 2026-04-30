@@ -1,14 +1,15 @@
 module main
 
-generatedNeed : (@x : Int) -> Int
-let generatedNeed (@x : Int) = x
-
 generated_4772 : Int
 let generated_4772 =
     block
-        let (@x : Int) = (((((0 + (((if True then (if False then 0 else 0) else 0) + 0) + 0)) + 0) + 0) + 0) + 0)
+        let (captured : Int) = ((block
+            let pair = (x = ((Some (0 + 1)) ?: (0 + 2)), y = (((Some (0 + 1)) ?: (0 + 2)) + 1))
+            let (x = captured, y = other) = pair
 
-        if True then generatedNeed else 0
+            (captured + other)) + 0)
+
+        captured
 
 result : Int
 let result = generated_4772
@@ -16,4 +17,4 @@ let result = generated_4772
 --! assertNoErrors
 --! assertType generated_4772 Int
 --! assertType result Int
---! assertDeclKinds signature, let, signature, let, signature, let
+--! assertDeclKinds signature, let, signature, let

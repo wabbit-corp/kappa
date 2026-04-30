@@ -1,12 +1,21 @@
 module main
 
-generated_4052 : Unit
-let generated_4052 = (if True then (if True then (if False then () else ((\(u : Unit) -> u) ((\(u : Unit) -> u) ()))) else ()) else ())
+generated_4052 : Map String Int
+let generated_4052 = { for x in [1, 2, 3], if x > 0, yield "k" : (block
+    generatedSetCount : Set Int -> Int
+    let generatedSetCount values = 2
 
-result : Unit
+    let item = (match (x == x)
+      case True -> x
+      case False -> 0)
+    let values = {|item, (item + 1)|}
+
+    generatedSetCount values) }
+
+result : Map String Int
 let result = generated_4052
 
 --! assertNoErrors
---! assertType generated_4052 Unit
---! assertType result Unit
+--! assertType generated_4052 Map String Int
+--! assertType result Map String Int
 --! assertDeclKinds signature, let, signature, let

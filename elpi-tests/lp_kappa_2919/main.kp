@@ -1,15 +1,25 @@
 module main
 
-generated_2919 : IO Int
+generated_2919 : Int
 let generated_2919 =
-    do
-        let staged = (((((((((Some (0 + 0)) ?: 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0)
-        pure (staged + 1)
+    block
+        rankedHelper : (Int -> Int)
+        let rankedHelper x = x + 1
 
-result : IO Int
+        rankedHelper ((match ((match [0, (0 + 1)]
+          case head :: tail -> head
+          case Nil -> 0) == (match [0, (0 + 1)]
+          case head :: tail -> head
+          case Nil -> 0))
+          case True -> (match [0, (0 + 1)]
+            case head :: tail -> head
+            case Nil -> 0)
+          case False -> 0) + 0)
+
+result : Int
 let result = generated_2919
 
 --! assertNoErrors
---! assertType generated_2919 IO Int
---! assertType result IO Int
+--! assertType generated_2919 Int
+--! assertType result Int
 --! assertDeclKinds signature, let, signature, let

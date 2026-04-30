@@ -1,15 +1,25 @@
 module main
 
-generated_3788 : IO Int
+generated_3788 : Int
 let generated_3788 =
-    do
-        value <- pure ((((((0 + ((0 + (((if True then 0 else 0) + 0) + 0)) + 0)) + 0) + 0) + 0) + 0) + 0)
-        pure (value + 2)
+    block
+        let base : (x : Int) = (x = ((block
+            let pair = (x = ((\(n : Int) -> n) 0), y = (((\(n : Int) -> n) 0) + 1))
+            let (x = captured, y = other) = pair
 
-result : IO Int
+            (captured + other)) + 0))
+        let extended = base.{ y := ((block
+            let pair = (x = ((\(n : Int) -> n) 0), y = (((\(n : Int) -> n) 0) + 1))
+            let (x = captured, y = other) = pair
+
+            (captured + other)) + 1) }
+
+        (extended.x + extended.y)
+
+result : Int
 let result = generated_3788
 
 --! assertNoErrors
---! assertType generated_3788 IO Int
---! assertType result IO Int
+--! assertType generated_3788 Int
+--! assertType result Int
 --! assertDeclKinds signature, let, signature, let

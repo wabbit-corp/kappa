@@ -1,12 +1,22 @@
 module main
 
-generated_1427 : Set Int
-let generated_1427 = {| yield ((((((((if False then 0 else ((if False then 0 else 0) + (0 + 0))) + 0) + 0) + 0) + 0) + 0) + 0) + 0) |}
+generated_1427 : Int
+let generated_1427 =
+    match (Some (((\(n : Int) -> n) (block
+        generatedSetCount : Set Int -> Int
+        let generatedSetCount values = 2
 
-result : Set Int
+        let item = 0
+        let values = {|item, (item + 1)|}
+
+        generatedSetCount values)) + 0))
+      case Some payload -> payload
+      case None -> 0
+
+result : Int
 let result = generated_1427
 
 --! assertNoErrors
---! assertType generated_1427 Set Int
---! assertType result Set Int
+--! assertType generated_1427 Int
+--! assertType result Int
 --! assertDeclKinds signature, let, signature, let

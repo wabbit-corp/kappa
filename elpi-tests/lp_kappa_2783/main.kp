@@ -1,15 +1,18 @@
 module main
 
-generated_2783 : IO Int
-let generated_2783 =
-    do
-        let staged = (((((((((left = 0, right = (((if False then 0 else 0) + (0 + 0)) + 0))).right + 0) + 0) + 0) + 0) + 0) + 0) + 0)
-        pure (staged + 1)
+generated_2783 : List Int
+let generated_2783 = [ for x in [1, 2, 3], order by x desc, yield (match [(match [x, (x + 1)]
+  case head :: tail -> head
+  case Nil -> 0), ((match [x, (x + 1)]
+  case head :: tail -> head
+  case Nil -> 0) + 1)]
+  case head :: tail -> head
+  case Nil -> 0) ]
 
-result : IO Int
+result : List Int
 let result = generated_2783
 
 --! assertNoErrors
---! assertType generated_2783 IO Int
---! assertType result IO Int
+--! assertType generated_2783 List Int
+--! assertType result List Int
 --! assertDeclKinds signature, let, signature, let

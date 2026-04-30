@@ -1,17 +1,19 @@
 module main
 
-generated_397 : Int
-let generated_397 =
-    block
-        rankedHelper : (Int -> Int)
-        let rankedHelper x = x + 1
+generatedEcho : forall (a : Type). (this x : a) -> a
+let generatedEcho @a (this x : a) = x
 
-        rankedHelper (((((((((((if False then 0 else 0) + (0 + 0)) + 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0)
+generated_397 : Option Int
+let generated_397 = (Some ((block
+    let pair = (x = 0, y = (0 + 1))
+    let (x = captured, y = other) = pair
 
-result : Int
+    (captured + other)) + 0))?.generatedEcho
+
+result : Option Int
 let result = generated_397
 
 --! assertNoErrors
---! assertType generated_397 Int
---! assertType result Int
---! assertDeclKinds signature, let, signature, let
+--! assertType generated_397 Option Int
+--! assertType result Option Int
+--! assertDeclKinds signature, let, signature, let, signature, let

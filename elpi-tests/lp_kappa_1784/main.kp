@@ -1,15 +1,28 @@
 module main
 
-generatedEcho : forall (a : Type). (this x : a) -> a
-let generatedEcho @a (this x : a) = x
+generated_1784 : Map String Int
+let generated_1784 = { for x in [1, 2, 3], yield "k" : (match [(block
+    generatedMapCount : Map String Int -> Int
+    let generatedMapCount values = 1
 
-generated_1784 : Int
-let generated_1784 = (((((((((if True then ((left = (0 + 0), right = 0)).left else 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0).generatedEcho
+    let item = x
+    let values = { yield "item" : item }
 
-result : Int
+    generatedMapCount values), ((block
+    generatedMapCount : Map String Int -> Int
+    let generatedMapCount values = 1
+
+    let item = x
+    let values = { yield "item" : item }
+
+    generatedMapCount values) + 1)]
+  case head :: tail -> head
+  case Nil -> 0) }
+
+result : Map String Int
 let result = generated_1784
 
 --! assertNoErrors
---! assertType generated_1784 Int
---! assertType result Int
---! assertDeclKinds signature, let, signature, let, signature, let
+--! assertType generated_1784 Map String Int
+--! assertType result Map String Int
+--! assertDeclKinds signature, let, signature, let

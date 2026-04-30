@@ -1,12 +1,21 @@
 module main
 
-generated_4496 : Option Int
-let generated_4496 = (if True then (if True then (if False then None else (if (((if (((Some (0 + 0)) ?: 0) == 0) then (Some ((Some (0 + 0)) ?: 0)) else None) ?: 0) == 1) then None else (if (((Some (0 + 0)) ?: 0) == 0) then (Some ((Some (0 + 0)) ?: 0)) else None))) else None) else None)
+generated_4496 : Map String Int
+let generated_4496 = { yield "only" : ((block
+    generatedListLength : List Int -> Int
+    let generatedListLength xs decreases structural xs =
+        match xs
+          case Nil -> 0
+          case _ :: tail -> 1 + generatedListLength tail
 
-result : Option Int
+    let item = ((Some (0 + 1)) ?: (0 + 2))
+
+    generatedListLength [item, (item + 1), 0]) + 0) }
+
+result : Map String Int
 let result = generated_4496
 
 --! assertNoErrors
---! assertType generated_4496 Option Int
---! assertType result Option Int
+--! assertType generated_4496 Map String Int
+--! assertType result Map String Int
 --! assertDeclKinds signature, let, signature, let

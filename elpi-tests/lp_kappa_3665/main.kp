@@ -1,17 +1,14 @@
 module main
 
-generated_3665 : Int
-let generated_3665 =
-    block
-        let pair = (x = ((((((0 + ((0 + (((0 + 0) + 0) + 0)) + 0)) + 0) + 0) + 0) + 0) + 0), y = ((((((0 + ((0 + (((0 + 0) + 0) + 0)) + 0)) + 0) + 0) + 0) + 0) + 1))
-        let (x = captured, y = other) = pair
+generated_3665 : List Int
+let generated_3665 = [ for x in [1, 2, 3], let y = x + 1, if y > 0, yield (match (Some ((\(n : Int) -> n) x))
+  case Some payload -> payload
+  case None -> 0) ]
 
-        (captured + other)
-
-result : Int
+result : List Int
 let result = generated_3665
 
 --! assertNoErrors
---! assertType generated_3665 Int
---! assertType result Int
+--! assertType generated_3665 List Int
+--! assertType result List Int
 --! assertDeclKinds signature, let, signature, let

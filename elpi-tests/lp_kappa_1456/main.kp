@@ -1,17 +1,60 @@
 module main
 
-generated_1456 : Int
-let generated_1456 =
-    block
-        let base : (x : Int) = (x = ((((((((if False then 0 else ((left = (0 + 0), right = 0)).left) + 0) + 0) + 0) + 0) + 0) + 0) + 0))
-        let extended = base.{ y := ((((((((if False then 0 else ((left = (0 + 0), right = 0)).left) + 0) + 0) + 0) + 0) + 0) + 0) + 1) }
+type GeneratedPair = (left : Int, right : Int)
 
-        (extended.x + extended.y)
+generated_1456 : GeneratedPair
+let generated_1456 = ((left = (match ((block
+    generatedSetCount : Set Int -> Int
+    let generatedSetCount values = 2
 
-result : Int
+    let item = 0
+    let values = {|item, (item + 1)|}
+
+    generatedSetCount values) == (block
+    generatedSetCount : Set Int -> Int
+    let generatedSetCount values = 2
+
+    let item = 0
+    let values = {|item, (item + 1)|}
+
+    generatedSetCount values))
+  case True -> (block
+      generatedSetCount : Set Int -> Int
+      let generatedSetCount values = 2
+
+      let item = 0
+      let values = {|item, (item + 1)|}
+
+      generatedSetCount values)
+  case False -> 0), right = 0)).{ right = ((match ((block
+    generatedSetCount : Set Int -> Int
+    let generatedSetCount values = 2
+
+    let item = 0
+    let values = {|item, (item + 1)|}
+
+    generatedSetCount values) == (block
+    generatedSetCount : Set Int -> Int
+    let generatedSetCount values = 2
+
+    let item = 0
+    let values = {|item, (item + 1)|}
+
+    generatedSetCount values))
+  case True -> (block
+      generatedSetCount : Set Int -> Int
+      let generatedSetCount values = 2
+
+      let item = 0
+      let values = {|item, (item + 1)|}
+
+      generatedSetCount values)
+  case False -> 0) + 1) }
+
+result : GeneratedPair
 let result = generated_1456
 
 --! assertNoErrors
---! assertType generated_1456 Int
---! assertType result Int
---! assertDeclKinds signature, let, signature, let
+--! assertType generated_1456 GeneratedPair
+--! assertType result GeneratedPair
+--! assertDeclKinds type, signature, let, signature, let

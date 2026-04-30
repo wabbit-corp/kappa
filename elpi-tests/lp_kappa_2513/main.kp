@@ -1,15 +1,16 @@
 module main
 
-generatedEcho : forall (a : Type). (this x : a) -> a
-let generatedEcho @a (this x : a) = x
+generated_2513 : List Int
+let generated_2513 = [ for x in [1, 2, 3], order by x desc, yield ((Some ((match (Some x)
+  case Some payload -> payload
+  case None -> 0) + 1)) ?: ((match (Some x)
+  case Some payload -> payload
+  case None -> 0) + 2)) ]
 
-generated_2513 : Int
-let generated_2513 = ((.generatedEcho) (((((((((left = (((left = 0, right = (0 + 0))).right + 0), right = 0)).left + 0) + 0) + 0) + 0) + 0) + 0) + 0))
-
-result : Int
+result : List Int
 let result = generated_2513
 
 --! assertNoErrors
---! assertType generated_2513 Int
---! assertType result Int
---! assertDeclKinds signature, let, signature, let, signature, let
+--! assertType generated_2513 List Int
+--! assertType result List Int
+--! assertDeclKinds signature, let, signature, let

@@ -2,11 +2,19 @@ module main
 
 generated_2097 : Int
 let generated_2097 =
-    block
-        rankedHelper : (Int -> Int)
-        let rankedHelper x = x + 1
+    let
+        ranked : Int = (block
+            generatedSetCount : Set Int -> Int
+            let generatedSetCount values = 2
 
-        rankedHelper (((((((((if False then 0 else ((if False then 0 else 0) + (0 + 0))) + (0 + 0)) + 0) + 0) + 0) + 0) + 0) + 0) + 0)
+            let item = (match (Some 0)
+              case Some payload -> payload
+              case None -> 0)
+            let values = {|item, (item + 1)|}
+
+            generatedSetCount values)
+in
+        (ranked + 0)
 
 result : Int
 let result = generated_2097

@@ -1,12 +1,30 @@
 module main
 
-generated_1019 : Set Int
-let generated_1019 = {| yield ((((((((if True then (if False then 0 else 0) else 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0) |}
+generated_1019 : List Int
+let generated_1019 = [ for x in [1, 2, 3], if x > 0, yield ((Some ((block
+    generatedListLength : List Int -> Int
+    let generatedListLength xs decreases structural xs =
+        match xs
+          case Nil -> 0
+          case _ :: tail -> 1 + generatedListLength tail
 
-result : Set Int
+    let item = x
+
+    generatedListLength [item, (item + 1), 0]) + 1)) ?: ((block
+    generatedListLength : List Int -> Int
+    let generatedListLength xs decreases structural xs =
+        match xs
+          case Nil -> 0
+          case _ :: tail -> 1 + generatedListLength tail
+
+    let item = x
+
+    generatedListLength [item, (item + 1), 0]) + 2)) ]
+
+result : List Int
 let result = generated_1019
 
 --! assertNoErrors
---! assertType generated_1019 Set Int
---! assertType result Set Int
+--! assertType generated_1019 List Int
+--! assertType result List Int
 --! assertDeclKinds signature, let, signature, let

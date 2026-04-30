@@ -1,12 +1,44 @@
 module main
 
-generated_145 : (Int -> Int)
-let generated_145 = \(x : Int) -> ((\(x : Int) -> ((\(x : Int) -> ((\(x : Int) -> x) x)) x)) x)
+generated_145 : Int
+let generated_145 =
+    block
+        scoped effect Choice =
+            ω choose : Unit -> Bool
 
-result : (Int -> Int)
+        let c = Choice
+
+        let seed = (block
+            generatedListLength : List Int -> Int
+            let generatedListLength xs decreases structural xs =
+                match xs
+                  case Nil -> 0
+                  case _ :: tail -> 1 + generatedListLength tail
+
+            let item = 0
+
+            generatedListLength [item, (item + 1), 0])
+
+        let comp : Eff <[Choice : Choice]> Int =
+            do
+                let b <- c.choose ()
+                if b then seed else (seed + 1)
+
+        let handled : Eff <[ ]> Int =
+            deep handle Choice comp with
+                case return x -> pure x
+                case choose () k ->
+                    do
+                        let a <- k True
+                        let b <- k False
+                        pure (a + b)
+
+        runPure handled
+
+result : Int
 let result = generated_145
 
 --! assertNoErrors
---! assertType generated_145 (Int -> Int)
---! assertType result (Int -> Int)
+--! assertType generated_145 Int
+--! assertType result Int
 --! assertDeclKinds signature, let, signature, let

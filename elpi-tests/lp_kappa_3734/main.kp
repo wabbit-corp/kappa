@@ -3,8 +3,12 @@ module main
 generated_3734 : Int
 let generated_3734 =
     block
-        let base : (x : Int) = (x = ((((((0 + ((0 + ((if True then 0 else 0) + 0)) + 0)) + 0) + 0) + 0) + 0) + 0))
-        let extended = base.{ y := ((((((0 + ((0 + ((if True then 0 else 0) + 0)) + 0)) + 0) + 0) + 0) + 0) + 1) }
+        let base : (x : Int) = (x = ((match [((\(n : Int) -> n) 0), (((\(n : Int) -> n) 0) + 1)]
+          case head :: tail -> head
+          case Nil -> 0) + 0))
+        let extended = base.{ y := ((match [((\(n : Int) -> n) 0), (((\(n : Int) -> n) 0) + 1)]
+          case head :: tail -> head
+          case Nil -> 0) + 1) }
 
         (extended.x + extended.y)
 

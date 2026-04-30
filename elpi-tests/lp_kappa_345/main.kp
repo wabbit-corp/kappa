@@ -1,12 +1,21 @@
 module main
 
-generated_345 : Bool
-let generated_345 = (if (if (if (if (if True then (True && True) else False) then True else False) then True else False) then True else False) then True else False)
+generated_345 : Int
+let generated_345 =
+    block
+        let pair = (x = ((match [0, (0 + 1)]
+          case head :: tail -> head
+          case Nil -> 0) + 0), y = ((match [0, (0 + 1)]
+          case head :: tail -> head
+          case Nil -> 0) + 1))
+        let whole@(x = captured, y = other) = pair
 
-result : Bool
+        (whole.x + (captured + other))
+
+result : Int
 let result = generated_345
 
 --! assertNoErrors
---! assertType generated_345 Bool
---! assertType result Bool
+--! assertType generated_345 Int
+--! assertType result Int
 --! assertDeclKinds signature, let, signature, let

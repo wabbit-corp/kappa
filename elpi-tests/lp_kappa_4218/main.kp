@@ -2,12 +2,27 @@ module main
 
 generated_4218 : Int
 let generated_4218 =
-    block
-        type RankedAlias = Int
-
-        let aliased : RankedAlias = ((((((0 + ((if True then ((left = (0 + 0), right = 0)).left else 0) + 0)) + 0) + 0) + 0) + 0) + 0)
-
-        (aliased + 1)
+    match (((match [(match (0 == 0)
+      case True -> 0
+      case False -> 0), ((match (0 == 0)
+      case True -> 0
+      case False -> 0) + 1)]
+      case head :: tail -> head
+      case Nil -> 0) + 0) == ((match [(match (0 == 0)
+      case True -> 0
+      case False -> 0), ((match (0 == 0)
+      case True -> 0
+      case False -> 0) + 1)]
+      case head :: tail -> head
+      case Nil -> 0) + 0))
+      case True -> ((match [(match (0 == 0)
+        case True -> 0
+        case False -> 0), ((match (0 == 0)
+        case True -> 0
+        case False -> 0) + 1)]
+        case head :: tail -> head
+        case Nil -> 0) + 0)
+      case False -> 0
 
 result : Int
 let result = generated_4218

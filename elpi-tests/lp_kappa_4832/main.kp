@@ -1,7 +1,14 @@
 module main
 
+generatedUseWidth : (width : Int) -> Int
+let generatedUseWidth width = width
+
 generated_4832 : Int
-let generated_4832 = (((((0 + (((if True then ((if False then 0 else 0) + (0 + 0)) else 0) + 0) + 0)) + 0) + 0) + 0) + 0)
+let generated_4832 =
+    block
+        let width = (((\(n : Int) -> n) ((Some (0 + 1)) ?: (0 + 2))) + 0)
+
+        generatedUseWidth { width }
 
 result : Int
 let result = generated_4832
@@ -9,4 +16,4 @@ let result = generated_4832
 --! assertNoErrors
 --! assertType generated_4832 Int
 --! assertType result Int
---! assertDeclKinds signature, let, signature, let
+--! assertDeclKinds signature, let, signature, let, signature, let

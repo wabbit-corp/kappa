@@ -1,15 +1,42 @@
 module main
 
-generated_3516 : IO Int
+generated_3516 : Int
 let generated_3516 =
-    do
-        value <- pure ((((((0 + (((((left = (0 + 0), right = 0)).left + 0) + 0) + 0)) + 0) + 0) + 0) + 0) + 0)
-        pure (value + 2)
+    match (((block
+        generatedListLength : List Int -> Int
+        let generatedListLength xs decreases structural xs =
+            match xs
+              case Nil -> 0
+              case _ :: tail -> 1 + generatedListLength tail
 
-result : IO Int
+        let item = ((\(n : Int) -> n) 0)
+
+        generatedListLength [item, (item + 1), 0]) + 0) == ((block
+        generatedListLength : List Int -> Int
+        let generatedListLength xs decreases structural xs =
+            match xs
+              case Nil -> 0
+              case _ :: tail -> 1 + generatedListLength tail
+
+        let item = ((\(n : Int) -> n) 0)
+
+        generatedListLength [item, (item + 1), 0]) + 0))
+      case True -> ((block
+          generatedListLength : List Int -> Int
+          let generatedListLength xs decreases structural xs =
+              match xs
+                case Nil -> 0
+                case _ :: tail -> 1 + generatedListLength tail
+
+          let item = ((\(n : Int) -> n) 0)
+
+          generatedListLength [item, (item + 1), 0]) + 0)
+      case False -> 0
+
+result : Int
 let result = generated_3516
 
 --! assertNoErrors
---! assertType generated_3516 IO Int
---! assertType result IO Int
+--! assertType generated_3516 Int
+--! assertType result Int
 --! assertDeclKinds signature, let, signature, let

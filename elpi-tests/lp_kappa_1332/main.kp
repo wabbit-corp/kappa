@@ -1,12 +1,49 @@
 module main
 
-generated_1332 : Unit
-let generated_1332 = (if True then (if True then (if True then ((\(u : Unit) -> ()) ((\(u : Unit) -> ()) ())) else ()) else ()) else ())
+generated_1332 : Int
+let generated_1332 =
+    block
+        scoped effect Choice =
+            ω choose : Unit -> Bool
 
-result : Unit
+        let seed = (match [(block
+            generatedSetCount : Set Int -> Int
+            let generatedSetCount values = 2
+
+            let item = 0
+            let values = {|item, (item + 1)|}
+
+            generatedSetCount values), ((block
+            generatedSetCount : Set Int -> Int
+            let generatedSetCount values = 2
+
+            let item = 0
+            let values = {|item, (item + 1)|}
+
+            generatedSetCount values) + 1)]
+          case head :: tail -> head
+          case Nil -> 0)
+
+        let comp : Eff <[Choice : Choice]> Int =
+            do
+                let b <- Choice.choose ()
+                if b then seed else (seed + 1)
+
+        let handled : Eff <[ ]> Int =
+            deep handle Choice comp with
+                case return x -> pure x
+                case choose () k ->
+                    do
+                        let a <- k True
+                        let b <- k False
+                        pure (a + b)
+
+        runPure handled
+
+result : Int
 let result = generated_1332
 
 --! assertNoErrors
---! assertType generated_1332 Unit
---! assertType result Unit
+--! assertType generated_1332 Int
+--! assertType result Int
 --! assertDeclKinds signature, let, signature, let

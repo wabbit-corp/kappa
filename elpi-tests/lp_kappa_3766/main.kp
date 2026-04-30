@@ -1,15 +1,12 @@
 module main
 
-generated_3766 : Int
-let generated_3766 =
-    match (((((((0 + ((0 + ((if False then 0 else 0) + 0)) + 0)) + 0) + 0) + 0) + 0) + 0) == ((((((0 + ((0 + ((if False then 0 else 0) + 0)) + 0)) + 0) + 0) + 0) + 0) + 0))
-      case True -> ((((((0 + ((0 + ((if False then 0 else 0) + 0)) + 0)) + 0) + 0) + 0) + 0) + 0)
-      case False -> 0
+generated_3766 : Unit
+let generated_3766 = (if True then (if True then (if True then ((\(u : Unit) -> if False then () else u) (if (True && True) then () else ())) else ()) else ()) else ())
 
-result : Int
+result : Unit
 let result = generated_3766
 
 --! assertNoErrors
---! assertType generated_3766 Int
---! assertType result Int
+--! assertType generated_3766 Unit
+--! assertType result Unit
 --! assertDeclKinds signature, let, signature, let

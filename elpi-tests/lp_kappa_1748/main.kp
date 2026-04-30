@@ -1,15 +1,25 @@
 module main
 
-generated_1748 : IO Int
+generated_1748 : Int
 let generated_1748 =
-    do
-        value <- pure (((((((((if True then ((if False then 0 else 0) + (0 + 0)) else 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0)
-        pure (value + 2)
+    block
+        let (captured : Int) = ((match (Some (block
+            generatedMapCount : Map String Int -> Int
+            let generatedMapCount values = 1
 
-result : IO Int
+            let item = 0
+            let values = { yield "item" : item }
+
+            generatedMapCount values))
+          case Some payload -> payload
+          case None -> 0) + 0)
+
+        captured
+
+result : Int
 let result = generated_1748
 
 --! assertNoErrors
---! assertType generated_1748 IO Int
---! assertType result IO Int
+--! assertType generated_1748 Int
+--! assertType result Int
 --! assertDeclKinds signature, let, signature, let

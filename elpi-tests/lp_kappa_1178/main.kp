@@ -1,12 +1,31 @@
 module main
 
-generated_1178 : Map String Int
-let generated_1178 = { for x in [1, 2, 3], let y = x + 1, yield "k" : (((((((if True then ((Some (x + 0)) ?: 0) else 0) + 0) + 0) + 0) + 0) + 0) + 0) }
+generated_1178 : Int
+let generated_1178 =
+    block
+        ranked : Int
+        let ranked = (block
+            generatedMapCount : Map String Int -> Int
+            let generatedMapCount values = 1
 
-result : Map String Int
+            let item = (block
+                generatedSetCount : Set Int -> Int
+                let generatedSetCount values = 2
+
+                let item = 0
+                let values = {|item, (item + 1)|}
+
+                generatedSetCount values)
+            let values = { yield "item" : item }
+
+            generatedMapCount values)
+
+        (ranked + 0)
+
+result : Int
 let result = generated_1178
 
 --! assertNoErrors
---! assertType generated_1178 Map String Int
---! assertType result Map String Int
+--! assertType generated_1178 Int
+--! assertType result Int
 --! assertDeclKinds signature, let, signature, let

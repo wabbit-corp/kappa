@@ -1,12 +1,32 @@
 module main
 
-generated_693 : List Int
-let generated_693 = [ for x in [1, 2, 3], let y = x + 1, if y > 0, yield (((((((0 + (((if True then x else 0) + 0) + 0)) + 0) + 0) + 0) + 0) + 0) + 0) ]
+generated_693 : Int
+let generated_693 =
+    let
+        ranked : Int = (block
+            generatedMapCount : Map String Int -> Int
+            let generatedMapCount values = 1
 
-result : List Int
+            let item = (block
+                generatedListLength : List Int -> Int
+                let generatedListLength xs decreases structural xs =
+                    match xs
+                      case Nil -> 0
+                      case _ :: tail -> 1 + generatedListLength tail
+
+                let item = 0
+
+                generatedListLength [item, (item + 1), 0])
+            let values = { yield "item" : item }
+
+            generatedMapCount values)
+in
+        (ranked + 0)
+
+result : Int
 let result = generated_693
 
 --! assertNoErrors
---! assertType generated_693 List Int
---! assertType result List Int
+--! assertType generated_693 Int
+--! assertType result Int
 --! assertDeclKinds signature, let, signature, let

@@ -1,13 +1,22 @@
 module main
 
+generatedUseWidth : (width : Int) -> Int
+let generatedUseWidth width = width
+
 generated_2348 : Int
 let generated_2348 =
     block
-        type RankedAlias = Int
+        let width = ((block
+            let pair = (x = (match (Some 0)
+              case Some payload -> payload
+              case None -> 0), y = ((match (Some 0)
+              case Some payload -> payload
+              case None -> 0) + 1))
+            let (x = captured, y = other) = pair
 
-        let aliased : RankedAlias = (((((((((left = ((if True then 0 else 0) + 0), right = 0)).left + 0) + 0) + 0) + 0) + 0) + 0) + 0)
+            (captured + other)) + 0)
 
-        (aliased + 1)
+        generatedUseWidth { width }
 
 result : Int
 let result = generated_2348
@@ -15,4 +24,4 @@ let result = generated_2348
 --! assertNoErrors
 --! assertType generated_2348 Int
 --! assertType result Int
---! assertDeclKinds signature, let, signature, let
+--! assertDeclKinds signature, let, signature, let, signature, let

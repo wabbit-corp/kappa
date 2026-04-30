@@ -1,15 +1,43 @@
 module main
 
-generated_1219 : IO Int
+generated_1219 : Int
 let generated_1219 =
-    do
-        let staged = ((((((((if False then 0 else 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0)
-        pure (staged + 1)
+    block
+        scoped effect State (s : Type) =
+            get : Unit -> s
 
-result : IO Int
+        let seed = (block
+            generatedMapCount : Map String Int -> Int
+            let generatedMapCount values = 1
+
+            let item = (block
+                generatedSetCount : Set Int -> Int
+                let generatedSetCount values = 2
+
+                let item = 0
+                let values = {|item, (item + 1)|}
+
+                generatedSetCount values)
+            let values = { yield "item" : item }
+
+            generatedMapCount values)
+
+        let comp : Eff <[State : State Int]> Int =
+            do
+                let n <- State.get ()
+                n
+
+        let handled : Eff <[ ]> Int =
+            deep handle State comp with
+                case return x -> pure x
+                case get () k -> k seed
+
+        runPure handled
+
+result : Int
 let result = generated_1219
 
 --! assertNoErrors
---! assertType generated_1219 IO Int
---! assertType result IO Int
+--! assertType generated_1219 Int
+--! assertType result Int
 --! assertDeclKinds signature, let, signature, let

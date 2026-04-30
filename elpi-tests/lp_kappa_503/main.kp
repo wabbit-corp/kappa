@@ -3,10 +3,15 @@ module main
 generated_503 : Int
 let generated_503 =
     block
-        let pair = (x = (((((((((((Some (0 + 0)) ?: 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0), y = (((((((((((Some (0 + 0)) ?: 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0) + 1))
-        let (x = captured, y = other) = pair
+        data RankedBox : Type =
+            RankedBox (value : Int)
 
-        (captured + other)
+        let boxed = RankedBox ((match (0 == 0)
+          case True -> 0
+          case False -> 0) + 0)
+
+        match boxed
+          case RankedBox value -> (value + 1)
 
 result : Int
 let result = generated_503

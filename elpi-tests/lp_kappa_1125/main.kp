@@ -2,14 +2,24 @@ module main
 
 generated_1125 : Int
 let generated_1125 =
-    block
-        data RankedBox : Type =
-            RankedBox (value : Int)
+    let
+        ranked : Int = (block
+            generatedSetCount : Set Int -> Int
+            let generatedSetCount values = 2
 
-        let boxed = RankedBox ((((((((if True then ((left = (0 + 0), right = 0)).left else 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0)
+            let item = (block
+                generatedSetCount : Set Int -> Int
+                let generatedSetCount values = 2
 
-        match boxed
-          case RankedBox value -> (value + 1)
+                let item = 0
+                let values = {|item, (item + 1)|}
+
+                generatedSetCount values)
+            let values = {|item, (item + 1)|}
+
+            generatedSetCount values)
+in
+        (ranked + 0)
 
 result : Int
 let result = generated_1125

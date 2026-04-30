@@ -1,14 +1,22 @@
 module main
 
-type GeneratedPair = (left : Int, right : Int)
+generatedNeed : (@x : Int) -> Int
+let generatedNeed (@x : Int) = x
 
-generated_4608 : GeneratedPair
-let generated_4608 = ((left = (((((0 + ((if False then 0 else ((Some (0 + 0)) ?: 0)) + 0)) + 0) + 0) + 0) + 0), right = 0)).{ right = ((((((0 + ((if False then 0 else ((Some (0 + 0)) ?: 0)) + 0)) + 0) + 0) + 0) + 0) + 1) }
+generated_4608 : Int
+let generated_4608 = generatedNeed @(((block
+    generatedMapCount : Map String Int -> Int
+    let generatedMapCount values = 1
 
-result : GeneratedPair
+    let item = ((Some (0 + 1)) ?: (0 + 2))
+    let values = { yield "item" : item }
+
+    generatedMapCount values) + 0))
+
+result : Int
 let result = generated_4608
 
 --! assertNoErrors
---! assertType generated_4608 GeneratedPair
---! assertType result GeneratedPair
---! assertDeclKinds type, signature, let, signature, let
+--! assertType generated_4608 Int
+--! assertType result Int
+--! assertDeclKinds signature, let, signature, let, signature, let

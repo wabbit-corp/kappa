@@ -1,12 +1,15 @@
 module main
 
-generated_565 : Set Int
-let generated_565 = {| for x in [1, 2, 3], let y = x + 1, if y > 0, yield (((((((0 + (((x + 0) + 0) + 0)) + 0) + 0) + 0) + 0) + 0) + 0) |}
+generatedMakeConst : forall (a : Type). a -> Unit -> a
+let generatedMakeConst value = \() -> value
 
-result : Set Int
+generated_565 : Int
+let generated_565 = ((generatedMakeConst @Int (((Some (0 + 1)) ?: (0 + 2)) + 0)) ())
+
+result : Int
 let result = generated_565
 
 --! assertNoErrors
---! assertType generated_565 Set Int
---! assertType result Set Int
---! assertDeclKinds signature, let, signature, let
+--! assertType generated_565 Int
+--! assertType result Int
+--! assertDeclKinds signature, let, signature, let, signature, let

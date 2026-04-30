@@ -1,12 +1,18 @@
 module main
 
-generated_4224 : Option Int
-let generated_4224 = (if True then (if True then (if False then None else (if (((if (False || True) then (Some (0 + 0)) else (Some (1 + 1))) ?: 0) == 0) then (if (False || True) then (Some (0 + 0)) else (Some (1 + 1))) else None)) else None) else None)
+generated_4224 : List Int
+let generated_4224 = [ yield ((match [(match (0 == 0)
+  case True -> 0
+  case False -> 0), ((match (0 == 0)
+  case True -> 0
+  case False -> 0) + 1)]
+  case head :: tail -> head
+  case Nil -> 0) + 0) ]
 
-result : Option Int
+result : List Int
 let result = generated_4224
 
 --! assertNoErrors
---! assertType generated_4224 Option Int
---! assertType result Option Int
+--! assertType generated_4224 List Int
+--! assertType result List Int
 --! assertDeclKinds signature, let, signature, let

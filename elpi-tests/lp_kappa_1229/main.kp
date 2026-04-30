@@ -1,12 +1,14 @@
 module main
 
-generated_1229 : Bool
-let generated_1229 = (if (if (if ((if True then True else False) || False) then True else False) then True else False) then True else False)
+type GeneratedTuple = (Int, Int)
 
-result : Bool
+generated_1229 : GeneratedTuple
+let generated_1229 = (if True then (if True then (if True then (if False then (0, (0 + 0)) else (if (False || True) then (0, (0 + 0)) else ((2 + 2), 2))) else (0, (0 + 0))) else (0, (0 + 0))) else (0, (0 + 0)))
+
+result : GeneratedTuple
 let result = generated_1229
 
 --! assertNoErrors
---! assertType generated_1229 Bool
---! assertType result Bool
---! assertDeclKinds signature, let, signature, let
+--! assertType generated_1229 GeneratedTuple
+--! assertType result GeneratedTuple
+--! assertDeclKinds type, signature, let, signature, let

@@ -1,14 +1,44 @@
 module main
 
-type GeneratedTuple = (Int, Int)
+generated_4971 : Int
+let generated_4971 =
+    block
+        rankedHelper : (Int -> Int)
+        let rankedHelper x = x + 1
 
-generated_4971 : GeneratedTuple
-let generated_4971 = (if True then (if True then (if False then (0, (0 + 0)) else (if (True && True) then (0, (0 + 0)) else ((1 + 1), 1))) else (0, (0 + 0))) else (0, (0 + 0)))
+        rankedHelper ((block
+            generatedListLength : List Int -> Int
+            let generatedListLength xs decreases structural xs =
+                match xs
+                  case Nil -> 0
+                  case _ :: tail -> 1 + generatedListLength tail
 
-result : GeneratedTuple
+            let item = (block
+                generatedListLength : List Int -> Int
+                let generatedListLength xs decreases structural xs =
+                    match xs
+                      case Nil -> 0
+                      case _ :: tail -> 1 + generatedListLength tail
+
+                let item = (block
+                    generatedListLength : List Int -> Int
+                    let generatedListLength xs decreases structural xs =
+                        match xs
+                          case Nil -> 0
+                          case _ :: tail -> 1 + generatedListLength tail
+
+                    let item = 0
+
+                    generatedListLength [item, (item + 1), 0])
+
+                generatedListLength [item, (item + 1), 0])
+
+            generatedListLength [item, (item + 1), 0]) + 0)
+
+result : Int
 let result = generated_4971
 
 --! assertNoErrors
---! assertType generated_4971 GeneratedTuple
---! assertType result GeneratedTuple
---! assertDeclKinds type, signature, let, signature, let
+--! assertType generated_4971 Int
+--! assertType result Int
+--! assertDeclKinds signature, let, signature, let

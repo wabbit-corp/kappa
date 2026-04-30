@@ -1,12 +1,33 @@
 module main
 
-generated_2924 : Map String Int
-let generated_2924 = { yield "only" : (((((((((Some (0 + 0)) ?: 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0) }
+generated_2924 : Int
+let generated_2924 =
+    block
+        let base : (x : Int) = (x = ((match ((match [0, (0 + 1)]
+          case head :: tail -> head
+          case Nil -> 0) == (match [0, (0 + 1)]
+          case head :: tail -> head
+          case Nil -> 0))
+          case True -> (match [0, (0 + 1)]
+            case head :: tail -> head
+            case Nil -> 0)
+          case False -> 0) + 0))
+        let extended = base.{ y := ((match ((match [0, (0 + 1)]
+          case head :: tail -> head
+          case Nil -> 0) == (match [0, (0 + 1)]
+          case head :: tail -> head
+          case Nil -> 0))
+          case True -> (match [0, (0 + 1)]
+            case head :: tail -> head
+            case Nil -> 0)
+          case False -> 0) + 1) }
 
-result : Map String Int
+        (extended.x + extended.y)
+
+result : Int
 let result = generated_2924
 
 --! assertNoErrors
---! assertType generated_2924 Map String Int
---! assertType result Map String Int
+--! assertType generated_2924 Int
+--! assertType result Int
 --! assertDeclKinds signature, let, signature, let

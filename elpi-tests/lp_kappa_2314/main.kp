@@ -1,13 +1,22 @@
 module main
 
+generatedNeed : (@x : Int) -> Int
+let generatedNeed (@x : Int) = x
+
 generated_2314 : Int
 let generated_2314 =
     block
-        type RankedAlias = Int
+        let (@x : Int) = (block
+            let pair = (x = (match (Some 0)
+              case Some payload -> payload
+              case None -> 0), y = ((match (Some 0)
+              case Some payload -> payload
+              case None -> 0) + 1))
+            let (x = captured, y = other) = pair
 
-        let aliased : RankedAlias = (((((((((left = ((0 + (0 + 0)) + 0), right = 0)).left + 0) + 0) + 0) + 0) + 0) + 0) + 0)
+            (captured + other))
 
-        (aliased + 1)
+        if True then generatedNeed else 0
 
 result : Int
 let result = generated_2314
@@ -15,4 +24,4 @@ let result = generated_2314
 --! assertNoErrors
 --! assertType generated_2314 Int
 --! assertType result Int
---! assertDeclKinds signature, let, signature, let
+--! assertDeclKinds signature, let, signature, let, signature, let

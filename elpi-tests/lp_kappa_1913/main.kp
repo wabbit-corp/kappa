@@ -1,12 +1,22 @@
 module main
 
-generated_1913 : (Int -> Int)
-let generated_1913 = \(x : Int) -> ((\(x : Int) -> ((\(x : Int) -> (((if (0 == 0) then \(x : Int) -> ((\(x : Int) -> x) x) else \(x : Int) -> (x + 0))) x)) x)) x)
+generated_1913 : Int
+let generated_1913 =
+    match (Some (((\(n : Int) -> n) (block
+        generatedMapCount : Map String Int -> Int
+        let generatedMapCount values = 1
 
-result : (Int -> Int)
+        let item = 0
+        let values = { yield "item" : item }
+
+        generatedMapCount values)) + 0))
+      case Some payload -> payload
+      case None -> 0
+
+result : Int
 let result = generated_1913
 
 --! assertNoErrors
---! assertType generated_1913 (Int -> Int)
---! assertType result (Int -> Int)
+--! assertType generated_1913 Int
+--! assertType result Int
 --! assertDeclKinds signature, let, signature, let

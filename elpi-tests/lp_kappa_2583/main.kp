@@ -1,12 +1,25 @@
 module main
 
-generated_2583 : Set Int
-let generated_2583 = {| yield (((((((((left = 0, right = (0 + 0))).right + 0) + 0) + 0) + 0) + 0) + 0) + 0) |}
+generated_2583 : Int
+let generated_2583 =
+    let
+        ranked : Int = (block
+            generatedSetCount : Set Int -> Int
+            let generatedSetCount values = 2
 
-result : Set Int
+            let item = (match [0, (0 + 1)]
+              case head :: tail -> head
+              case Nil -> 0)
+            let values = {|item, (item + 1)|}
+
+            generatedSetCount values)
+in
+        (ranked + 0)
+
+result : Int
 let result = generated_2583
 
 --! assertNoErrors
---! assertType generated_2583 Set Int
---! assertType result Set Int
+--! assertType generated_2583 Int
+--! assertType result Int
 --! assertDeclKinds signature, let, signature, let

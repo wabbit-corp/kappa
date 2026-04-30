@@ -1,12 +1,29 @@
 module main
 
-generated_686 : Unit
-let generated_686 = (if True then (if True then (if True then (if False then () else (if (True && True) then () else ())) else ()) else ()) else ())
+generated_686 : Int
+let generated_686 =
+    block
+        generatedMapCount : Map String Int -> Int
+        let generatedMapCount values = 1
 
-result : Unit
+        let item = (block
+            generatedListLength : List Int -> Int
+            let generatedListLength xs decreases structural xs =
+                match xs
+                  case Nil -> 0
+                  case _ :: tail -> 1 + generatedListLength tail
+
+            let item = 0
+
+            generatedListLength [item, (item + 1), 0])
+        let values = { yield "item" : item }
+
+        generatedMapCount values
+
+result : Int
 let result = generated_686
 
 --! assertNoErrors
---! assertType generated_686 Unit
---! assertType result Unit
+--! assertType generated_686 Int
+--! assertType result Int
 --! assertDeclKinds signature, let, signature, let

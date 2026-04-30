@@ -1,12 +1,27 @@
 module main
 
-generated_2558 : Option Int
-let generated_2558 = (if True then (if True then (if True then (if (False || True) then (Some (0 + 0)) else (Some (1 + 1))) else None) else None) else None)
+generated_2558 : Int
+let generated_2558 =
+    block
+        let (captured : Int) = ((block
+            generatedListLength : List Int -> Int
+            let generatedListLength xs decreases structural xs =
+                match xs
+                  case Nil -> 0
+                  case _ :: tail -> 1 + generatedListLength tail
 
-result : Option Int
+            let item = (match [0, (0 + 1)]
+              case head :: tail -> head
+              case Nil -> 0)
+
+            generatedListLength [item, (item + 1), 0]) + 0)
+
+        captured
+
+result : Int
 let result = generated_2558
 
 --! assertNoErrors
---! assertType generated_2558 Option Int
---! assertType result Option Int
+--! assertType generated_2558 Int
+--! assertType result Int
 --! assertDeclKinds signature, let, signature, let

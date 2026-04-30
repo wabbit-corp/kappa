@@ -1,12 +1,30 @@
 module main
 
-generated_3304 : Unit
-let generated_3304 = (if True then (if True then (if False then () else (if True then (if True then () else ()) else ())) else ()) else ())
+generatedNeed : (@x : Int) -> Int
+let generatedNeed (@x : Int) = x
 
-result : Unit
+generated_3304 : IO Int
+let generated_3304 =
+    do
+        let (@x : Int) = ((block
+            let pair = (x = (block
+                let pair = (x = 0, y = (0 + 1))
+                let (x = captured, y = other) = pair
+
+                (captured + other)), y = ((block
+                let pair = (x = 0, y = (0 + 1))
+                let (x = captured, y = other) = pair
+
+                (captured + other)) + 1))
+            let (x = captured, y = other) = pair
+
+            (captured + other)) + 0)
+        pure generatedNeed
+
+result : IO Int
 let result = generated_3304
 
 --! assertNoErrors
---! assertType generated_3304 Unit
---! assertType result Unit
---! assertDeclKinds signature, let, signature, let
+--! assertType generated_3304 IO Int
+--! assertType result IO Int
+--! assertDeclKinds signature, let, signature, let, signature, let

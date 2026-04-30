@@ -1,10 +1,24 @@
 module main
 
-generatedMakeConst : forall (a : Type). a -> Unit -> a
-let generatedMakeConst value = \() -> value
-
 generated_462 : Int
-let generated_462 = ((generatedMakeConst (((((((((((left = 0, right = (0 + 0))).right + 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0)) ())
+let generated_462 =
+    block
+        scoped effect Ask =
+            ask : Unit -> Bool
+
+        let seed = ((\(n : Int) -> n) 0)
+
+        let comp : Eff <[Ask : Ask]> Int =
+            do
+                let b <- Ask.ask ()
+                if b then seed else (seed + 1)
+
+        let handled : Eff <[ ]> Int =
+            deep handle Ask comp with
+                case return x -> pure x
+                case ask () k -> k True
+
+        runPure handled
 
 result : Int
 let result = generated_462
@@ -12,4 +26,4 @@ let result = generated_462
 --! assertNoErrors
 --! assertType generated_462 Int
 --! assertType result Int
---! assertDeclKinds signature, let, signature, let, signature, let
+--! assertDeclKinds signature, let, signature, let

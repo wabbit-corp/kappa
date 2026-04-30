@@ -1,12 +1,34 @@
 module main
 
-generated_1096 : Option Int
-let generated_1096 = (if True then (if True then (if True then (if (((if (((Some (0 + 0)) ?: 0) == 1) then (Some (((Some (0 + 0)) ?: 0) + 0)) else (Some (0 + 0))) ?: 0) == 0) then (if (((Some (0 + 0)) ?: 0) == 1) then (Some (((Some (0 + 0)) ?: 0) + 0)) else (Some (0 + 0))) else None) else None) else None) else None)
+generated_1096 : Int
+let generated_1096 =
+    block
+        type RankedAlias = Int
 
-result : Option Int
+        let aliased : RankedAlias = ((block
+            generatedListLength : List Int -> Int
+            let generatedListLength xs decreases structural xs =
+                match xs
+                  case Nil -> 0
+                  case _ :: tail -> 1 + generatedListLength tail
+
+            let item = (block
+                generatedSetCount : Set Int -> Int
+                let generatedSetCount values = 2
+
+                let item = 0
+                let values = {|item, (item + 1)|}
+
+                generatedSetCount values)
+
+            generatedListLength [item, (item + 1), 0]) + 0)
+
+        (aliased + 1)
+
+result : Int
 let result = generated_1096
 
 --! assertNoErrors
---! assertType generated_1096 Option Int
---! assertType result Option Int
+--! assertType generated_1096 Int
+--! assertType result Int
 --! assertDeclKinds signature, let, signature, let

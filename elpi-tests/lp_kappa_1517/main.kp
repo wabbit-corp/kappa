@@ -1,12 +1,12 @@
 module main
 
-generated_1517 : Set Int
-let generated_1517 = {| for x in [1, 2, 3], let y = x + 1, if y > 0, yield (((((((if False then 0 else ((Some (x + 0)) ?: 0)) + 0) + 0) + 0) + 0) + 0) + 0) |}
+generated_1517 : String
+let generated_1517 = (if (if (if (if ((True && False) && False) then True else False) then True else False) then True else False) then #"raw lambda-prolog"# else "fallback")
 
-result : Set Int
+result : String
 let result = generated_1517
 
 --! assertNoErrors
---! assertType generated_1517 Set Int
---! assertType result Set Int
+--! assertType generated_1517 String
+--! assertType result String
 --! assertDeclKinds signature, let, signature, let

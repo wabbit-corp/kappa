@@ -1,19 +1,26 @@
 module main
 
-data GeneratedChoice : Type =
-    GeneratedLeft (value : Int)
-    GeneratedRight
+generated_1513 : Set Int
+let generated_1513 = {| for x in [1, 2, 3], let y = x + 1, if y > 0, yield ((Some ((block
+    generatedSetCount : Set Int -> Int
+    let generatedSetCount values = 2
 
-generated_1513 : Int
-let generated_1513 =
-    match (GeneratedLeft ((((((((if False then 0 else ((Some (0 + 0)) ?: 0)) + 0) + 0) + 0) + 0) + 0) + 0) + 0))
-      case GeneratedLeft payload -> (payload + 0)
-      case GeneratedRight -> ((((((((if False then 0 else ((Some (0 + 0)) ?: 0)) + 0) + 0) + 0) + 0) + 0) + 0) + 0)
+    let item = x
+    let values = {|item, (item + 1)|}
 
-result : Int
+    generatedSetCount values) + 1)) ?: ((block
+    generatedSetCount : Set Int -> Int
+    let generatedSetCount values = 2
+
+    let item = x
+    let values = {|item, (item + 1)|}
+
+    generatedSetCount values) + 2)) |}
+
+result : Set Int
 let result = generated_1513
 
 --! assertNoErrors
---! assertType generated_1513 Int
---! assertType result Int
---! assertDeclKinds data, signature, let, signature, let
+--! assertType generated_1513 Set Int
+--! assertType result Set Int
+--! assertDeclKinds signature, let, signature, let

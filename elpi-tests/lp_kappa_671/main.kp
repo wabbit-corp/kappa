@@ -1,12 +1,31 @@
 module main
 
-generated_671 : String
-let generated_671 = (if (if (if (if (if (True || False) then False else True) then True else False) then True else False) then True else False) then #"raw lambda-prolog"# else "fallback")
+generated_671 : Int
+let generated_671 =
+    match (Some ((block
+        generatedSetCount : Set Int -> Int
+        let generatedSetCount values = 2
 
-result : String
+        let item = (block
+            generatedListLength : List Int -> Int
+            let generatedListLength xs decreases structural xs =
+                match xs
+                  case Nil -> 0
+                  case _ :: tail -> 1 + generatedListLength tail
+
+            let item = 0
+
+            generatedListLength [item, (item + 1), 0])
+        let values = {|item, (item + 1)|}
+
+        generatedSetCount values) + 0))
+      case Some payload -> payload
+      case None -> 0
+
+result : Int
 let result = generated_671
 
 --! assertNoErrors
---! assertType generated_671 String
---! assertType result String
+--! assertType generated_671 Int
+--! assertType result Int
 --! assertDeclKinds signature, let, signature, let

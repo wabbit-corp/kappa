@@ -1,12 +1,26 @@
 module main
 
-generated_2027 : Set Int
-let generated_2027 = {| for x in [1, 2, 3], if x > 0, yield ((((((((if False then 0 else (if False then 0 else x)) + (0 + 0)) + 0) + 0) + 0) + 0) + 0) + 0) |}
+generated_2027 : List Int
+let generated_2027 = [ for x in [1, 2, 3], order by x desc, yield ((Some ((block
+    generatedMapCount : Map String Int -> Int
+    let generatedMapCount values = 1
 
-result : Set Int
+    let item = x
+    let values = { yield "item" : item }
+
+    generatedMapCount values) + 1)) ?: ((block
+    generatedMapCount : Map String Int -> Int
+    let generatedMapCount values = 1
+
+    let item = x
+    let values = { yield "item" : item }
+
+    generatedMapCount values) + 2)) ]
+
+result : List Int
 let result = generated_2027
 
 --! assertNoErrors
---! assertType generated_2027 Set Int
---! assertType result Set Int
+--! assertType generated_2027 List Int
+--! assertType result List Int
 --! assertDeclKinds signature, let, signature, let

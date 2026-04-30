@@ -3,15 +3,38 @@ module main
 generated_1520 : Int
 let generated_1520 =
     block
-        trait RankedScore a =
-            rank : a -> Int
+        let base : (x : Int) = (x = (((Some ((block
+            generatedSetCount : Set Int -> Int
+            let generatedSetCount values = 2
 
-        instance RankedScore Int =
-            let rank x = x
+            let item = 0
+            let values = {|item, (item + 1)|}
 
-        let dict = summon (RankedScore Int)
+            generatedSetCount values) + 1)) ?: ((block
+            generatedSetCount : Set Int -> Int
+            let generatedSetCount values = 2
 
-        dict.rank ((((((((if False then 0 else ((Some (0 + 0)) ?: 0)) + 0) + 0) + 0) + 0) + 0) + 0) + 0)
+            let item = 0
+            let values = {|item, (item + 1)|}
+
+            generatedSetCount values) + 2)) + 0))
+        let extended = base.{ y := (((Some ((block
+            generatedSetCount : Set Int -> Int
+            let generatedSetCount values = 2
+
+            let item = 0
+            let values = {|item, (item + 1)|}
+
+            generatedSetCount values) + 1)) ?: ((block
+            generatedSetCount : Set Int -> Int
+            let generatedSetCount values = 2
+
+            let item = 0
+            let values = {|item, (item + 1)|}
+
+            generatedSetCount values) + 2)) + 1) }
+
+        (extended.x + extended.y)
 
 result : Int
 let result = generated_1520

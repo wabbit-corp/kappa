@@ -1,12 +1,37 @@
 module main
 
-generated_875 : String
-let generated_875 = (if (if (if (if (True && False) then True else False) then True else False) then True else False) then #"raw lambda-prolog"# else "fallback")
+generatedEcho : forall (a : Type). (this x : a) -> a
+let generatedEcho @a (this x : a) = x
 
-result : String
+generated_875 : Int
+let generated_875 = ((.generatedEcho) ((block
+    let pair = (x = (block
+        generatedListLength : List Int -> Int
+        let generatedListLength xs decreases structural xs =
+            match xs
+              case Nil -> 0
+              case _ :: tail -> 1 + generatedListLength tail
+
+        let item = 0
+
+        generatedListLength [item, (item + 1), 0]), y = ((block
+        generatedListLength : List Int -> Int
+        let generatedListLength xs decreases structural xs =
+            match xs
+              case Nil -> 0
+              case _ :: tail -> 1 + generatedListLength tail
+
+        let item = 0
+
+        generatedListLength [item, (item + 1), 0]) + 1))
+    let (x = captured, y = other) = pair
+
+    (captured + other)) + 0))
+
+result : Int
 let result = generated_875
 
 --! assertNoErrors
---! assertType generated_875 String
---! assertType result String
---! assertDeclKinds signature, let, signature, let
+--! assertType generated_875 Int
+--! assertType result Int
+--! assertDeclKinds signature, let, signature, let, signature, let

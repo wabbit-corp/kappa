@@ -1,12 +1,12 @@
 module main
 
-generated_1500 : Int
-let generated_1500 = (((((((if False then 0 else ((Some (0 + 0)) ?: 0)) + 0) + 0) + 0) + 0) + 0) + 0)
+generated_1500 : Option Int
+let generated_1500 = (if True then (if True then (if True then (if (((if (((Some (0 + 0)) ?: 0) == 0) then (Some (0 + 0)) else None) ?: 0) == 0) then (if (((Some (0 + 0)) ?: 0) == 0) then (Some (0 + 0)) else None) else None) else None) else None) else None)
 
-result : Int
+result : Option Int
 let result = generated_1500
 
 --! assertNoErrors
---! assertType generated_1500 Int
---! assertType result Int
+--! assertType generated_1500 Option Int
+--! assertType result Option Int
 --! assertDeclKinds signature, let, signature, let

@@ -1,10 +1,14 @@
 module main
 
-generatedEcho : forall (a : Type). (this x : a) -> a
-let generatedEcho @a (this x : a) = x
+generatedUseWidth : (width : Int) -> Int
+let generatedUseWidth width = width
 
 generated_458 : Int
-let generated_458 = (((((((((((left = 0, right = (0 + 0))).right + 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0).generatedEcho
+let generated_458 =
+    block
+        let width = (((\(n : Int) -> n) 0) + 0)
+
+        generatedUseWidth { width }
 
 result : Int
 let result = generated_458

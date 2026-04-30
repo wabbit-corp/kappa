@@ -1,12 +1,19 @@
 module main
 
-generated_175 : Bool
-let generated_175 = (if (if (if (if True then True else False) then True else False) then True else False) then True else False)
+generated_175 : Set Int
+let generated_175 = {| yield ((block
+    generatedSetCount : Set Int -> Int
+    let generatedSetCount values = 2
 
-result : Bool
+    let item = 0
+    let values = {|item, (item + 1)|}
+
+    generatedSetCount values) + 0) |}
+
+result : Set Int
 let result = generated_175
 
 --! assertNoErrors
---! assertType generated_175 Bool
---! assertType result Bool
+--! assertType generated_175 Set Int
+--! assertType result Set Int
 --! assertDeclKinds signature, let, signature, let

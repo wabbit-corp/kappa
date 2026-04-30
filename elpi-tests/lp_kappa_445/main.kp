@@ -1,20 +1,12 @@
 module main
 
-generated_445 : Int
-let generated_445 =
-    block
-        data RankedBox : Type =
-            RankedBox (value : Int)
+generated_445 : Set Int
+let generated_445 = {| yield (((\(n : Int) -> n) 0) + 0) |}
 
-        let boxed = RankedBox (((((((((((left = (0 + 0), right = 0)).left + 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0)
-
-        match boxed
-          case RankedBox value -> (value + 1)
-
-result : Int
+result : Set Int
 let result = generated_445
 
 --! assertNoErrors
---! assertType generated_445 Int
---! assertType result Int
+--! assertType generated_445 Set Int
+--! assertType result Set Int
 --! assertDeclKinds signature, let, signature, let

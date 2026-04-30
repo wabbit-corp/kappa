@@ -1,12 +1,19 @@
 module main
 
-generated_4701 : (Int -> Int)
-let generated_4701 = \(x : Int) -> ((\(x : Int) -> ((\(x : Int) -> ((((if False then \(x : Int) -> x else \(x : Int) -> (((\(x : Int) -> x) x) + 0))) x) + 0)) x)) x)
+generated_4701 : Int
+let generated_4701 =
+    block
+        rankedHelper : (Int -> Int)
+        let rankedHelper x = x + 1
 
-result : (Int -> Int)
+        rankedHelper ((match [((Some (0 + 1)) ?: (0 + 2)), (((Some (0 + 1)) ?: (0 + 2)) + 1)]
+          case head :: tail -> head
+          case Nil -> 0) + 0)
+
+result : Int
 let result = generated_4701
 
 --! assertNoErrors
---! assertType generated_4701 (Int -> Int)
---! assertType result (Int -> Int)
+--! assertType generated_4701 Int
+--! assertType result Int
 --! assertDeclKinds signature, let, signature, let

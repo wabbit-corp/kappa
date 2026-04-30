@@ -1,18 +1,19 @@
 module main
 
-generatedNeed : (@x : Int) -> Int
-let generatedNeed (@x : Int) = x
-
-generated_2852 : IO Int
+generated_2852 : Int
 let generated_2852 =
-    do
-        let (@x : Int) = (((((((((left = 0, right = (((left = 0, right = (0 + 0))).right + 0))).right + 0) + 0) + 0) + 0) + 0) + 0) + 0)
-        pure generatedNeed
+    block
+        ranked : Int
+        let ranked = ((\(n : Int) -> n) (match [0, (0 + 1)]
+          case head :: tail -> head
+          case Nil -> 0))
 
-result : IO Int
+        (ranked + 0)
+
+result : Int
 let result = generated_2852
 
 --! assertNoErrors
---! assertType generated_2852 IO Int
---! assertType result IO Int
---! assertDeclKinds signature, let, signature, let, signature, let
+--! assertType generated_2852 Int
+--! assertType result Int
+--! assertDeclKinds signature, let, signature, let

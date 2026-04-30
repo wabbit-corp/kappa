@@ -1,12 +1,27 @@
 module main
 
-generated_2116 : Option Int
-let generated_2116 = (if True then (if True then (if True then (if (((if (((Some (0 + 0)) ?: 0) == 1) then (Some (((Some (0 + 0)) ?: 0) + 0)) else (Some (0 + 0))) ?: 0) == 0) then (Some ((if (((Some (0 + 0)) ?: 0) == 1) then (Some (((Some (0 + 0)) ?: 0) + 0)) else (Some (0 + 0))) ?: 0)) else None) else None) else None) else None)
+generatedNeed : (@x : Int) -> Int
+let generatedNeed (@x : Int) = x
 
-result : Option Int
+generated_2116 : IO Int
+let generated_2116 =
+    do
+        let (@x : Int) = ((block
+            generatedSetCount : Set Int -> Int
+            let generatedSetCount values = 2
+
+            let item = (match (Some 0)
+              case Some payload -> payload
+              case None -> 0)
+            let values = {|item, (item + 1)|}
+
+            generatedSetCount values) + 0)
+        pure generatedNeed
+
+result : IO Int
 let result = generated_2116
 
 --! assertNoErrors
---! assertType generated_2116 Option Int
---! assertType result Option Int
---! assertDeclKinds signature, let, signature, let
+--! assertType generated_2116 IO Int
+--! assertType result IO Int
+--! assertDeclKinds signature, let, signature, let, signature, let

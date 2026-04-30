@@ -3,7 +3,15 @@ module main
 generated_2817 : IO Int
 let generated_2817 =
     do
-        let staged = (((((((((left = 0, right = (((left = (0 + 0), right = 0)).left + 0))).right + 0) + 0) + 0) + 0) + 0) + 0) + 0)
+        let staged = ((block
+            let pair = (x = (match [0, (0 + 1)]
+              case head :: tail -> head
+              case Nil -> 0), y = ((match [0, (0 + 1)]
+              case head :: tail -> head
+              case Nil -> 0) + 1))
+            let (x = captured, y = other) = pair
+
+            (captured + other)) + 0)
         pure (staged + 1)
 
 result : IO Int

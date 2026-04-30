@@ -1,12 +1,24 @@
 module main
 
-generated_1747 : List Int
-let generated_1747 = [ for x in [1, 2, 3], if x > 0, yield ((((((((if True then ((if False then 0 else x) + (0 + 0)) else 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0) ]
+generatedEcho : forall (a : Type). (this x : a) -> a
+let generatedEcho @a (this x : a) = x
 
-result : List Int
+generated_1747 : Option Int
+let generated_1747 = (Some ((match (Some (block
+    generatedMapCount : Map String Int -> Int
+    let generatedMapCount values = 1
+
+    let item = 0
+    let values = { yield "item" : item }
+
+    generatedMapCount values))
+  case Some payload -> payload
+  case None -> 0) + 0))?.generatedEcho
+
+result : Option Int
 let result = generated_1747
 
 --! assertNoErrors
---! assertType generated_1747 List Int
---! assertType result List Int
---! assertDeclKinds signature, let, signature, let
+--! assertType generated_1747 Option Int
+--! assertType result Option Int
+--! assertDeclKinds signature, let, signature, let, signature, let

@@ -1,12 +1,19 @@
 module main
 
-generated_489 : List Int
-let generated_489 = [ for x in [1, 2, 3], let y = x + 1, yield ((((((((((Some (x + 0)) ?: 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0) ]
+generated_489 : Int
+let generated_489 =
+    block
+        rankedHelper : (Int -> Int)
+        let rankedHelper x = x + 1
 
-result : List Int
+        rankedHelper ((match (0 == 0)
+          case True -> 0
+          case False -> 0) + 0)
+
+result : Int
 let result = generated_489
 
 --! assertNoErrors
---! assertType generated_489 List Int
---! assertType result List Int
+--! assertType generated_489 Int
+--! assertType result Int
 --! assertDeclKinds signature, let, signature, let

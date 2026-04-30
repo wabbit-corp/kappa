@@ -1,15 +1,12 @@
 module main
 
-generated_3120 : Int
-let generated_3120 =
-    match ((((((((((Some (((if False then 0 else 0) + (0 + 0)) + 0)) ?: 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0) == (((((((((Some (((if False then 0 else 0) + (0 + 0)) + 0)) ?: 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0))
-      case True -> (((((((((Some (((if False then 0 else 0) + (0 + 0)) + 0)) ?: 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0)
-      case False -> 0
+generated_3120 : Option Int
+let generated_3120 = (if True then (if True then (if True then (if (((if (((Some (0 + 0)) ?: 0) == 0) then (Some (0 + 0)) else None) ?: 0) == 0) then (Some ((if (((Some (0 + 0)) ?: 0) == 0) then (Some (0 + 0)) else None) ?: 0)) else None) else None) else None) else None)
 
-result : Int
+result : Option Int
 let result = generated_3120
 
 --! assertNoErrors
---! assertType generated_3120 Int
---! assertType result Int
+--! assertType generated_3120 Option Int
+--! assertType result Option Int
 --! assertDeclKinds signature, let, signature, let

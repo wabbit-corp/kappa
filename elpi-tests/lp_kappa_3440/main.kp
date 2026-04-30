@@ -1,12 +1,20 @@
 module main
 
-generated_3440 : Unit
-let generated_3440 = (if True then (if True then (if False then () else (if True then (if (True && True) then () else ()) else ())) else ()) else ())
+generated_3440 : Int
+let generated_3440 = ((Some ((block
+    let pair = (x = 0, y = (0 + 1))
+    let (x = captured, y = other) = pair
 
-result : Unit
+    (captured + other)) + 1)) ?: ((block
+    let pair = (x = 0, y = (0 + 1))
+    let (x = captured, y = other) = pair
+
+    (captured + other)) + 2))
+
+result : Int
 let result = generated_3440
 
 --! assertNoErrors
---! assertType generated_3440 Unit
---! assertType result Unit
+--! assertType generated_3440 Int
+--! assertType result Int
 --! assertDeclKinds signature, let, signature, let

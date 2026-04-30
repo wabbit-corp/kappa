@@ -1,12 +1,31 @@
 module main
 
-generated_1292 : Map String Int
-let generated_1292 = { yield "only" : ((((((((if False then 0 else (0 + (0 + 0))) + 0) + 0) + 0) + 0) + 0) + 0) + 0) }
+generatedEcho : forall (a : Type). (this x : a) -> a
+let generatedEcho @a (this x : a) = x
 
-result : Map String Int
+generated_1292 : Int
+let generated_1292 = ((match [(block
+    generatedSetCount : Set Int -> Int
+    let generatedSetCount values = 2
+
+    let item = 0
+    let values = {|item, (item + 1)|}
+
+    generatedSetCount values), ((block
+    generatedSetCount : Set Int -> Int
+    let generatedSetCount values = 2
+
+    let item = 0
+    let values = {|item, (item + 1)|}
+
+    generatedSetCount values) + 1)]
+  case head :: tail -> head
+  case Nil -> 0) + 0).generatedEcho
+
+result : Int
 let result = generated_1292
 
 --! assertNoErrors
---! assertType generated_1292 Map String Int
---! assertType result Map String Int
---! assertDeclKinds signature, let, signature, let
+--! assertType generated_1292 Int
+--! assertType result Int
+--! assertDeclKinds signature, let, signature, let, signature, let

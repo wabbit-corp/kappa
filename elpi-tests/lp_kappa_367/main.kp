@@ -1,17 +1,12 @@
 module main
 
-generated_367 : Int
-let generated_367 =
-    block
-        let pair = (x = (((((((((((if True then 0 else 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0), y = (((((((((((if True then 0 else 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0) + 1))
-        let (x = captured, y = other) = pair
+generated_367 : (Int -> Int)
+let generated_367 = \(x : Int) -> ((\(x : Int) -> ((\(x : Int) -> ((\(x : Int) -> ((\(x : Int) -> (((\(x : Int) -> x) x) + 0)) x)) x)) x)) x)
 
-        (captured + other)
-
-result : Int
+result : (Int -> Int)
 let result = generated_367
 
 --! assertNoErrors
---! assertType generated_367 Int
---! assertType result Int
+--! assertType generated_367 (Int -> Int)
+--! assertType result (Int -> Int)
 --! assertDeclKinds signature, let, signature, let

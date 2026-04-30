@@ -1,12 +1,22 @@
 module main
 
-generated_212 : Option Int
-let generated_212 = (if True then (if True then (if True then (if True then (if True then (Some (0 + 0)) else None) else None) else None) else None) else None)
+generatedEcho : forall (a : Type). (this x : a) -> a
+let generatedEcho @a (this x : a) = x
 
-result : Option Int
+generated_212 : Int
+let generated_212 = ((block
+    generatedMapCount : Map String Int -> Int
+    let generatedMapCount values = 1
+
+    let item = 0
+    let values = { yield "item" : item }
+
+    generatedMapCount values) + 0).generatedEcho
+
+result : Int
 let result = generated_212
 
 --! assertNoErrors
---! assertType generated_212 Option Int
---! assertType result Option Int
---! assertDeclKinds signature, let, signature, let
+--! assertType generated_212 Int
+--! assertType result Int
+--! assertDeclKinds signature, let, signature, let, signature, let

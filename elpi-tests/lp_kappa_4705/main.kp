@@ -1,12 +1,21 @@
 module main
 
-generated_4705 : List Int
-let generated_4705 = [ for x in [1, 2, 3], let y = x + 1, yield (((((0 + (((if True then (0 + (x + 0)) else 0) + 0) + 0)) + 0) + 0) + 0) + 0) ]
+generated_4705 : Int
+let generated_4705 =
+    block
+        let pair = (x = ((match [((Some (0 + 1)) ?: (0 + 2)), (((Some (0 + 1)) ?: (0 + 2)) + 1)]
+          case head :: tail -> head
+          case Nil -> 0) + 0), y = ((match [((Some (0 + 1)) ?: (0 + 2)), (((Some (0 + 1)) ?: (0 + 2)) + 1)]
+          case head :: tail -> head
+          case Nil -> 0) + 1))
+        let (x = captured, y = other) = pair
 
-result : List Int
+        (captured + other)
+
+result : Int
 let result = generated_4705
 
 --! assertNoErrors
---! assertType generated_4705 List Int
---! assertType result List Int
+--! assertType generated_4705 Int
+--! assertType result Int
 --! assertDeclKinds signature, let, signature, let

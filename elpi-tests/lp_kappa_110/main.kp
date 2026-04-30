@@ -1,12 +1,21 @@
 module main
 
-generated_110 : Option Int
-let generated_110 = (if True then (if True then (Some (0 + 0)) else None) else None)
+generated_110 : Map String Int
+let generated_110 = { for x in [1, 2, 3], let y = x + 1, yield "k" : (block
+    generatedListLength : List Int -> Int
+    let generatedListLength xs decreases structural xs =
+        match xs
+          case Nil -> 0
+          case _ :: tail -> 1 + generatedListLength tail
 
-result : Option Int
+    let item = x
+
+    generatedListLength [item, (item + 1), 0]) }
+
+result : Map String Int
 let result = generated_110
 
 --! assertNoErrors
---! assertType generated_110 Option Int
---! assertType result Option Int
+--! assertType generated_110 Map String Int
+--! assertType result Map String Int
 --! assertDeclKinds signature, let, signature, let

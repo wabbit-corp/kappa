@@ -2,11 +2,31 @@ module main
 
 generated_3156 : Int
 let generated_3156 =
-    block
-        let base : (x : Int) = (x = (((((((((Some (((left = (0 + 0), right = 0)).left + 0)) ?: 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0))
-        let extended = base.{ y := (((((((((Some (((left = (0 + 0), right = 0)).left + 0)) ?: 0) + 0) + 0) + 0) + 0) + 0) + 0) + 1) }
+    match [((block
+        generatedMapCount : Map String Int -> Int
+        let generatedMapCount values = 1
 
-        (extended.x + extended.y)
+        let item = (block
+            let pair = (x = 0, y = (0 + 1))
+            let (x = captured, y = other) = pair
+
+            (captured + other))
+        let values = { yield "item" : item }
+
+        generatedMapCount values) + 0), (((block
+        generatedMapCount : Map String Int -> Int
+        let generatedMapCount values = 1
+
+        let item = (block
+            let pair = (x = 0, y = (0 + 1))
+            let (x = captured, y = other) = pair
+
+            (captured + other))
+        let values = { yield "item" : item }
+
+        generatedMapCount values) + 0) + 1)]
+      case head :: tail -> head
+      case Nil -> 0
 
 result : Int
 let result = generated_3156

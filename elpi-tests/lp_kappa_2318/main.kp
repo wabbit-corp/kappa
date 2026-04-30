@@ -1,12 +1,23 @@
 module main
 
-generated_2318 : Unit
-let generated_2318 = (if True then (if True then (if True then ((\(u : Unit) -> if False then () else u) ((\(u : Unit) -> u) ())) else ()) else ()) else ())
+generatedEcho : forall (a : Type). (this x : a) -> a
+let generatedEcho @a (this x : a) = x
 
-result : Unit
+generated_2318 : Int
+let generated_2318 = ((block
+    let pair = (x = (match (Some 0)
+      case Some payload -> payload
+      case None -> 0), y = ((match (Some 0)
+      case Some payload -> payload
+      case None -> 0) + 1))
+    let (x = captured, y = other) = pair
+
+    (captured + other)) + 0).generatedEcho
+
+result : Int
 let result = generated_2318
 
 --! assertNoErrors
---! assertType generated_2318 Unit
---! assertType result Unit
---! assertDeclKinds signature, let, signature, let
+--! assertType generated_2318 Int
+--! assertType result Int
+--! assertDeclKinds signature, let, signature, let, signature, let

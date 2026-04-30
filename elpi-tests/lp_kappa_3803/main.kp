@@ -1,15 +1,19 @@
 module main
 
-generated_3803 : IO Int
+generated_3803 : Int
 let generated_3803 =
-    do
-        let staged = ((((((0 + ((0 + (((if True then 0 else 0) + 0) + 0)) + 0)) + 0) + 0) + 0) + 0) + 0)
-        pure (staged + 1)
+    match (Some ((block
+        let pair = (x = ((\(n : Int) -> n) 0), y = (((\(n : Int) -> n) 0) + 1))
+        let (x = captured, y = other) = pair
 
-result : IO Int
+        (captured + other)) + 0))
+      case Some payload -> payload
+      case None -> 0
+
+result : Int
 let result = generated_3803
 
 --! assertNoErrors
---! assertType generated_3803 IO Int
---! assertType result IO Int
+--! assertType generated_3803 Int
+--! assertType result Int
 --! assertDeclKinds signature, let, signature, let

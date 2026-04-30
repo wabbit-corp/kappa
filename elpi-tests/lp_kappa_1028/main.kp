@@ -1,12 +1,30 @@
 module main
 
-generated_1028 : Option Int
-let generated_1028 = (if True then (if True then (if True then (if (((Some ((Some (0 + 0)) ?: 0)) ?: 0) == 0) then (Some ((Some (0 + 0)) ?: 0)) else None) else None) else None) else None)
+generated_1028 : Map String Int
+let generated_1028 = { for x in [1, 2, 3], if x > 0, yield "k" : ((Some ((block
+    generatedListLength : List Int -> Int
+    let generatedListLength xs decreases structural xs =
+        match xs
+          case Nil -> 0
+          case _ :: tail -> 1 + generatedListLength tail
 
-result : Option Int
+    let item = x
+
+    generatedListLength [item, (item + 1), 0]) + 1)) ?: ((block
+    generatedListLength : List Int -> Int
+    let generatedListLength xs decreases structural xs =
+        match xs
+          case Nil -> 0
+          case _ :: tail -> 1 + generatedListLength tail
+
+    let item = x
+
+    generatedListLength [item, (item + 1), 0]) + 2)) }
+
+result : Map String Int
 let result = generated_1028
 
 --! assertNoErrors
---! assertType generated_1028 Option Int
---! assertType result Option Int
+--! assertType generated_1028 Map String Int
+--! assertType result Map String Int
 --! assertDeclKinds signature, let, signature, let

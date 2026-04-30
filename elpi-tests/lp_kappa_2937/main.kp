@@ -1,12 +1,33 @@
 module main
 
-generated_2937 : List Int
-let generated_2937 = [ for x in [1, 2, 3], let y = x + 1, yield ((((((((Some (((x + 0) + 0) + 0)) ?: 0) + 0) + 0) + 0) + 0) + 0) + 0) ]
+generated_2937 : Int
+let generated_2937 =
+    block
+        let pair = (x = ((match ((match [0, (0 + 1)]
+          case head :: tail -> head
+          case Nil -> 0) == (match [0, (0 + 1)]
+          case head :: tail -> head
+          case Nil -> 0))
+          case True -> (match [0, (0 + 1)]
+            case head :: tail -> head
+            case Nil -> 0)
+          case False -> 0) + 0), y = ((match ((match [0, (0 + 1)]
+          case head :: tail -> head
+          case Nil -> 0) == (match [0, (0 + 1)]
+          case head :: tail -> head
+          case Nil -> 0))
+          case True -> (match [0, (0 + 1)]
+            case head :: tail -> head
+            case Nil -> 0)
+          case False -> 0) + 1))
+        let whole@(x = captured, y = other) = pair
 
-result : List Int
+        (whole.x + (captured + other))
+
+result : Int
 let result = generated_2937
 
 --! assertNoErrors
---! assertType generated_2937 List Int
---! assertType result List Int
+--! assertType generated_2937 Int
+--! assertType result Int
 --! assertDeclKinds signature, let, signature, let

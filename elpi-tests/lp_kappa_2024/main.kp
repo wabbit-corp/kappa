@@ -1,14 +1,33 @@
 module main
 
-type GeneratedPair = (left : Int, right : Int)
+generatedUseWidth : (width : Int) -> Int
+let generatedUseWidth width = width
 
-generated_2024 : GeneratedPair
-let generated_2024 = ((left = ((((((((if False then 0 else (if False then 0 else 0)) + (0 + 0)) + 0) + 0) + 0) + 0) + 0) + 0), right = 0)).{ right = (((((((((if False then 0 else (if False then 0 else 0)) + (0 + 0)) + 0) + 0) + 0) + 0) + 0) + 0) + 1) }
+generated_2024 : Int
+let generated_2024 =
+    block
+        let width = (((Some ((block
+            generatedMapCount : Map String Int -> Int
+            let generatedMapCount values = 1
 
-result : GeneratedPair
+            let item = 0
+            let values = { yield "item" : item }
+
+            generatedMapCount values) + 1)) ?: ((block
+            generatedMapCount : Map String Int -> Int
+            let generatedMapCount values = 1
+
+            let item = 0
+            let values = { yield "item" : item }
+
+            generatedMapCount values) + 2)) + 0)
+
+        generatedUseWidth { width }
+
+result : Int
 let result = generated_2024
 
 --! assertNoErrors
---! assertType generated_2024 GeneratedPair
---! assertType result GeneratedPair
---! assertDeclKinds type, signature, let, signature, let
+--! assertType generated_2024 Int
+--! assertType result Int
+--! assertDeclKinds signature, let, signature, let, signature, let

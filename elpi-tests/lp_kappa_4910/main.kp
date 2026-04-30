@@ -1,15 +1,15 @@
 module main
 
-generated_4910 : IO Int
-let generated_4910 =
-    do
-        value <- pure ((((((0 + (((if True then ((left = 0, right = (0 + 0))).right else 0) + 0) + 0)) + 0) + 0) + 0) + 0) + 0)
-        pure (value + 2)
+generatedEcho : forall (a : Type). (this x : a) -> a
+let generatedEcho @a (this x : a) = x
 
-result : IO Int
+generated_4910 : Int
+let generated_4910 = (((Some (((Some (0 + 1)) ?: (0 + 2)) + 1)) ?: (((Some (0 + 1)) ?: (0 + 2)) + 2)) + 0).generatedEcho
+
+result : Int
 let result = generated_4910
 
 --! assertNoErrors
---! assertType generated_4910 IO Int
---! assertType result IO Int
---! assertDeclKinds signature, let, signature, let
+--! assertType generated_4910 Int
+--! assertType result Int
+--! assertDeclKinds signature, let, signature, let, signature, let

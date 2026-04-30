@@ -1,16 +1,15 @@
 module main
 
-generated_3853 : Int
-let generated_3853 =
-    let
-        ranked : Int = (((((0 + ((0 + (((left = (0 + 0), right = 0)).left + 0)) + 0)) + 0) + 0) + 0) + 0)
-in
-        (ranked + 0)
+generatedEcho : forall (a : Type). (this x : a) -> a
+let generatedEcho @a (this x : a) = x
 
-result : Int
+generated_3853 : Option Int
+let generated_3853 = (Some (((\(n : Int) -> n) ((\(n : Int) -> n) 0)) + 0))?.generatedEcho
+
+result : Option Int
 let result = generated_3853
 
 --! assertNoErrors
---! assertType generated_3853 Int
---! assertType result Int
---! assertDeclKinds signature, let, signature, let
+--! assertType generated_3853 Option Int
+--! assertType result Option Int
+--! assertDeclKinds signature, let, signature, let, signature, let

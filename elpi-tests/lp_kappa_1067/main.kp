@@ -1,12 +1,14 @@
 module main
 
-generated_1067 : List Int
-let generated_1067 = [ for x in [1, 2, 3], if x > 0, yield (((((((if True then ((if False then 0 else x) + (0 + 0)) else 0) + 0) + 0) + 0) + 0) + 0) + 0) ]
+type GeneratedTuple = (Int, Int)
 
-result : List Int
+generated_1067 : GeneratedTuple
+let generated_1067 = (if True then (if True then (if True then (if False then (0, (0 + 0)) else (if True then (if True then (0, (0 + 0)) else (0, (0 + 0))) else ((1 + 1), 1))) else (0, (0 + 0))) else (0, (0 + 0))) else (0, (0 + 0)))
+
+result : GeneratedTuple
 let result = generated_1067
 
 --! assertNoErrors
---! assertType generated_1067 List Int
---! assertType result List Int
---! assertDeclKinds signature, let, signature, let
+--! assertType generated_1067 GeneratedTuple
+--! assertType result GeneratedTuple
+--! assertDeclKinds type, signature, let, signature, let

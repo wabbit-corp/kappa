@@ -1,12 +1,19 @@
 module main
 
-generated_532 : Map String Int
-let generated_532 = { for x in [1, 2, 3], if x > 0, yield "k" : (((((((0 + (x + 0)) + 0) + 0) + 0) + 0) + 0) + 0) }
+generatedNeed : (@x : Int) -> Int
+let generatedNeed (@x : Int) = x
 
-result : Map String Int
+generated_532 : Int
+let generated_532 =
+    block
+        let (@x : Int) = ((Some (0 + 1)) ?: (0 + 2))
+
+        if True then generatedNeed else 0
+
+result : Int
 let result = generated_532
 
 --! assertNoErrors
---! assertType generated_532 Map String Int
---! assertType result Map String Int
---! assertDeclKinds signature, let, signature, let
+--! assertType generated_532 Int
+--! assertType result Int
+--! assertDeclKinds signature, let, signature, let, signature, let

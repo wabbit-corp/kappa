@@ -1,22 +1,12 @@
 module main
 
-generated_3118 : Int
-let generated_3118 =
-    block
-        trait RankedScore a =
-            rank : a -> Int
+generated_3118 : Unit
+let generated_3118 = (if True then (if True then (if True then (if (False || True) then ((\(u : Unit) -> u) ()) else ()) else ()) else ()) else ())
 
-        instance RankedScore Int =
-            let rank x = x
-
-        let dict = summon (RankedScore Int)
-
-        dict.rank (((((((((Some (((if False then 0 else 0) + (0 + 0)) + 0)) ?: 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0)
-
-result : Int
+result : Unit
 let result = generated_3118
 
 --! assertNoErrors
---! assertType generated_3118 Int
---! assertType result Int
+--! assertType generated_3118 Unit
+--! assertType result Unit
 --! assertDeclKinds signature, let, signature, let

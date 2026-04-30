@@ -1,12 +1,39 @@
 module main
 
-generated_4969 : Bool
-let generated_4969 = (if (if (if (if False then True else (True || False)) then False else True) then True else False) then True else False)
+generated_4969 : Set Int
+let generated_4969 = {| for x in [1, 2, 3], let y = x + 1, if y > 0, yield (block
+    generatedListLength : List Int -> Int
+    let generatedListLength xs decreases structural xs =
+        match xs
+          case Nil -> 0
+          case _ :: tail -> 1 + generatedListLength tail
 
-result : Bool
+    let item = (block
+        generatedListLength : List Int -> Int
+        let generatedListLength xs decreases structural xs =
+            match xs
+              case Nil -> 0
+              case _ :: tail -> 1 + generatedListLength tail
+
+        let item = (block
+            generatedListLength : List Int -> Int
+            let generatedListLength xs decreases structural xs =
+                match xs
+                  case Nil -> 0
+                  case _ :: tail -> 1 + generatedListLength tail
+
+            let item = x
+
+            generatedListLength [item, (item + 1), 0])
+
+        generatedListLength [item, (item + 1), 0])
+
+    generatedListLength [item, (item + 1), 0]) |}
+
+result : Set Int
 let result = generated_4969
 
 --! assertNoErrors
---! assertType generated_4969 Bool
---! assertType result Bool
+--! assertType generated_4969 Set Int
+--! assertType result Set Int
 --! assertDeclKinds signature, let, signature, let

@@ -6,7 +6,14 @@ let generatedNeed (@x : Int) = x
 generated_1900 : IO Int
 let generated_1900 =
     do
-        let (@x : Int) = (((((((((if False then 0 else 0) + (0 + 0)) + 0) + 0) + 0) + 0) + 0) + 0) + 0)
+        let (@x : Int) = (((\(n : Int) -> n) (block
+            generatedMapCount : Map String Int -> Int
+            let generatedMapCount values = 1
+
+            let item = 0
+            let values = { yield "item" : item }
+
+            generatedMapCount values)) + 0)
         pure generatedNeed
 
 result : IO Int

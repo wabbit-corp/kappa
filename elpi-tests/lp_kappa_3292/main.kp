@@ -1,17 +1,38 @@
 module main
 
-generated_3292 : Int
-let generated_3292 =
-    block
-        let base : (x : Int) = (x = ((((((0 + (((0 + 0) + 0) + 0)) + 0) + 0) + 0) + 0) + 0))
-        let extended = base.{ y := ((((((0 + (((0 + 0) + 0) + 0)) + 0) + 0) + 0) + 0) + 1) }
+type GeneratedPair = (left : Int, right : Int)
 
-        (extended.x + extended.y)
+generated_3292 : GeneratedPair
+let generated_3292 = ((left = (block
+    let pair = (x = (block
+        let pair = (x = 0, y = (0 + 1))
+        let (x = captured, y = other) = pair
 
-result : Int
+        (captured + other)), y = ((block
+        let pair = (x = 0, y = (0 + 1))
+        let (x = captured, y = other) = pair
+
+        (captured + other)) + 1))
+    let (x = captured, y = other) = pair
+
+    (captured + other)), right = 0)).{ right = ((block
+    let pair = (x = (block
+        let pair = (x = 0, y = (0 + 1))
+        let (x = captured, y = other) = pair
+
+        (captured + other)), y = ((block
+        let pair = (x = 0, y = (0 + 1))
+        let (x = captured, y = other) = pair
+
+        (captured + other)) + 1))
+    let (x = captured, y = other) = pair
+
+    (captured + other)) + 1) }
+
+result : GeneratedPair
 let result = generated_3292
 
 --! assertNoErrors
---! assertType generated_3292 Int
---! assertType result Int
---! assertDeclKinds signature, let, signature, let
+--! assertType generated_3292 GeneratedPair
+--! assertType result GeneratedPair
+--! assertDeclKinds type, signature, let, signature, let

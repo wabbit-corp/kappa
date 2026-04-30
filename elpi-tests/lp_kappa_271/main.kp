@@ -1,7 +1,9 @@
 module main
 
 generated_271 : Set Int
-let generated_271 = {| yield ((((((((((0 + (0 + 0)) + 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0) |}
+let generated_271 = {| for x in [1, 2, 3], yield (match (Some x)
+  case Some payload -> payload
+  case None -> 0) |}
 
 result : Set Int
 let result = generated_271

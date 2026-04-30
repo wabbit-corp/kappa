@@ -1,12 +1,12 @@
 module main
 
-generated_266 : Int
-let generated_266 =
-    block
-        let base : (x : Int) = (x = ((((((((((0 + (0 + 0)) + 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0))
-        let extended = base.{ y := ((((((((((0 + (0 + 0)) + 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0) + 1) }
+generatedEcho : forall (a : Type). (this x : a) -> a
+let generatedEcho @a (this x : a) = x
 
-        (extended.x + extended.y)
+generated_266 : Int
+let generated_266 = ((match (Some 0)
+  case Some payload -> payload
+  case None -> 0) + 0).generatedEcho
 
 result : Int
 let result = generated_266
@@ -14,4 +14,4 @@ let result = generated_266
 --! assertNoErrors
 --! assertType generated_266 Int
 --! assertType result Int
---! assertDeclKinds signature, let, signature, let
+--! assertDeclKinds signature, let, signature, let, signature, let

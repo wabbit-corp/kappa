@@ -1,12 +1,23 @@
 module main
 
-generated_4010 : List Int
-let generated_4010 = [ yield ((((((0 + ((if True then ((0 + 0) + 0) else 0) + 0)) + 0) + 0) + 0) + 0) + 0) ]
+generated_4010 : Map String Int
+let generated_4010 = { yield "only" : ((block
+    generatedListLength : List Int -> Int
+    let generatedListLength xs decreases structural xs =
+        match xs
+          case Nil -> 0
+          case _ :: tail -> 1 + generatedListLength tail
 
-result : List Int
+    let item = (match (0 == 0)
+      case True -> 0
+      case False -> 0)
+
+    generatedListLength [item, (item + 1), 0]) + 0) }
+
+result : Map String Int
 let result = generated_4010
 
 --! assertNoErrors
---! assertType generated_4010 List Int
---! assertType result List Int
+--! assertType generated_4010 Map String Int
+--! assertType result Map String Int
 --! assertDeclKinds signature, let, signature, let

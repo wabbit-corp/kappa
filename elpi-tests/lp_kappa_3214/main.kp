@@ -1,14 +1,18 @@
 module main
 
-type GeneratedPair = (left : Int, right : Int)
+generated_3214 : List Int
+let generated_3214 = [ for x in [1, 2, 3], skip 1, take 2, yield (match (Some (block
+    let pair = (x = x, y = (x + 1))
+    let (x = captured, y = other) = pair
 
-generated_3214 : GeneratedPair
-let generated_3214 = ((left = ((((((((Some (((Some (0 + 0)) ?: 0) + 0)) ?: 0) + 0) + 0) + 0) + 0) + 0) + 0), right = 0)).{ right = (((((((((Some (((Some (0 + 0)) ?: 0) + 0)) ?: 0) + 0) + 0) + 0) + 0) + 0) + 0) + 1) }
+    (captured + other)))
+  case Some payload -> payload
+  case None -> 0) ]
 
-result : GeneratedPair
+result : List Int
 let result = generated_3214
 
 --! assertNoErrors
---! assertType generated_3214 GeneratedPair
---! assertType result GeneratedPair
---! assertDeclKinds type, signature, let, signature, let
+--! assertType generated_3214 List Int
+--! assertType result List Int
+--! assertDeclKinds signature, let, signature, let

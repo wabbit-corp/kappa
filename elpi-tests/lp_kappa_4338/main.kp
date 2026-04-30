@@ -1,10 +1,12 @@
 module main
 
-generatedMakeConst : forall (a : Type). a -> Unit -> a
-let generatedMakeConst value = \() -> value
+generatedNeed : (@x : Int) -> Int
+let generatedNeed (@x : Int) = x
 
 generated_4338 : Int
-let generated_4338 = ((generatedMakeConst ((((((0 + ((if False then 0 else ((0 + 0) + 0)) + 0)) + 0) + 0) + 0) + 0) + 0)) ())
+let generated_4338 = generatedNeed @((((\(n : Int) -> n) (match (0 == 0)
+  case True -> 0
+  case False -> 0)) + 0))
 
 result : Int
 let result = generated_4338

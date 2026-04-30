@@ -1,12 +1,37 @@
 module main
 
-generated_1052 : List Int
-let generated_1052 = [ yield ((((((((if True then ((if True then 0 else 0) + 0) else 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0) ]
+generatedUseWidth : (width : Int) -> Int
+let generatedUseWidth width = width
 
-result : List Int
+generated_1052 : Int
+let generated_1052 =
+    block
+        let width = (((Some ((block
+            generatedListLength : List Int -> Int
+            let generatedListLength xs decreases structural xs =
+                match xs
+                  case Nil -> 0
+                  case _ :: tail -> 1 + generatedListLength tail
+
+            let item = 0
+
+            generatedListLength [item, (item + 1), 0]) + 1)) ?: ((block
+            generatedListLength : List Int -> Int
+            let generatedListLength xs decreases structural xs =
+                match xs
+                  case Nil -> 0
+                  case _ :: tail -> 1 + generatedListLength tail
+
+            let item = 0
+
+            generatedListLength [item, (item + 1), 0]) + 2)) + 0)
+
+        generatedUseWidth { width }
+
+result : Int
 let result = generated_1052
 
 --! assertNoErrors
---! assertType generated_1052 List Int
---! assertType result List Int
---! assertDeclKinds signature, let, signature, let
+--! assertType generated_1052 Int
+--! assertType result Int
+--! assertDeclKinds signature, let, signature, let, signature, let

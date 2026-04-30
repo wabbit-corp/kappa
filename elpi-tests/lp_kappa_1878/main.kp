@@ -1,7 +1,7 @@
 module main
 
 generated_1878 : Option Int
-let generated_1878 = (if True then (if True then (if True then (if (((Some (0 + 0)) ?: 0) == 0) then (Some ((Some (0 + 0)) ?: 0)) else None) else None) else None) else None)
+let generated_1878 = (if True then (if True then (if True then (if (((Some (0 + 0)) ?: 0) == 1) then None else (Some (0 + 0))) else None) else None) else None)
 
 result : Option Int
 let result = generated_1878

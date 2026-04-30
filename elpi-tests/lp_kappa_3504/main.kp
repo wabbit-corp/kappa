@@ -1,18 +1,24 @@
 module main
 
-generated_3504 : Int
+generated_3504 : IO Int
 let generated_3504 =
-    block
-        type RankedAlias = Int
+    do
+        value <- pure ((block
+            generatedListLength : List Int -> Int
+            let generatedListLength xs decreases structural xs =
+                match xs
+                  case Nil -> 0
+                  case _ :: tail -> 1 + generatedListLength tail
 
-        let aliased : RankedAlias = ((((((0 + (((((if False then 0 else 0) + (0 + 0)) + 0) + 0) + 0)) + 0) + 0) + 0) + 0) + 0)
+            let item = ((\(n : Int) -> n) 0)
 
-        (aliased + 1)
+            generatedListLength [item, (item + 1), 0]) + 0)
+        pure (value + 2)
 
-result : Int
+result : IO Int
 let result = generated_3504
 
 --! assertNoErrors
---! assertType generated_3504 Int
---! assertType result Int
+--! assertType generated_3504 IO Int
+--! assertType result IO Int
 --! assertDeclKinds signature, let, signature, let

@@ -1,12 +1,45 @@
 module main
 
-generated_1223 : Set Int
-let generated_1223 = {| yield ((((((((if False then 0 else 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0) |}
+generated_1223 : Int
+let generated_1223 =
+    block
+        scoped effect Ask =
+            ask : Unit -> Bool
 
-result : Set Int
+        let pkg = (label = Ask)
+
+        let seed = (block
+            generatedMapCount : Map String Int -> Int
+            let generatedMapCount values = 1
+
+            let item = (block
+                generatedSetCount : Set Int -> Int
+                let generatedSetCount values = 2
+
+                let item = 0
+                let values = {|item, (item + 1)|}
+
+                generatedSetCount values)
+            let values = { yield "item" : item }
+
+            generatedMapCount values)
+
+        let comp : Eff <[Ask : Ask]> Int =
+            do
+                let b <- pkg.label.ask ()
+                if b then seed else (seed + 1)
+
+        let handled : Eff <[ ]> Int =
+            deep handle pkg.label comp with
+                case return x -> pure x
+                case ask () k -> k True
+
+        runPure handled
+
+result : Int
 let result = generated_1223
 
 --! assertNoErrors
---! assertType generated_1223 Set Int
---! assertType result Set Int
+--! assertType generated_1223 Int
+--! assertType result Int
 --! assertDeclKinds signature, let, signature, let

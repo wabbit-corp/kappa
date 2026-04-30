@@ -1,12 +1,40 @@
 module main
 
-generated_1461 : Set Int
-let generated_1461 = {| yield ((((((((if False then 0 else ((left = (0 + 0), right = 0)).left) + 0) + 0) + 0) + 0) + 0) + 0) + 0) |}
+generated_1461 : Int
+let generated_1461 =
+    block
+        rankedHelper : (Int -> Int)
+        let rankedHelper x = x + 1
 
-result : Set Int
+        rankedHelper ((match ((block
+            generatedSetCount : Set Int -> Int
+            let generatedSetCount values = 2
+
+            let item = 0
+            let values = {|item, (item + 1)|}
+
+            generatedSetCount values) == (block
+            generatedSetCount : Set Int -> Int
+            let generatedSetCount values = 2
+
+            let item = 0
+            let values = {|item, (item + 1)|}
+
+            generatedSetCount values))
+          case True -> (block
+              generatedSetCount : Set Int -> Int
+              let generatedSetCount values = 2
+
+              let item = 0
+              let values = {|item, (item + 1)|}
+
+              generatedSetCount values)
+          case False -> 0) + 0)
+
+result : Int
 let result = generated_1461
 
 --! assertNoErrors
---! assertType generated_1461 Set Int
---! assertType result Set Int
+--! assertType generated_1461 Int
+--! assertType result Int
 --! assertDeclKinds signature, let, signature, let

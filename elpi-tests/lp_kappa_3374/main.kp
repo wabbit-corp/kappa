@@ -1,12 +1,23 @@
 module main
 
-generated_3374 : Option Int
-let generated_3374 = (if True then (if True then (if False then None else (if True then (if (((Some (0 + 0)) ?: 0) == 0) then (Some (0 + 0)) else None) else None)) else None) else None)
+generatedUseWidth : (width : Int) -> Int
+let generatedUseWidth width = width
 
-result : Option Int
+generated_3374 : Int
+let generated_3374 =
+    block
+        let width = (((\(n : Int) -> n) (block
+            let pair = (x = 0, y = (0 + 1))
+            let (x = captured, y = other) = pair
+
+            (captured + other))) + 0)
+
+        generatedUseWidth { width }
+
+result : Int
 let result = generated_3374
 
 --! assertNoErrors
---! assertType generated_3374 Option Int
---! assertType result Option Int
---! assertDeclKinds signature, let, signature, let
+--! assertType generated_3374 Int
+--! assertType result Int
+--! assertDeclKinds signature, let, signature, let, signature, let

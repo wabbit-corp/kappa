@@ -1,12 +1,43 @@
 module main
 
-generated_3031 : Bool
-let generated_3031 = (if (if (if ((if (True || False) then True else False) && True) then True else False) then True else False) then True else False)
+generated_3031 : Int
+let generated_3031 =
+    block
+        let pair = (x = ((block
+            generatedListLength : List Int -> Int
+            let generatedListLength xs decreases structural xs =
+                match xs
+                  case Nil -> 0
+                  case _ :: tail -> 1 + generatedListLength tail
 
-result : Bool
+            let item = (block
+                let pair = (x = 0, y = (0 + 1))
+                let (x = captured, y = other) = pair
+
+                (captured + other))
+
+            generatedListLength [item, (item + 1), 0]) + 0), y = ((block
+            generatedListLength : List Int -> Int
+            let generatedListLength xs decreases structural xs =
+                match xs
+                  case Nil -> 0
+                  case _ :: tail -> 1 + generatedListLength tail
+
+            let item = (block
+                let pair = (x = 0, y = (0 + 1))
+                let (x = captured, y = other) = pair
+
+                (captured + other))
+
+            generatedListLength [item, (item + 1), 0]) + 1))
+        let (x = captured, y = other) = pair
+
+        (captured + other)
+
+result : Int
 let result = generated_3031
 
 --! assertNoErrors
---! assertType generated_3031 Bool
---! assertType result Bool
+--! assertType generated_3031 Int
+--! assertType result Int
 --! assertDeclKinds signature, let, signature, let

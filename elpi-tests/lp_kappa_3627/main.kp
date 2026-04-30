@@ -1,17 +1,22 @@
 module main
 
-generated_3627 : Int
+generated_3627 : IO Int
 let generated_3627 =
-    block
-        rankedHelper : (Int -> Int)
-        let rankedHelper x = x + 1
+    do
+        let staged = ((block
+            generatedMapCount : Map String Int -> Int
+            let generatedMapCount values = 1
 
-        rankedHelper ((((((0 + ((0 + (0 + 0)) + 0)) + 0) + 0) + 0) + 0) + 0)
+            let item = ((\(n : Int) -> n) 0)
+            let values = { yield "item" : item }
 
-result : Int
+            generatedMapCount values) + 0)
+        pure (staged + 1)
+
+result : IO Int
 let result = generated_3627
 
 --! assertNoErrors
---! assertType generated_3627 Int
---! assertType result Int
+--! assertType generated_3627 IO Int
+--! assertType result IO Int
 --! assertDeclKinds signature, let, signature, let

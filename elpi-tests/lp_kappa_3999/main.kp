@@ -1,12 +1,28 @@
 module main
 
-generated_3999 : Set Int
-let generated_3999 = {| for x in [1, 2, 3], yield (((((0 + ((if True then ((x + 0) + 0) else 0) + 0)) + 0) + 0) + 0) + 0) |}
+generated_3999 : Int
+let generated_3999 =
+    block
+        rankedHelper : (Int -> Int)
+        let rankedHelper x = x + 1
 
-result : Set Int
+        rankedHelper ((block
+            generatedListLength : List Int -> Int
+            let generatedListLength xs decreases structural xs =
+                match xs
+                  case Nil -> 0
+                  case _ :: tail -> 1 + generatedListLength tail
+
+            let item = (match (0 == 0)
+              case True -> 0
+              case False -> 0)
+
+            generatedListLength [item, (item + 1), 0]) + 0)
+
+result : Int
 let result = generated_3999
 
 --! assertNoErrors
---! assertType generated_3999 Set Int
---! assertType result Set Int
+--! assertType generated_3999 Int
+--! assertType result Int
 --! assertDeclKinds signature, let, signature, let

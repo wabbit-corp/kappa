@@ -1,12 +1,19 @@
 module main
 
-generated_4157 : (Int -> Int)
-let generated_4157 = \(x : Int) -> ((\(x : Int) -> ((\(x : Int) -> (((\(x : Int) -> (0 + (((if (0 == 0) then \(x : Int) -> x else \(x : Int) -> (x + 0))) x))) x) + 0)) x)) x)
+generatedResize : (image : Int) -> (width : Int) -> (height : Int) -> Int
+let generatedResize image width height = image + width * 10 + height
 
-result : (Int -> Int)
+generated_4157 : Int
+let generated_4157 = generatedResize { image = ((match (Some (match (0 == 0)
+  case True -> 0
+  case False -> 0))
+  case Some payload -> payload
+  case None -> 0) + 0), height = 3, width = 2 }
+
+result : Int
 let result = generated_4157
 
 --! assertNoErrors
---! assertType generated_4157 (Int -> Int)
---! assertType result (Int -> Int)
---! assertDeclKinds signature, let, signature, let
+--! assertType generated_4157 Int
+--! assertType result Int
+--! assertDeclKinds signature, let, signature, let, signature, let

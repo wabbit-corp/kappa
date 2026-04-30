@@ -1,12 +1,35 @@
 module main
 
-generated_1460 : List Int
-let generated_1460 = [ yield ((((((((if False then 0 else ((left = (0 + 0), right = 0)).left) + 0) + 0) + 0) + 0) + 0) + 0) + 0) ]
+generated_1460 : Map String Int
+let generated_1460 = { for x in [1, 2, 3], if x > 0, yield "k" : (match ((block
+    generatedSetCount : Set Int -> Int
+    let generatedSetCount values = 2
 
-result : List Int
+    let item = x
+    let values = {|item, (item + 1)|}
+
+    generatedSetCount values) == (block
+    generatedSetCount : Set Int -> Int
+    let generatedSetCount values = 2
+
+    let item = x
+    let values = {|item, (item + 1)|}
+
+    generatedSetCount values))
+  case True -> (block
+      generatedSetCount : Set Int -> Int
+      let generatedSetCount values = 2
+
+      let item = x
+      let values = {|item, (item + 1)|}
+
+      generatedSetCount values)
+  case False -> 0) }
+
+result : Map String Int
 let result = generated_1460
 
 --! assertNoErrors
---! assertType generated_1460 List Int
---! assertType result List Int
+--! assertType generated_1460 Map String Int
+--! assertType result Map String Int
 --! assertDeclKinds signature, let, signature, let

@@ -6,7 +6,14 @@ let generated_1893 =
         rankedHelper : (Int -> Int)
         let rankedHelper x = x + 1
 
-        rankedHelper (((((((((if False then 0 else 0) + (0 + 0)) + 0) + 0) + 0) + 0) + 0) + 0) + 0)
+        rankedHelper (((\(n : Int) -> n) (block
+            generatedMapCount : Map String Int -> Int
+            let generatedMapCount values = 1
+
+            let item = 0
+            let values = { yield "item" : item }
+
+            generatedMapCount values)) + 0)
 
 result : Int
 let result = generated_1893

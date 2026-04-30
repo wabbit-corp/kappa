@@ -3,10 +3,14 @@ module main
 generated_4328 : Int
 let generated_4328 =
     block
-        ranked : Int
-        let ranked = (((((0 + ((if False then 0 else ((0 + 0) + 0)) + 0)) + 0) + 0) + 0) + 0)
+        let base : (x : Int) = (x = (((\(n : Int) -> n) (match (0 == 0)
+          case True -> 0
+          case False -> 0)) + 0))
+        let extended = base.{ y := (((\(n : Int) -> n) (match (0 == 0)
+          case True -> 0
+          case False -> 0)) + 1) }
 
-        (ranked + 0)
+        (extended.x + extended.y)
 
 result : Int
 let result = generated_4328

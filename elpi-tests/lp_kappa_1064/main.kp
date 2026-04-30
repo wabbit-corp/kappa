@@ -3,10 +3,22 @@ module main
 generated_1064 : Int
 let generated_1064 =
     block
-        ranked : Int
-        let ranked = (((((((if True then ((if False then 0 else 0) + (0 + 0)) else 0) + 0) + 0) + 0) + 0) + 0) + 0)
+        generatedListLength : List Int -> Int
+        let generatedListLength xs decreases structural xs =
+            match xs
+              case Nil -> 0
+              case _ :: tail -> 1 + generatedListLength tail
 
-        (ranked + 0)
+        let item = (block
+            generatedSetCount : Set Int -> Int
+            let generatedSetCount values = 2
+
+            let item = 0
+            let values = {|item, (item + 1)|}
+
+            generatedSetCount values)
+
+        generatedListLength [item, (item + 1), 0]
 
 result : Int
 let result = generated_1064

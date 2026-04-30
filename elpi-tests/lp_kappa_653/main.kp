@@ -1,14 +1,12 @@
 module main
 
-type GeneratedTuple = (Int, Int)
+generated_653 : String
+let generated_653 = (if (if (if (if (if ((if True then 1 else 0) == 1) then True else False) then True else False) then True else False) then True else False) then #"raw lambda-prolog"# else "fallback")
 
-generated_653 : GeneratedTuple
-let generated_653 = (if True then (if True then (if True then (if False then (0, (0 + 0)) else (if (0 == 1) then (1, (1 + (1 + 1))) else (0, (0 + 0)))) else (0, (0 + 0))) else (0, (0 + 0))) else (0, (0 + 0)))
-
-result : GeneratedTuple
+result : String
 let result = generated_653
 
 --! assertNoErrors
---! assertType generated_653 GeneratedTuple
---! assertType result GeneratedTuple
---! assertDeclKinds type, signature, let, signature, let
+--! assertType generated_653 String
+--! assertType result String
+--! assertDeclKinds signature, let, signature, let

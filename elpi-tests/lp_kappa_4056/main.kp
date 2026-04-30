@@ -2,11 +2,36 @@ module main
 
 generated_4056 : Int
 let generated_4056 =
-    block
-        ranked : Int
-        let ranked = (((((0 + ((if True then (if True then 0 else 0) else 0) + 0)) + 0) + 0) + 0) + 0)
+    match (((block
+        generatedSetCount : Set Int -> Int
+        let generatedSetCount values = 2
 
-        (ranked + 0)
+        let item = (match (0 == 0)
+          case True -> 0
+          case False -> 0)
+        let values = {|item, (item + 1)|}
+
+        generatedSetCount values) + 0) == ((block
+        generatedSetCount : Set Int -> Int
+        let generatedSetCount values = 2
+
+        let item = (match (0 == 0)
+          case True -> 0
+          case False -> 0)
+        let values = {|item, (item + 1)|}
+
+        generatedSetCount values) + 0))
+      case True -> ((block
+          generatedSetCount : Set Int -> Int
+          let generatedSetCount values = 2
+
+          let item = (match (0 == 0)
+            case True -> 0
+            case False -> 0)
+          let values = {|item, (item + 1)|}
+
+          generatedSetCount values) + 0)
+      case False -> 0
 
 result : Int
 let result = generated_4056

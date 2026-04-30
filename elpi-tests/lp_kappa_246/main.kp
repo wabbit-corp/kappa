@@ -1,12 +1,36 @@
 module main
 
-generated_246 : Option Int
-let generated_246 = (if True then (if True then (if True then (if True then (if False then None else (Some (0 + 0))) else None) else None) else None) else None)
+generated_246 : Int
+let generated_246 =
+    block
+        scoped effect Ask =
+            ask : Unit -> Bool
 
-result : Option Int
+        let seed = (block
+            generatedMapCount : Map String Int -> Int
+            let generatedMapCount values = 1
+
+            let item = 0
+            let values = { yield "item" : item }
+
+            generatedMapCount values)
+
+        let comp : Eff <[Ask : Ask]> Int =
+            do
+                let b <- Ask.ask ()
+                if b then seed else (seed + 1)
+
+        let handled : Eff <[ ]> Int =
+            deep handle Ask comp with
+                case return x -> pure x
+                case ask () k -> k True
+
+        runPure handled
+
+result : Int
 let result = generated_246
 
 --! assertNoErrors
---! assertType generated_246 Option Int
---! assertType result Option Int
+--! assertType generated_246 Int
+--! assertType result Int
 --! assertDeclKinds signature, let, signature, let

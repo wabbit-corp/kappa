@@ -1,12 +1,23 @@
 module main
 
+generatedUseWidth : (width : Int) -> Int
+let generatedUseWidth width = width
+
 generated_1268 : Int
 let generated_1268 =
     block
-        ranked : Int
-        let ranked = (((((((if False then 0 else (0 + (0 + 0))) + 0) + 0) + 0) + 0) + 0) + 0)
+        let width = ((match (Some (block
+            generatedSetCount : Set Int -> Int
+            let generatedSetCount values = 2
 
-        (ranked + 0)
+            let item = 0
+            let values = {|item, (item + 1)|}
+
+            generatedSetCount values))
+          case Some payload -> payload
+          case None -> 0) + 0)
+
+        generatedUseWidth { width }
 
 result : Int
 let result = generated_1268
@@ -14,4 +25,4 @@ let result = generated_1268
 --! assertNoErrors
 --! assertType generated_1268 Int
 --! assertType result Int
---! assertDeclKinds signature, let, signature, let
+--! assertDeclKinds signature, let, signature, let, signature, let

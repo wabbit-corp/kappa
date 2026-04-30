@@ -1,12 +1,17 @@
 module main
 
-generated_4871 : (Int -> Int)
-let generated_4871 = \(x : Int) -> ((\(x : Int) -> ((\(x : Int) -> ((((if False then \(x : Int) -> x else (if (0 == 1) then \(x : Int) -> (0 + x) else \(x : Int) -> x))) x) + 0)) x)) x)
+generatedEcho : forall (a : Type). (this x : a) -> a
+let generatedEcho @a (this x : a) = x
 
-result : (Int -> Int)
+generated_4871 : Int
+let generated_4871 = ((.generatedEcho) ((match (((Some (0 + 1)) ?: (0 + 2)) == ((Some (0 + 1)) ?: (0 + 2)))
+  case True -> ((Some (0 + 1)) ?: (0 + 2))
+  case False -> 0) + 0))
+
+result : Int
 let result = generated_4871
 
 --! assertNoErrors
---! assertType generated_4871 (Int -> Int)
---! assertType result (Int -> Int)
---! assertDeclKinds signature, let, signature, let
+--! assertType generated_4871 Int
+--! assertType result Int
+--! assertDeclKinds signature, let, signature, let, signature, let

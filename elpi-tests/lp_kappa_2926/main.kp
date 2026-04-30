@@ -1,18 +1,26 @@
 module main
 
-generated_2926 : Int
+generatedNeed : (@x : Int) -> Int
+let generatedNeed (@x : Int) = x
+
+generated_2926 : IO Int
 let generated_2926 =
-    block
-        type RankedAlias = Int
+    do
+        let (@x : Int) = ((match ((match [0, (0 + 1)]
+          case head :: tail -> head
+          case Nil -> 0) == (match [0, (0 + 1)]
+          case head :: tail -> head
+          case Nil -> 0))
+          case True -> (match [0, (0 + 1)]
+            case head :: tail -> head
+            case Nil -> 0)
+          case False -> 0) + 0)
+        pure generatedNeed
 
-        let aliased : RankedAlias = (((((((((Some (0 + 0)) ?: 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0)
-
-        (aliased + 1)
-
-result : Int
+result : IO Int
 let result = generated_2926
 
 --! assertNoErrors
---! assertType generated_2926 Int
---! assertType result Int
---! assertDeclKinds signature, let, signature, let
+--! assertType generated_2926 IO Int
+--! assertType result IO Int
+--! assertDeclKinds signature, let, signature, let, signature, let

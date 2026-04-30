@@ -1,18 +1,21 @@
 module main
 
-generatedNeed : (@x : Int) -> Int
-let generatedNeed (@x : Int) = x
+generated_2172 : List Int
+let generated_2172 = [ yield ((block
+    generatedMapCount : Map String Int -> Int
+    let generatedMapCount values = 1
 
-generated_2172 : IO Int
-let generated_2172 =
-    do
-        let (@x : Int) = (((((((((if False then 0 else ((left = 0, right = (0 + 0))).right) + (0 + 0)) + 0) + 0) + 0) + 0) + 0) + 0) + 0)
-        pure generatedNeed
+    let item = (match (Some 0)
+      case Some payload -> payload
+      case None -> 0)
+    let values = { yield "item" : item }
 
-result : IO Int
+    generatedMapCount values) + 0) ]
+
+result : List Int
 let result = generated_2172
 
 --! assertNoErrors
---! assertType generated_2172 IO Int
---! assertType result IO Int
---! assertDeclKinds signature, let, signature, let, signature, let
+--! assertType generated_2172 List Int
+--! assertType result List Int
+--! assertDeclKinds signature, let, signature, let
