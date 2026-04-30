@@ -1,3 +1,0 @@
-module main
-result : Int
-let result = 2

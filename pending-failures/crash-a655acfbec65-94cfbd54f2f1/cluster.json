@@ -1,0 +1,19 @@
+{
+  "cluster_key": "a655acfbec652f93dfb02a6453324e5274423af5:DEBUG unresolved Int in validateExpressionWithFlow: expr=Name [\"Int\"]",
+  "count": 1,
+  "trace_hash": "a655acfbec652f93dfb02a6453324e5274423af5",
+  "alpha_source_hash": "16a32382a8b0c9cad07d6fd6df253d0b08447020",
+  "trace_step_count": 18,
+  "kinds": {
+    "crash": 1
+  },
+  "terminal_signatures": {
+    "DEBUG unresolved Int in validateExpressionWithFlow: expr=Name [\"Int\"]": 1
+  },
+  "canonical_terminal_signatures": {
+    "DEBUG unresolved Int in validateExpressionWithFlow: expr=Name [\"Int\"]": 1
+  },
+  "representative_case": "crash-a655acfbec65-94cfbd54f2f1",
+  "representative_path": "/Users/wabbit/ws/kappa/pending-failures/crash-a655acfbec65-94cfbd54f2f1",
+  "source_case_dir": "/Users/wabbit/ws/kappa/pending-failures/crash-a655acfbec65-94cfbd54f2f1"
+}

@@ -1,1 +1,0 @@
-oracle: backend disagreement dotnet-il[failure, rc=1, stderr="Unexpected token ':' in a type."] | interpreter[ok, stdout="42"] | zig[ok, stdout="42"]

@@ -8,6 +8,8 @@ from unittest import mock
 from scripts.kappa_fuzz_lib import (
     CaseRunResult,
     DEFAULT_EXECUTION_ORACLE_TEMPLATES,
+    DEFAULT_STATIC_CORPUS_ROOTS,
+    DEFAULT_TRAINING_ROOTS,
     add_provenance,
     add_test_result,
     alpha_normalize_source,
@@ -73,6 +75,26 @@ let program =
 
         self.assertEqual(["module main\nlet result = 40 + 2"], [sample.text for sample in samples])
         self.assertEqual(["inline-string-list"], [sample.source_label for sample in samples])
+
+
+class CorpusRootTests(unittest.TestCase):
+    def write_fs(self, text: str) -> Path:
+        temp_dir = tempfile.TemporaryDirectory()
+        self.addCleanup(temp_dir.cleanup)
+        path = Path(temp_dir.name) / "SampleTests.fs"
+        path.write_text(text, encoding="utf-8")
+        return path
+
+    def test_default_corpus_roots_include_elpi_tests(self) -> None:
+        self.assertEqual(
+            (
+                ("fixtures", "tests/Kappa.Compiler.Tests/Fixtures"),
+                ("new_tests", "new-tests"),
+                ("elpi_tests", "elpi-tests"),
+            ),
+            DEFAULT_STATIC_CORPUS_ROOTS,
+        )
+        self.assertIn("elpi-tests", DEFAULT_TRAINING_ROOTS)
 
     def test_extracts_multiline_literal_programs(self) -> None:
         path = self.write_fs(

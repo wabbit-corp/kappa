@@ -1,0 +1,7 @@
+module main
+
+i0 :> Int
+let i0 i2 = \() -> i2
+
+i2 : I0 -> Int
+let I1 'c'

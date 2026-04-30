@@ -1,0 +1,19 @@
+{
+  "cluster_key": "121c7f0b05af1ac78083ba889c51f44aa957d37d:oracle: backend disagreement dotnet-il[diagnostic, rc=1, stdout=\"Diagnostics\\nerror: Could not lower runtime binding 'main.<sym>' to KBackendIR: Runtime call target 'main.<sym>' expects 3 arguments but received 1.\", terminal=\"error: Could not lower runtime binding 'main.<sym>' to KBackendIR: Runtime call target 'main.<sym>' expects 3 arguments but received 1.\"] | interpreter[ok, stdout=\"<function>\"] | zig[diagnostic, rc=1, stdout=\"Diagnostics\\nerror: Could not lower runtime binding 'main.<sym>' to KBackendIR: Runtime call target 'main.<sym>' expects 3 arguments but received 1.\", terminal=\"error: Could not lower runtime binding 'main.<sym>' to KBackendIR: Runtime call target 'main.<sym>' expects 3 arguments but received 1.\"]",
+  "count": 1,
+  "trace_hash": "121c7f0b05af1ac78083ba889c51f44aa957d37d",
+  "alpha_source_hash": "caad82f11cbf6cd06d95fc3444ecb2d9bceaede7",
+  "trace_step_count": 20,
+  "kinds": {
+    "failure": 1
+  },
+  "terminal_signatures": {
+    "oracle: backend disagreement dotnet-il[diagnostic, rc=1, stdout=\"Diagnostics\\nerror: Could not lower runtime binding 'main.<sym>' to KBackendIR: Runtime call target 'main.<sym>' expects 3 arguments but received 1.\", terminal=\"error: Could not lower runtime binding 'main.<sym>' to KBackendIR: Runtime call target 'main.<sym>' expects 3 arguments but received 1.\"] | interpreter[ok, stdout=\"<function>\"] | zig[diagnostic, rc=1, stdout=\"Diagnostics\\nerror: Could not lower runtime binding 'main.<sym>' to KBackendIR: Runtime call target 'main.<sym>' expects 3 arguments but received 1.\", terminal=\"error: Could not lower runtime binding 'main.<sym>' to KBackendIR: Runtime call target 'main.<sym>' expects 3 arguments but received 1.\"]": 1
+  },
+  "canonical_terminal_signatures": {
+    "oracle: backend disagreement dotnet-il[diagnostic, rc=1, stdout=\"Diagnostics\\nerror: Could not lower runtime binding 'main.<sym>' to KBackendIR: Runtime call target 'main.<sym>' expects 3 arguments but received 1.\", terminal=\"error: Could not lower runtime binding 'main.<sym>' to KBackendIR: Runtime call target 'main.<sym>' expects 3 arguments but received 1.\"] | interpreter[ok, stdout=\"<function>\"] | zig[diagnostic, rc=1, stdout=\"Diagnostics\\nerror: Could not lower runtime binding 'main.<sym>' to KBackendIR: Runtime call target 'main.<sym>' expects 3 arguments but received 1.\", terminal=\"error: Could not lower runtime binding 'main.<sym>' to KBackendIR: Runtime call target 'main.<sym>' expects 3 arguments but received 1.\"]": 1
+  },
+  "representative_case": "failure-121c7f0b05af-a86afd00d582",
+  "representative_path": "/Users/wabbit/ws/kappa/pending-failures/failure-121c7f0b05af-a86afd00d582",
+  "source_case_dir": "/Users/wabbit/ws/kappa/pending-failures/failure-121c7f0b05af-a86afd00d582"
+}

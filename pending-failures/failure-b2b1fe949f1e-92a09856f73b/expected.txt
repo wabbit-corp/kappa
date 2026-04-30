@@ -1,0 +1,1 @@
+run:interpreter:main.main: runtime error: Operator '*' is not supported for <function> and 10.

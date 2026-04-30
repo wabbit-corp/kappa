@@ -1,0 +1,19 @@
+{
+  "cluster_key": "121c7f0b05af1ac78083ba889c51f44aa957d37d:run:interpreter:main.<sym>: runtime error: Name 'Dict' is not in scope.",
+  "count": 1,
+  "trace_hash": "121c7f0b05af1ac78083ba889c51f44aa957d37d",
+  "alpha_source_hash": "28a116a06917168abf94179c4ec9875393f7eb96",
+  "trace_step_count": 20,
+  "kinds": {
+    "failure": 1
+  },
+  "terminal_signatures": {
+    "run:interpreter:main.result: runtime error: Name 'Dict' is not in scope.": 1
+  },
+  "canonical_terminal_signatures": {
+    "run:interpreter:main.<sym>: runtime error: Name 'Dict' is not in scope.": 1
+  },
+  "representative_case": "failure-121c7f0b05af-2b4a269a632c",
+  "representative_path": "/Users/wabbit/ws/kappa/pending-failures/failure-121c7f0b05af-2b4a269a632c",
+  "source_case_dir": "/Users/wabbit/ws/kappa/pending-failures/failure-121c7f0b05af-2b4a269a632c"
+}

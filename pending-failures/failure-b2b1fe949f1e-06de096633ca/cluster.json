@@ -1,0 +1,19 @@
+{
+  "cluster_key": "b2b1fe949f1e91e160a6c52db542e992954143e6:oracle: backend disagreement dotnet-il[failure, rc=1, stderr=\"IL backend could not unify __kappa_record_d59e207039ae71233a6b with Int.\"] | interpreter[ok, stdout=\"__kappa_record_d59e207039ae71233a6b 20\"] | zig[ok, stdout=\"<data:1:0>\"]",
+  "count": 1,
+  "trace_hash": "b2b1fe949f1e91e160a6c52db542e992954143e6",
+  "alpha_source_hash": "4f55edef6d70f331303f037b257dfdb13c62f820",
+  "trace_step_count": 20,
+  "kinds": {
+    "failure": 1
+  },
+  "terminal_signatures": {
+    "oracle: backend disagreement dotnet-il[failure, rc=1, stderr=\"IL backend could not unify __kappa_record_d59e207039ae71233a6b with Int.\"] | interpreter[ok, stdout=\"__kappa_record_d59e207039ae71233a6b 20\"] | zig[ok, stdout=\"<data:1:0>\"]": 1
+  },
+  "canonical_terminal_signatures": {
+    "oracle: backend disagreement dotnet-il[failure, rc=1, stderr=\"IL backend could not unify __kappa_record_d59e207039ae71233a6b with Int.\"] | interpreter[ok, stdout=\"__kappa_record_d59e207039ae71233a6b 20\"] | zig[ok, stdout=\"<data:1:0>\"]": 1
+  },
+  "representative_case": "failure-b2b1fe949f1e-06de096633ca",
+  "representative_path": "/Users/wabbit/ws/kappa/pending-failures/failure-b2b1fe949f1e-06de096633ca",
+  "source_case_dir": "/Users/wabbit/ws/kappa/pending-failures/failure-b2b1fe949f1e-06de096633ca"
+}

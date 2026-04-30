@@ -1,0 +1,1 @@
+Unhandled exception. System.IO.FileNotFoundException: Could not load file or assembly 'Kappa.Compiler, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null'. The system cannot find the file specified.

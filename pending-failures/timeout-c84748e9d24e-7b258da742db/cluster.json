@@ -1,0 +1,19 @@
+{
+  "cluster_key": "c84748e9d24e61b602c77b7e9e155c7809731127:verify:KBackendIR@zig",
+  "count": 2,
+  "trace_hash": "c84748e9d24e61b602c77b7e9e155c7809731127",
+  "alpha_source_hash": "1a418eb41ced2173adb40f845d338aae1b4fdc63",
+  "trace_step_count": 18,
+  "kinds": {
+    "timeout": 2
+  },
+  "terminal_signatures": {
+    "verify:KBackendIR@zig": 2
+  },
+  "canonical_terminal_signatures": {
+    "verify:KBackendIR@zig": 2
+  },
+  "representative_case": "timeout-c152ffb5cdd1-7b258da742db",
+  "representative_path": "/Users/wabbit/ws/kappa/pending-failures/timeout-c152ffb5cdd1-7b258da742db",
+  "source_case_dir": "/Users/wabbit/ws/kappa/pending-failures/timeout-c152ffb5cdd1-7b258da742db"
+}

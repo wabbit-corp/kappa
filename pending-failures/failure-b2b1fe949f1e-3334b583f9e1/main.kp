@@ -1,0 +1,8 @@
+module main
+
+i0 : Unit -> Int
+let i0 = \() -> 42
+main : IO Int
+let main = do
+    let i1 = 10 :: 12 :: 20 :: Nil
+    pure (i0 i1)

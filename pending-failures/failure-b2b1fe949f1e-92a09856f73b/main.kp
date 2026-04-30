@@ -1,0 +1,4 @@
+let i0 = \() -> 42
+let main = do
+    i1 <- i0
+    pure (i1 * 10 + i1)

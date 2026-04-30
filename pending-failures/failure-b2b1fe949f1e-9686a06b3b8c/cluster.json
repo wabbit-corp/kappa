@@ -1,0 +1,19 @@
+{
+  "cluster_key": "b2b1fe949f1e91e160a6c52db542e992954143e6:run:interpreter:main.<sym>: runtime error: Operator '+' is not supported for <function> and <function>.",
+  "count": 1,
+  "trace_hash": "b2b1fe949f1e91e160a6c52db542e992954143e6",
+  "alpha_source_hash": "ddaeca961c67c132f20795ad21457504617695eb",
+  "trace_step_count": 20,
+  "kinds": {
+    "failure": 1
+  },
+  "terminal_signatures": {
+    "run:interpreter:main.result: runtime error: Operator '+' is not supported for <function> and <function>.": 1
+  },
+  "canonical_terminal_signatures": {
+    "run:interpreter:main.<sym>: runtime error: Operator '+' is not supported for <function> and <function>.": 1
+  },
+  "representative_case": "failure-b2b1fe949f1e-9686a06b3b8c",
+  "representative_path": "/Users/wabbit/ws/kappa/pending-failures/failure-b2b1fe949f1e-9686a06b3b8c",
+  "source_case_dir": "/Users/wabbit/ws/kappa/pending-failures/failure-b2b1fe949f1e-9686a06b3b8c"
+}

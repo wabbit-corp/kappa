@@ -1,0 +1,19 @@
+{
+  "cluster_key": "a655acfbec652f93dfb02a6453324e5274423af5:compile",
+  "count": 3,
+  "trace_hash": "a655acfbec652f93dfb02a6453324e5274423af5",
+  "alpha_source_hash": "b5e8e8c1c3f8c363ad22d6e8c16883779e9b0446",
+  "trace_step_count": 18,
+  "kinds": {
+    "timeout": 3
+  },
+  "terminal_signatures": {
+    "compile": 3
+  },
+  "canonical_terminal_signatures": {
+    "compile": 3
+  },
+  "representative_case": "timeout-a655acfbec65-36d0981b3375",
+  "representative_path": "/Users/wabbit/ws/kappa/pending-failures/timeout-a655acfbec65-36d0981b3375",
+  "source_case_dir": "/Users/wabbit/ws/kappa/pending-failures/timeout-a655acfbec65-36d0981b3375"
+}

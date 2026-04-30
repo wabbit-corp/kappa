@@ -1,0 +1,19 @@
+{
+  "cluster_key": "b2b1fe949f1e91e160a6c52db542e992954143e6:oracle: backend disagreement dotnet-il[failure, rc=1, stderr=\"Unexpected token '3' in a type.\"] | interpreter[ok, stdout=\"<constructor i0/3 [1]>\"] | zig[failure, rc=1, stderr=\"zig does not yet support using intrinsic 'pure' as a first-class value.\"]",
+  "count": 1,
+  "trace_hash": "b2b1fe949f1e91e160a6c52db542e992954143e6",
+  "alpha_source_hash": "398f726b0cde5c721b6dc08faa6fe24715e8a735",
+  "trace_step_count": 20,
+  "kinds": {
+    "failure": 1
+  },
+  "terminal_signatures": {
+    "oracle: backend disagreement dotnet-il[failure, rc=1, stderr=\"Unexpected token '3' in a type.\"] | interpreter[ok, stdout=\"<constructor i0/3 [1]>\"] | zig[failure, rc=1, stderr=\"zig does not yet support using intrinsic 'pure' as a first-class value.\"]": 1
+  },
+  "canonical_terminal_signatures": {
+    "oracle: backend disagreement dotnet-il[failure, rc=1, stderr=\"Unexpected token '3' in a type.\"] | interpreter[ok, stdout=\"<constructor i0/3 [1]>\"] | zig[failure, rc=1, stderr=\"zig does not yet support using intrinsic 'pure' as a first-class value.\"]": 1
+  },
+  "representative_case": "failure-b2b1fe949f1e-8712d2369cda",
+  "representative_path": "/Users/wabbit/ws/kappa/pending-failures/failure-b2b1fe949f1e-8712d2369cda",
+  "source_case_dir": "/Users/wabbit/ws/kappa/pending-failures/failure-b2b1fe949f1e-8712d2369cda"
+}

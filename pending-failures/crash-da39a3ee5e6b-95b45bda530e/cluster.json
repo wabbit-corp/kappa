@@ -1,0 +1,19 @@
+{
+  "cluster_key": "da39a3ee5e6b4b0d3255bfef95601890afd80709:Unhandled exception. System.ArgumentOutOfRangeException: The index is outside the legal range.",
+  "count": 4,
+  "trace_hash": "da39a3ee5e6b4b0d3255bfef95601890afd80709",
+  "alpha_source_hash": "26db104751c6483c2e1f87e91713b639777397e2",
+  "trace_step_count": 0,
+  "kinds": {
+    "crash": 4
+  },
+  "terminal_signatures": {
+    "Unhandled exception. System.ArgumentOutOfRangeException: The index is outside the legal range.": 4
+  },
+  "canonical_terminal_signatures": {
+    "Unhandled exception. System.ArgumentOutOfRangeException: The index is outside the legal range.": 4
+  },
+  "representative_case": "crash-da39a3ee5e6b-95b45bda530e",
+  "representative_path": "/Users/wabbit/ws/kappa/pending-failures/crash-da39a3ee5e6b-95b45bda530e",
+  "source_case_dir": "/Users/wabbit/ws/kappa/pending-failures/crash-da39a3ee5e6b-95b45bda530e"
+}

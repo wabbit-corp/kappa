@@ -1,0 +1,1 @@
+oracle: backend disagreement dotnet-il[failure, rc=1, stderr="IL backend currently requires parameter types for 'main.<sym>'."] | interpreter[ok, stdout="<function>"] | zig[ok, stdout="<closure:main.<sym>>"]

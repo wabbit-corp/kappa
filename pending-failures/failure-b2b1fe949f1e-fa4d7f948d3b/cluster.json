@@ -1,0 +1,19 @@
+{
+  "cluster_key": "b2b1fe949f1e91e160a6c52db542e992954143e6:oracle: backend disagreement dotnet-il[failure, rc=1, stderr=\"IL backend expected expression of type Int, but found Unit.\"] | interpreter[ok, stdout=\"42\"] | zig[ok, stdout=\"42\"]",
+  "count": 1,
+  "trace_hash": "b2b1fe949f1e91e160a6c52db542e992954143e6",
+  "alpha_source_hash": "2c24ade0c02e59595e0e9e9d3f0de8e6cc0a4d92",
+  "trace_step_count": 20,
+  "kinds": {
+    "failure": 1
+  },
+  "terminal_signatures": {
+    "oracle: backend disagreement dotnet-il[failure, rc=1, stderr=\"IL backend expected expression of type Int, but found Unit.\"] | interpreter[ok, stdout=\"42\"] | zig[ok, stdout=\"42\"]": 1
+  },
+  "canonical_terminal_signatures": {
+    "oracle: backend disagreement dotnet-il[failure, rc=1, stderr=\"IL backend expected expression of type Int, but found Unit.\"] | interpreter[ok, stdout=\"42\"] | zig[ok, stdout=\"42\"]": 1
+  },
+  "representative_case": "failure-b2b1fe949f1e-fa4d7f948d3b",
+  "representative_path": "/Users/wabbit/ws/kappa/pending-failures/failure-b2b1fe949f1e-fa4d7f948d3b",
+  "source_case_dir": "/Users/wabbit/ws/kappa/pending-failures/failure-b2b1fe949f1e-fa4d7f948d3b"
+}

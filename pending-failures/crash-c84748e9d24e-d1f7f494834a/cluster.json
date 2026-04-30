@@ -1,0 +1,19 @@
+{
+  "cluster_key": "c84748e9d24e61b602c77b7e9e155c7809731127:Stack overflow.",
+  "count": 1,
+  "trace_hash": "c84748e9d24e61b602c77b7e9e155c7809731127",
+  "alpha_source_hash": "6e87ed0cf16d6e664cab1c215636dd2bc23c150f",
+  "trace_step_count": 18,
+  "kinds": {
+    "crash": 1
+  },
+  "terminal_signatures": {
+    "Stack overflow.": 1
+  },
+  "canonical_terminal_signatures": {
+    "Stack overflow.": 1
+  },
+  "representative_case": "crash-c84748e9d24e-d1f7f494834a",
+  "representative_path": "/Users/wabbit/ws/kappa/pending-failures/crash-c84748e9d24e-d1f7f494834a",
+  "source_case_dir": "/Users/wabbit/ws/kappa/pending-failures/crash-c84748e9d24e-d1f7f494834a"
+}

@@ -1,0 +1,4 @@
+i0 : Unit -> Int
+let i0 = do
+    i0 <- pure 42
+let result = i0 ()

@@ -1,0 +1,7 @@
+module main
+
+i0 : IO Int -> Int
+let i0 i0 =
+    i0 :: Int
+result : Int
+let result = 0

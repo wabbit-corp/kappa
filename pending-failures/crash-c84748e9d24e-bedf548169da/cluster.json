@@ -1,0 +1,19 @@
+{
+  "cluster_key": "c84748e9d24e61b602c77b7e9e155c7809731127:IL backend emission failed: System.InvalidOperationException: IL backend could not resolve type parameter 'else'. Available type parameters: [True, i0].",
+  "count": 1,
+  "trace_hash": "c84748e9d24e61b602c77b7e9e155c7809731127",
+  "alpha_source_hash": "57cfce63cb3b3400fd576bf25c6150794952afdb",
+  "trace_step_count": 18,
+  "kinds": {
+    "crash": 1
+  },
+  "terminal_signatures": {
+    "IL backend emission failed: System.InvalidOperationException: IL backend could not resolve type parameter 'else'. Available type parameters: [True, i0].": 1
+  },
+  "canonical_terminal_signatures": {
+    "IL backend emission failed: System.InvalidOperationException: IL backend could not resolve type parameter 'else'. Available type parameters: [True, i0].": 1
+  },
+  "representative_case": "crash-c84748e9d24e-bedf548169da",
+  "representative_path": "/Users/wabbit/ws/kappa/pending-failures/crash-c84748e9d24e-bedf548169da",
+  "source_case_dir": "/Users/wabbit/ws/kappa/pending-failures/crash-c84748e9d24e-bedf548169da"
+}

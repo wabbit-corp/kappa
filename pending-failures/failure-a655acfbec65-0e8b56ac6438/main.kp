@@ -1,4 +1,0 @@
-let i0 i0 =
-    match i0
-      case right () i0 -> pure i0
-let result = i0 (10 :: 20 :: 42 :: Nil)

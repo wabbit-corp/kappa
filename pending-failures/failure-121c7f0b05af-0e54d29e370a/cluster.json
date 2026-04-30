@@ -1,0 +1,19 @@
+{
+  "cluster_key": "121c7f0b05af1ac78083ba889c51f44aa957d37d:oracle: backend disagreement dotnet-il[diagnostic, rc=1, stdout=\"Diagnostics\\nerror: Could not lower runtime binding 'main.<sym>' to KBackendIR: unresolved runtime name 'Int'\", terminal=\"error: Could not lower runtime binding 'main.<sym>' to KBackendIR: unresolved runtime name 'Int'\"] | interpreter[ok, stdout=\"0\"] | zig[diagnostic, rc=1, stdout=\"Diagnostics\\nerror: Could not lower runtime binding 'main.<sym>' to KBackendIR: unresolved runtime name 'Int'\", terminal=\"error: Could not lower runtime binding 'main.<sym>' to KBackendIR: unresolved runtime name 'Int'\"]",
+  "count": 1,
+  "trace_hash": "121c7f0b05af1ac78083ba889c51f44aa957d37d",
+  "alpha_source_hash": "b6afb2d7c143b7d760e65c6db7522c194a10b957",
+  "trace_step_count": 20,
+  "kinds": {
+    "failure": 1
+  },
+  "terminal_signatures": {
+    "oracle: backend disagreement dotnet-il[diagnostic, rc=1, stdout=\"Diagnostics\\nerror: Could not lower runtime binding 'main.<sym>' to KBackendIR: unresolved runtime name 'Int'\", terminal=\"error: Could not lower runtime binding 'main.<sym>' to KBackendIR: unresolved runtime name 'Int'\"] | interpreter[ok, stdout=\"0\"] | zig[diagnostic, rc=1, stdout=\"Diagnostics\\nerror: Could not lower runtime binding 'main.<sym>' to KBackendIR: unresolved runtime name 'Int'\", terminal=\"error: Could not lower runtime binding 'main.<sym>' to KBackendIR: unresolved runtime name 'Int'\"]": 1
+  },
+  "canonical_terminal_signatures": {
+    "oracle: backend disagreement dotnet-il[diagnostic, rc=1, stdout=\"Diagnostics\\nerror: Could not lower runtime binding 'main.<sym>' to KBackendIR: unresolved runtime name 'Int'\", terminal=\"error: Could not lower runtime binding 'main.<sym>' to KBackendIR: unresolved runtime name 'Int'\"] | interpreter[ok, stdout=\"0\"] | zig[diagnostic, rc=1, stdout=\"Diagnostics\\nerror: Could not lower runtime binding 'main.<sym>' to KBackendIR: unresolved runtime name 'Int'\", terminal=\"error: Could not lower runtime binding 'main.<sym>' to KBackendIR: unresolved runtime name 'Int'\"]": 1
+  },
+  "representative_case": "failure-121c7f0b05af-0e54d29e370a",
+  "representative_path": "/Users/wabbit/ws/kappa/pending-failures/failure-121c7f0b05af-0e54d29e370a",
+  "source_case_dir": "/Users/wabbit/ws/kappa/pending-failures/failure-121c7f0b05af-0e54d29e370a"
+}

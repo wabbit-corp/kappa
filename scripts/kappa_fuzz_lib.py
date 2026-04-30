@@ -32,6 +32,12 @@ except ModuleNotFoundError:
 
 
 BUCKETS = ("crashes", "timeouts", "diagnostics", "successes", "failures", "oracles")
+DEFAULT_STATIC_CORPUS_ROOTS = (
+    ("fixtures", "tests/Kappa.Compiler.Tests/Fixtures"),
+    ("new_tests", "new-tests"),
+    ("elpi_tests", "elpi-tests"),
+)
+DEFAULT_TRAINING_ROOTS = tuple(root for _label, root in DEFAULT_STATIC_CORPUS_ROOTS)
 KIND_TO_BUCKET = {
     "ok": "successes",
     "success": "successes",
@@ -2400,8 +2406,11 @@ def update_corpus_store(repo_root: Path, *, db_path: Path, jsonl_path: Path) -> 
     try:
         ensure_schema(connection)
         counts = {
-            "fixtures": add_static_corpus_root(connection, repo_root, repo_root / "tests/Kappa.Compiler.Tests/Fixtures", "fixtures"),
-            "new_tests": add_static_corpus_root(connection, repo_root, repo_root / "new-tests", "new-tests"),
+            label: add_static_corpus_root(connection, repo_root, repo_root / root, label)
+            for label, root in DEFAULT_STATIC_CORPUS_ROOTS
+        }
+        counts.update(
+            {
             "inline_tests": add_inline_test_sources(connection, repo_root, repo_root / "tests"),
             "runtime_seeds": (
                 add_runtime_seed_root(connection, repo_root, repo_root / "tests/Kappa.Compiler.Tests/Fixtures", "runtime-seeds")
@@ -2411,7 +2420,8 @@ def update_corpus_store(repo_root: Path, *, db_path: Path, jsonl_path: Path) -> 
             "crash_boosted_seeds": sum(add_static_corpus_root(connection, repo_root, root, "crash-boosted-seeds") for root in find_artifact_roots(repo_root, "crash-boosted-seeds")),
             "pending_failures": add_pending_failures(connection, repo_root, repo_root / "pending-failures"),
             "fuzz_cases": sum(scan_fuzz_run(connection, repo_root, root) for root in sorted(path for path in (repo_root / "artifacts").rglob("fuzz-run*") if path.is_dir())),
-        }
+            }
+        )
         connection.commit()
         export_summary = export_jsonl(connection, jsonl_path)
     finally:
@@ -2882,7 +2892,7 @@ def train_model(
     device = pick_device(device_name)
     weighted_summary = None
     files: list[Path] = []
-    roots = roots or ["tests/Kappa.Compiler.Tests/Fixtures", "new-tests"]
+    roots = roots or list(DEFAULT_TRAINING_ROOTS)
     absolute_roots = [resolve_path(repo_root, root) for root in roots]
 
     if weighted_samples_path is not None:

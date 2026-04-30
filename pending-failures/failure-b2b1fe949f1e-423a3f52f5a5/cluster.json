@@ -1,0 +1,19 @@
+{
+  "cluster_key": "b2b1fe949f1e91e160a6c52db542e992954143e6:oracle: backend disagreement dotnet-il[failure, rc=1, stderr=\"IL backend could not resolve type 'I1'.\"] | interpreter[ok] | zig[ok]",
+  "count": 1,
+  "trace_hash": "b2b1fe949f1e91e160a6c52db542e992954143e6",
+  "alpha_source_hash": "21f36cebd6632eaf1c94d976a2b7165664c667ec",
+  "trace_step_count": 20,
+  "kinds": {
+    "failure": 1
+  },
+  "terminal_signatures": {
+    "oracle: backend disagreement dotnet-il[failure, rc=1, stderr=\"IL backend could not resolve type 'I1'.\"] | interpreter[ok] | zig[ok]": 1
+  },
+  "canonical_terminal_signatures": {
+    "oracle: backend disagreement dotnet-il[failure, rc=1, stderr=\"IL backend could not resolve type 'I1'.\"] | interpreter[ok] | zig[ok]": 1
+  },
+  "representative_case": "failure-b2b1fe949f1e-423a3f52f5a5",
+  "representative_path": "/Users/wabbit/ws/kappa/pending-failures/failure-b2b1fe949f1e-423a3f52f5a5",
+  "source_case_dir": "/Users/wabbit/ws/kappa/pending-failures/failure-b2b1fe949f1e-423a3f52f5a5"
+}

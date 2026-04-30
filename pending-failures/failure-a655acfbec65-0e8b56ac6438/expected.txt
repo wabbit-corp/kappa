@@ -1,1 +1,0 @@
-run:interpreter:main.result: runtime error: Pattern 'right' is not in scope as a constructor.

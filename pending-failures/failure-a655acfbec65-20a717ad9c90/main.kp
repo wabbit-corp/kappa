@@ -1,3 +1,0 @@
-let main = do
-    i0 <- pure 40
-    i1 i0 * i0 "s"

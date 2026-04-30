@@ -1,0 +1,1 @@
+oracle: backend disagreement dotnet-il[failure, rc=1, stderr="IL backend does not support closures yet."] | interpreter[ok, stdout="42"] | zig[ok, stdout="42"]

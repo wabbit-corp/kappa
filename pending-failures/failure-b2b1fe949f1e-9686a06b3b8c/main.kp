@@ -1,0 +1,2 @@
+let i0 = \() -> 42
+let result = i0 (i0 + i0)

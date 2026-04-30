@@ -1,0 +1,19 @@
+{
+  "cluster_key": "121c7f0b05af1ac78083ba889c51f44aa957d37d:run:interpreter:main.<sym>: runtime error: Module qualifier 'result' is not in scope.",
+  "count": 1,
+  "trace_hash": "121c7f0b05af1ac78083ba889c51f44aa957d37d",
+  "alpha_source_hash": "05c14d08b2d3756cdafb74a88c84a04ceb3c6ad7",
+  "trace_step_count": 20,
+  "kinds": {
+    "failure": 1
+  },
+  "terminal_signatures": {
+    "run:interpreter:main.result: runtime error: Module qualifier 'result' is not in scope.": 1
+  },
+  "canonical_terminal_signatures": {
+    "run:interpreter:main.<sym>: runtime error: Module qualifier 'result' is not in scope.": 1
+  },
+  "representative_case": "failure-121c7f0b05af-fc12c8fa0584",
+  "representative_path": "/Users/wabbit/ws/kappa/pending-failures/failure-121c7f0b05af-fc12c8fa0584",
+  "source_case_dir": "/Users/wabbit/ws/kappa/pending-failures/failure-121c7f0b05af-fc12c8fa0584"
+}

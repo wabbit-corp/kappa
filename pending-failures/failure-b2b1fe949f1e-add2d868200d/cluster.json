@@ -1,0 +1,19 @@
+{
+  "cluster_key": "b2b1fe949f1e91e160a6c52db542e992954143e6:run:interpreter:main.<sym>: runtime error: Cannot apply Nil as a function.",
+  "count": 1,
+  "trace_hash": "b2b1fe949f1e91e160a6c52db542e992954143e6",
+  "alpha_source_hash": "36c2ea9356983116df8697fae1b4be9460d69e27",
+  "trace_step_count": 20,
+  "kinds": {
+    "failure": 1
+  },
+  "terminal_signatures": {
+    "run:interpreter:main.result: runtime error: Cannot apply Nil as a function.": 1
+  },
+  "canonical_terminal_signatures": {
+    "run:interpreter:main.<sym>: runtime error: Cannot apply Nil as a function.": 1
+  },
+  "representative_case": "failure-b2b1fe949f1e-add2d868200d",
+  "representative_path": "/Users/wabbit/ws/kappa/pending-failures/failure-b2b1fe949f1e-add2d868200d",
+  "source_case_dir": "/Users/wabbit/ws/kappa/pending-failures/failure-b2b1fe949f1e-add2d868200d"
+}

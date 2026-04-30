@@ -1,0 +1,5 @@
+module main
+
+let i0 i1 = i1 1
+result : Int
+let result = i0

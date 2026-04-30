@@ -1,0 +1,6 @@
+module main
+
+data I3 i0 =
+    I0 ->         else (i0 :: Nil)
+result : Int
+let result = 0

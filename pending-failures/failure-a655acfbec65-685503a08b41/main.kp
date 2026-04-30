@@ -1,2 +1,0 @@
-type I0 = (I0 : Int, right -> pure i3
-let result = I0 (10 :: 20 :: Nil)

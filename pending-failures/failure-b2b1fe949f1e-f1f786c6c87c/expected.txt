@@ -1,0 +1,1 @@
+oracle: backend disagreement dotnet-il[failure, rc=1, stderr="IL backend recursive type inference is not implemented yet for 'main.<sym>'."] | interpreter[ok] | zig[ok]

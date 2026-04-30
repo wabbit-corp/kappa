@@ -1,0 +1,19 @@
+{
+  "cluster_key": "121c7f0b05af1ac78083ba889c51f44aa957d37d:run:interpreter:main.<sym>: runtime error: Cannot apply 2 as a function.",
+  "count": 1,
+  "trace_hash": "121c7f0b05af1ac78083ba889c51f44aa957d37d",
+  "alpha_source_hash": "ebb922f69d548b4f8d270e28efe0dc31030a41a3",
+  "trace_step_count": 20,
+  "kinds": {
+    "failure": 1
+  },
+  "terminal_signatures": {
+    "run:interpreter:main.result: runtime error: Cannot apply 2 as a function.": 1
+  },
+  "canonical_terminal_signatures": {
+    "run:interpreter:main.<sym>: runtime error: Cannot apply 2 as a function.": 1
+  },
+  "representative_case": "failure-121c7f0b05af-c39d3765e1a3",
+  "representative_path": "/Users/wabbit/ws/kappa/pending-failures/failure-121c7f0b05af-c39d3765e1a3",
+  "source_case_dir": "/Users/wabbit/ws/kappa/pending-failures/failure-121c7f0b05af-c39d3765e1a3"
+}

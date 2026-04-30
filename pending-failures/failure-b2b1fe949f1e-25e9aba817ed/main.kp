@@ -1,0 +1,6 @@
+module main
+
+i0 : (& i0 : Int) -> I0
+let i0 i0 = i0 * 2
+result : Int
+let result = 0

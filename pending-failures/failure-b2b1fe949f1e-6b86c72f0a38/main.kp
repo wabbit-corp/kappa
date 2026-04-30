@@ -1,0 +1,8 @@
+module main
+
+i0 : Int -> Int
+let i0 (this i1 : Int) : Int =
+    i0 + i1
+main : IO Int
+let main = do
+    i0 <- pure 42

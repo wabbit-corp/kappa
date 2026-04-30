@@ -1,0 +1,19 @@
+{
+  "cluster_key": "bdefc4955e02cb86af5cece32d5c59fa026e9272:Unhandled exception. System.IO.FileNotFoundException: Could not load file or assembly 'Kappa.Compiler, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null'. The system cannot find the file specified.",
+  "count": 1,
+  "trace_hash": "bdefc4955e02cb86af5cece32d5c59fa026e9272",
+  "alpha_source_hash": "173f088313bdfac9c927f9935fcb6eb4b523497a",
+  "trace_step_count": 18,
+  "kinds": {
+    "crash": 1
+  },
+  "terminal_signatures": {
+    "Unhandled exception. System.IO.FileNotFoundException: Could not load file or assembly 'Kappa.Compiler, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null'. The system cannot find the file specified.": 1
+  },
+  "canonical_terminal_signatures": {
+    "Unhandled exception. System.IO.FileNotFoundException: Could not load file or assembly 'Kappa.Compiler, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null'. The system cannot find the file specified.": 1
+  },
+  "representative_case": "crash-bdefc4955e02-7281e099728a",
+  "representative_path": "/Users/wabbit/ws/kappa/pending-failures/crash-bdefc4955e02-7281e099728a",
+  "source_case_dir": "/Users/wabbit/ws/kappa/pending-failures/crash-bdefc4955e02-7281e099728a"
+}

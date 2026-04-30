@@ -1,0 +1,19 @@
+{
+  "cluster_key": "b2b1fe949f1e91e160a6c52db542e992954143e6:oracle: backend disagreement dotnet-il[failure, rc=1, stderr=\"IL backend does not support closures yet.\"] | interpreter[ok, stdout=\"0\"] | zig[ok, stdout=\"0\"]",
+  "count": 1,
+  "trace_hash": "b2b1fe949f1e91e160a6c52db542e992954143e6",
+  "alpha_source_hash": "604091788c011e654f0c32de1769ba8e2ff8ca56",
+  "trace_step_count": 20,
+  "kinds": {
+    "failure": 1
+  },
+  "terminal_signatures": {
+    "oracle: backend disagreement dotnet-il[failure, rc=1, stderr=\"IL backend does not support closures yet.\"] | interpreter[ok, stdout=\"0\"] | zig[ok, stdout=\"0\"]": 1
+  },
+  "canonical_terminal_signatures": {
+    "oracle: backend disagreement dotnet-il[failure, rc=1, stderr=\"IL backend does not support closures yet.\"] | interpreter[ok, stdout=\"0\"] | zig[ok, stdout=\"0\"]": 1
+  },
+  "representative_case": "failure-b2b1fe949f1e-5fdb87bfeb80",
+  "representative_path": "/Users/wabbit/ws/kappa/pending-failures/failure-b2b1fe949f1e-5fdb87bfeb80",
+  "source_case_dir": "/Users/wabbit/ws/kappa/pending-failures/failure-b2b1fe949f1e-5fdb87bfeb80"
+}

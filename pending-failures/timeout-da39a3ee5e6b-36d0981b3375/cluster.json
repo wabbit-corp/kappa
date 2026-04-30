@@ -2,7 +2,7 @@
   "cluster_key": "da39a3ee5e6b4b0d3255bfef95601890afd80709:compile",
   "count": 1,
   "trace_hash": "da39a3ee5e6b4b0d3255bfef95601890afd80709",
-  "alpha_source_hash": "5da95c5287325f64dbcdae4efbad3a167cd1c0f8",
+  "alpha_source_hash": "33f61d449f0b8dfbdcc3431b739884b59a1ba023",
   "trace_step_count": 0,
   "kinds": {
     "timeout": 1
@@ -13,7 +13,7 @@
   "canonical_terminal_signatures": {
     "compile": 1
   },
-  "representative_case": "timeout-da39a3ee5e6b-36d0981b3375",
-  "representative_path": "/Users/wabbit/ws/kappa/pending-failures/timeout-da39a3ee5e6b-36d0981b3375",
-  "source_case_dir": "/Users/wabbit/ws/kappa/pending-failures/timeout-da39a3ee5e6b-36d0981b3375"
+  "representative_case": "timeout-9b9143e87be6632f47a6dc8bfba2bee8afced04f",
+  "representative_path": "/Users/wabbit/ws/kappa/artifacts/fuzzball-kappa-weighted-current/fuzz-run-20260428-083044-kappa-char-lstm-14ed7e79-10000/minimized-timeouts/timeout-9b9143e87be6632f47a6dc8bfba2bee8afced04f",
+  "source_case_dir": "/Users/wabbit/ws/kappa/artifacts/fuzzball-kappa-weighted-current/fuzz-run-20260428-083044-kappa-char-lstm-14ed7e79-10000/minimized-timeouts/timeout-9b9143e87be6632f47a6dc8bfba2bee8afced04f"
 }

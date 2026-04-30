@@ -1,0 +1,4 @@
+module main
+main : IO Unit
+let main = do
+    i0 <- pure 42

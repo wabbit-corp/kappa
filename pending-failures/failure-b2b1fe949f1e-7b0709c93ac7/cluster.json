@@ -1,0 +1,19 @@
+{
+  "cluster_key": "b2b1fe949f1e91e160a6c52db542e992954143e6:oracle: backend disagreement dotnet-il[failure, rc=1, stderr=\"IL backend currently requires parameter types for 'main.<sym>'.\"] | interpreter[ok, stdout=\"<function>\"] | zig[ok, stdout=\"<closure:main.<sym>>\"]",
+  "count": 1,
+  "trace_hash": "b2b1fe949f1e91e160a6c52db542e992954143e6",
+  "alpha_source_hash": "9e74b6e756aef6ce5f2078b160f0888f6da28ee9",
+  "trace_step_count": 20,
+  "kinds": {
+    "failure": 1
+  },
+  "terminal_signatures": {
+    "oracle: backend disagreement dotnet-il[failure, rc=1, stderr=\"IL backend currently requires parameter types for 'main.<sym>'.\"] | interpreter[ok, stdout=\"<function>\"] | zig[ok, stdout=\"<closure:main.<sym>>\"]": 1
+  },
+  "canonical_terminal_signatures": {
+    "oracle: backend disagreement dotnet-il[failure, rc=1, stderr=\"IL backend currently requires parameter types for 'main.<sym>'.\"] | interpreter[ok, stdout=\"<function>\"] | zig[ok, stdout=\"<closure:main.<sym>>\"]": 1
+  },
+  "representative_case": "failure-b2b1fe949f1e-7b0709c93ac7",
+  "representative_path": "/Users/wabbit/ws/kappa/pending-failures/failure-b2b1fe949f1e-7b0709c93ac7",
+  "source_case_dir": "/Users/wabbit/ws/kappa/pending-failures/failure-b2b1fe949f1e-7b0709c93ac7"
+}

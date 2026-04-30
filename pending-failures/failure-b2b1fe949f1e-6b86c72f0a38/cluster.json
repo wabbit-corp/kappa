@@ -1,0 +1,19 @@
+{
+  "cluster_key": "b2b1fe949f1e91e160a6c52db542e992954143e6:oracle: backend disagreement dotnet-il[failure, rc=1, stderr=\"IL backend does not support function-valued name 'main.<sym>' yet.\"] | interpreter[ok] | zig[ok]",
+  "count": 1,
+  "trace_hash": "b2b1fe949f1e91e160a6c52db542e992954143e6",
+  "alpha_source_hash": "36c6164e30649b386323eee17b2a04fce69f6c23",
+  "trace_step_count": 20,
+  "kinds": {
+    "failure": 1
+  },
+  "terminal_signatures": {
+    "oracle: backend disagreement dotnet-il[failure, rc=1, stderr=\"IL backend does not support function-valued name 'main.<sym>' yet.\"] | interpreter[ok] | zig[ok]": 1
+  },
+  "canonical_terminal_signatures": {
+    "oracle: backend disagreement dotnet-il[failure, rc=1, stderr=\"IL backend does not support function-valued name 'main.<sym>' yet.\"] | interpreter[ok] | zig[ok]": 1
+  },
+  "representative_case": "failure-b2b1fe949f1e-6b86c72f0a38",
+  "representative_path": "/Users/wabbit/ws/kappa/pending-failures/failure-b2b1fe949f1e-6b86c72f0a38",
+  "source_case_dir": "/Users/wabbit/ws/kappa/pending-failures/failure-b2b1fe949f1e-6b86c72f0a38"
+}

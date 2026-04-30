@@ -1,0 +1,5 @@
+module main
+
+let i0 i0 = i0
+result : Int
+let result = i0 (i0 i0 :: i0)

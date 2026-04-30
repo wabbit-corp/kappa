@@ -1,0 +1,1 @@
+run:interpreter:main.result: runtime error: Cannot apply __kappa_record_bee2579f574d260bbc2d 1 1 as a function.

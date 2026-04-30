@@ -1,0 +1,1 @@
+run:interpreter:main.result: runtime error: Cannot apply 2 as a function.

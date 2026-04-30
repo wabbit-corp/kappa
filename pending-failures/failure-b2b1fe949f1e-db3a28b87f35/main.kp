@@ -1,0 +1,4 @@
+i0 : Int -> Int -> Int
+let i0 (this i0 : Int) : Int =
+    i0 + i0
+let result = i0 ()

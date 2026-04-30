@@ -1,0 +1,2 @@
+let i0 i1 = 1
+let result = i0 True i0 0

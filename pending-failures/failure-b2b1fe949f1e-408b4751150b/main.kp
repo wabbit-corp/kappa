@@ -1,0 +1,3 @@
+module main
+result : Int
+let result = (I0 = 3, i0 = 1)

@@ -1,0 +1,7 @@
+module main
+
+i0 : Nil -> Int
+let i0 i0 =
+    i0 + i0
+result : Int
+let result = 0

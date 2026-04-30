@@ -1,0 +1,1 @@
+run:interpreter:main.result: runtime error: Module qualifier 'i0' is not in scope.

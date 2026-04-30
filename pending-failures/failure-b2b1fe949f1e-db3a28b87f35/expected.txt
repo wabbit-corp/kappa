@@ -1,0 +1,1 @@
+run:interpreter:main.result: runtime error: Operator '+' is not supported for () and ().

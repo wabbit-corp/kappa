@@ -1,0 +1,10 @@
+module main
+
+i0 : List Int -> Int
+let i0 i1 = i1 * 2
+
+i2 : Int -> Int
+let i2 i1 = i1 + 2
+main : IO Int
+let main = do
+    i0 <- pure 42

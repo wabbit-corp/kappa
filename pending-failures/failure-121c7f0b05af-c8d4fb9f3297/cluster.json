@@ -1,0 +1,19 @@
+{
+  "cluster_key": "121c7f0b05af1ac78083ba889c51f44aa957d37d:oracle: backend disagreement dotnet-il[diagnostic, rc=1, stdout=\"Diagnostics\\nerror: Could not lower runtime binding 'main.<sym>' to KBackendIR: unresolved module qualifier 'i1'\", terminal=\"error: Could not lower runtime binding 'main.<sym>' to KBackendIR: unresolved module qualifier 'i1'\"] | interpreter[ok, stdout=\"0\"] | zig[diagnostic, rc=1, stdout=\"Diagnostics\\nerror: Could not lower runtime binding 'main.<sym>' to KBackendIR: unresolved module qualifier 'i1'\", terminal=\"error: Could not lower runtime binding 'main.<sym>' to KBackendIR: unresolved module qualifier 'i1'\"]",
+  "count": 1,
+  "trace_hash": "121c7f0b05af1ac78083ba889c51f44aa957d37d",
+  "alpha_source_hash": "504bdcd8c440f083d733a2c6d5bfc13b94322521",
+  "trace_step_count": 20,
+  "kinds": {
+    "failure": 1
+  },
+  "terminal_signatures": {
+    "oracle: backend disagreement dotnet-il[diagnostic, rc=1, stdout=\"Diagnostics\\nerror: Could not lower runtime binding 'main.<sym>' to KBackendIR: unresolved module qualifier 'i1'\", terminal=\"error: Could not lower runtime binding 'main.<sym>' to KBackendIR: unresolved module qualifier 'i1'\"] | interpreter[ok, stdout=\"0\"] | zig[diagnostic, rc=1, stdout=\"Diagnostics\\nerror: Could not lower runtime binding 'main.<sym>' to KBackendIR: unresolved module qualifier 'i1'\", terminal=\"error: Could not lower runtime binding 'main.<sym>' to KBackendIR: unresolved module qualifier 'i1'\"]": 1
+  },
+  "canonical_terminal_signatures": {
+    "oracle: backend disagreement dotnet-il[diagnostic, rc=1, stdout=\"Diagnostics\\nerror: Could not lower runtime binding 'main.<sym>' to KBackendIR: unresolved module qualifier 'i1'\", terminal=\"error: Could not lower runtime binding 'main.<sym>' to KBackendIR: unresolved module qualifier 'i1'\"] | interpreter[ok, stdout=\"0\"] | zig[diagnostic, rc=1, stdout=\"Diagnostics\\nerror: Could not lower runtime binding 'main.<sym>' to KBackendIR: unresolved module qualifier 'i1'\", terminal=\"error: Could not lower runtime binding 'main.<sym>' to KBackendIR: unresolved module qualifier 'i1'\"]": 1
+  },
+  "representative_case": "failure-121c7f0b05af-c8d4fb9f3297",
+  "representative_path": "/Users/wabbit/ws/kappa/pending-failures/failure-121c7f0b05af-c8d4fb9f3297",
+  "source_case_dir": "/Users/wabbit/ws/kappa/pending-failures/failure-121c7f0b05af-c8d4fb9f3297"
+}

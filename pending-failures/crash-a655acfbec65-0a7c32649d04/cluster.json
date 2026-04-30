@@ -1,0 +1,19 @@
+{
+  "cluster_key": "a655acfbec652f93dfb02a6453324e5274423af5:DEBUG unresolved Int stack:",
+  "count": 1,
+  "trace_hash": "a655acfbec652f93dfb02a6453324e5274423af5",
+  "alpha_source_hash": "785836c198a170c5fc7d3b417faa3104cb459e77",
+  "trace_step_count": 18,
+  "kinds": {
+    "crash": 1
+  },
+  "terminal_signatures": {
+    "DEBUG unresolved Int stack:": 1
+  },
+  "canonical_terminal_signatures": {
+    "DEBUG unresolved Int stack:": 1
+  },
+  "representative_case": "crash-a655acfbec65-0a7c32649d04",
+  "representative_path": "/Users/wabbit/ws/kappa/pending-failures/crash-a655acfbec65-0a7c32649d04",
+  "source_case_dir": "/Users/wabbit/ws/kappa/pending-failures/crash-a655acfbec65-0a7c32649d04"
+}

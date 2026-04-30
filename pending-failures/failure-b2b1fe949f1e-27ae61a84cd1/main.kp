@@ -1,0 +1,7 @@
+module main
+
+i0 : type -> Int
+let i0 i0 =
+    i0 + 1
+result : Int
+let result = 0

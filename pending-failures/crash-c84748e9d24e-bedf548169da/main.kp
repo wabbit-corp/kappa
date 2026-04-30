@@ -1,0 +1,2 @@
+data I3 True i0 = i0 else 0
+let result = 0

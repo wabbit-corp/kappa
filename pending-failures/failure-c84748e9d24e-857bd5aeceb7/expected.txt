@@ -1,1 +1,0 @@
-run:interpreter:main.result: runtime error: Cannot apply 40 as a function.

@@ -1,0 +1,1 @@
+oracle: backend disagreement dotnet-il[failure, rc=1, stderr="Unexpected token '3' in a type."] | interpreter[ok, stdout="<constructor i0/3 [1]>"] | zig[failure, rc=1, stderr="zig does not yet support using intrinsic 'pure' as a first-class value."]

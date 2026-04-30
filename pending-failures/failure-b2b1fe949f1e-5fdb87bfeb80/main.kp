@@ -1,0 +1,6 @@
+module main
+
+i0 : IO Int
+let i0 = \() -> 42
+result : Int
+let result = 0

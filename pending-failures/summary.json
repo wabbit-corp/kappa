@@ -1,155 +1,1534 @@
 {
-  "promoted": 8,
-  "clusters": 8,
+  "promoted": 77,
+  "clusters": 77,
   "pending_dir": "/Users/wabbit/ws/kappa/pending-failures",
   "entries": [
     {
-      "destination": "/Users/wabbit/ws/kappa/pending-failures/failure-a655acfbec65-73b647c98316",
-      "cluster_key": "a655acfbec652f93dfb02a6453324e5274423af5:run:interpreter:main.<sym>: runtime error: Name 'i0' is not in scope.",
+      "destination": "/Users/wabbit/ws/kappa/pending-failures/timeout-bdefc4955e02-36d0981b3375",
+      "cluster_key": "bdefc4955e02cb86af5cece32d5c59fa026e9272:compile",
       "count": 6,
-      "trace_hash": "a655acfbec652f93dfb02a6453324e5274423af5",
-      "alpha_source_hash": "73d1ea58f770e2663673bf5365959656b631e687",
+      "trace_hash": "bdefc4955e02cb86af5cece32d5c59fa026e9272",
+      "alpha_source_hash": "bf0d3a9e7b282c505f9c2417fe373fe875880f22",
       "trace_step_count": 18,
       "kinds": {
-        "failure": 6
+        "timeout": 6
       },
       "terminal_signatures": {
-        "run:interpreter:main.result: runtime error: Name 'i0' is not in scope.": 6
+        "compile": 6
       },
       "canonical_terminal_signatures": {
-        "run:interpreter:main.<sym>: runtime error: Name 'i0' is not in scope.": 6
+        "compile": 6
       },
-      "representative_case": "failure-b15f1d0094722a70497d8bb3c148e88a28a38362",
-      "representative_path": "/Users/wabbit/ws/kappa/artifacts/fuzzball-kappa-oracle-current/fuzz-run-oracle-20260426-013936-kappa-char-lstm-f80a569b-500/minimized-failures/failure-b15f1d0094722a70497d8bb3c148e88a28a38362",
-      "source_case_dir": "/Users/wabbit/ws/kappa/artifacts/fuzzball-kappa-oracle-current/fuzz-run-oracle-20260426-013936-kappa-char-lstm-f80a569b-500/minimized-failures/failure-b15f1d0094722a70497d8bb3c148e88a28a38362"
+      "representative_case": "timeout-cd8ff6fe1ddfc4f52163efab0b29075ee4971e9f",
+      "representative_path": "/Users/wabbit/ws/kappa/artifacts/fuzzball-kappa-weighted-current/fuzz-run-20260428-083044-kappa-char-lstm-14ed7e79-10000/minimized-timeouts/timeout-cd8ff6fe1ddfc4f52163efab0b29075ee4971e9f",
+      "source_case_dir": "/Users/wabbit/ws/kappa/artifacts/fuzzball-kappa-weighted-current/fuzz-run-20260428-083044-kappa-char-lstm-14ed7e79-10000/minimized-timeouts/timeout-cd8ff6fe1ddfc4f52163efab0b29075ee4971e9f"
     },
     {
-      "destination": "/Users/wabbit/ws/kappa/pending-failures/failure-a655acfbec65-685503a08b41",
-      "cluster_key": "a655acfbec652f93dfb02a6453324e5274423af5:run:interpreter:main.<sym>: runtime error: Name 'I0' is not in scope.",
-      "count": 2,
+      "destination": "/Users/wabbit/ws/kappa/pending-failures/crash-da39a3ee5e6b-95b45bda530e",
+      "cluster_key": "da39a3ee5e6b4b0d3255bfef95601890afd80709:Unhandled exception. System.ArgumentOutOfRangeException: The index is outside the legal range.",
+      "count": 4,
+      "trace_hash": "da39a3ee5e6b4b0d3255bfef95601890afd80709",
+      "alpha_source_hash": "26db104751c6483c2e1f87e91713b639777397e2",
+      "trace_step_count": 0,
+      "kinds": {
+        "crash": 4
+      },
+      "terminal_signatures": {
+        "Unhandled exception. System.ArgumentOutOfRangeException: The index is outside the legal range.": 4
+      },
+      "canonical_terminal_signatures": {
+        "Unhandled exception. System.ArgumentOutOfRangeException: The index is outside the legal range.": 4
+      },
+      "representative_case": "crash-da39a3ee5e6b-95b45bda530e",
+      "representative_path": "/Users/wabbit/ws/kappa/pending-failures/crash-da39a3ee5e6b-95b45bda530e",
+      "source_case_dir": "/Users/wabbit/ws/kappa/pending-failures/crash-da39a3ee5e6b-95b45bda530e"
+    },
+    {
+      "destination": "/Users/wabbit/ws/kappa/pending-failures/timeout-a655acfbec65-36d0981b3375",
+      "cluster_key": "a655acfbec652f93dfb02a6453324e5274423af5:compile",
+      "count": 3,
       "trace_hash": "a655acfbec652f93dfb02a6453324e5274423af5",
-      "alpha_source_hash": "438cb5f7ea84f74ee98cd6cb54186fd16c9f25fa",
+      "alpha_source_hash": "b5e8e8c1c3f8c363ad22d6e8c16883779e9b0446",
       "trace_step_count": 18,
       "kinds": {
-        "failure": 2
+        "timeout": 3
       },
       "terminal_signatures": {
-        "run:interpreter:main.result: runtime error: Name 'I0' is not in scope.": 2
+        "compile": 3
       },
       "canonical_terminal_signatures": {
-        "run:interpreter:main.<sym>: runtime error: Name 'I0' is not in scope.": 2
+        "compile": 3
       },
-      "representative_case": "failure-72da5915699a52f52fe2c1fa2b4802d8790f9e11",
-      "representative_path": "/Users/wabbit/ws/kappa/artifacts/fuzzball-kappa-oracle-current/fuzz-run-oracle-20260426-013936-kappa-char-lstm-f80a569b-500/minimized-failures/failure-72da5915699a52f52fe2c1fa2b4802d8790f9e11",
-      "source_case_dir": "/Users/wabbit/ws/kappa/artifacts/fuzzball-kappa-oracle-current/fuzz-run-oracle-20260426-013936-kappa-char-lstm-f80a569b-500/minimized-failures/failure-72da5915699a52f52fe2c1fa2b4802d8790f9e11"
+      "representative_case": "timeout-a655acfbec65-36d0981b3375",
+      "representative_path": "/Users/wabbit/ws/kappa/pending-failures/timeout-a655acfbec65-36d0981b3375",
+      "source_case_dir": "/Users/wabbit/ws/kappa/pending-failures/timeout-a655acfbec65-36d0981b3375"
     },
     {
-      "destination": "/Users/wabbit/ws/kappa/pending-failures/failure-c84748e9d24e-857bd5aeceb7",
-      "cluster_key": "c84748e9d24e61b602c77b7e9e155c7809731127:run:interpreter:main.<sym>: runtime error: Cannot apply 40 as a function.",
+      "destination": "/Users/wabbit/ws/kappa/pending-failures/timeout-c84748e9d24e-36d0981b3375",
+      "cluster_key": "c84748e9d24e61b602c77b7e9e155c7809731127:compile",
+      "count": 3,
+      "trace_hash": "c84748e9d24e61b602c77b7e9e155c7809731127",
+      "alpha_source_hash": "ce616194d44d6e0151780ba60a058c4819315c8c",
+      "trace_step_count": 18,
+      "kinds": {
+        "timeout": 3
+      },
+      "terminal_signatures": {
+        "compile": 3
+      },
+      "canonical_terminal_signatures": {
+        "compile": 3
+      },
+      "representative_case": "timeout-c84748e9d24e-36d0981b3375",
+      "representative_path": "/Users/wabbit/ws/kappa/pending-failures/timeout-c84748e9d24e-36d0981b3375",
+      "source_case_dir": "/Users/wabbit/ws/kappa/pending-failures/timeout-c84748e9d24e-36d0981b3375"
+    },
+    {
+      "destination": "/Users/wabbit/ws/kappa/pending-failures/timeout-c84748e9d24e-7b258da742db",
+      "cluster_key": "c84748e9d24e61b602c77b7e9e155c7809731127:verify:KBackendIR@zig",
       "count": 2,
       "trace_hash": "c84748e9d24e61b602c77b7e9e155c7809731127",
-      "alpha_source_hash": "aebbcfee1c436c2f0df6d4b8570119b281524843",
+      "alpha_source_hash": "1a418eb41ced2173adb40f845d338aae1b4fdc63",
       "trace_step_count": 18,
       "kinds": {
-        "failure": 2
+        "timeout": 2
       },
       "terminal_signatures": {
-        "run:interpreter:main.main: runtime error: Cannot apply 40 as a function.": 1,
-        "run:interpreter:main.result: runtime error: Cannot apply 40 as a function.": 1
+        "verify:KBackendIR@zig": 2
       },
       "canonical_terminal_signatures": {
-        "run:interpreter:main.<sym>: runtime error: Cannot apply 40 as a function.": 2
+        "verify:KBackendIR@zig": 2
       },
-      "representative_case": "failure-52a2ee95c9e6be5ed9239fbc15fbaf09d36dc9d7",
-      "representative_path": "/Users/wabbit/ws/kappa/artifacts/fuzzball-kappa-oracle-current/fuzz-run-oracle-20260426-013936-kappa-char-lstm-f80a569b-500/minimized-failures/failure-52a2ee95c9e6be5ed9239fbc15fbaf09d36dc9d7",
-      "source_case_dir": "/Users/wabbit/ws/kappa/artifacts/fuzzball-kappa-oracle-current/fuzz-run-oracle-20260426-013936-kappa-char-lstm-f80a569b-500/minimized-failures/failure-52a2ee95c9e6be5ed9239fbc15fbaf09d36dc9d7"
+      "representative_case": "timeout-c152ffb5cdd1-7b258da742db",
+      "representative_path": "/Users/wabbit/ws/kappa/pending-failures/timeout-c152ffb5cdd1-7b258da742db",
+      "source_case_dir": "/Users/wabbit/ws/kappa/pending-failures/timeout-c152ffb5cdd1-7b258da742db"
     },
     {
-      "destination": "/Users/wabbit/ws/kappa/pending-failures/failure-a655acfbec65-20a717ad9c90",
-      "cluster_key": "a655acfbec652f93dfb02a6453324e5274423af5:run:interpreter:main.<sym>: runtime error: Name 'i1' is not in scope.",
+      "destination": "/Users/wabbit/ws/kappa/pending-failures/failure-121c7f0b05af-a86afd00d582",
+      "cluster_key": "121c7f0b05af1ac78083ba889c51f44aa957d37d:oracle: backend disagreement dotnet-il[diagnostic, rc=1, stdout=\"Diagnostics\\nerror: Could not lower runtime binding 'main.<sym>' to KBackendIR: Runtime call target 'main.<sym>' expects 3 arguments but received 1.\", terminal=\"error: Could not lower runtime binding 'main.<sym>' to KBackendIR: Runtime call target 'main.<sym>' expects 3 arguments but received 1.\"] | interpreter[ok, stdout=\"<function>\"] | zig[diagnostic, rc=1, stdout=\"Diagnostics\\nerror: Could not lower runtime binding 'main.<sym>' to KBackendIR: Runtime call target 'main.<sym>' expects 3 arguments but received 1.\", terminal=\"error: Could not lower runtime binding 'main.<sym>' to KBackendIR: Runtime call target 'main.<sym>' expects 3 arguments but received 1.\"]",
       "count": 1,
-      "trace_hash": "a655acfbec652f93dfb02a6453324e5274423af5",
-      "alpha_source_hash": "f75027eb9ee32b63d9debf20770656c7193d4efc",
-      "trace_step_count": 18,
+      "trace_hash": "121c7f0b05af1ac78083ba889c51f44aa957d37d",
+      "alpha_source_hash": "caad82f11cbf6cd06d95fc3444ecb2d9bceaede7",
+      "trace_step_count": 20,
       "kinds": {
         "failure": 1
       },
       "terminal_signatures": {
-        "run:interpreter:main.main: runtime error: Name 'i1' is not in scope.": 1
+        "oracle: backend disagreement dotnet-il[diagnostic, rc=1, stdout=\"Diagnostics\\nerror: Could not lower runtime binding 'main.<sym>' to KBackendIR: Runtime call target 'main.<sym>' expects 3 arguments but received 1.\", terminal=\"error: Could not lower runtime binding 'main.<sym>' to KBackendIR: Runtime call target 'main.<sym>' expects 3 arguments but received 1.\"] | interpreter[ok, stdout=\"<function>\"] | zig[diagnostic, rc=1, stdout=\"Diagnostics\\nerror: Could not lower runtime binding 'main.<sym>' to KBackendIR: Runtime call target 'main.<sym>' expects 3 arguments but received 1.\", terminal=\"error: Could not lower runtime binding 'main.<sym>' to KBackendIR: Runtime call target 'main.<sym>' expects 3 arguments but received 1.\"]": 1
       },
       "canonical_terminal_signatures": {
-        "run:interpreter:main.<sym>: runtime error: Name 'i1' is not in scope.": 1
+        "oracle: backend disagreement dotnet-il[diagnostic, rc=1, stdout=\"Diagnostics\\nerror: Could not lower runtime binding 'main.<sym>' to KBackendIR: Runtime call target 'main.<sym>' expects 3 arguments but received 1.\", terminal=\"error: Could not lower runtime binding 'main.<sym>' to KBackendIR: Runtime call target 'main.<sym>' expects 3 arguments but received 1.\"] | interpreter[ok, stdout=\"<function>\"] | zig[diagnostic, rc=1, stdout=\"Diagnostics\\nerror: Could not lower runtime binding 'main.<sym>' to KBackendIR: Runtime call target 'main.<sym>' expects 3 arguments but received 1.\", terminal=\"error: Could not lower runtime binding 'main.<sym>' to KBackendIR: Runtime call target 'main.<sym>' expects 3 arguments but received 1.\"]": 1
       },
-      "representative_case": "failure-a99a1dcd54c10fcfa859f897ef828df1ad1b5e8a",
-      "representative_path": "/Users/wabbit/ws/kappa/artifacts/fuzzball-kappa-oracle-current/fuzz-run-oracle-20260426-013936-kappa-char-lstm-f80a569b-500/minimized-failures/failure-a99a1dcd54c10fcfa859f897ef828df1ad1b5e8a",
-      "source_case_dir": "/Users/wabbit/ws/kappa/artifacts/fuzzball-kappa-oracle-current/fuzz-run-oracle-20260426-013936-kappa-char-lstm-f80a569b-500/minimized-failures/failure-a99a1dcd54c10fcfa859f897ef828df1ad1b5e8a"
+      "representative_case": "failure-121c7f0b05af-a86afd00d582",
+      "representative_path": "/Users/wabbit/ws/kappa/pending-failures/failure-121c7f0b05af-a86afd00d582",
+      "source_case_dir": "/Users/wabbit/ws/kappa/pending-failures/failure-121c7f0b05af-a86afd00d582"
     },
     {
-      "destination": "/Users/wabbit/ws/kappa/pending-failures/failure-a655acfbec65-0e8b56ac6438",
-      "cluster_key": "a655acfbec652f93dfb02a6453324e5274423af5:run:interpreter:main.<sym>: runtime error: Pattern 'right' is not in scope as a constructor.",
+      "destination": "/Users/wabbit/ws/kappa/pending-failures/failure-121c7f0b05af-c8d4fb9f3297",
+      "cluster_key": "121c7f0b05af1ac78083ba889c51f44aa957d37d:oracle: backend disagreement dotnet-il[diagnostic, rc=1, stdout=\"Diagnostics\\nerror: Could not lower runtime binding 'main.<sym>' to KBackendIR: unresolved module qualifier 'i1'\", terminal=\"error: Could not lower runtime binding 'main.<sym>' to KBackendIR: unresolved module qualifier 'i1'\"] | interpreter[ok, stdout=\"0\"] | zig[diagnostic, rc=1, stdout=\"Diagnostics\\nerror: Could not lower runtime binding 'main.<sym>' to KBackendIR: unresolved module qualifier 'i1'\", terminal=\"error: Could not lower runtime binding 'main.<sym>' to KBackendIR: unresolved module qualifier 'i1'\"]",
       "count": 1,
-      "trace_hash": "a655acfbec652f93dfb02a6453324e5274423af5",
-      "alpha_source_hash": "e14869a3f2be58b32992c41616c16a63a35e6bde",
-      "trace_step_count": 18,
+      "trace_hash": "121c7f0b05af1ac78083ba889c51f44aa957d37d",
+      "alpha_source_hash": "504bdcd8c440f083d733a2c6d5bfc13b94322521",
+      "trace_step_count": 20,
       "kinds": {
         "failure": 1
       },
       "terminal_signatures": {
-        "run:interpreter:main.result: runtime error: Pattern 'right' is not in scope as a constructor.": 1
+        "oracle: backend disagreement dotnet-il[diagnostic, rc=1, stdout=\"Diagnostics\\nerror: Could not lower runtime binding 'main.<sym>' to KBackendIR: unresolved module qualifier 'i1'\", terminal=\"error: Could not lower runtime binding 'main.<sym>' to KBackendIR: unresolved module qualifier 'i1'\"] | interpreter[ok, stdout=\"0\"] | zig[diagnostic, rc=1, stdout=\"Diagnostics\\nerror: Could not lower runtime binding 'main.<sym>' to KBackendIR: unresolved module qualifier 'i1'\", terminal=\"error: Could not lower runtime binding 'main.<sym>' to KBackendIR: unresolved module qualifier 'i1'\"]": 1
       },
       "canonical_terminal_signatures": {
-        "run:interpreter:main.<sym>: runtime error: Pattern 'right' is not in scope as a constructor.": 1
+        "oracle: backend disagreement dotnet-il[diagnostic, rc=1, stdout=\"Diagnostics\\nerror: Could not lower runtime binding 'main.<sym>' to KBackendIR: unresolved module qualifier 'i1'\", terminal=\"error: Could not lower runtime binding 'main.<sym>' to KBackendIR: unresolved module qualifier 'i1'\"] | interpreter[ok, stdout=\"0\"] | zig[diagnostic, rc=1, stdout=\"Diagnostics\\nerror: Could not lower runtime binding 'main.<sym>' to KBackendIR: unresolved module qualifier 'i1'\", terminal=\"error: Could not lower runtime binding 'main.<sym>' to KBackendIR: unresolved module qualifier 'i1'\"]": 1
       },
-      "representative_case": "failure-b9c679f029045c0f531637636a4306767295890c",
-      "representative_path": "/Users/wabbit/ws/kappa/artifacts/fuzzball-kappa-oracle-current/fuzz-run-oracle-20260426-013936-kappa-char-lstm-f80a569b-500/minimized-failures/failure-b9c679f029045c0f531637636a4306767295890c",
-      "source_case_dir": "/Users/wabbit/ws/kappa/artifacts/fuzzball-kappa-oracle-current/fuzz-run-oracle-20260426-013936-kappa-char-lstm-f80a569b-500/minimized-failures/failure-b9c679f029045c0f531637636a4306767295890c"
+      "representative_case": "failure-121c7f0b05af-c8d4fb9f3297",
+      "representative_path": "/Users/wabbit/ws/kappa/pending-failures/failure-121c7f0b05af-c8d4fb9f3297",
+      "source_case_dir": "/Users/wabbit/ws/kappa/pending-failures/failure-121c7f0b05af-c8d4fb9f3297"
     },
     {
-      "destination": "/Users/wabbit/ws/kappa/pending-failures/oracle-b2b1fe949f1e-f0b61d255812",
-      "cluster_key": "b2b1fe949f1e91e160a6c52db542e992954143e6:oracle: backend disagreement dotnet-il[failure, rc=1, stderr=\"Unexpected token ':' in a type.\"] | interpreter[ok, stdout=\"2\"] | zig[ok, stdout=\"2\"]",
+      "destination": "/Users/wabbit/ws/kappa/pending-failures/failure-121c7f0b05af-0e54d29e370a",
+      "cluster_key": "121c7f0b05af1ac78083ba889c51f44aa957d37d:oracle: backend disagreement dotnet-il[diagnostic, rc=1, stdout=\"Diagnostics\\nerror: Could not lower runtime binding 'main.<sym>' to KBackendIR: unresolved runtime name 'Int'\", terminal=\"error: Could not lower runtime binding 'main.<sym>' to KBackendIR: unresolved runtime name 'Int'\"] | interpreter[ok, stdout=\"0\"] | zig[diagnostic, rc=1, stdout=\"Diagnostics\\nerror: Could not lower runtime binding 'main.<sym>' to KBackendIR: unresolved runtime name 'Int'\", terminal=\"error: Could not lower runtime binding 'main.<sym>' to KBackendIR: unresolved runtime name 'Int'\"]",
       "count": 1,
-      "trace_hash": "b2b1fe949f1e91e160a6c52db542e992954143e6",
-      "alpha_source_hash": "c7c9465fed534a3d69ee043eb913ca3755b0f306",
+      "trace_hash": "121c7f0b05af1ac78083ba889c51f44aa957d37d",
+      "alpha_source_hash": "b6afb2d7c143b7d760e65c6db7522c194a10b957",
       "trace_step_count": 20,
       "kinds": {
-        "oracle": 1
+        "failure": 1
       },
       "terminal_signatures": {
-        "oracle: backend disagreement dotnet-il[failure, rc=1, stderr=\"Unexpected token ':' in a type.\"] | interpreter[ok, stdout=\"2\"] | zig[ok, stdout=\"2\"]": 1
+        "oracle: backend disagreement dotnet-il[diagnostic, rc=1, stdout=\"Diagnostics\\nerror: Could not lower runtime binding 'main.<sym>' to KBackendIR: unresolved runtime name 'Int'\", terminal=\"error: Could not lower runtime binding 'main.<sym>' to KBackendIR: unresolved runtime name 'Int'\"] | interpreter[ok, stdout=\"0\"] | zig[diagnostic, rc=1, stdout=\"Diagnostics\\nerror: Could not lower runtime binding 'main.<sym>' to KBackendIR: unresolved runtime name 'Int'\", terminal=\"error: Could not lower runtime binding 'main.<sym>' to KBackendIR: unresolved runtime name 'Int'\"]": 1
       },
       "canonical_terminal_signatures": {
-        "oracle: backend disagreement dotnet-il[failure, rc=1, stderr=\"Unexpected token ':' in a type.\"] | interpreter[ok, stdout=\"2\"] | zig[ok, stdout=\"2\"]": 1
+        "oracle: backend disagreement dotnet-il[diagnostic, rc=1, stdout=\"Diagnostics\\nerror: Could not lower runtime binding 'main.<sym>' to KBackendIR: unresolved runtime name 'Int'\", terminal=\"error: Could not lower runtime binding 'main.<sym>' to KBackendIR: unresolved runtime name 'Int'\"] | interpreter[ok, stdout=\"0\"] | zig[diagnostic, rc=1, stdout=\"Diagnostics\\nerror: Could not lower runtime binding 'main.<sym>' to KBackendIR: unresolved runtime name 'Int'\", terminal=\"error: Could not lower runtime binding 'main.<sym>' to KBackendIR: unresolved runtime name 'Int'\"]": 1
       },
-      "representative_case": "oracle-c7c9465fed534a3d69ee043eb913ca3755b0f306",
-      "representative_path": "/Users/wabbit/ws/kappa/artifacts/fuzzball-kappa-oracle-current/fuzz-run-oracle-20260426-013936-kappa-char-lstm-f80a569b-500/oracles/oracle-c7c9465fed534a3d69ee043eb913ca3755b0f306",
-      "source_case_dir": "/Users/wabbit/ws/kappa/artifacts/fuzzball-kappa-oracle-current/fuzz-run-oracle-20260426-013936-kappa-char-lstm-f80a569b-500/oracles/oracle-c7c9465fed534a3d69ee043eb913ca3755b0f306"
+      "representative_case": "failure-121c7f0b05af-0e54d29e370a",
+      "representative_path": "/Users/wabbit/ws/kappa/pending-failures/failure-121c7f0b05af-0e54d29e370a",
+      "source_case_dir": "/Users/wabbit/ws/kappa/pending-failures/failure-121c7f0b05af-0e54d29e370a"
     },
     {
-      "destination": "/Users/wabbit/ws/kappa/pending-failures/oracle-b2b1fe949f1e-22d5b98abae5",
-      "cluster_key": "b2b1fe949f1e91e160a6c52db542e992954143e6:oracle: backend disagreement dotnet-il[failure, rc=1, stderr=\"Unexpected token ':' in a type.\"] | interpreter[ok, stdout=\"42\"] | zig[ok, stdout=\"42\"]",
+      "destination": "/Users/wabbit/ws/kappa/pending-failures/failure-121c7f0b05af-798d323d2d1c",
+      "cluster_key": "121c7f0b05af1ac78083ba889c51f44aa957d37d:run:interpreter:main.<sym>: runtime error: Cannot apply () as a function.",
       "count": 1,
-      "trace_hash": "b2b1fe949f1e91e160a6c52db542e992954143e6",
-      "alpha_source_hash": "29966f96cf11b5723fab849e5a8cff5fe08587fa",
+      "trace_hash": "121c7f0b05af1ac78083ba889c51f44aa957d37d",
+      "alpha_source_hash": "a5bc57009f0269015cc1714262394c278c002ab5",
       "trace_step_count": 20,
       "kinds": {
-        "oracle": 1
+        "failure": 1
       },
       "terminal_signatures": {
-        "oracle: backend disagreement dotnet-il[failure, rc=1, stderr=\"Unexpected token ':' in a type.\"] | interpreter[ok, stdout=\"42\"] | zig[ok, stdout=\"42\"]": 1
+        "run:interpreter:main.result: runtime error: Cannot apply () as a function.": 1
       },
       "canonical_terminal_signatures": {
-        "oracle: backend disagreement dotnet-il[failure, rc=1, stderr=\"Unexpected token ':' in a type.\"] | interpreter[ok, stdout=\"42\"] | zig[ok, stdout=\"42\"]": 1
+        "run:interpreter:main.<sym>: runtime error: Cannot apply () as a function.": 1
       },
-      "representative_case": "oracle-5840c737722a58195351758064570aff9955dda9",
-      "representative_path": "/Users/wabbit/ws/kappa/artifacts/fuzzball-kappa-oracle-current/fuzz-run-oracle-20260426-013936-kappa-char-lstm-f80a569b-500/oracles/oracle-5840c737722a58195351758064570aff9955dda9",
-      "source_case_dir": "/Users/wabbit/ws/kappa/artifacts/fuzzball-kappa-oracle-current/fuzz-run-oracle-20260426-013936-kappa-char-lstm-f80a569b-500/oracles/oracle-5840c737722a58195351758064570aff9955dda9"
+      "representative_case": "failure-121c7f0b05af-798d323d2d1c",
+      "representative_path": "/Users/wabbit/ws/kappa/pending-failures/failure-121c7f0b05af-798d323d2d1c",
+      "source_case_dir": "/Users/wabbit/ws/kappa/pending-failures/failure-121c7f0b05af-798d323d2d1c"
+    },
+    {
+      "destination": "/Users/wabbit/ws/kappa/pending-failures/failure-121c7f0b05af-e02ec645bae3",
+      "cluster_key": "121c7f0b05af1ac78083ba889c51f44aa957d37d:run:interpreter:main.<sym>: runtime error: Cannot apply 1 as a function.",
+      "count": 1,
+      "trace_hash": "121c7f0b05af1ac78083ba889c51f44aa957d37d",
+      "alpha_source_hash": "90eafe55750783a219321524c874594f04ac30e8",
+      "trace_step_count": 20,
+      "kinds": {
+        "failure": 1
+      },
+      "terminal_signatures": {
+        "run:interpreter:main.result: runtime error: Cannot apply 1 as a function.": 1
+      },
+      "canonical_terminal_signatures": {
+        "run:interpreter:main.<sym>: runtime error: Cannot apply 1 as a function.": 1
+      },
+      "representative_case": "failure-121c7f0b05af-e02ec645bae3",
+      "representative_path": "/Users/wabbit/ws/kappa/pending-failures/failure-121c7f0b05af-e02ec645bae3",
+      "source_case_dir": "/Users/wabbit/ws/kappa/pending-failures/failure-121c7f0b05af-e02ec645bae3"
+    },
+    {
+      "destination": "/Users/wabbit/ws/kappa/pending-failures/failure-121c7f0b05af-c39d3765e1a3",
+      "cluster_key": "121c7f0b05af1ac78083ba889c51f44aa957d37d:run:interpreter:main.<sym>: runtime error: Cannot apply 2 as a function.",
+      "count": 1,
+      "trace_hash": "121c7f0b05af1ac78083ba889c51f44aa957d37d",
+      "alpha_source_hash": "ebb922f69d548b4f8d270e28efe0dc31030a41a3",
+      "trace_step_count": 20,
+      "kinds": {
+        "failure": 1
+      },
+      "terminal_signatures": {
+        "run:interpreter:main.result: runtime error: Cannot apply 2 as a function.": 1
+      },
+      "canonical_terminal_signatures": {
+        "run:interpreter:main.<sym>: runtime error: Cannot apply 2 as a function.": 1
+      },
+      "representative_case": "failure-121c7f0b05af-c39d3765e1a3",
+      "representative_path": "/Users/wabbit/ws/kappa/pending-failures/failure-121c7f0b05af-c39d3765e1a3",
+      "source_case_dir": "/Users/wabbit/ws/kappa/pending-failures/failure-121c7f0b05af-c39d3765e1a3"
+    },
+    {
+      "destination": "/Users/wabbit/ws/kappa/pending-failures/failure-121c7f0b05af-077167d14ae0",
+      "cluster_key": "121c7f0b05af1ac78083ba889c51f44aa957d37d:run:interpreter:main.<sym>: runtime error: Cannot apply 42 as a function.",
+      "count": 1,
+      "trace_hash": "121c7f0b05af1ac78083ba889c51f44aa957d37d",
+      "alpha_source_hash": "643b3e39647c6248be26c175ce371d13f07e2703",
+      "trace_step_count": 20,
+      "kinds": {
+        "failure": 1
+      },
+      "terminal_signatures": {
+        "run:interpreter:main.result: runtime error: Cannot apply 42 as a function.": 1
+      },
+      "canonical_terminal_signatures": {
+        "run:interpreter:main.<sym>: runtime error: Cannot apply 42 as a function.": 1
+      },
+      "representative_case": "failure-121c7f0b05af-077167d14ae0",
+      "representative_path": "/Users/wabbit/ws/kappa/pending-failures/failure-121c7f0b05af-077167d14ae0",
+      "source_case_dir": "/Users/wabbit/ws/kappa/pending-failures/failure-121c7f0b05af-077167d14ae0"
+    },
+    {
+      "destination": "/Users/wabbit/ws/kappa/pending-failures/failure-121c7f0b05af-d0ea11b7101a",
+      "cluster_key": "121c7f0b05af1ac78083ba889c51f44aa957d37d:run:interpreter:main.<sym>: runtime error: Cannot apply <io> as a function.",
+      "count": 1,
+      "trace_hash": "121c7f0b05af1ac78083ba889c51f44aa957d37d",
+      "alpha_source_hash": "9d7c8d31187113431acc2574357023192aba7704",
+      "trace_step_count": 20,
+      "kinds": {
+        "failure": 1
+      },
+      "terminal_signatures": {
+        "run:interpreter:main.result: runtime error: Cannot apply <io> as a function.": 1
+      },
+      "canonical_terminal_signatures": {
+        "run:interpreter:main.<sym>: runtime error: Cannot apply <io> as a function.": 1
+      },
+      "representative_case": "failure-121c7f0b05af-d0ea11b7101a",
+      "representative_path": "/Users/wabbit/ws/kappa/pending-failures/failure-121c7f0b05af-d0ea11b7101a",
+      "source_case_dir": "/Users/wabbit/ws/kappa/pending-failures/failure-121c7f0b05af-d0ea11b7101a"
+    },
+    {
+      "destination": "/Users/wabbit/ws/kappa/pending-failures/failure-121c7f0b05af-4bf191df7c14",
+      "cluster_key": "121c7f0b05af1ac78083ba889c51f44aa957d37d:run:interpreter:main.<sym>: runtime error: Cannot apply True as a function.",
+      "count": 1,
+      "trace_hash": "121c7f0b05af1ac78083ba889c51f44aa957d37d",
+      "alpha_source_hash": "b88d53708161b48528ab1ec86a6c89e08a511891",
+      "trace_step_count": 20,
+      "kinds": {
+        "failure": 1
+      },
+      "terminal_signatures": {
+        "run:interpreter:main.result: runtime error: Cannot apply True as a function.": 1
+      },
+      "canonical_terminal_signatures": {
+        "run:interpreter:main.<sym>: runtime error: Cannot apply True as a function.": 1
+      },
+      "representative_case": "failure-121c7f0b05af-4bf191df7c14",
+      "representative_path": "/Users/wabbit/ws/kappa/pending-failures/failure-121c7f0b05af-4bf191df7c14",
+      "source_case_dir": "/Users/wabbit/ws/kappa/pending-failures/failure-121c7f0b05af-4bf191df7c14"
+    },
+    {
+      "destination": "/Users/wabbit/ws/kappa/pending-failures/failure-121c7f0b05af-de3c9d6df4df",
+      "cluster_key": "121c7f0b05af1ac78083ba889c51f44aa957d37d:run:interpreter:main.<sym>: runtime error: Module qualifier 'i0' is not in scope.",
+      "count": 1,
+      "trace_hash": "121c7f0b05af1ac78083ba889c51f44aa957d37d",
+      "alpha_source_hash": "78d98474b341460147b6505ceb7ea3d5aabab049",
+      "trace_step_count": 20,
+      "kinds": {
+        "failure": 1
+      },
+      "terminal_signatures": {
+        "run:interpreter:main.result: runtime error: Module qualifier 'i0' is not in scope.": 1
+      },
+      "canonical_terminal_signatures": {
+        "run:interpreter:main.<sym>: runtime error: Module qualifier 'i0' is not in scope.": 1
+      },
+      "representative_case": "failure-121c7f0b05af-de3c9d6df4df",
+      "representative_path": "/Users/wabbit/ws/kappa/pending-failures/failure-121c7f0b05af-de3c9d6df4df",
+      "source_case_dir": "/Users/wabbit/ws/kappa/pending-failures/failure-121c7f0b05af-de3c9d6df4df"
+    },
+    {
+      "destination": "/Users/wabbit/ws/kappa/pending-failures/failure-121c7f0b05af-fc12c8fa0584",
+      "cluster_key": "121c7f0b05af1ac78083ba889c51f44aa957d37d:run:interpreter:main.<sym>: runtime error: Module qualifier 'result' is not in scope.",
+      "count": 1,
+      "trace_hash": "121c7f0b05af1ac78083ba889c51f44aa957d37d",
+      "alpha_source_hash": "05c14d08b2d3756cdafb74a88c84a04ceb3c6ad7",
+      "trace_step_count": 20,
+      "kinds": {
+        "failure": 1
+      },
+      "terminal_signatures": {
+        "run:interpreter:main.result: runtime error: Module qualifier 'result' is not in scope.": 1
+      },
+      "canonical_terminal_signatures": {
+        "run:interpreter:main.<sym>: runtime error: Module qualifier 'result' is not in scope.": 1
+      },
+      "representative_case": "failure-121c7f0b05af-fc12c8fa0584",
+      "representative_path": "/Users/wabbit/ws/kappa/pending-failures/failure-121c7f0b05af-fc12c8fa0584",
+      "source_case_dir": "/Users/wabbit/ws/kappa/pending-failures/failure-121c7f0b05af-fc12c8fa0584"
+    },
+    {
+      "destination": "/Users/wabbit/ws/kappa/pending-failures/failure-121c7f0b05af-2b4a269a632c",
+      "cluster_key": "121c7f0b05af1ac78083ba889c51f44aa957d37d:run:interpreter:main.<sym>: runtime error: Name 'Dict' is not in scope.",
+      "count": 1,
+      "trace_hash": "121c7f0b05af1ac78083ba889c51f44aa957d37d",
+      "alpha_source_hash": "28a116a06917168abf94179c4ec9875393f7eb96",
+      "trace_step_count": 20,
+      "kinds": {
+        "failure": 1
+      },
+      "terminal_signatures": {
+        "run:interpreter:main.result: runtime error: Name 'Dict' is not in scope.": 1
+      },
+      "canonical_terminal_signatures": {
+        "run:interpreter:main.<sym>: runtime error: Name 'Dict' is not in scope.": 1
+      },
+      "representative_case": "failure-121c7f0b05af-2b4a269a632c",
+      "representative_path": "/Users/wabbit/ws/kappa/pending-failures/failure-121c7f0b05af-2b4a269a632c",
+      "source_case_dir": "/Users/wabbit/ws/kappa/pending-failures/failure-121c7f0b05af-2b4a269a632c"
+    },
+    {
+      "destination": "/Users/wabbit/ws/kappa/pending-failures/failure-121c7f0b05af-72226da3e5be",
+      "cluster_key": "121c7f0b05af1ac78083ba889c51f44aa957d37d:run:interpreter:main.<sym>: runtime error: Name 'IO' is not in scope.",
+      "count": 1,
+      "trace_hash": "121c7f0b05af1ac78083ba889c51f44aa957d37d",
+      "alpha_source_hash": "7c850dc550b651f69803c56a74443e1035037e00",
+      "trace_step_count": 20,
+      "kinds": {
+        "failure": 1
+      },
+      "terminal_signatures": {
+        "run:interpreter:main.result: runtime error: Name 'IO' is not in scope.": 1
+      },
+      "canonical_terminal_signatures": {
+        "run:interpreter:main.<sym>: runtime error: Name 'IO' is not in scope.": 1
+      },
+      "representative_case": "failure-121c7f0b05af-72226da3e5be",
+      "representative_path": "/Users/wabbit/ws/kappa/pending-failures/failure-121c7f0b05af-72226da3e5be",
+      "source_case_dir": "/Users/wabbit/ws/kappa/pending-failures/failure-121c7f0b05af-72226da3e5be"
+    },
+    {
+      "destination": "/Users/wabbit/ws/kappa/pending-failures/failure-121c7f0b05af-dd93cff00527",
+      "cluster_key": "121c7f0b05af1ac78083ba889c51f44aa957d37d:run:interpreter:main.<sym>: runtime error: Name 'Int' is not in scope.",
+      "count": 1,
+      "trace_hash": "121c7f0b05af1ac78083ba889c51f44aa957d37d",
+      "alpha_source_hash": "96b71c5fb3f5989dbc2a1a3542648d3f35370e2b",
+      "trace_step_count": 20,
+      "kinds": {
+        "failure": 1
+      },
+      "terminal_signatures": {
+        "run:interpreter:main.result: runtime error: Name 'Int' is not in scope.": 1
+      },
+      "canonical_terminal_signatures": {
+        "run:interpreter:main.<sym>: runtime error: Name 'Int' is not in scope.": 1
+      },
+      "representative_case": "failure-121c7f0b05af-dd93cff00527",
+      "representative_path": "/Users/wabbit/ws/kappa/pending-failures/failure-121c7f0b05af-dd93cff00527",
+      "source_case_dir": "/Users/wabbit/ws/kappa/pending-failures/failure-121c7f0b05af-dd93cff00527"
+    },
+    {
+      "destination": "/Users/wabbit/ws/kappa/pending-failures/failure-121c7f0b05af-2e442ddcefa6",
+      "cluster_key": "121c7f0b05af1ac78083ba889c51f44aa957d37d:run:interpreter:main.<sym>: runtime error: Name 'List' is not in scope.",
+      "count": 1,
+      "trace_hash": "121c7f0b05af1ac78083ba889c51f44aa957d37d",
+      "alpha_source_hash": "7a9bee8e3ae78b93b4c0526d038552eef736944e",
+      "trace_step_count": 20,
+      "kinds": {
+        "failure": 1
+      },
+      "terminal_signatures": {
+        "run:interpreter:main.result: runtime error: Name 'List' is not in scope.": 1
+      },
+      "canonical_terminal_signatures": {
+        "run:interpreter:main.<sym>: runtime error: Name 'List' is not in scope.": 1
+      },
+      "representative_case": "failure-121c7f0b05af-2e442ddcefa6",
+      "representative_path": "/Users/wabbit/ws/kappa/pending-failures/failure-121c7f0b05af-2e442ddcefa6",
+      "source_case_dir": "/Users/wabbit/ws/kappa/pending-failures/failure-121c7f0b05af-2e442ddcefa6"
+    },
+    {
+      "destination": "/Users/wabbit/ws/kappa/pending-failures/failure-121c7f0b05af-73b647c98316",
+      "cluster_key": "121c7f0b05af1ac78083ba889c51f44aa957d37d:run:interpreter:main.<sym>: runtime error: Name 'i0' is not in scope.",
+      "count": 1,
+      "trace_hash": "121c7f0b05af1ac78083ba889c51f44aa957d37d",
+      "alpha_source_hash": "1d36eadbaea49115a73d9022bedf5e215603a513",
+      "trace_step_count": 20,
+      "kinds": {
+        "failure": 1
+      },
+      "terminal_signatures": {
+        "run:interpreter:main.result: runtime error: Name 'i0' is not in scope.": 1
+      },
+      "canonical_terminal_signatures": {
+        "run:interpreter:main.<sym>: runtime error: Name 'i0' is not in scope.": 1
+      },
+      "representative_case": "failure-121c7f0b05af-73b647c98316",
+      "representative_path": "/Users/wabbit/ws/kappa/pending-failures/failure-121c7f0b05af-73b647c98316",
+      "source_case_dir": "/Users/wabbit/ws/kappa/pending-failures/failure-121c7f0b05af-73b647c98316"
+    },
+    {
+      "destination": "/Users/wabbit/ws/kappa/pending-failures/failure-121c7f0b05af-1bb26dc8e505",
+      "cluster_key": "121c7f0b05af1ac78083ba889c51f44aa957d37d:run:interpreter:main.<sym>: runtime error: Name 'main' is not in scope.",
+      "count": 1,
+      "trace_hash": "121c7f0b05af1ac78083ba889c51f44aa957d37d",
+      "alpha_source_hash": "4da9ef6242bf437f4447e16ea140a7e0fc733975",
+      "trace_step_count": 20,
+      "kinds": {
+        "failure": 1
+      },
+      "terminal_signatures": {
+        "run:interpreter:main.result: runtime error: Name 'main' is not in scope.": 1
+      },
+      "canonical_terminal_signatures": {
+        "run:interpreter:main.<sym>: runtime error: Name 'main' is not in scope.": 1
+      },
+      "representative_case": "failure-121c7f0b05af-1bb26dc8e505",
+      "representative_path": "/Users/wabbit/ws/kappa/pending-failures/failure-121c7f0b05af-1bb26dc8e505",
+      "source_case_dir": "/Users/wabbit/ws/kappa/pending-failures/failure-121c7f0b05af-1bb26dc8e505"
+    },
+    {
+      "destination": "/Users/wabbit/ws/kappa/pending-failures/failure-121c7f0b05af-8651dfcb8e45",
+      "cluster_key": "121c7f0b05af1ac78083ba889c51f44aa957d37d:run:interpreter:main.<sym>: runtime error: Recursive evaluation of 'main.<sym>' is not supported for non-function values.",
+      "count": 1,
+      "trace_hash": "121c7f0b05af1ac78083ba889c51f44aa957d37d",
+      "alpha_source_hash": "7be790c443c676b48117ec8268a3578e062be84b",
+      "trace_step_count": 20,
+      "kinds": {
+        "failure": 1
+      },
+      "terminal_signatures": {
+        "run:interpreter:main.result: runtime error: Recursive evaluation of 'main.i0' is not supported for non-function values.": 1
+      },
+      "canonical_terminal_signatures": {
+        "run:interpreter:main.<sym>: runtime error: Recursive evaluation of 'main.<sym>' is not supported for non-function values.": 1
+      },
+      "representative_case": "failure-121c7f0b05af-8651dfcb8e45",
+      "representative_path": "/Users/wabbit/ws/kappa/pending-failures/failure-121c7f0b05af-8651dfcb8e45",
+      "source_case_dir": "/Users/wabbit/ws/kappa/pending-failures/failure-121c7f0b05af-8651dfcb8e45"
+    },
+    {
+      "destination": "/Users/wabbit/ws/kappa/pending-failures/crash-a655acfbec65-94cfbd54f2f1",
+      "cluster_key": "a655acfbec652f93dfb02a6453324e5274423af5:DEBUG unresolved Int in validateExpressionWithFlow: expr=Name [\"Int\"]",
+      "count": 1,
+      "trace_hash": "a655acfbec652f93dfb02a6453324e5274423af5",
+      "alpha_source_hash": "16a32382a8b0c9cad07d6fd6df253d0b08447020",
+      "trace_step_count": 18,
+      "kinds": {
+        "crash": 1
+      },
+      "terminal_signatures": {
+        "DEBUG unresolved Int in validateExpressionWithFlow: expr=Name [\"Int\"]": 1
+      },
+      "canonical_terminal_signatures": {
+        "DEBUG unresolved Int in validateExpressionWithFlow: expr=Name [\"Int\"]": 1
+      },
+      "representative_case": "crash-a655acfbec65-94cfbd54f2f1",
+      "representative_path": "/Users/wabbit/ws/kappa/pending-failures/crash-a655acfbec65-94cfbd54f2f1",
+      "source_case_dir": "/Users/wabbit/ws/kappa/pending-failures/crash-a655acfbec65-94cfbd54f2f1"
+    },
+    {
+      "destination": "/Users/wabbit/ws/kappa/pending-failures/crash-a655acfbec65-0a7c32649d04",
+      "cluster_key": "a655acfbec652f93dfb02a6453324e5274423af5:DEBUG unresolved Int stack:",
+      "count": 1,
+      "trace_hash": "a655acfbec652f93dfb02a6453324e5274423af5",
+      "alpha_source_hash": "785836c198a170c5fc7d3b417faa3104cb459e77",
+      "trace_step_count": 18,
+      "kinds": {
+        "crash": 1
+      },
+      "terminal_signatures": {
+        "DEBUG unresolved Int stack:": 1
+      },
+      "canonical_terminal_signatures": {
+        "DEBUG unresolved Int stack:": 1
+      },
+      "representative_case": "crash-a655acfbec65-0a7c32649d04",
+      "representative_path": "/Users/wabbit/ws/kappa/pending-failures/crash-a655acfbec65-0a7c32649d04",
+      "source_case_dir": "/Users/wabbit/ws/kappa/pending-failures/crash-a655acfbec65-0a7c32649d04"
+    },
+    {
+      "destination": "/Users/wabbit/ws/kappa/pending-failures/failure-b2b1fe949f1e-0ed88aff6a88",
+      "cluster_key": "b2b1fe949f1e91e160a6c52db542e992954143e6:oracle: backend disagreement dotnet-il[failure, rc=1, stderr=\"Expected a type.\"] | interpreter[ok, stdout=\"0\"] | zig[ok, stdout=\"0\"]",
+      "count": 1,
+      "trace_hash": "b2b1fe949f1e91e160a6c52db542e992954143e6",
+      "alpha_source_hash": "6241329b1215675a53be4a0c5f176022f211aebd",
+      "trace_step_count": 20,
+      "kinds": {
+        "failure": 1
+      },
+      "terminal_signatures": {
+        "oracle: backend disagreement dotnet-il[failure, rc=1, stderr=\"Expected a type.\"] | interpreter[ok, stdout=\"0\"] | zig[ok, stdout=\"0\"]": 1
+      },
+      "canonical_terminal_signatures": {
+        "oracle: backend disagreement dotnet-il[failure, rc=1, stderr=\"Expected a type.\"] | interpreter[ok, stdout=\"0\"] | zig[ok, stdout=\"0\"]": 1
+      },
+      "representative_case": "failure-b2b1fe949f1e-0ed88aff6a88",
+      "representative_path": "/Users/wabbit/ws/kappa/pending-failures/failure-b2b1fe949f1e-0ed88aff6a88",
+      "source_case_dir": "/Users/wabbit/ws/kappa/pending-failures/failure-b2b1fe949f1e-0ed88aff6a88"
+    },
+    {
+      "destination": "/Users/wabbit/ws/kappa/pending-failures/failure-b2b1fe949f1e-43fb058882cb",
+      "cluster_key": "b2b1fe949f1e91e160a6c52db542e992954143e6:oracle: backend disagreement dotnet-il[failure, rc=1, stderr=\"IL backend could not resolve callee 'i1'.\"] | interpreter[ok] | zig[ok]",
+      "count": 1,
+      "trace_hash": "b2b1fe949f1e91e160a6c52db542e992954143e6",
+      "alpha_source_hash": "e7532e3afdd896bebda6d3eb0f1f5041a44a5d66",
+      "trace_step_count": 20,
+      "kinds": {
+        "failure": 1
+      },
+      "terminal_signatures": {
+        "oracle: backend disagreement dotnet-il[failure, rc=1, stderr=\"IL backend could not resolve callee 'i1'.\"] | interpreter[ok] | zig[ok]": 1
+      },
+      "canonical_terminal_signatures": {
+        "oracle: backend disagreement dotnet-il[failure, rc=1, stderr=\"IL backend could not resolve callee 'i1'.\"] | interpreter[ok] | zig[ok]": 1
+      },
+      "representative_case": "failure-b2b1fe949f1e-43fb058882cb",
+      "representative_path": "/Users/wabbit/ws/kappa/pending-failures/failure-b2b1fe949f1e-43fb058882cb",
+      "source_case_dir": "/Users/wabbit/ws/kappa/pending-failures/failure-b2b1fe949f1e-43fb058882cb"
+    },
+    {
+      "destination": "/Users/wabbit/ws/kappa/pending-failures/failure-b2b1fe949f1e-25e9aba817ed",
+      "cluster_key": "b2b1fe949f1e91e160a6c52db542e992954143e6:oracle: backend disagreement dotnet-il[failure, rc=1, stderr=\"IL backend could not resolve type 'I0'.\"] | interpreter[ok, stdout=\"0\"] | zig[ok, stdout=\"0\"]",
+      "count": 1,
+      "trace_hash": "b2b1fe949f1e91e160a6c52db542e992954143e6",
+      "alpha_source_hash": "65846c136c8a26555b449d89636a50a57e1b35fb",
+      "trace_step_count": 20,
+      "kinds": {
+        "failure": 1
+      },
+      "terminal_signatures": {
+        "oracle: backend disagreement dotnet-il[failure, rc=1, stderr=\"IL backend could not resolve type 'I0'.\"] | interpreter[ok, stdout=\"0\"] | zig[ok, stdout=\"0\"]": 1
+      },
+      "canonical_terminal_signatures": {
+        "oracle: backend disagreement dotnet-il[failure, rc=1, stderr=\"IL backend could not resolve type 'I0'.\"] | interpreter[ok, stdout=\"0\"] | zig[ok, stdout=\"0\"]": 1
+      },
+      "representative_case": "failure-b2b1fe949f1e-25e9aba817ed",
+      "representative_path": "/Users/wabbit/ws/kappa/pending-failures/failure-b2b1fe949f1e-25e9aba817ed",
+      "source_case_dir": "/Users/wabbit/ws/kappa/pending-failures/failure-b2b1fe949f1e-25e9aba817ed"
+    },
+    {
+      "destination": "/Users/wabbit/ws/kappa/pending-failures/failure-b2b1fe949f1e-423a3f52f5a5",
+      "cluster_key": "b2b1fe949f1e91e160a6c52db542e992954143e6:oracle: backend disagreement dotnet-il[failure, rc=1, stderr=\"IL backend could not resolve type 'I1'.\"] | interpreter[ok] | zig[ok]",
+      "count": 1,
+      "trace_hash": "b2b1fe949f1e91e160a6c52db542e992954143e6",
+      "alpha_source_hash": "21f36cebd6632eaf1c94d976a2b7165664c667ec",
+      "trace_step_count": 20,
+      "kinds": {
+        "failure": 1
+      },
+      "terminal_signatures": {
+        "oracle: backend disagreement dotnet-il[failure, rc=1, stderr=\"IL backend could not resolve type 'I1'.\"] | interpreter[ok] | zig[ok]": 1
+      },
+      "canonical_terminal_signatures": {
+        "oracle: backend disagreement dotnet-il[failure, rc=1, stderr=\"IL backend could not resolve type 'I1'.\"] | interpreter[ok] | zig[ok]": 1
+      },
+      "representative_case": "failure-b2b1fe949f1e-423a3f52f5a5",
+      "representative_path": "/Users/wabbit/ws/kappa/pending-failures/failure-b2b1fe949f1e-423a3f52f5a5",
+      "source_case_dir": "/Users/wabbit/ws/kappa/pending-failures/failure-b2b1fe949f1e-423a3f52f5a5"
+    },
+    {
+      "destination": "/Users/wabbit/ws/kappa/pending-failures/failure-b2b1fe949f1e-7b64817dfb79",
+      "cluster_key": "b2b1fe949f1e91e160a6c52db542e992954143e6:oracle: backend disagreement dotnet-il[failure, rc=1, stderr=\"IL backend could not resolve type 'Nil'.\"] | interpreter[ok, stdout=\"0\"] | zig[ok, stdout=\"0\"]",
+      "count": 1,
+      "trace_hash": "b2b1fe949f1e91e160a6c52db542e992954143e6",
+      "alpha_source_hash": "87a85fd464045069589396dfc93a981cf85d6c1d",
+      "trace_step_count": 20,
+      "kinds": {
+        "failure": 1
+      },
+      "terminal_signatures": {
+        "oracle: backend disagreement dotnet-il[failure, rc=1, stderr=\"IL backend could not resolve type 'Nil'.\"] | interpreter[ok, stdout=\"0\"] | zig[ok, stdout=\"0\"]": 1
+      },
+      "canonical_terminal_signatures": {
+        "oracle: backend disagreement dotnet-il[failure, rc=1, stderr=\"IL backend could not resolve type 'Nil'.\"] | interpreter[ok, stdout=\"0\"] | zig[ok, stdout=\"0\"]": 1
+      },
+      "representative_case": "failure-b2b1fe949f1e-7b64817dfb79",
+      "representative_path": "/Users/wabbit/ws/kappa/pending-failures/failure-b2b1fe949f1e-7b64817dfb79",
+      "source_case_dir": "/Users/wabbit/ws/kappa/pending-failures/failure-b2b1fe949f1e-7b64817dfb79"
+    },
+    {
+      "destination": "/Users/wabbit/ws/kappa/pending-failures/failure-b2b1fe949f1e-62474181490e",
+      "cluster_key": "b2b1fe949f1e91e160a6c52db542e992954143e6:oracle: backend disagreement dotnet-il[failure, rc=1, stderr=\"IL backend could not unify List a with Int.\"] | interpreter[ok, stdout=\"10 :: 20 :: 40\"] | zig[ok, stdout=\"<data:10:1>\"]",
+      "count": 1,
+      "trace_hash": "b2b1fe949f1e91e160a6c52db542e992954143e6",
+      "alpha_source_hash": "f35a93dae229c973f2e7d578e790599495089f75",
+      "trace_step_count": 20,
+      "kinds": {
+        "failure": 1
+      },
+      "terminal_signatures": {
+        "oracle: backend disagreement dotnet-il[failure, rc=1, stderr=\"IL backend could not unify List a with Int.\"] | interpreter[ok, stdout=\"10 :: 20 :: 40\"] | zig[ok, stdout=\"<data:10:1>\"]": 1
+      },
+      "canonical_terminal_signatures": {
+        "oracle: backend disagreement dotnet-il[failure, rc=1, stderr=\"IL backend could not unify List a with Int.\"] | interpreter[ok, stdout=\"10 :: 20 :: 40\"] | zig[ok, stdout=\"<data:10:1>\"]": 1
+      },
+      "representative_case": "failure-b2b1fe949f1e-62474181490e",
+      "representative_path": "/Users/wabbit/ws/kappa/pending-failures/failure-b2b1fe949f1e-62474181490e",
+      "source_case_dir": "/Users/wabbit/ws/kappa/pending-failures/failure-b2b1fe949f1e-62474181490e"
+    },
+    {
+      "destination": "/Users/wabbit/ws/kappa/pending-failures/failure-b2b1fe949f1e-c3b9ecf0f0d4",
+      "cluster_key": "b2b1fe949f1e91e160a6c52db542e992954143e6:oracle: backend disagreement dotnet-il[failure, rc=1, stderr=\"IL backend could not unify List a with Int.\"] | interpreter[ok, stdout=\"Nil\"] | zig[ok, stdout=\"<data:10:0>\"]",
+      "count": 1,
+      "trace_hash": "b2b1fe949f1e91e160a6c52db542e992954143e6",
+      "alpha_source_hash": "f813e0942ec459beda2c2cd9088ae82e53d6d855",
+      "trace_step_count": 20,
+      "kinds": {
+        "failure": 1
+      },
+      "terminal_signatures": {
+        "oracle: backend disagreement dotnet-il[failure, rc=1, stderr=\"IL backend could not unify List a with Int.\"] | interpreter[ok, stdout=\"Nil\"] | zig[ok, stdout=\"<data:10:0>\"]": 1
+      },
+      "canonical_terminal_signatures": {
+        "oracle: backend disagreement dotnet-il[failure, rc=1, stderr=\"IL backend could not unify List a with Int.\"] | interpreter[ok, stdout=\"Nil\"] | zig[ok, stdout=\"<data:10:0>\"]": 1
+      },
+      "representative_case": "failure-b2b1fe949f1e-c3b9ecf0f0d4",
+      "representative_path": "/Users/wabbit/ws/kappa/pending-failures/failure-b2b1fe949f1e-c3b9ecf0f0d4",
+      "source_case_dir": "/Users/wabbit/ws/kappa/pending-failures/failure-b2b1fe949f1e-c3b9ecf0f0d4"
+    },
+    {
+      "destination": "/Users/wabbit/ws/kappa/pending-failures/failure-b2b1fe949f1e-60986e81aeef",
+      "cluster_key": "b2b1fe949f1e91e160a6c52db542e992954143e6:oracle: backend disagreement dotnet-il[failure, rc=1, stderr=\"IL backend could not unify __kappa_record_16d5e8d2f6ee4f8ef3ee with Int.\"] | interpreter[ok, stdout=\"__kappa_record_16d5e8d2f6ee4f8ef3ee 0\"] | zig[ok, stdout=\"<data:1:0>\"]",
+      "count": 1,
+      "trace_hash": "b2b1fe949f1e91e160a6c52db542e992954143e6",
+      "alpha_source_hash": "f50e10dc6ea1c9057d34a8ab5480fdcaf274d71c",
+      "trace_step_count": 20,
+      "kinds": {
+        "failure": 1
+      },
+      "terminal_signatures": {
+        "oracle: backend disagreement dotnet-il[failure, rc=1, stderr=\"IL backend could not unify __kappa_record_16d5e8d2f6ee4f8ef3ee with Int.\"] | interpreter[ok, stdout=\"__kappa_record_16d5e8d2f6ee4f8ef3ee 0\"] | zig[ok, stdout=\"<data:1:0>\"]": 1
+      },
+      "canonical_terminal_signatures": {
+        "oracle: backend disagreement dotnet-il[failure, rc=1, stderr=\"IL backend could not unify __kappa_record_16d5e8d2f6ee4f8ef3ee with Int.\"] | interpreter[ok, stdout=\"__kappa_record_16d5e8d2f6ee4f8ef3ee 0\"] | zig[ok, stdout=\"<data:1:0>\"]": 1
+      },
+      "representative_case": "failure-b2b1fe949f1e-60986e81aeef",
+      "representative_path": "/Users/wabbit/ws/kappa/pending-failures/failure-b2b1fe949f1e-60986e81aeef",
+      "source_case_dir": "/Users/wabbit/ws/kappa/pending-failures/failure-b2b1fe949f1e-60986e81aeef"
+    },
+    {
+      "destination": "/Users/wabbit/ws/kappa/pending-failures/failure-b2b1fe949f1e-3339654c8b75",
+      "cluster_key": "b2b1fe949f1e91e160a6c52db542e992954143e6:oracle: backend disagreement dotnet-il[failure, rc=1, stderr=\"IL backend could not unify __kappa_record_33a6fc85a55df00e3b69 with Int.\"] | interpreter[ok, stdout=\"__kappa_record_33a6fc85a55df00e3b69 2\"] | zig[ok, stdout=\"<data:1:0>\"]",
+      "count": 1,
+      "trace_hash": "b2b1fe949f1e91e160a6c52db542e992954143e6",
+      "alpha_source_hash": "6a346b177e157ee30bd1805adcc75fc9b1f0a5c1",
+      "trace_step_count": 20,
+      "kinds": {
+        "failure": 1
+      },
+      "terminal_signatures": {
+        "oracle: backend disagreement dotnet-il[failure, rc=1, stderr=\"IL backend could not unify __kappa_record_33a6fc85a55df00e3b69 with Int.\"] | interpreter[ok, stdout=\"__kappa_record_33a6fc85a55df00e3b69 2\"] | zig[ok, stdout=\"<data:1:0>\"]": 1
+      },
+      "canonical_terminal_signatures": {
+        "oracle: backend disagreement dotnet-il[failure, rc=1, stderr=\"IL backend could not unify __kappa_record_33a6fc85a55df00e3b69 with Int.\"] | interpreter[ok, stdout=\"__kappa_record_33a6fc85a55df00e3b69 2\"] | zig[ok, stdout=\"<data:1:0>\"]": 1
+      },
+      "representative_case": "failure-b2b1fe949f1e-3339654c8b75",
+      "representative_path": "/Users/wabbit/ws/kappa/pending-failures/failure-b2b1fe949f1e-3339654c8b75",
+      "source_case_dir": "/Users/wabbit/ws/kappa/pending-failures/failure-b2b1fe949f1e-3339654c8b75"
+    },
+    {
+      "destination": "/Users/wabbit/ws/kappa/pending-failures/failure-b2b1fe949f1e-673205b8259b",
+      "cluster_key": "b2b1fe949f1e91e160a6c52db542e992954143e6:oracle: backend disagreement dotnet-il[failure, rc=1, stderr=\"IL backend could not unify __kappa_record_5e95a17f382ea8d6eb8a with Int.\"] | interpreter[ok, stdout=\"__kappa_record_5e95a17f382ea8d6eb8a 1\"] | zig[ok, stdout=\"<data:1:0>\"]",
+      "count": 1,
+      "trace_hash": "b2b1fe949f1e91e160a6c52db542e992954143e6",
+      "alpha_source_hash": "0a8335c177dddfd1a7c089af1d8e215e6ee284c9",
+      "trace_step_count": 20,
+      "kinds": {
+        "failure": 1
+      },
+      "terminal_signatures": {
+        "oracle: backend disagreement dotnet-il[failure, rc=1, stderr=\"IL backend could not unify __kappa_record_5e95a17f382ea8d6eb8a with Int.\"] | interpreter[ok, stdout=\"__kappa_record_5e95a17f382ea8d6eb8a 1\"] | zig[ok, stdout=\"<data:1:0>\"]": 1
+      },
+      "canonical_terminal_signatures": {
+        "oracle: backend disagreement dotnet-il[failure, rc=1, stderr=\"IL backend could not unify __kappa_record_5e95a17f382ea8d6eb8a with Int.\"] | interpreter[ok, stdout=\"__kappa_record_5e95a17f382ea8d6eb8a 1\"] | zig[ok, stdout=\"<data:1:0>\"]": 1
+      },
+      "representative_case": "failure-b2b1fe949f1e-673205b8259b",
+      "representative_path": "/Users/wabbit/ws/kappa/pending-failures/failure-b2b1fe949f1e-673205b8259b",
+      "source_case_dir": "/Users/wabbit/ws/kappa/pending-failures/failure-b2b1fe949f1e-673205b8259b"
+    },
+    {
+      "destination": "/Users/wabbit/ws/kappa/pending-failures/failure-b2b1fe949f1e-8486e7753e00",
+      "cluster_key": "b2b1fe949f1e91e160a6c52db542e992954143e6:oracle: backend disagreement dotnet-il[failure, rc=1, stderr=\"IL backend could not unify __kappa_record_5e95a17f382ea8d6eb8a with Int.\"] | interpreter[ok, stdout=\"__kappa_record_5e95a17f382ea8d6eb8a 4\"] | zig[ok, stdout=\"<data:1:0>\"]",
+      "count": 1,
+      "trace_hash": "b2b1fe949f1e91e160a6c52db542e992954143e6",
+      "alpha_source_hash": "324754eb9b95eb3b3831862f4896ceade84fa07a",
+      "trace_step_count": 20,
+      "kinds": {
+        "failure": 1
+      },
+      "terminal_signatures": {
+        "oracle: backend disagreement dotnet-il[failure, rc=1, stderr=\"IL backend could not unify __kappa_record_5e95a17f382ea8d6eb8a with Int.\"] | interpreter[ok, stdout=\"__kappa_record_5e95a17f382ea8d6eb8a 4\"] | zig[ok, stdout=\"<data:1:0>\"]": 1
+      },
+      "canonical_terminal_signatures": {
+        "oracle: backend disagreement dotnet-il[failure, rc=1, stderr=\"IL backend could not unify __kappa_record_5e95a17f382ea8d6eb8a with Int.\"] | interpreter[ok, stdout=\"__kappa_record_5e95a17f382ea8d6eb8a 4\"] | zig[ok, stdout=\"<data:1:0>\"]": 1
+      },
+      "representative_case": "failure-b2b1fe949f1e-8486e7753e00",
+      "representative_path": "/Users/wabbit/ws/kappa/pending-failures/failure-b2b1fe949f1e-8486e7753e00",
+      "source_case_dir": "/Users/wabbit/ws/kappa/pending-failures/failure-b2b1fe949f1e-8486e7753e00"
+    },
+    {
+      "destination": "/Users/wabbit/ws/kappa/pending-failures/failure-b2b1fe949f1e-0966f1bf1cde",
+      "cluster_key": "b2b1fe949f1e91e160a6c52db542e992954143e6:oracle: backend disagreement dotnet-il[failure, rc=1, stderr=\"IL backend could not unify __kappa_record_d59e207039ae71233a6b with Int.\"] | interpreter[ok, stdout=\"__kappa_record_d59e207039ae71233a6b 0\"] | zig[ok, stdout=\"<data:1:0>\"]",
+      "count": 1,
+      "trace_hash": "b2b1fe949f1e91e160a6c52db542e992954143e6",
+      "alpha_source_hash": "1b00fc696620a0ca36f79695d07dd7ce0f5575f0",
+      "trace_step_count": 20,
+      "kinds": {
+        "failure": 1
+      },
+      "terminal_signatures": {
+        "oracle: backend disagreement dotnet-il[failure, rc=1, stderr=\"IL backend could not unify __kappa_record_d59e207039ae71233a6b with Int.\"] | interpreter[ok, stdout=\"__kappa_record_d59e207039ae71233a6b 0\"] | zig[ok, stdout=\"<data:1:0>\"]": 1
+      },
+      "canonical_terminal_signatures": {
+        "oracle: backend disagreement dotnet-il[failure, rc=1, stderr=\"IL backend could not unify __kappa_record_d59e207039ae71233a6b with Int.\"] | interpreter[ok, stdout=\"__kappa_record_d59e207039ae71233a6b 0\"] | zig[ok, stdout=\"<data:1:0>\"]": 1
+      },
+      "representative_case": "failure-b2b1fe949f1e-0966f1bf1cde",
+      "representative_path": "/Users/wabbit/ws/kappa/pending-failures/failure-b2b1fe949f1e-0966f1bf1cde",
+      "source_case_dir": "/Users/wabbit/ws/kappa/pending-failures/failure-b2b1fe949f1e-0966f1bf1cde"
+    },
+    {
+      "destination": "/Users/wabbit/ws/kappa/pending-failures/failure-b2b1fe949f1e-7e20e1c15017",
+      "cluster_key": "b2b1fe949f1e91e160a6c52db542e992954143e6:oracle: backend disagreement dotnet-il[failure, rc=1, stderr=\"IL backend could not unify __kappa_record_d59e207039ae71233a6b with Int.\"] | interpreter[ok, stdout=\"__kappa_record_d59e207039ae71233a6b 1\"] | zig[ok, stdout=\"<data:1:0>\"]",
+      "count": 1,
+      "trace_hash": "b2b1fe949f1e91e160a6c52db542e992954143e6",
+      "alpha_source_hash": "fb7e2788d46b379a4a146a366c10d66e8661fb19",
+      "trace_step_count": 20,
+      "kinds": {
+        "failure": 1
+      },
+      "terminal_signatures": {
+        "oracle: backend disagreement dotnet-il[failure, rc=1, stderr=\"IL backend could not unify __kappa_record_d59e207039ae71233a6b with Int.\"] | interpreter[ok, stdout=\"__kappa_record_d59e207039ae71233a6b 1\"] | zig[ok, stdout=\"<data:1:0>\"]": 1
+      },
+      "canonical_terminal_signatures": {
+        "oracle: backend disagreement dotnet-il[failure, rc=1, stderr=\"IL backend could not unify __kappa_record_d59e207039ae71233a6b with Int.\"] | interpreter[ok, stdout=\"__kappa_record_d59e207039ae71233a6b 1\"] | zig[ok, stdout=\"<data:1:0>\"]": 1
+      },
+      "representative_case": "failure-b2b1fe949f1e-7e20e1c15017",
+      "representative_path": "/Users/wabbit/ws/kappa/pending-failures/failure-b2b1fe949f1e-7e20e1c15017",
+      "source_case_dir": "/Users/wabbit/ws/kappa/pending-failures/failure-b2b1fe949f1e-7e20e1c15017"
+    },
+    {
+      "destination": "/Users/wabbit/ws/kappa/pending-failures/failure-b2b1fe949f1e-08df77cc167f",
+      "cluster_key": "b2b1fe949f1e91e160a6c52db542e992954143e6:oracle: backend disagreement dotnet-il[failure, rc=1, stderr=\"IL backend could not unify __kappa_record_d59e207039ae71233a6b with Int.\"] | interpreter[ok, stdout=\"__kappa_record_d59e207039ae71233a6b 10\"] | zig[ok, stdout=\"<data:1:0>\"]",
+      "count": 1,
+      "trace_hash": "b2b1fe949f1e91e160a6c52db542e992954143e6",
+      "alpha_source_hash": "c1b13d0c0fade28207c485e1f29ddbd8ad37c8af",
+      "trace_step_count": 20,
+      "kinds": {
+        "failure": 1
+      },
+      "terminal_signatures": {
+        "oracle: backend disagreement dotnet-il[failure, rc=1, stderr=\"IL backend could not unify __kappa_record_d59e207039ae71233a6b with Int.\"] | interpreter[ok, stdout=\"__kappa_record_d59e207039ae71233a6b 10\"] | zig[ok, stdout=\"<data:1:0>\"]": 1
+      },
+      "canonical_terminal_signatures": {
+        "oracle: backend disagreement dotnet-il[failure, rc=1, stderr=\"IL backend could not unify __kappa_record_d59e207039ae71233a6b with Int.\"] | interpreter[ok, stdout=\"__kappa_record_d59e207039ae71233a6b 10\"] | zig[ok, stdout=\"<data:1:0>\"]": 1
+      },
+      "representative_case": "failure-b2b1fe949f1e-08df77cc167f",
+      "representative_path": "/Users/wabbit/ws/kappa/pending-failures/failure-b2b1fe949f1e-08df77cc167f",
+      "source_case_dir": "/Users/wabbit/ws/kappa/pending-failures/failure-b2b1fe949f1e-08df77cc167f"
+    },
+    {
+      "destination": "/Users/wabbit/ws/kappa/pending-failures/failure-b2b1fe949f1e-06de096633ca",
+      "cluster_key": "b2b1fe949f1e91e160a6c52db542e992954143e6:oracle: backend disagreement dotnet-il[failure, rc=1, stderr=\"IL backend could not unify __kappa_record_d59e207039ae71233a6b with Int.\"] | interpreter[ok, stdout=\"__kappa_record_d59e207039ae71233a6b 20\"] | zig[ok, stdout=\"<data:1:0>\"]",
+      "count": 1,
+      "trace_hash": "b2b1fe949f1e91e160a6c52db542e992954143e6",
+      "alpha_source_hash": "4f55edef6d70f331303f037b257dfdb13c62f820",
+      "trace_step_count": 20,
+      "kinds": {
+        "failure": 1
+      },
+      "terminal_signatures": {
+        "oracle: backend disagreement dotnet-il[failure, rc=1, stderr=\"IL backend could not unify __kappa_record_d59e207039ae71233a6b with Int.\"] | interpreter[ok, stdout=\"__kappa_record_d59e207039ae71233a6b 20\"] | zig[ok, stdout=\"<data:1:0>\"]": 1
+      },
+      "canonical_terminal_signatures": {
+        "oracle: backend disagreement dotnet-il[failure, rc=1, stderr=\"IL backend could not unify __kappa_record_d59e207039ae71233a6b with Int.\"] | interpreter[ok, stdout=\"__kappa_record_d59e207039ae71233a6b 20\"] | zig[ok, stdout=\"<data:1:0>\"]": 1
+      },
+      "representative_case": "failure-b2b1fe949f1e-06de096633ca",
+      "representative_path": "/Users/wabbit/ws/kappa/pending-failures/failure-b2b1fe949f1e-06de096633ca",
+      "source_case_dir": "/Users/wabbit/ws/kappa/pending-failures/failure-b2b1fe949f1e-06de096633ca"
+    },
+    {
+      "destination": "/Users/wabbit/ws/kappa/pending-failures/failure-b2b1fe949f1e-5c3585ea2ab8",
+      "cluster_key": "b2b1fe949f1e91e160a6c52db542e992954143e6:oracle: backend disagreement dotnet-il[failure, rc=1, stderr=\"IL backend could not unify __kappa_record_d59e207039ae71233a6b with Int.\"] | interpreter[ok, stdout=\"__kappa_record_d59e207039ae71233a6b 6\"] | zig[ok, stdout=\"<data:1:0>\"]",
+      "count": 1,
+      "trace_hash": "b2b1fe949f1e91e160a6c52db542e992954143e6",
+      "alpha_source_hash": "5b9f536cf6fbad78ac0c282c80bfdd9745efedc0",
+      "trace_step_count": 20,
+      "kinds": {
+        "failure": 1
+      },
+      "terminal_signatures": {
+        "oracle: backend disagreement dotnet-il[failure, rc=1, stderr=\"IL backend could not unify __kappa_record_d59e207039ae71233a6b with Int.\"] | interpreter[ok, stdout=\"__kappa_record_d59e207039ae71233a6b 6\"] | zig[ok, stdout=\"<data:1:0>\"]": 1
+      },
+      "canonical_terminal_signatures": {
+        "oracle: backend disagreement dotnet-il[failure, rc=1, stderr=\"IL backend could not unify __kappa_record_d59e207039ae71233a6b with Int.\"] | interpreter[ok, stdout=\"__kappa_record_d59e207039ae71233a6b 6\"] | zig[ok, stdout=\"<data:1:0>\"]": 1
+      },
+      "representative_case": "failure-b2b1fe949f1e-5c3585ea2ab8",
+      "representative_path": "/Users/wabbit/ws/kappa/pending-failures/failure-b2b1fe949f1e-5c3585ea2ab8",
+      "source_case_dir": "/Users/wabbit/ws/kappa/pending-failures/failure-b2b1fe949f1e-5c3585ea2ab8"
+    },
+    {
+      "destination": "/Users/wabbit/ws/kappa/pending-failures/failure-b2b1fe949f1e-408b4751150b",
+      "cluster_key": "b2b1fe949f1e91e160a6c52db542e992954143e6:oracle: backend disagreement dotnet-il[failure, rc=1, stderr=\"IL backend could not unify __kappa_record_f3d2119aa9f4265945ef with Int.\"] | interpreter[ok, stdout=\"__kappa_record_f3d2119aa9f4265945ef 3 1\"] | zig[ok, stdout=\"<data:1:0>\"]",
+      "count": 1,
+      "trace_hash": "b2b1fe949f1e91e160a6c52db542e992954143e6",
+      "alpha_source_hash": "e9ac5200d682a02371cb3503c60f05776eaaf3d0",
+      "trace_step_count": 20,
+      "kinds": {
+        "failure": 1
+      },
+      "terminal_signatures": {
+        "oracle: backend disagreement dotnet-il[failure, rc=1, stderr=\"IL backend could not unify __kappa_record_f3d2119aa9f4265945ef with Int.\"] | interpreter[ok, stdout=\"__kappa_record_f3d2119aa9f4265945ef 3 1\"] | zig[ok, stdout=\"<data:1:0>\"]": 1
+      },
+      "canonical_terminal_signatures": {
+        "oracle: backend disagreement dotnet-il[failure, rc=1, stderr=\"IL backend could not unify __kappa_record_f3d2119aa9f4265945ef with Int.\"] | interpreter[ok, stdout=\"__kappa_record_f3d2119aa9f4265945ef 3 1\"] | zig[ok, stdout=\"<data:1:0>\"]": 1
+      },
+      "representative_case": "failure-b2b1fe949f1e-408b4751150b",
+      "representative_path": "/Users/wabbit/ws/kappa/pending-failures/failure-b2b1fe949f1e-408b4751150b",
+      "source_case_dir": "/Users/wabbit/ws/kappa/pending-failures/failure-b2b1fe949f1e-408b4751150b"
+    },
+    {
+      "destination": "/Users/wabbit/ws/kappa/pending-failures/failure-b2b1fe949f1e-17585798e874",
+      "cluster_key": "b2b1fe949f1e91e160a6c52db542e992954143e6:oracle: backend disagreement dotnet-il[failure, rc=1, stderr=\"IL backend currently requires parameter types for 'main.<sym>'.\"] | interpreter[ok, stdout=\"0\"] | zig[ok, stdout=\"0\"]",
+      "count": 1,
+      "trace_hash": "b2b1fe949f1e91e160a6c52db542e992954143e6",
+      "alpha_source_hash": "614979e5c85fe73352cd4793ddd3dadde19d0b8d",
+      "trace_step_count": 20,
+      "kinds": {
+        "failure": 1
+      },
+      "terminal_signatures": {
+        "oracle: backend disagreement dotnet-il[failure, rc=1, stderr=\"IL backend currently requires parameter types for 'main.<sym>'.\"] | interpreter[ok, stdout=\"0\"] | zig[ok, stdout=\"0\"]": 1
+      },
+      "canonical_terminal_signatures": {
+        "oracle: backend disagreement dotnet-il[failure, rc=1, stderr=\"IL backend currently requires parameter types for 'main.<sym>'.\"] | interpreter[ok, stdout=\"0\"] | zig[ok, stdout=\"0\"]": 1
+      },
+      "representative_case": "failure-b2b1fe949f1e-17585798e874",
+      "representative_path": "/Users/wabbit/ws/kappa/pending-failures/failure-b2b1fe949f1e-17585798e874",
+      "source_case_dir": "/Users/wabbit/ws/kappa/pending-failures/failure-b2b1fe949f1e-17585798e874"
+    },
+    {
+      "destination": "/Users/wabbit/ws/kappa/pending-failures/failure-b2b1fe949f1e-87fbef00e9f6",
+      "cluster_key": "b2b1fe949f1e91e160a6c52db542e992954143e6:oracle: backend disagreement dotnet-il[failure, rc=1, stderr=\"IL backend currently requires parameter types for 'main.<sym>'.\"] | interpreter[ok, stdout=\"1\"] | zig[ok, stdout=\"1\"]",
+      "count": 1,
+      "trace_hash": "b2b1fe949f1e91e160a6c52db542e992954143e6",
+      "alpha_source_hash": "9bf7edfbac245d2470037e6f5e80e92c9aa19f80",
+      "trace_step_count": 20,
+      "kinds": {
+        "failure": 1
+      },
+      "terminal_signatures": {
+        "oracle: backend disagreement dotnet-il[failure, rc=1, stderr=\"IL backend currently requires parameter types for 'main.<sym>'.\"] | interpreter[ok, stdout=\"1\"] | zig[ok, stdout=\"1\"]": 1
+      },
+      "canonical_terminal_signatures": {
+        "oracle: backend disagreement dotnet-il[failure, rc=1, stderr=\"IL backend currently requires parameter types for 'main.<sym>'.\"] | interpreter[ok, stdout=\"1\"] | zig[ok, stdout=\"1\"]": 1
+      },
+      "representative_case": "failure-b2b1fe949f1e-87fbef00e9f6",
+      "representative_path": "/Users/wabbit/ws/kappa/pending-failures/failure-b2b1fe949f1e-87fbef00e9f6",
+      "source_case_dir": "/Users/wabbit/ws/kappa/pending-failures/failure-b2b1fe949f1e-87fbef00e9f6"
+    },
+    {
+      "destination": "/Users/wabbit/ws/kappa/pending-failures/failure-b2b1fe949f1e-7238af87dd1b",
+      "cluster_key": "b2b1fe949f1e91e160a6c52db542e992954143e6:oracle: backend disagreement dotnet-il[failure, rc=1, stderr=\"IL backend currently requires parameter types for 'main.<sym>'.\"] | interpreter[ok, stdout=\"<function> :: <function>\"] | zig[ok, stdout=\"<data:10:1>\"]",
+      "count": 1,
+      "trace_hash": "b2b1fe949f1e91e160a6c52db542e992954143e6",
+      "alpha_source_hash": "4b1f4b298461812cdd4c0fcdb87e969a3210aad8",
+      "trace_step_count": 20,
+      "kinds": {
+        "failure": 1
+      },
+      "terminal_signatures": {
+        "oracle: backend disagreement dotnet-il[failure, rc=1, stderr=\"IL backend currently requires parameter types for 'main.<sym>'.\"] | interpreter[ok, stdout=\"<function> :: <function>\"] | zig[ok, stdout=\"<data:10:1>\"]": 1
+      },
+      "canonical_terminal_signatures": {
+        "oracle: backend disagreement dotnet-il[failure, rc=1, stderr=\"IL backend currently requires parameter types for 'main.<sym>'.\"] | interpreter[ok, stdout=\"<function> :: <function>\"] | zig[ok, stdout=\"<data:10:1>\"]": 1
+      },
+      "representative_case": "failure-b2b1fe949f1e-7238af87dd1b",
+      "representative_path": "/Users/wabbit/ws/kappa/pending-failures/failure-b2b1fe949f1e-7238af87dd1b",
+      "source_case_dir": "/Users/wabbit/ws/kappa/pending-failures/failure-b2b1fe949f1e-7238af87dd1b"
+    },
+    {
+      "destination": "/Users/wabbit/ws/kappa/pending-failures/failure-b2b1fe949f1e-7b0709c93ac7",
+      "cluster_key": "b2b1fe949f1e91e160a6c52db542e992954143e6:oracle: backend disagreement dotnet-il[failure, rc=1, stderr=\"IL backend currently requires parameter types for 'main.<sym>'.\"] | interpreter[ok, stdout=\"<function>\"] | zig[ok, stdout=\"<closure:main.<sym>>\"]",
+      "count": 1,
+      "trace_hash": "b2b1fe949f1e91e160a6c52db542e992954143e6",
+      "alpha_source_hash": "9e74b6e756aef6ce5f2078b160f0888f6da28ee9",
+      "trace_step_count": 20,
+      "kinds": {
+        "failure": 1
+      },
+      "terminal_signatures": {
+        "oracle: backend disagreement dotnet-il[failure, rc=1, stderr=\"IL backend currently requires parameter types for 'main.<sym>'.\"] | interpreter[ok, stdout=\"<function>\"] | zig[ok, stdout=\"<closure:main.<sym>>\"]": 1
+      },
+      "canonical_terminal_signatures": {
+        "oracle: backend disagreement dotnet-il[failure, rc=1, stderr=\"IL backend currently requires parameter types for 'main.<sym>'.\"] | interpreter[ok, stdout=\"<function>\"] | zig[ok, stdout=\"<closure:main.<sym>>\"]": 1
+      },
+      "representative_case": "failure-b2b1fe949f1e-7b0709c93ac7",
+      "representative_path": "/Users/wabbit/ws/kappa/pending-failures/failure-b2b1fe949f1e-7b0709c93ac7",
+      "source_case_dir": "/Users/wabbit/ws/kappa/pending-failures/failure-b2b1fe949f1e-7b0709c93ac7"
+    },
+    {
+      "destination": "/Users/wabbit/ws/kappa/pending-failures/failure-b2b1fe949f1e-c1e9e4fa7944",
+      "cluster_key": "b2b1fe949f1e91e160a6c52db542e992954143e6:oracle: backend disagreement dotnet-il[failure, rc=1, stderr=\"IL backend currently requires parameter types for 'main.<sym>'.\"] | interpreter[ok] | zig[ok]",
+      "count": 1,
+      "trace_hash": "b2b1fe949f1e91e160a6c52db542e992954143e6",
+      "alpha_source_hash": "d1cd2c6628f1a9507e6f2934ea6a8015db49a493",
+      "trace_step_count": 20,
+      "kinds": {
+        "failure": 1
+      },
+      "terminal_signatures": {
+        "oracle: backend disagreement dotnet-il[failure, rc=1, stderr=\"IL backend currently requires parameter types for 'main.<sym>'.\"] | interpreter[ok] | zig[ok]": 1
+      },
+      "canonical_terminal_signatures": {
+        "oracle: backend disagreement dotnet-il[failure, rc=1, stderr=\"IL backend currently requires parameter types for 'main.<sym>'.\"] | interpreter[ok] | zig[ok]": 1
+      },
+      "representative_case": "failure-b2b1fe949f1e-c1e9e4fa7944",
+      "representative_path": "/Users/wabbit/ws/kappa/pending-failures/failure-b2b1fe949f1e-c1e9e4fa7944",
+      "source_case_dir": "/Users/wabbit/ws/kappa/pending-failures/failure-b2b1fe949f1e-c1e9e4fa7944"
+    },
+    {
+      "destination": "/Users/wabbit/ws/kappa/pending-failures/failure-b2b1fe949f1e-5fdb87bfeb80",
+      "cluster_key": "b2b1fe949f1e91e160a6c52db542e992954143e6:oracle: backend disagreement dotnet-il[failure, rc=1, stderr=\"IL backend does not support closures yet.\"] | interpreter[ok, stdout=\"0\"] | zig[ok, stdout=\"0\"]",
+      "count": 1,
+      "trace_hash": "b2b1fe949f1e91e160a6c52db542e992954143e6",
+      "alpha_source_hash": "604091788c011e654f0c32de1769ba8e2ff8ca56",
+      "trace_step_count": 20,
+      "kinds": {
+        "failure": 1
+      },
+      "terminal_signatures": {
+        "oracle: backend disagreement dotnet-il[failure, rc=1, stderr=\"IL backend does not support closures yet.\"] | interpreter[ok, stdout=\"0\"] | zig[ok, stdout=\"0\"]": 1
+      },
+      "canonical_terminal_signatures": {
+        "oracle: backend disagreement dotnet-il[failure, rc=1, stderr=\"IL backend does not support closures yet.\"] | interpreter[ok, stdout=\"0\"] | zig[ok, stdout=\"0\"]": 1
+      },
+      "representative_case": "failure-b2b1fe949f1e-5fdb87bfeb80",
+      "representative_path": "/Users/wabbit/ws/kappa/pending-failures/failure-b2b1fe949f1e-5fdb87bfeb80",
+      "source_case_dir": "/Users/wabbit/ws/kappa/pending-failures/failure-b2b1fe949f1e-5fdb87bfeb80"
+    },
+    {
+      "destination": "/Users/wabbit/ws/kappa/pending-failures/failure-b2b1fe949f1e-5b97f06da5cb",
+      "cluster_key": "b2b1fe949f1e91e160a6c52db542e992954143e6:oracle: backend disagreement dotnet-il[failure, rc=1, stderr=\"IL backend does not support closures yet.\"] | interpreter[ok, stdout=\"4\"] | zig[ok, stdout=\"4\"]",
+      "count": 1,
+      "trace_hash": "b2b1fe949f1e91e160a6c52db542e992954143e6",
+      "alpha_source_hash": "ce798280cebd4768c1fe969ac62113b8f6e2fb0e",
+      "trace_step_count": 20,
+      "kinds": {
+        "failure": 1
+      },
+      "terminal_signatures": {
+        "oracle: backend disagreement dotnet-il[failure, rc=1, stderr=\"IL backend does not support closures yet.\"] | interpreter[ok, stdout=\"4\"] | zig[ok, stdout=\"4\"]": 1
+      },
+      "canonical_terminal_signatures": {
+        "oracle: backend disagreement dotnet-il[failure, rc=1, stderr=\"IL backend does not support closures yet.\"] | interpreter[ok, stdout=\"4\"] | zig[ok, stdout=\"4\"]": 1
+      },
+      "representative_case": "failure-b2b1fe949f1e-5b97f06da5cb",
+      "representative_path": "/Users/wabbit/ws/kappa/pending-failures/failure-b2b1fe949f1e-5b97f06da5cb",
+      "source_case_dir": "/Users/wabbit/ws/kappa/pending-failures/failure-b2b1fe949f1e-5b97f06da5cb"
+    },
+    {
+      "destination": "/Users/wabbit/ws/kappa/pending-failures/failure-b2b1fe949f1e-fb03d75b52c2",
+      "cluster_key": "b2b1fe949f1e91e160a6c52db542e992954143e6:oracle: backend disagreement dotnet-il[failure, rc=1, stderr=\"IL backend does not support closures yet.\"] | interpreter[ok, stdout=\"42\"] | zig[ok, stdout=\"42\"]",
+      "count": 1,
+      "trace_hash": "b2b1fe949f1e91e160a6c52db542e992954143e6",
+      "alpha_source_hash": "a6b5a9643d7f4eb002e91bebac731690f7744eaf",
+      "trace_step_count": 20,
+      "kinds": {
+        "failure": 1
+      },
+      "terminal_signatures": {
+        "oracle: backend disagreement dotnet-il[failure, rc=1, stderr=\"IL backend does not support closures yet.\"] | interpreter[ok, stdout=\"42\"] | zig[ok, stdout=\"42\"]": 1
+      },
+      "canonical_terminal_signatures": {
+        "oracle: backend disagreement dotnet-il[failure, rc=1, stderr=\"IL backend does not support closures yet.\"] | interpreter[ok, stdout=\"42\"] | zig[ok, stdout=\"42\"]": 1
+      },
+      "representative_case": "failure-b2b1fe949f1e-fb03d75b52c2",
+      "representative_path": "/Users/wabbit/ws/kappa/pending-failures/failure-b2b1fe949f1e-fb03d75b52c2",
+      "source_case_dir": "/Users/wabbit/ws/kappa/pending-failures/failure-b2b1fe949f1e-fb03d75b52c2"
+    },
+    {
+      "destination": "/Users/wabbit/ws/kappa/pending-failures/failure-b2b1fe949f1e-3b9a2e01ff72",
+      "cluster_key": "b2b1fe949f1e91e160a6c52db542e992954143e6:oracle: backend disagreement dotnet-il[failure, rc=1, stderr=\"IL backend does not support closures yet.\"] | interpreter[ok] | zig[ok]",
+      "count": 1,
+      "trace_hash": "b2b1fe949f1e91e160a6c52db542e992954143e6",
+      "alpha_source_hash": "2f289fb5ce8bd215e9800ee0ae9097b584a3b659",
+      "trace_step_count": 20,
+      "kinds": {
+        "failure": 1
+      },
+      "terminal_signatures": {
+        "oracle: backend disagreement dotnet-il[failure, rc=1, stderr=\"IL backend does not support closures yet.\"] | interpreter[ok] | zig[ok]": 1
+      },
+      "canonical_terminal_signatures": {
+        "oracle: backend disagreement dotnet-il[failure, rc=1, stderr=\"IL backend does not support closures yet.\"] | interpreter[ok] | zig[ok]": 1
+      },
+      "representative_case": "failure-b2b1fe949f1e-3b9a2e01ff72",
+      "representative_path": "/Users/wabbit/ws/kappa/pending-failures/failure-b2b1fe949f1e-3b9a2e01ff72",
+      "source_case_dir": "/Users/wabbit/ws/kappa/pending-failures/failure-b2b1fe949f1e-3b9a2e01ff72"
+    },
+    {
+      "destination": "/Users/wabbit/ws/kappa/pending-failures/failure-b2b1fe949f1e-6b86c72f0a38",
+      "cluster_key": "b2b1fe949f1e91e160a6c52db542e992954143e6:oracle: backend disagreement dotnet-il[failure, rc=1, stderr=\"IL backend does not support function-valued name 'main.<sym>' yet.\"] | interpreter[ok] | zig[ok]",
+      "count": 1,
+      "trace_hash": "b2b1fe949f1e91e160a6c52db542e992954143e6",
+      "alpha_source_hash": "36c6164e30649b386323eee17b2a04fce69f6c23",
+      "trace_step_count": 20,
+      "kinds": {
+        "failure": 1
+      },
+      "terminal_signatures": {
+        "oracle: backend disagreement dotnet-il[failure, rc=1, stderr=\"IL backend does not support function-valued name 'main.<sym>' yet.\"] | interpreter[ok] | zig[ok]": 1
+      },
+      "canonical_terminal_signatures": {
+        "oracle: backend disagreement dotnet-il[failure, rc=1, stderr=\"IL backend does not support function-valued name 'main.<sym>' yet.\"] | interpreter[ok] | zig[ok]": 1
+      },
+      "representative_case": "failure-b2b1fe949f1e-6b86c72f0a38",
+      "representative_path": "/Users/wabbit/ws/kappa/pending-failures/failure-b2b1fe949f1e-6b86c72f0a38",
+      "source_case_dir": "/Users/wabbit/ws/kappa/pending-failures/failure-b2b1fe949f1e-6b86c72f0a38"
+    },
+    {
+      "destination": "/Users/wabbit/ws/kappa/pending-failures/failure-b2b1fe949f1e-fa4d7f948d3b",
+      "cluster_key": "b2b1fe949f1e91e160a6c52db542e992954143e6:oracle: backend disagreement dotnet-il[failure, rc=1, stderr=\"IL backend expected expression of type Int, but found Unit.\"] | interpreter[ok, stdout=\"42\"] | zig[ok, stdout=\"42\"]",
+      "count": 1,
+      "trace_hash": "b2b1fe949f1e91e160a6c52db542e992954143e6",
+      "alpha_source_hash": "2c24ade0c02e59595e0e9e9d3f0de8e6cc0a4d92",
+      "trace_step_count": 20,
+      "kinds": {
+        "failure": 1
+      },
+      "terminal_signatures": {
+        "oracle: backend disagreement dotnet-il[failure, rc=1, stderr=\"IL backend expected expression of type Int, but found Unit.\"] | interpreter[ok, stdout=\"42\"] | zig[ok, stdout=\"42\"]": 1
+      },
+      "canonical_terminal_signatures": {
+        "oracle: backend disagreement dotnet-il[failure, rc=1, stderr=\"IL backend expected expression of type Int, but found Unit.\"] | interpreter[ok, stdout=\"42\"] | zig[ok, stdout=\"42\"]": 1
+      },
+      "representative_case": "failure-b2b1fe949f1e-fa4d7f948d3b",
+      "representative_path": "/Users/wabbit/ws/kappa/pending-failures/failure-b2b1fe949f1e-fa4d7f948d3b",
+      "source_case_dir": "/Users/wabbit/ws/kappa/pending-failures/failure-b2b1fe949f1e-fa4d7f948d3b"
+    },
+    {
+      "destination": "/Users/wabbit/ws/kappa/pending-failures/failure-b2b1fe949f1e-237cb5008c1c",
+      "cluster_key": "b2b1fe949f1e91e160a6c52db542e992954143e6:oracle: backend disagreement dotnet-il[failure, rc=1, stderr=\"IL backend expected expression of type Int, but found Unit.\"] | interpreter[ok] | zig[ok]",
+      "count": 1,
+      "trace_hash": "b2b1fe949f1e91e160a6c52db542e992954143e6",
+      "alpha_source_hash": "e8e8e21a5b12fbfc68efcf6401d079e94087c542",
+      "trace_step_count": 20,
+      "kinds": {
+        "failure": 1
+      },
+      "terminal_signatures": {
+        "oracle: backend disagreement dotnet-il[failure, rc=1, stderr=\"IL backend expected expression of type Int, but found Unit.\"] | interpreter[ok] | zig[ok]": 1
+      },
+      "canonical_terminal_signatures": {
+        "oracle: backend disagreement dotnet-il[failure, rc=1, stderr=\"IL backend expected expression of type Int, but found Unit.\"] | interpreter[ok] | zig[ok]": 1
+      },
+      "representative_case": "failure-b2b1fe949f1e-237cb5008c1c",
+      "representative_path": "/Users/wabbit/ws/kappa/pending-failures/failure-b2b1fe949f1e-237cb5008c1c",
+      "source_case_dir": "/Users/wabbit/ws/kappa/pending-failures/failure-b2b1fe949f1e-237cb5008c1c"
+    },
+    {
+      "destination": "/Users/wabbit/ws/kappa/pending-failures/failure-b2b1fe949f1e-3334b583f9e1",
+      "cluster_key": "b2b1fe949f1e91e160a6c52db542e992954143e6:oracle: backend disagreement dotnet-il[failure, rc=1, stderr=\"IL backend expected expression of type Unit, but found List Int.\"] | interpreter[ok, stdout=\"42\"] | zig[ok, stdout=\"42\"]",
+      "count": 1,
+      "trace_hash": "b2b1fe949f1e91e160a6c52db542e992954143e6",
+      "alpha_source_hash": "3327cdc21d43478357cfc072e1440083ac234615",
+      "trace_step_count": 20,
+      "kinds": {
+        "failure": 1
+      },
+      "terminal_signatures": {
+        "oracle: backend disagreement dotnet-il[failure, rc=1, stderr=\"IL backend expected expression of type Unit, but found List Int.\"] | interpreter[ok, stdout=\"42\"] | zig[ok, stdout=\"42\"]": 1
+      },
+      "canonical_terminal_signatures": {
+        "oracle: backend disagreement dotnet-il[failure, rc=1, stderr=\"IL backend expected expression of type Unit, but found List Int.\"] | interpreter[ok, stdout=\"42\"] | zig[ok, stdout=\"42\"]": 1
+      },
+      "representative_case": "failure-b2b1fe949f1e-3334b583f9e1",
+      "representative_path": "/Users/wabbit/ws/kappa/pending-failures/failure-b2b1fe949f1e-3334b583f9e1",
+      "source_case_dir": "/Users/wabbit/ws/kappa/pending-failures/failure-b2b1fe949f1e-3334b583f9e1"
+    },
+    {
+      "destination": "/Users/wabbit/ws/kappa/pending-failures/failure-b2b1fe949f1e-f1f786c6c87c",
+      "cluster_key": "b2b1fe949f1e91e160a6c52db542e992954143e6:oracle: backend disagreement dotnet-il[failure, rc=1, stderr=\"IL backend recursive type inference is not implemented yet for 'main.<sym>'.\"] | interpreter[ok] | zig[ok]",
+      "count": 1,
+      "trace_hash": "b2b1fe949f1e91e160a6c52db542e992954143e6",
+      "alpha_source_hash": "c74c478135da4c82b0f1543783dd41d9bc390851",
+      "trace_step_count": 20,
+      "kinds": {
+        "failure": 1
+      },
+      "terminal_signatures": {
+        "oracle: backend disagreement dotnet-il[failure, rc=1, stderr=\"IL backend recursive type inference is not implemented yet for 'main.<sym>'.\"] | interpreter[ok] | zig[ok]": 1
+      },
+      "canonical_terminal_signatures": {
+        "oracle: backend disagreement dotnet-il[failure, rc=1, stderr=\"IL backend recursive type inference is not implemented yet for 'main.<sym>'.\"] | interpreter[ok] | zig[ok]": 1
+      },
+      "representative_case": "failure-b2b1fe949f1e-f1f786c6c87c",
+      "representative_path": "/Users/wabbit/ws/kappa/pending-failures/failure-b2b1fe949f1e-f1f786c6c87c",
+      "source_case_dir": "/Users/wabbit/ws/kappa/pending-failures/failure-b2b1fe949f1e-f1f786c6c87c"
+    },
+    {
+      "destination": "/Users/wabbit/ws/kappa/pending-failures/failure-b2b1fe949f1e-8712d2369cda",
+      "cluster_key": "b2b1fe949f1e91e160a6c52db542e992954143e6:oracle: backend disagreement dotnet-il[failure, rc=1, stderr=\"Unexpected token '3' in a type.\"] | interpreter[ok, stdout=\"<constructor i0/3 [1]>\"] | zig[failure, rc=1, stderr=\"zig does not yet support using intrinsic 'pure' as a first-class value.\"]",
+      "count": 1,
+      "trace_hash": "b2b1fe949f1e91e160a6c52db542e992954143e6",
+      "alpha_source_hash": "398f726b0cde5c721b6dc08faa6fe24715e8a735",
+      "trace_step_count": 20,
+      "kinds": {
+        "failure": 1
+      },
+      "terminal_signatures": {
+        "oracle: backend disagreement dotnet-il[failure, rc=1, stderr=\"Unexpected token '3' in a type.\"] | interpreter[ok, stdout=\"<constructor i0/3 [1]>\"] | zig[failure, rc=1, stderr=\"zig does not yet support using intrinsic 'pure' as a first-class value.\"]": 1
+      },
+      "canonical_terminal_signatures": {
+        "oracle: backend disagreement dotnet-il[failure, rc=1, stderr=\"Unexpected token '3' in a type.\"] | interpreter[ok, stdout=\"<constructor i0/3 [1]>\"] | zig[failure, rc=1, stderr=\"zig does not yet support using intrinsic 'pure' as a first-class value.\"]": 1
+      },
+      "representative_case": "failure-b2b1fe949f1e-8712d2369cda",
+      "representative_path": "/Users/wabbit/ws/kappa/pending-failures/failure-b2b1fe949f1e-8712d2369cda",
+      "source_case_dir": "/Users/wabbit/ws/kappa/pending-failures/failure-b2b1fe949f1e-8712d2369cda"
+    },
+    {
+      "destination": "/Users/wabbit/ws/kappa/pending-failures/failure-b2b1fe949f1e-27ae61a84cd1",
+      "cluster_key": "b2b1fe949f1e91e160a6c52db542e992954143e6:oracle: backend disagreement dotnet-il[failure, rc=1] | interpreter[ok, stdout=\"0\"] | zig[ok, stdout=\"0\"]",
+      "count": 1,
+      "trace_hash": "b2b1fe949f1e91e160a6c52db542e992954143e6",
+      "alpha_source_hash": "16c62d232307e574f8abe6a0f1a0a781c432d269",
+      "trace_step_count": 20,
+      "kinds": {
+        "failure": 1
+      },
+      "terminal_signatures": {
+        "oracle: backend disagreement dotnet-il[failure, rc=1] | interpreter[ok, stdout=\"0\"] | zig[ok, stdout=\"0\"]": 1
+      },
+      "canonical_terminal_signatures": {
+        "oracle: backend disagreement dotnet-il[failure, rc=1] | interpreter[ok, stdout=\"0\"] | zig[ok, stdout=\"0\"]": 1
+      },
+      "representative_case": "failure-b2b1fe949f1e-27ae61a84cd1",
+      "representative_path": "/Users/wabbit/ws/kappa/pending-failures/failure-b2b1fe949f1e-27ae61a84cd1",
+      "source_case_dir": "/Users/wabbit/ws/kappa/pending-failures/failure-b2b1fe949f1e-27ae61a84cd1"
+    },
+    {
+      "destination": "/Users/wabbit/ws/kappa/pending-failures/failure-b2b1fe949f1e-45d1a470c7c2",
+      "cluster_key": "b2b1fe949f1e91e160a6c52db542e992954143e6:oracle: backend disagreement dotnet-il[failure, rc=1] | interpreter[ok] | zig[ok]",
+      "count": 1,
+      "trace_hash": "b2b1fe949f1e91e160a6c52db542e992954143e6",
+      "alpha_source_hash": "0564db3f9209980b3597517133f19e515ddc06b1",
+      "trace_step_count": 20,
+      "kinds": {
+        "failure": 1
+      },
+      "terminal_signatures": {
+        "oracle: backend disagreement dotnet-il[failure, rc=1] | interpreter[ok] | zig[ok]": 1
+      },
+      "canonical_terminal_signatures": {
+        "oracle: backend disagreement dotnet-il[failure, rc=1] | interpreter[ok] | zig[ok]": 1
+      },
+      "representative_case": "failure-b2b1fe949f1e-45d1a470c7c2",
+      "representative_path": "/Users/wabbit/ws/kappa/pending-failures/failure-b2b1fe949f1e-45d1a470c7c2",
+      "source_case_dir": "/Users/wabbit/ws/kappa/pending-failures/failure-b2b1fe949f1e-45d1a470c7c2"
+    },
+    {
+      "destination": "/Users/wabbit/ws/kappa/pending-failures/failure-b2b1fe949f1e-86e07cba11e0",
+      "cluster_key": "b2b1fe949f1e91e160a6c52db542e992954143e6:oracle: backend disagreement dotnet-il[ok, stdout=\"83\"] | interpreter[ok, stdout=\"83\"] | zig[failure, rc=1, stderr=\"runtime error: expected Int value\"]",
+      "count": 1,
+      "trace_hash": "b2b1fe949f1e91e160a6c52db542e992954143e6",
+      "alpha_source_hash": "69eb649e1cacdeb1b7383b8c046631cfc32cba30",
+      "trace_step_count": 20,
+      "kinds": {
+        "failure": 1
+      },
+      "terminal_signatures": {
+        "oracle: backend disagreement dotnet-il[ok, stdout=\"83\"] | interpreter[ok, stdout=\"83\"] | zig[failure, rc=1, stderr=\"runtime error: expected Int value\"]": 1
+      },
+      "canonical_terminal_signatures": {
+        "oracle: backend disagreement dotnet-il[ok, stdout=\"83\"] | interpreter[ok, stdout=\"83\"] | zig[failure, rc=1, stderr=\"runtime error: expected Int value\"]": 1
+      },
+      "representative_case": "failure-b2b1fe949f1e-86e07cba11e0",
+      "representative_path": "/Users/wabbit/ws/kappa/pending-failures/failure-b2b1fe949f1e-86e07cba11e0",
+      "source_case_dir": "/Users/wabbit/ws/kappa/pending-failures/failure-b2b1fe949f1e-86e07cba11e0"
+    },
+    {
+      "destination": "/Users/wabbit/ws/kappa/pending-failures/failure-b2b1fe949f1e-cf19b8464755",
+      "cluster_key": "b2b1fe949f1e91e160a6c52db542e992954143e6:oracle: output mismatch dotnet-il[ok, stdout=\"()\"] | interpreter[ok] | zig[ok]",
+      "count": 1,
+      "trace_hash": "b2b1fe949f1e91e160a6c52db542e992954143e6",
+      "alpha_source_hash": "3b1c09c902874630024d22dcd8dd334cfd9c021d",
+      "trace_step_count": 20,
+      "kinds": {
+        "failure": 1
+      },
+      "terminal_signatures": {
+        "oracle: output mismatch dotnet-il[ok, stdout=\"()\"] | interpreter[ok] | zig[ok]": 1
+      },
+      "canonical_terminal_signatures": {
+        "oracle: output mismatch dotnet-il[ok, stdout=\"()\"] | interpreter[ok] | zig[ok]": 1
+      },
+      "representative_case": "failure-b2b1fe949f1e-cf19b8464755",
+      "representative_path": "/Users/wabbit/ws/kappa/pending-failures/failure-b2b1fe949f1e-cf19b8464755",
+      "source_case_dir": "/Users/wabbit/ws/kappa/pending-failures/failure-b2b1fe949f1e-cf19b8464755"
+    },
+    {
+      "destination": "/Users/wabbit/ws/kappa/pending-failures/failure-b2b1fe949f1e-add2d868200d",
+      "cluster_key": "b2b1fe949f1e91e160a6c52db542e992954143e6:run:interpreter:main.<sym>: runtime error: Cannot apply Nil as a function.",
+      "count": 1,
+      "trace_hash": "b2b1fe949f1e91e160a6c52db542e992954143e6",
+      "alpha_source_hash": "36c2ea9356983116df8697fae1b4be9460d69e27",
+      "trace_step_count": 20,
+      "kinds": {
+        "failure": 1
+      },
+      "terminal_signatures": {
+        "run:interpreter:main.result: runtime error: Cannot apply Nil as a function.": 1
+      },
+      "canonical_terminal_signatures": {
+        "run:interpreter:main.<sym>: runtime error: Cannot apply Nil as a function.": 1
+      },
+      "representative_case": "failure-b2b1fe949f1e-add2d868200d",
+      "representative_path": "/Users/wabbit/ws/kappa/pending-failures/failure-b2b1fe949f1e-add2d868200d",
+      "source_case_dir": "/Users/wabbit/ws/kappa/pending-failures/failure-b2b1fe949f1e-add2d868200d"
+    },
+    {
+      "destination": "/Users/wabbit/ws/kappa/pending-failures/failure-b2b1fe949f1e-74b203aebb49",
+      "cluster_key": "b2b1fe949f1e91e160a6c52db542e992954143e6:run:interpreter:main.<sym>: runtime error: Cannot apply __kappa_record_bee2579f574d260bbc2d 1 1 as a function.",
+      "count": 1,
+      "trace_hash": "b2b1fe949f1e91e160a6c52db542e992954143e6",
+      "alpha_source_hash": "83472e123780d7356d7d99b610c803cb4339e415",
+      "trace_step_count": 20,
+      "kinds": {
+        "failure": 1
+      },
+      "terminal_signatures": {
+        "run:interpreter:main.result: runtime error: Cannot apply __kappa_record_bee2579f574d260bbc2d 1 1 as a function.": 1
+      },
+      "canonical_terminal_signatures": {
+        "run:interpreter:main.<sym>: runtime error: Cannot apply __kappa_record_bee2579f574d260bbc2d 1 1 as a function.": 1
+      },
+      "representative_case": "failure-b2b1fe949f1e-74b203aebb49",
+      "representative_path": "/Users/wabbit/ws/kappa/pending-failures/failure-b2b1fe949f1e-74b203aebb49",
+      "source_case_dir": "/Users/wabbit/ws/kappa/pending-failures/failure-b2b1fe949f1e-74b203aebb49"
+    },
+    {
+      "destination": "/Users/wabbit/ws/kappa/pending-failures/failure-b2b1fe949f1e-c2ec45615b64",
+      "cluster_key": "b2b1fe949f1e91e160a6c52db542e992954143e6:run:interpreter:main.<sym>: runtime error: Operator '*' is not supported for () and 2.",
+      "count": 1,
+      "trace_hash": "b2b1fe949f1e91e160a6c52db542e992954143e6",
+      "alpha_source_hash": "ff21585d85485ae7605ed63af08a6e0f037257a5",
+      "trace_step_count": 20,
+      "kinds": {
+        "failure": 1
+      },
+      "terminal_signatures": {
+        "run:interpreter:main.result: runtime error: Operator '*' is not supported for () and 2.": 1
+      },
+      "canonical_terminal_signatures": {
+        "run:interpreter:main.<sym>: runtime error: Operator '*' is not supported for () and 2.": 1
+      },
+      "representative_case": "failure-b2b1fe949f1e-c2ec45615b64",
+      "representative_path": "/Users/wabbit/ws/kappa/pending-failures/failure-b2b1fe949f1e-c2ec45615b64",
+      "source_case_dir": "/Users/wabbit/ws/kappa/pending-failures/failure-b2b1fe949f1e-c2ec45615b64"
+    },
+    {
+      "destination": "/Users/wabbit/ws/kappa/pending-failures/failure-b2b1fe949f1e-92a09856f73b",
+      "cluster_key": "b2b1fe949f1e91e160a6c52db542e992954143e6:run:interpreter:main.<sym>: runtime error: Operator '*' is not supported for <function> and 10.",
+      "count": 1,
+      "trace_hash": "b2b1fe949f1e91e160a6c52db542e992954143e6",
+      "alpha_source_hash": "25219e74bb3f0c18f1af3b6c6af2485339414621",
+      "trace_step_count": 20,
+      "kinds": {
+        "failure": 1
+      },
+      "terminal_signatures": {
+        "run:interpreter:main.main: runtime error: Operator '*' is not supported for <function> and 10.": 1
+      },
+      "canonical_terminal_signatures": {
+        "run:interpreter:main.<sym>: runtime error: Operator '*' is not supported for <function> and 10.": 1
+      },
+      "representative_case": "failure-b2b1fe949f1e-92a09856f73b",
+      "representative_path": "/Users/wabbit/ws/kappa/pending-failures/failure-b2b1fe949f1e-92a09856f73b",
+      "source_case_dir": "/Users/wabbit/ws/kappa/pending-failures/failure-b2b1fe949f1e-92a09856f73b"
+    },
+    {
+      "destination": "/Users/wabbit/ws/kappa/pending-failures/failure-b2b1fe949f1e-deb2bb6ad39d",
+      "cluster_key": "b2b1fe949f1e91e160a6c52db542e992954143e6:run:interpreter:main.<sym>: runtime error: Operator '*' is not supported for <function> and 2.",
+      "count": 1,
+      "trace_hash": "b2b1fe949f1e91e160a6c52db542e992954143e6",
+      "alpha_source_hash": "4bf5f9fc2c9e755b765e4f180ef2834ed56f8184",
+      "trace_step_count": 20,
+      "kinds": {
+        "failure": 1
+      },
+      "terminal_signatures": {
+        "run:interpreter:main.result: runtime error: Operator '*' is not supported for <function> and 2.": 1
+      },
+      "canonical_terminal_signatures": {
+        "run:interpreter:main.<sym>: runtime error: Operator '*' is not supported for <function> and 2.": 1
+      },
+      "representative_case": "failure-b2b1fe949f1e-deb2bb6ad39d",
+      "representative_path": "/Users/wabbit/ws/kappa/pending-failures/failure-b2b1fe949f1e-deb2bb6ad39d",
+      "source_case_dir": "/Users/wabbit/ws/kappa/pending-failures/failure-b2b1fe949f1e-deb2bb6ad39d"
+    },
+    {
+      "destination": "/Users/wabbit/ws/kappa/pending-failures/failure-b2b1fe949f1e-db3a28b87f35",
+      "cluster_key": "b2b1fe949f1e91e160a6c52db542e992954143e6:run:interpreter:main.<sym>: runtime error: Operator '+' is not supported for () and ().",
+      "count": 1,
+      "trace_hash": "b2b1fe949f1e91e160a6c52db542e992954143e6",
+      "alpha_source_hash": "0286a0b724d616f4f5bdb5e4080c6aafad274d9a",
+      "trace_step_count": 20,
+      "kinds": {
+        "failure": 1
+      },
+      "terminal_signatures": {
+        "run:interpreter:main.result: runtime error: Operator '+' is not supported for () and ().": 1
+      },
+      "canonical_terminal_signatures": {
+        "run:interpreter:main.<sym>: runtime error: Operator '+' is not supported for () and ().": 1
+      },
+      "representative_case": "failure-b2b1fe949f1e-db3a28b87f35",
+      "representative_path": "/Users/wabbit/ws/kappa/pending-failures/failure-b2b1fe949f1e-db3a28b87f35",
+      "source_case_dir": "/Users/wabbit/ws/kappa/pending-failures/failure-b2b1fe949f1e-db3a28b87f35"
+    },
+    {
+      "destination": "/Users/wabbit/ws/kappa/pending-failures/failure-b2b1fe949f1e-02b05094802d",
+      "cluster_key": "b2b1fe949f1e91e160a6c52db542e992954143e6:run:interpreter:main.<sym>: runtime error: Operator '+' is not supported for () and 1.",
+      "count": 1,
+      "trace_hash": "b2b1fe949f1e91e160a6c52db542e992954143e6",
+      "alpha_source_hash": "82b5c59ed90e5ae8202e1f7c61a04c112f4b9945",
+      "trace_step_count": 20,
+      "kinds": {
+        "failure": 1
+      },
+      "terminal_signatures": {
+        "run:interpreter:main.result: runtime error: Operator '+' is not supported for () and 1.": 1
+      },
+      "canonical_terminal_signatures": {
+        "run:interpreter:main.<sym>: runtime error: Operator '+' is not supported for () and 1.": 1
+      },
+      "representative_case": "failure-b2b1fe949f1e-02b05094802d",
+      "representative_path": "/Users/wabbit/ws/kappa/pending-failures/failure-b2b1fe949f1e-02b05094802d",
+      "source_case_dir": "/Users/wabbit/ws/kappa/pending-failures/failure-b2b1fe949f1e-02b05094802d"
+    },
+    {
+      "destination": "/Users/wabbit/ws/kappa/pending-failures/failure-b2b1fe949f1e-add8e2c7e214",
+      "cluster_key": "b2b1fe949f1e91e160a6c52db542e992954143e6:run:interpreter:main.<sym>: runtime error: Operator '+' is not supported for <function> and 1.",
+      "count": 1,
+      "trace_hash": "b2b1fe949f1e91e160a6c52db542e992954143e6",
+      "alpha_source_hash": "3c5aa85727ddcc063a1770b48afd020a8ae35f92",
+      "trace_step_count": 20,
+      "kinds": {
+        "failure": 1
+      },
+      "terminal_signatures": {
+        "run:interpreter:main.main: runtime error: Operator '+' is not supported for <function> and 1.": 1
+      },
+      "canonical_terminal_signatures": {
+        "run:interpreter:main.<sym>: runtime error: Operator '+' is not supported for <function> and 1.": 1
+      },
+      "representative_case": "failure-b2b1fe949f1e-add8e2c7e214",
+      "representative_path": "/Users/wabbit/ws/kappa/pending-failures/failure-b2b1fe949f1e-add8e2c7e214",
+      "source_case_dir": "/Users/wabbit/ws/kappa/pending-failures/failure-b2b1fe949f1e-add8e2c7e214"
+    },
+    {
+      "destination": "/Users/wabbit/ws/kappa/pending-failures/failure-b2b1fe949f1e-9686a06b3b8c",
+      "cluster_key": "b2b1fe949f1e91e160a6c52db542e992954143e6:run:interpreter:main.<sym>: runtime error: Operator '+' is not supported for <function> and <function>.",
+      "count": 1,
+      "trace_hash": "b2b1fe949f1e91e160a6c52db542e992954143e6",
+      "alpha_source_hash": "ddaeca961c67c132f20795ad21457504617695eb",
+      "trace_step_count": 20,
+      "kinds": {
+        "failure": 1
+      },
+      "terminal_signatures": {
+        "run:interpreter:main.result: runtime error: Operator '+' is not supported for <function> and <function>.": 1
+      },
+      "canonical_terminal_signatures": {
+        "run:interpreter:main.<sym>: runtime error: Operator '+' is not supported for <function> and <function>.": 1
+      },
+      "representative_case": "failure-b2b1fe949f1e-9686a06b3b8c",
+      "representative_path": "/Users/wabbit/ws/kappa/pending-failures/failure-b2b1fe949f1e-9686a06b3b8c",
+      "source_case_dir": "/Users/wabbit/ws/kappa/pending-failures/failure-b2b1fe949f1e-9686a06b3b8c"
+    },
+    {
+      "destination": "/Users/wabbit/ws/kappa/pending-failures/failure-b2b1fe949f1e-0fc95a1de68c",
+      "cluster_key": "b2b1fe949f1e91e160a6c52db542e992954143e6:run:interpreter:main.<sym>: runtime error: Operator '+' is not supported for None and 1.",
+      "count": 1,
+      "trace_hash": "b2b1fe949f1e91e160a6c52db542e992954143e6",
+      "alpha_source_hash": "48e0449231a563c114b3ff63630372d78d83b3e9",
+      "trace_step_count": 20,
+      "kinds": {
+        "failure": 1
+      },
+      "terminal_signatures": {
+        "run:interpreter:main.result: runtime error: Operator '+' is not supported for None and 1.": 1
+      },
+      "canonical_terminal_signatures": {
+        "run:interpreter:main.<sym>: runtime error: Operator '+' is not supported for None and 1.": 1
+      },
+      "representative_case": "failure-b2b1fe949f1e-0fc95a1de68c",
+      "representative_path": "/Users/wabbit/ws/kappa/pending-failures/failure-b2b1fe949f1e-0fc95a1de68c",
+      "source_case_dir": "/Users/wabbit/ws/kappa/pending-failures/failure-b2b1fe949f1e-0fc95a1de68c"
+    },
+    {
+      "destination": "/Users/wabbit/ws/kappa/pending-failures/failure-b2b1fe949f1e-8651dfcb8e45",
+      "cluster_key": "b2b1fe949f1e91e160a6c52db542e992954143e6:run:interpreter:main.<sym>: runtime error: Recursive evaluation of 'main.<sym>' is not supported for non-function values.",
+      "count": 1,
+      "trace_hash": "b2b1fe949f1e91e160a6c52db542e992954143e6",
+      "alpha_source_hash": "3ab9d71ae1fd1d10b47ecaed4956002e6cc84e45",
+      "trace_step_count": 20,
+      "kinds": {
+        "failure": 1
+      },
+      "terminal_signatures": {
+        "run:interpreter:main.result: runtime error: Recursive evaluation of 'main.i0' is not supported for non-function values.": 1
+      },
+      "canonical_terminal_signatures": {
+        "run:interpreter:main.<sym>: runtime error: Recursive evaluation of 'main.<sym>' is not supported for non-function values.": 1
+      },
+      "representative_case": "failure-b2b1fe949f1e-8651dfcb8e45",
+      "representative_path": "/Users/wabbit/ws/kappa/pending-failures/failure-b2b1fe949f1e-8651dfcb8e45",
+      "source_case_dir": "/Users/wabbit/ws/kappa/pending-failures/failure-b2b1fe949f1e-8651dfcb8e45"
+    },
+    {
+      "destination": "/Users/wabbit/ws/kappa/pending-failures/crash-bdefc4955e02-7281e099728a",
+      "cluster_key": "bdefc4955e02cb86af5cece32d5c59fa026e9272:Unhandled exception. System.IO.FileNotFoundException: Could not load file or assembly 'Kappa.Compiler, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null'. The system cannot find the file specified.",
+      "count": 1,
+      "trace_hash": "bdefc4955e02cb86af5cece32d5c59fa026e9272",
+      "alpha_source_hash": "173f088313bdfac9c927f9935fcb6eb4b523497a",
+      "trace_step_count": 18,
+      "kinds": {
+        "crash": 1
+      },
+      "terminal_signatures": {
+        "Unhandled exception. System.IO.FileNotFoundException: Could not load file or assembly 'Kappa.Compiler, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null'. The system cannot find the file specified.": 1
+      },
+      "canonical_terminal_signatures": {
+        "Unhandled exception. System.IO.FileNotFoundException: Could not load file or assembly 'Kappa.Compiler, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null'. The system cannot find the file specified.": 1
+      },
+      "representative_case": "crash-bdefc4955e02-7281e099728a",
+      "representative_path": "/Users/wabbit/ws/kappa/pending-failures/crash-bdefc4955e02-7281e099728a",
+      "source_case_dir": "/Users/wabbit/ws/kappa/pending-failures/crash-bdefc4955e02-7281e099728a"
+    },
+    {
+      "destination": "/Users/wabbit/ws/kappa/pending-failures/crash-c84748e9d24e-bedf548169da",
+      "cluster_key": "c84748e9d24e61b602c77b7e9e155c7809731127:IL backend emission failed: System.InvalidOperationException: IL backend could not resolve type parameter 'else'. Available type parameters: [True, i0].",
+      "count": 1,
+      "trace_hash": "c84748e9d24e61b602c77b7e9e155c7809731127",
+      "alpha_source_hash": "57cfce63cb3b3400fd576bf25c6150794952afdb",
+      "trace_step_count": 18,
+      "kinds": {
+        "crash": 1
+      },
+      "terminal_signatures": {
+        "IL backend emission failed: System.InvalidOperationException: IL backend could not resolve type parameter 'else'. Available type parameters: [True, i0].": 1
+      },
+      "canonical_terminal_signatures": {
+        "IL backend emission failed: System.InvalidOperationException: IL backend could not resolve type parameter 'else'. Available type parameters: [True, i0].": 1
+      },
+      "representative_case": "crash-c84748e9d24e-bedf548169da",
+      "representative_path": "/Users/wabbit/ws/kappa/pending-failures/crash-c84748e9d24e-bedf548169da",
+      "source_case_dir": "/Users/wabbit/ws/kappa/pending-failures/crash-c84748e9d24e-bedf548169da"
+    },
+    {
+      "destination": "/Users/wabbit/ws/kappa/pending-failures/crash-c84748e9d24e-d1f7f494834a",
+      "cluster_key": "c84748e9d24e61b602c77b7e9e155c7809731127:Stack overflow.",
+      "count": 1,
+      "trace_hash": "c84748e9d24e61b602c77b7e9e155c7809731127",
+      "alpha_source_hash": "6e87ed0cf16d6e664cab1c215636dd2bc23c150f",
+      "trace_step_count": 18,
+      "kinds": {
+        "crash": 1
+      },
+      "terminal_signatures": {
+        "Stack overflow.": 1
+      },
+      "canonical_terminal_signatures": {
+        "Stack overflow.": 1
+      },
+      "representative_case": "crash-c84748e9d24e-d1f7f494834a",
+      "representative_path": "/Users/wabbit/ws/kappa/pending-failures/crash-c84748e9d24e-d1f7f494834a",
+      "source_case_dir": "/Users/wabbit/ws/kappa/pending-failures/crash-c84748e9d24e-d1f7f494834a"
+    },
+    {
+      "destination": "/Users/wabbit/ws/kappa/pending-failures/crash-c84748e9d24e-1c1126f30d97",
+      "cluster_key": "c84748e9d24e61b602c77b7e9e155c7809731127:Unhandled exception. System.Collections.Generic.KeyNotFoundException: An index satisfying the predicate was not found in the collection.",
+      "count": 1,
+      "trace_hash": "c84748e9d24e61b602c77b7e9e155c7809731127",
+      "alpha_source_hash": "b7d0e1dac4b8ba7c4277d49a574be7006d6682dc",
+      "trace_step_count": 18,
+      "kinds": {
+        "crash": 1
+      },
+      "terminal_signatures": {
+        "Unhandled exception. System.Collections.Generic.KeyNotFoundException: An index satisfying the predicate was not found in the collection.": 1
+      },
+      "canonical_terminal_signatures": {
+        "Unhandled exception. System.Collections.Generic.KeyNotFoundException: An index satisfying the predicate was not found in the collection.": 1
+      },
+      "representative_case": "crash-c84748e9d24e-1c1126f30d97",
+      "representative_path": "/Users/wabbit/ws/kappa/pending-failures/crash-c84748e9d24e-1c1126f30d97",
+      "source_case_dir": "/Users/wabbit/ws/kappa/pending-failures/crash-c84748e9d24e-1c1126f30d97"
     },
     {
       "destination": "/Users/wabbit/ws/kappa/pending-failures/timeout-da39a3ee5e6b-36d0981b3375",
       "cluster_key": "da39a3ee5e6b4b0d3255bfef95601890afd80709:compile",
       "count": 1,
       "trace_hash": "da39a3ee5e6b4b0d3255bfef95601890afd80709",
-      "alpha_source_hash": "5da95c5287325f64dbcdae4efbad3a167cd1c0f8",
+      "alpha_source_hash": "33f61d449f0b8dfbdcc3431b739884b59a1ba023",
       "trace_step_count": 0,
       "kinds": {
         "timeout": 1
@@ -160,9 +1539,9 @@
       "canonical_terminal_signatures": {
         "compile": 1
       },
-      "representative_case": "timeout-da39a3ee5e6b-36d0981b3375",
-      "representative_path": "/Users/wabbit/ws/kappa/pending-failures/timeout-da39a3ee5e6b-36d0981b3375",
-      "source_case_dir": "/Users/wabbit/ws/kappa/pending-failures/timeout-da39a3ee5e6b-36d0981b3375"
+      "representative_case": "timeout-9b9143e87be6632f47a6dc8bfba2bee8afced04f",
+      "representative_path": "/Users/wabbit/ws/kappa/artifacts/fuzzball-kappa-weighted-current/fuzz-run-20260428-083044-kappa-char-lstm-14ed7e79-10000/minimized-timeouts/timeout-9b9143e87be6632f47a6dc8bfba2bee8afced04f",
+      "source_case_dir": "/Users/wabbit/ws/kappa/artifacts/fuzzball-kappa-weighted-current/fuzz-run-20260428-083044-kappa-char-lstm-14ed7e79-10000/minimized-timeouts/timeout-9b9143e87be6632f47a6dc8bfba2bee8afced04f"
     }
   ]
 }
