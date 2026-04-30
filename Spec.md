@@ -6461,8 +6461,9 @@ however, MAY carry such terms as ordinary compile-time bindable values.
 Intended use:
 
 * `Universe` classifies universe levels that may appear in explicit forms such as `Type u`.
-* `Quantity` classifies exact usage intervals and the borrow mode `&`. It remains reserved for ownership and usage
-  accounting only; see §5.1.5.1.
+* `Quantity` classifies interval usage quantities only. It does not classify borrowing.
+  Borrowing is a binder access mode, written with `&` or `&[ρ]`, and is specified by §§5.1.5-5.1.6.
+  `Quantity` remains reserved for usage accounting only; see §5.1.5.
 * `Region` classifies explicit borrow lifetimes that may be named in surface types when a borrow relationship must cross
   an interface boundary.
 * `RecRow`, `VarRow`, and `EffRow` classify record, union/variant, and effect rows.
