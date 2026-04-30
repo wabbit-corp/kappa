@@ -13148,27 +13148,30 @@ Resolution proceeds in this order:
 
 1. **Local implicit context**: search lexical implicit bindings from innermost scope to outermost scope. The local
    implicit context includes:
-   * implicit binders introduced by `(@x : T)` parameters, and
-   * local implicit values introduced by `let (@q x : T) = ...` and `let (@q x : T) <- ...`, and
-   * implicit record-field projections unpacked from bound records with implicit fields (§5.5.9),
+   * implicit binders introduced by `(@x : T)` parameters;
+   * local implicit values introduced by `let (@q x : T) = ...` and `let (@q x : T) <- ...`;
+   * local explicit binding roots whose type is known to be trait evidence, that is, whose type `G` satisfies
+     `IsTrait G`;
+   * implicit record-field projections unpacked from bound records with implicit fields (§5.5.9);
    * explicit erased branch evidence introduced by control flow, including boolean equality evidence and constructor
-     refinement evidence (§7.4.1, §7.5.4, and any later branch form that introduces such evidence),
-   * local instance declarations in scope, and
-   * for an in-scope implicit value or trait evidence value `d : Tr args`, coherent evidence obtained by projecting any
-     declared supertraits of `Tr args` (§12.1.1).
+     refinement evidence (§7.4.1, §7.5.4, and any later branch form that introduces such evidence);
+   * local instance declarations in scope; and
+   * for any local trait evidence candidate `d : Tr args`, coherent evidence obtained by projecting any declared
+     supertraits of `Tr args` (§12.1.1).
+
+   Imported top-level term bindings and exported module bindings are not searched merely because they are
+   name-resolvable. If source code wants an imported explicit evidence value to participate in local implicit
+   resolution, it must first bind that value as a local binding root.
 
    At the first lexical scope level containing one or more candidates whose types are definitionally equal to `G`:
    * if exactly one candidate is present, use it;
    * if more than one candidate is present and `IsTrait G` is not available, the implicit goal is ambiguous and
      compilation fails;
-   * if more than one candidate is present and `IsTrait G` is available, the candidates are accepted iff they are
-     coherent under the trait-evidence coherence relation of §15.2.1. When coherent candidates are accepted, the
-     implementation selects the deterministic representative specified by §12.3.1.
+   * if more than one candidate is present and `IsTrait G` is available, the candidates are accepted. Their coherence
+     is justified by the compiler-issued proof irrelevance for trait evidence of type `G`. The implementation selects a
+     deterministic representative.
 
    Search does not continue to outer lexical levels once such a level is found.
-
-   Ordinary implicit-value search never consults imported top-level term bindings or exported module bindings. Only the
-   local implicit context is searched for goals that are not trait evidence types.
 
 2. **Trait evidence resolution**: if `G : Type u`, `IsTrait G` is available, and step 1 did not yield a unique local
    candidate, attempt to resolve trait evidence using the algorithm of §12.3.1.
