@@ -22829,6 +22829,11 @@ Rules:
   module-interface identity.
 * A proof produced by `unsafeAssertProof` may erase exactly like any other proof of the same proposition. Erasure does
   not make the assertion checked.
+* A `RuntimeErased T` proof produced directly or indirectly by `unsafeAssertProof` is unsafe-erasure evidence.
+* Any declaration, instance artifact, module interface, or optimization decision that depends on unsafe-erasure
+  evidence MUST record that dependency in its interface identity, semantic hash, and unsafe feature provenance.
+* A safe importing module MUST NOT silently treat unsafe-erasure evidence as trusted safe evidence unless the build
+  profile explicitly accepts unsafe proof assertions from the providing artifact.
 * If `allow_unsafe_assert_proof` is disabled under §16.2, use of `unsafeAssertProof` is a compile-time error.
 
 <!-- unsafe_debug.backend_escapes -->
