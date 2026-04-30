@@ -12949,23 +12949,15 @@ binders ::= binder+
 binder  ::= ident                            -- inferred type, quantity ω
           | '_'                              -- anonymous explicit binder, inferred type, quantity ω
           | '(' ')'                          -- anonymous explicit Unit binder, quantity ω
-          | '(' ident ':' type ')'           -- explicit type, quantity ω
-          | '(' '_' ':' type ')'             -- anonymous explicit binder, explicit type, quantity ω
-          | '(' quantity ident ':' type ')'  -- explicit type and quantity
-          | '(' quantity '_' ':' type ')'    -- anonymous explicit binder, explicit type and quantity
-          | '(' 'thunk' ident ':' type ')'   -- suspension sugar, quantity ω
-          | '(' 'thunk' '_' ':' type ')'     -- anonymous suspension binder, quantity ω
-          | '(' quantity 'thunk' ident ':' type ')' -- suspension sugar, explicit quantity
-          | '(' quantity 'thunk' '_' ':' type ')'   -- anonymous suspension binder, explicit quantity
-          | '(' 'lazy' ident ':' type ')'    -- memoized suspension sugar, quantity ω
-          | '(' 'lazy' '_' ':' type ')'      -- anonymous memoized suspension binder, quantity ω
-          | '(' quantity 'lazy' ident ':' type ')' -- memoized suspension sugar, explicit quantity
-          | '(' quantity 'lazy' '_' ':' type ')'   -- anonymous memoized suspension binder, explicit quantity
-          | '(' 'this' ':' type ')'          -- receiver binder, local name `this`
-          | '(' quantity 'this' ':' type ')' -- receiver binder, explicit quantity
-          | '(' 'this' ident ':' type ')'    -- receiver binder, local name `ident`
-          | '(' quantity 'this' ident ':' type ')' -- receiver binder, explicit quantity and local name
-          | '(' '@' binder_body ')'         -- implicit binder (as before)
+          | '(' explicitBinderBody ')'
+          | '(' suspensionBinderBody ')'
+          | '(' '@' binderPrefix? ident ':' type ')'
+
+suspensionBinderBody ::=
+    binderPrefix? 'thunk' ident ':' type
+  | binderPrefix? 'thunk' '_' ':' type
+  | binderPrefix? 'lazy' ident ':' type
+  | binderPrefix? 'lazy' '_' ':' type
 ```
 
 Rules:
@@ -12985,6 +12977,23 @@ Rules:
 * `_` in lambda-binder position is not an expression hole and does not enable placeholder-abstraction shorthand.
 * The suspension-marked forms `(thunk x : A)`, `(thunk _ : A)`, `(lazy x : A)`, `(lazy _ : A)`, `(q thunk x : A)`,
   `(q thunk _ : A)`, `(q lazy x : A)`, and `(q lazy _ : A)` are the ordinary function-binder sugar of §5.2.1.
+* A borrowed suspension binder is permitted:
+
+  ```kappa
+  (& thunk x : A)
+  (1 & thunk x : A)
+  (& lazy x : A)
+  ```
+
+  and desugars after prefix interpretation:
+
+  ```kappa
+  (& thunk x : A)      ≜ (ω & x : Thunk A)
+  (1 & thunk x : A)    ≜ (1 & x : Thunk A)
+  (& lazy x : A)       ≜ (ω & x : Need A)
+  ```
+
+  The spelling `thunk & x` is not a binder form.
 * Receiver-marked binders are explicit binders. `(this : T)` binds the receiver locally as `this`, while `(this x : T)`
   marks the binder as the receiver and binds it locally as `x`. The quantity-annotated forms `(q this : T)` and `(q this
   x : T)` are the corresponding receiver-marked variants with explicit quantity `q`.
