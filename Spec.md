@@ -1674,6 +1674,10 @@ intrinsic trait RuntimeErased (t : Type)
 
 intrinsic trait IsSubsingleton t => IsTrait (t : Type)
 
+intrinsic trait QuantitySatisfies
+    (capability : Quantity)
+    (demand : Quantity)
+
 intrinsic trait ContainsRec (r : RecRow) (l : Label) (a : Type)
 intrinsic trait LacksRec    (r : RecRow) (l : Label)
 
