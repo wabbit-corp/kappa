@@ -115,27 +115,27 @@ module internal IlDotNetBackendInput =
 
         loop 0 []
 
-    let private hashModuleIdentity = ModuleIdentity.ofSegments [ "std"; "hash" ]
+    let private hashModuleIdentity = Stdlib.HashModuleIdentity
     let internal tryParsePrimitiveTypeIdentity typeIdentity =
-        if TypeIdentity.hasTopLevelName preludeModuleIdentity "Int" typeIdentity
-           || TypeIdentity.hasTopLevelName preludeModuleIdentity "Nat" typeIdentity
-           || TypeIdentity.hasTopLevelName preludeModuleIdentity "Integer" typeIdentity
-           || TypeIdentity.hasTopLevelName preludeModuleIdentity "Byte" typeIdentity
-           || TypeIdentity.hasTopLevelName hashModuleIdentity "HashCode" typeIdentity then
+        if TypeIdentity.hasTopLevelName preludeModuleIdentity Stdlib.KnownTypeNames.Int typeIdentity
+           || TypeIdentity.hasTopLevelName preludeModuleIdentity Stdlib.KnownTypeNames.Nat typeIdentity
+           || TypeIdentity.hasTopLevelName preludeModuleIdentity Stdlib.KnownTypeNames.Integer typeIdentity
+           || TypeIdentity.hasTopLevelName preludeModuleIdentity Stdlib.KnownTypeNames.Byte typeIdentity
+           || TypeIdentity.hasTopLevelName hashModuleIdentity Stdlib.KnownTypeNames.HashCode typeIdentity then
             Some(IlPrimitive IlInt64)
-        elif TypeIdentity.hasTopLevelName preludeModuleIdentity "Float" typeIdentity
-             || TypeIdentity.hasTopLevelName preludeModuleIdentity "Double" typeIdentity
-             || TypeIdentity.hasTopLevelName preludeModuleIdentity "Real" typeIdentity then
+        elif TypeIdentity.hasTopLevelName preludeModuleIdentity Stdlib.KnownTypeNames.Float typeIdentity
+             || TypeIdentity.hasTopLevelName preludeModuleIdentity Stdlib.KnownTypeNames.Double typeIdentity
+             || TypeIdentity.hasTopLevelName preludeModuleIdentity Stdlib.KnownTypeNames.Real typeIdentity then
             Some(IlPrimitive IlFloat64)
-        elif TypeIdentity.hasTopLevelName preludeModuleIdentity "Bool" typeIdentity then
+        elif TypeIdentity.hasTopLevelName preludeModuleIdentity Stdlib.KnownTypeNames.Bool typeIdentity then
             Some(IlPrimitive IlBool)
-        elif TypeIdentity.hasTopLevelName preludeModuleIdentity "String" typeIdentity then
+        elif TypeIdentity.hasTopLevelName preludeModuleIdentity Stdlib.KnownTypeNames.String typeIdentity then
             Some(IlPrimitive IlString)
-        elif TypeIdentity.hasTopLevelName preludeModuleIdentity "Char" typeIdentity then
+        elif TypeIdentity.hasTopLevelName preludeModuleIdentity Stdlib.KnownTypeNames.Char typeIdentity then
             Some(IlPrimitive IlChar)
-        elif TypeIdentity.hasTopLevelName preludeModuleIdentity "UnicodeScalar" typeIdentity
-             || TypeIdentity.hasTopLevelName preludeModuleIdentity "Grapheme" typeIdentity
-             || TypeIdentity.hasTopLevelName preludeModuleIdentity "Bytes" typeIdentity then
+        elif TypeIdentity.hasTopLevelName preludeModuleIdentity Stdlib.KnownTypeNames.UnicodeScalar typeIdentity
+             || TypeIdentity.hasTopLevelName preludeModuleIdentity Stdlib.KnownTypeNames.Grapheme typeIdentity
+             || TypeIdentity.hasTopLevelName preludeModuleIdentity Stdlib.KnownTypeNames.Bytes typeIdentity then
             Some(IlPrimitive IlString)
         else
             None
@@ -343,14 +343,14 @@ module internal IlDotNetBackendInput =
                 Result.Ok(IlTypeParameter name)
             else
                 let resolvedIdentity =
-                    if String.Equals(name, "Unit", StringComparison.Ordinal) then
-                        Some(preludeTypeIdentity "Unit")
-                    elif String.Equals(name, "Ref", StringComparison.Ordinal) then
-                        Some(preludeTypeIdentity "Ref")
-                    elif String.Equals(name, "IO", StringComparison.Ordinal) then
-                        Some(preludeTypeIdentity "IO")
-                    elif String.Equals(name, "Dict", StringComparison.Ordinal) then
-                        Some(preludeTypeIdentity "Dict")
+                    if String.Equals(name, Stdlib.KnownTypeNames.Unit, StringComparison.Ordinal) then
+                        Some(preludeTypeIdentity Stdlib.KnownTypeNames.Unit)
+                    elif String.Equals(name, Stdlib.KnownTypeNames.Ref, StringComparison.Ordinal) then
+                        Some(preludeTypeIdentity Stdlib.KnownTypeNames.Ref)
+                    elif String.Equals(name, Stdlib.KnownTypeNames.IO, StringComparison.Ordinal) then
+                        Some(preludeTypeIdentity Stdlib.KnownTypeNames.IO)
+                    elif String.Equals(name, Stdlib.KnownTypeNames.Dict, StringComparison.Ordinal) then
+                        Some(preludeTypeIdentity Stdlib.KnownTypeNames.Dict)
                     elif isDictionaryTypeName name then
                         Some(preludeTypeIdentity name)
                     else
@@ -391,7 +391,9 @@ module internal IlDotNetBackendInput =
         let rec lowerTypeExpr (typeExpr: TypeSignatures.TypeExpr) =
             result {
                 match typeExpr with
-                | TypeSignatures.TypeName(([ "Dict" ] | [ "std"; "prelude"; "Dict" ]), [ constraintExpr ]) ->
+                | TypeSignatures.TypeName(nameSegments, [ constraintExpr ])
+                    when nameSegments = [ Stdlib.KnownTypeNames.Dict ]
+                         || nameSegments = Stdlib.PreludeModuleName @ [ Stdlib.KnownTypeNames.Dict ] ->
                     match constraintExpr with
                     | TypeSignatures.TypeName(traitNameSegments, argumentExprs) ->
                         let traitName = List.last traitNameSegments
@@ -801,10 +803,10 @@ module internal IlDotNetBackendInput =
             Some([ fileType ], unitIlType)
         | "newRef", [ valueType ] ->
             Some([ valueType ], refIlType valueType)
-        | "readRef", [ IlNamed(typeIdentity, [ valueType ]) ] when TypeIdentity.hasTopLevelName preludeModuleIdentity "Ref" typeIdentity ->
+        | "readRef", [ IlNamed(typeIdentity, [ valueType ]) ] when TypeIdentity.hasTopLevelName preludeModuleIdentity Stdlib.KnownTypeNames.Ref typeIdentity ->
             Some([ refIlType valueType ], valueType)
         | "writeRef", [ IlNamed(typeIdentity, [ valueType ]); actualValueType ]
-            when TypeIdentity.hasTopLevelName preludeModuleIdentity "Ref" typeIdentity && valueType = actualValueType ->
+            when TypeIdentity.hasTopLevelName preludeModuleIdentity Stdlib.KnownTypeNames.Ref typeIdentity && valueType = actualValueType ->
             Some([ refIlType valueType; valueType ], unitIlType)
         | "not", [ IlPrimitive IlBool ] ->
             Some([ IlPrimitive IlBool ], IlPrimitive IlBool)
@@ -818,7 +820,7 @@ module internal IlDotNetBackendInput =
         | intrinsicName, [ valueType ] when intrinsicName = IntrinsicCatalog.BuiltinPreludeShowIntrinsicName ->
             Some([ valueType ], IlPrimitive IlString)
         | intrinsicName, [ leftType; rightType ] when intrinsicName = IntrinsicCatalog.BuiltinPreludeCompareIntrinsicName && leftType = rightType ->
-            Some([ leftType; rightType ], IlNamed(preludeTypeIdentity "Ordering", []))
+            Some([ leftType; rightType ], IlNamed(preludeTypeIdentity Stdlib.KnownTypeNames.Ordering, []))
         | _ ->
             None
 

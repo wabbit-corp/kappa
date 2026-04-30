@@ -183,13 +183,13 @@ module internal IlDotNetBackendModel =
 
     let internal primitiveTypeName =
         function
-        | IlInt64 -> "Int"
-        | IlFloat64 -> "Float"
-        | IlBool -> "Bool"
-        | IlString -> "String"
-        | IlChar -> "Char"
+        | IlInt64 -> Stdlib.KnownTypeNames.Int
+        | IlFloat64 -> Stdlib.KnownTypeNames.Float
+        | IlBool -> Stdlib.KnownTypeNames.Bool
+        | IlString -> Stdlib.KnownTypeNames.String
+        | IlChar -> Stdlib.KnownTypeNames.Char
 
-    let internal preludeModuleIdentity = ModuleIdentity.ofSegments Stdlib.PreludeModuleName
+    let internal preludeModuleIdentity = Stdlib.PreludeModuleIdentity
 
     let internal preludeTypeIdentity name =
         TypeIdentity.topLevel preludeModuleIdentity name
@@ -198,10 +198,10 @@ module internal IlDotNetBackendModel =
         IlNamed(TypeIdentity.ofDottedTextUnchecked moduleName typeName, arguments)
 
     let internal unitIlType =
-        IlNamed(preludeTypeIdentity "Unit", [])
+        IlNamed(preludeTypeIdentity Stdlib.KnownTypeNames.Unit, [])
 
     let internal refIlType elementType =
-        IlNamed(preludeTypeIdentity "Ref", [ elementType ])
+        IlNamed(preludeTypeIdentity Stdlib.KnownTypeNames.Ref, [ elementType ])
 
     let internal dictionaryIlType traitName argumentTypes =
         IlNamed(preludeTypeIdentity (TraitRuntime.dictionaryTypeName traitName), argumentTypes)

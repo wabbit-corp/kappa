@@ -20,6 +20,7 @@ TEXT_SUFFIXES = {".fs", ".cs", ".py"}
 IGNORE_DIR_NAMES = {".git", ".idea", ".vs", "__pycache__", "bin", "obj"}
 
 ALLOWED_FILES = {
+    Path("src/Kappa.Compiler/CompilerKnownSymbols.fs"),
     Path("src/Kappa.Compiler/BundledPrelude.fs"),
     Path("src/Kappa.Compiler/Stdlib.fs"),
     Path("src/Kappa.Compiler/IntrinsicCatalog.fs"),

@@ -12,8 +12,75 @@ module Stdlib =
           RuntimeTermNames: Set<string>
           ElaborationAvailableTermNames: Set<string> }
 
-    let PreludeModuleName = [ "std"; "prelude" ]
+    let PreludeModuleName = CompilerKnownSymbols.KnownModules.Prelude
     let PreludeModuleText = SyntaxFacts.moduleNameToText PreludeModuleName
+    let PreludeModuleIdentity = ModuleIdentity.ofSegments PreludeModuleName
+
+    let HashModuleName = CompilerKnownSymbols.KnownModules.Hash
+    let HashModuleText = SyntaxFacts.moduleNameToText HashModuleName
+    let HashModuleIdentity = ModuleIdentity.ofSegments HashModuleName
+
+    let UnicodeModuleName = CompilerKnownSymbols.KnownModules.Unicode
+    let UnicodeModuleText = SyntaxFacts.moduleNameToText UnicodeModuleName
+    let UnicodeModuleIdentity = ModuleIdentity.ofSegments UnicodeModuleName
+
+    let BytesModuleName = CompilerKnownSymbols.KnownModules.Bytes
+    let BytesModuleText = SyntaxFacts.moduleNameToText BytesModuleName
+    let BytesModuleIdentity = ModuleIdentity.ofSegments BytesModuleName
+
+    module KnownTypeNames =
+        let Unit = CompilerKnownSymbols.KnownTypeNames.Unit
+        let Bool = CompilerKnownSymbols.KnownTypeNames.Bool
+        let Byte = CompilerKnownSymbols.KnownTypeNames.Byte
+        let Bytes = CompilerKnownSymbols.KnownTypeNames.Bytes
+        let Char = CompilerKnownSymbols.KnownTypeNames.Char
+        let Double = CompilerKnownSymbols.KnownTypeNames.Double
+        let Dict = CompilerKnownSymbols.KnownTypeNames.Dict
+        let Float = CompilerKnownSymbols.KnownTypeNames.Float
+        let Grapheme = CompilerKnownSymbols.KnownTypeNames.Grapheme
+        let HashCode = CompilerKnownSymbols.KnownTypeNames.HashCode
+        let Int = CompilerKnownSymbols.KnownTypeNames.Int
+        let Integer = CompilerKnownSymbols.KnownTypeNames.Integer
+        let IO = CompilerKnownSymbols.KnownTypeNames.IO
+        let Nat = CompilerKnownSymbols.KnownTypeNames.Nat
+        let Option = CompilerKnownSymbols.KnownTypeNames.Option
+        let Ordering = CompilerKnownSymbols.KnownTypeNames.Ordering
+        let Real = CompilerKnownSymbols.KnownTypeNames.Real
+        let Ref = CompilerKnownSymbols.KnownTypeNames.Ref
+        let String = CompilerKnownSymbols.KnownTypeNames.String
+        let UIO = CompilerKnownSymbols.KnownTypeNames.UIO
+        let UnicodeScalar = CompilerKnownSymbols.KnownTypeNames.UnicodeScalar
+        let Universe = CompilerKnownSymbols.KnownTypeNames.Universe
+        let IsProp = CompilerKnownSymbols.KnownTypeNames.IsProp
+        let IsTrait = CompilerKnownSymbols.KnownTypeNames.IsTrait
+        let Syntax = CompilerKnownSymbols.KnownTypeNames.Syntax
+        let Code = CompilerKnownSymbols.KnownTypeNames.Code
+        let Constraint = CompilerKnownSymbols.KnownTypeNames.Constraint
+        let Quantity = CompilerKnownSymbols.KnownTypeNames.Quantity
+        let Region = CompilerKnownSymbols.KnownTypeNames.Region
+        let RecRow = CompilerKnownSymbols.KnownTypeNames.RecRow
+        let VarRow = CompilerKnownSymbols.KnownTypeNames.VarRow
+        let EffRow = CompilerKnownSymbols.KnownTypeNames.EffRow
+        let Label = CompilerKnownSymbols.KnownTypeNames.Label
+        let EffLabel = CompilerKnownSymbols.KnownTypeNames.EffLabel
+        let Need = CompilerKnownSymbols.KnownTypeNames.Need
+        let Thunk = CompilerKnownSymbols.KnownTypeNames.Thunk
+
+    module KnownTypeIdentities =
+        let prelude name = TypeIdentity.topLevel PreludeModuleIdentity name
+        let hash name = TypeIdentity.topLevel HashModuleIdentity name
+        let unicode name = TypeIdentity.topLevel UnicodeModuleIdentity name
+        let bytes name = TypeIdentity.topLevel BytesModuleIdentity name
+
+    module KnownTypePaths =
+        let bare = CompilerKnownSymbols.KnownTypePaths.bare
+        let prelude = CompilerKnownSymbols.KnownTypePaths.prelude
+        let hash = CompilerKnownSymbols.KnownTypePaths.hash
+        let unicode = CompilerKnownSymbols.KnownTypePaths.unicode
+        let bytes = CompilerKnownSymbols.KnownTypePaths.bytes
+        let isBare = CompilerKnownSymbols.KnownTypePaths.isBare
+        let isPrelude = CompilerKnownSymbols.KnownTypePaths.isPrelude
+        let isBareOrPrelude = CompilerKnownSymbols.KnownTypePaths.isBareOrPrelude
 
     let PreludeImportSpec =
         { Source = Dotted PreludeModuleName

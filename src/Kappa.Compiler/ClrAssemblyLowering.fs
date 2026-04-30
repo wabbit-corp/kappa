@@ -155,20 +155,20 @@ module internal ClrAssemblyLowering =
     let private typeTextFromRepresentation representation =
         let rec render rep =
             match rep with
-            | BackendRepInt64 -> Some "Int"
-            | BackendRepFloat64 -> Some "Float"
-            | BackendRepBoolean -> Some "Bool"
-            | BackendRepString -> Some "String"
-            | BackendRepChar -> Some "Char"
-            | BackendRepUnit -> Some "Unit"
+            | BackendRepInt64 -> Some Stdlib.KnownTypeNames.Int
+            | BackendRepFloat64 -> Some Stdlib.KnownTypeNames.Float
+            | BackendRepBoolean -> Some Stdlib.KnownTypeNames.Bool
+            | BackendRepString -> Some Stdlib.KnownTypeNames.String
+            | BackendRepChar -> Some Stdlib.KnownTypeNames.Char
+            | BackendRepUnit -> Some Stdlib.KnownTypeNames.Unit
             | BackendRepRef elementRepresentation ->
-                render elementRepresentation |> Option.map (fun elementText -> $"Ref {elementText}")
+                render elementRepresentation |> Option.map (fun elementText -> $"{Stdlib.KnownTypeNames.Ref} {elementText}")
             | BackendRepDictionary traitName ->
                 Some(TraitRuntime.dictionaryTypeName traitName)
             | BackendRepTaggedData(moduleName, typeName) ->
                 Some($"{moduleName}.{typeName}")
             | BackendRepIOAction ->
-                Some "IO Unit"
+                Some $"{Stdlib.KnownTypeNames.IO} {Stdlib.KnownTypeNames.Unit}"
             | BackendRepEffectLabel
             | BackendRepEffectOperation ->
                 None

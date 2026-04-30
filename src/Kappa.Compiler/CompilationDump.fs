@@ -274,7 +274,7 @@ module CompilationDump =
 
     let private dumpProvenance (provenance: KCoreOrigin) =
         { FilePath = provenance.FilePath
-          ModuleName = provenance.ModuleName
+          ModuleName = provenance |> KCoreOrigin.moduleNameText
           DeclarationName = provenance.DeclarationName
           IntroductionKind = provenance.IntroductionKind }
 

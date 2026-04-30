@@ -2021,9 +2021,9 @@ module internal CompilationFrontend =
         |> Option.map SyntaxFacts.moduleNameToText
         |> Option.defaultValue "<unknown>"
 
-    let declarationOrigin filePath moduleName declaration =
+    let declarationOrigin filePath moduleIdentity declaration =
         { FilePath = filePath
-          ModuleName = moduleName
+          ModuleIdentity = moduleIdentity
           DeclarationName = declarationName declaration
           IntroductionKind = "source" }
 

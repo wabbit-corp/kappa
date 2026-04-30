@@ -127,6 +127,7 @@ type KCoreSyntheticDataType =
 
 type KCoreModule =
     { Name: string
+      ModuleIdentity: ModuleIdentity option
       SourceFile: string
       ModuleAttributes: string list
       Imports: ImportSpec list

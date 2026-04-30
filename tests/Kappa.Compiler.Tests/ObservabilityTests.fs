@@ -3849,7 +3849,7 @@ let ``backend verification rejects unsupported backend intrinsics`` () =
           Intrinsic = true
           Provenance =
             { FilePath = Stdlib.BundledPreludeVirtualPath
-              ModuleName = Stdlib.PreludeModuleText
+              ModuleIdentity = Some Stdlib.PreludeModuleIdentity
               DeclarationName = Some "mysteryIntrinsic"
               IntroductionKind = "intrinsic" } }
 

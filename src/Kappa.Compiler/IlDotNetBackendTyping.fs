@@ -682,8 +682,8 @@ module internal IlDotNetBackendTyping =
                                             | ("==" | "!="), IlPrimitive IlBool, IlPrimitive IlBool ->
                                                 ensureExpected (IlPrimitive IlBool)
                                             | ("==" | "!="), IlNamed(leftIdentity, []), IlNamed(rightIdentity, [])
-                                                when TypeIdentity.hasTopLevelName preludeModuleIdentity "Bool" leftIdentity
-                                                     && TypeIdentity.hasTopLevelName preludeModuleIdentity "Bool" rightIdentity ->
+                                                when TypeIdentity.hasTopLevelName preludeModuleIdentity Stdlib.KnownTypeNames.Bool leftIdentity
+                                                     && TypeIdentity.hasTopLevelName preludeModuleIdentity Stdlib.KnownTypeNames.Bool rightIdentity ->
                                                 ensureExpected (IlPrimitive IlBool)
                                             | ("==" | "!="), IlPrimitive IlString, IlPrimitive IlString ->
                                                 ensureExpected (IlPrimitive IlBool)
@@ -696,8 +696,8 @@ module internal IlDotNetBackendTyping =
                                             | ("&&" | "||"), IlPrimitive IlBool, IlPrimitive IlBool ->
                                                 ensureExpected (IlPrimitive IlBool)
                                             | ("&&" | "||"), IlNamed(leftIdentity, []), IlNamed(rightIdentity, [])
-                                                when TypeIdentity.hasTopLevelName preludeModuleIdentity "Bool" leftIdentity
-                                                     && TypeIdentity.hasTopLevelName preludeModuleIdentity "Bool" rightIdentity ->
+                                                when TypeIdentity.hasTopLevelName preludeModuleIdentity Stdlib.KnownTypeNames.Bool leftIdentity
+                                                     && TypeIdentity.hasTopLevelName preludeModuleIdentity Stdlib.KnownTypeNames.Bool rightIdentity ->
                                                 ensureExpected (IlPrimitive IlBool)
                                             | _ ->
                                                 Result.Error

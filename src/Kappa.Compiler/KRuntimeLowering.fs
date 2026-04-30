@@ -33,14 +33,21 @@ module internal KRuntimeLowering =
             TypeSignatures.parseType lexResult.Tokens
 
     let private isIntrinsicCompileTimeTraitName nameSegments =
-        match nameSegments with
-        | [ "IsProp" ]
-        | [ "IsTrait" ]
-        | [ "std"; "prelude"; "IsProp" ]
-        | [ "std"; "prelude"; "IsTrait" ] ->
-            true
-        | _ ->
-            false
+        Stdlib.KnownTypePaths.isBareOrPrelude Stdlib.KnownTypeNames.IsProp nameSegments
+        || Stdlib.KnownTypePaths.isBareOrPrelude Stdlib.KnownTypeNames.IsTrait nameSegments
+
+    let private isCompileTimeOnlyNamedType nameSegments =
+        Stdlib.KnownTypePaths.isBare Stdlib.KnownTypeNames.Universe nameSegments
+        || Stdlib.KnownTypePaths.isBare Stdlib.KnownTypeNames.Constraint nameSegments
+        || Stdlib.KnownTypePaths.isBare Stdlib.KnownTypeNames.Quantity nameSegments
+        || Stdlib.KnownTypePaths.isBare Stdlib.KnownTypeNames.Region nameSegments
+        || Stdlib.KnownTypePaths.isBare Stdlib.KnownTypeNames.RecRow nameSegments
+        || Stdlib.KnownTypePaths.isBare Stdlib.KnownTypeNames.VarRow nameSegments
+        || Stdlib.KnownTypePaths.isBare Stdlib.KnownTypeNames.EffRow nameSegments
+        || Stdlib.KnownTypePaths.isBare Stdlib.KnownTypeNames.Label nameSegments
+        || Stdlib.KnownTypePaths.isBare Stdlib.KnownTypeNames.EffLabel nameSegments
+        || Stdlib.KnownTypePaths.isBareOrPrelude Stdlib.KnownTypeNames.Syntax nameSegments
+        || Stdlib.KnownTypePaths.isBareOrPrelude Stdlib.KnownTypeNames.Code nameSegments
 
     let rec private eraseRuntimeTypeExpr typeExpr =
         match typeExpr with
@@ -48,7 +55,7 @@ module internal KRuntimeLowering =
             typeExpr
         | TypeSignatures.TypeUniverse _
         | TypeSignatures.TypeIntrinsic _ ->
-            TypeSignatures.TypeName([ "Unit" ], [])
+            TypeSignatures.TypeName(Stdlib.KnownTypePaths.bare Stdlib.KnownTypeNames.Unit, [])
         | TypeSignatures.TypeApply(callee, arguments) ->
             TypeSignatures.TypeApply(eraseRuntimeTypeExpr callee, arguments |> List.map eraseRuntimeTypeExpr)
         | TypeSignatures.TypeLambda(parameterName, parameterSort, body) ->
@@ -66,22 +73,10 @@ module internal KRuntimeLowering =
         | TypeSignatures.TypeName(nameSegments, arguments) ->
             match nameSegments with
             | [ "Type" ]
-            | [ "Universe" ]
-            | [ "Constraint" ]
-            | [ "Quantity" ]
-            | [ "Region" ]
-            | [ "RecRow" ]
-            | [ "VarRow" ]
-            | [ "EffRow" ]
-            | [ "Label" ]
-            | [ "EffLabel" ]
-            | [ "Syntax" ]
-            | [ "Code" ]
-            | [ "std"; "prelude"; "Syntax" ]
-            | [ "std"; "prelude"; "Code" ] ->
-                TypeSignatures.TypeName([ "Unit" ], [])
+            | _ when isCompileTimeOnlyNamedType nameSegments ->
+                TypeSignatures.TypeName(Stdlib.KnownTypePaths.bare Stdlib.KnownTypeNames.Unit, [])
             | _ when isIntrinsicCompileTimeTraitName nameSegments ->
-                TypeSignatures.TypeName([ "Unit" ], [])
+                TypeSignatures.TypeName(Stdlib.KnownTypePaths.bare Stdlib.KnownTypeNames.Unit, [])
             | _ ->
                 TypeSignatures.TypeName(nameSegments, arguments |> List.map eraseRuntimeTypeExpr)
         | TypeSignatures.TypeArrow(_, parameterType, resultType) ->
@@ -114,9 +109,9 @@ module internal KRuntimeLowering =
 
     let private runtimeValueTypeExpr typeExpr =
         match eraseRuntimeTypeExpr typeExpr with
-        | TypeSignatures.TypeName([ "IO" ], [ inner ]) -> inner
-        | TypeSignatures.TypeName([ "IO" ], [ _; inner ]) -> inner
-        | TypeSignatures.TypeName([ "UIO" ], [ inner ]) -> inner
+        | TypeSignatures.TypeName(nameSegments, [ inner ]) when Stdlib.KnownTypePaths.isBare Stdlib.KnownTypeNames.IO nameSegments -> inner
+        | TypeSignatures.TypeName(nameSegments, [ _; inner ]) when Stdlib.KnownTypePaths.isBare Stdlib.KnownTypeNames.IO nameSegments -> inner
+        | TypeSignatures.TypeName(nameSegments, [ inner ]) when Stdlib.KnownTypePaths.isBare Stdlib.KnownTypeNames.UIO nameSegments -> inner
         | other -> other
 
     let private eraseRuntimeTypeText (text: string) =
@@ -205,19 +200,9 @@ module internal KRuntimeLowering =
         | TypeSignatures.TypeIntrinsic TypeSignatures.EffRowClassifier
         | TypeSignatures.TypeIntrinsic TypeSignatures.LabelClassifier
         | TypeSignatures.TypeIntrinsic TypeSignatures.EffLabelClassifier
-        | TypeSignatures.TypeName([ "Type" ], [])
-        | TypeSignatures.TypeName([ "Constraint" ], [])
-        | TypeSignatures.TypeName([ "Quantity" ], [])
-        | TypeSignatures.TypeName([ "Region" ], [])
-        | TypeSignatures.TypeName([ "RecRow" ], [])
-        | TypeSignatures.TypeName([ "VarRow" ], [])
-        | TypeSignatures.TypeName([ "EffRow" ], [])
-        | TypeSignatures.TypeName([ "Label" ], [])
-        | TypeSignatures.TypeName([ "EffLabel" ], [])
-        | TypeSignatures.TypeName([ "Syntax" ], _)
-        | TypeSignatures.TypeName([ "Code" ], _)
-        | TypeSignatures.TypeName([ "std"; "prelude"; "Syntax" ], _)
-        | TypeSignatures.TypeName([ "std"; "prelude"; "Code" ], _) ->
+        | TypeSignatures.TypeName([ "Type" ], []) ->
+            true
+        | TypeSignatures.TypeName(nameSegments, _) when isCompileTimeOnlyNamedType nameSegments ->
             true
         | TypeSignatures.TypeName(nameSegments, _) when isIntrinsicCompileTimeTraitName nameSegments ->
             true
@@ -319,7 +304,9 @@ module internal KRuntimeLowering =
 
         let referencesSelf =
             match typeExpr with
-            | TypeSignatures.TypeName(([ "Dict" ] | [ "std"; "prelude"; "Dict" ]), [ constraintType ]) ->
+            | TypeSignatures.TypeName(nameSegments, [ constraintType ])
+                when Stdlib.KnownTypePaths.isBare Stdlib.KnownTypeNames.Dict nameSegments
+                     || Stdlib.KnownTypePaths.isPrelude Stdlib.KnownTypeNames.Dict nameSegments ->
                 match constraintType with
                 | TypeSignatures.TypeName(traitNameSegments, _) ->
                     compileTimeTraitNames.Contains(List.last traitNameSegments)
@@ -398,7 +385,7 @@ module internal KRuntimeLowering =
 
             let makeProvenance declarationName introductionKind =
                 { FilePath = coreModule.SourceFile
-                  ModuleName = coreModule.Name
+                  ModuleIdentity = coreModule.ModuleIdentity
                   DeclarationName = Some declarationName
                   IntroductionKind = introductionKind }
 
@@ -964,19 +951,7 @@ module internal KRuntimeLowering =
         | TypeSignatures.TypeName(nameSegments, _) ->
             match nameSegments with
             | [ "Type" ]
-            | [ "Universe" ]
-            | [ "Constraint" ]
-            | [ "Quantity" ]
-            | [ "Region" ]
-            | [ "RecRow" ]
-            | [ "VarRow" ]
-            | [ "EffRow" ]
-            | [ "Label" ]
-            | [ "EffLabel" ]
-            | [ "Syntax" ]
-            | [ "Code" ]
-            | [ "std"; "prelude"; "Syntax" ]
-            | [ "std"; "prelude"; "Code" ] ->
+            | _ when isCompileTimeOnlyNamedType nameSegments ->
                 true
             | _ when isIntrinsicCompileTimeTraitName nameSegments ->
                 true
@@ -1265,7 +1240,7 @@ module internal KRuntimeLowering =
                   Intrinsic = true
                   Provenance =
                     { FilePath = coreModule.SourceFile
-                      ModuleName = coreModule.Name
+                      ModuleIdentity = coreModule.ModuleIdentity
                       DeclarationName = Some name
                       IntroductionKind = "intrinsic" } })
 
@@ -1374,7 +1349,7 @@ module internal KRuntimeLowering =
 
             let syntheticRecordOrigin typeName =
                 { FilePath = coreModule.SourceFile
-                  ModuleName = coreModule.Name
+                  ModuleIdentity = coreModule.ModuleIdentity
                   DeclarationName = Some typeName
                   IntroductionKind = "runtime-record" }
 

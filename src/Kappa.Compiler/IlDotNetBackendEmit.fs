@@ -91,11 +91,11 @@ module internal IlDotNetBackendEmit =
 
                 invalidOp
                     $"IL backend could not resolve type parameter '{name}'. Available type parameters: [{available}]."
-        | IlNamed(typeIdentity, []) when TypeIdentity.hasTopLevelName preludeModuleIdentity "Unit" typeIdentity ->
+        | IlNamed(typeIdentity, []) when TypeIdentity.hasTopLevelName preludeModuleIdentity Stdlib.KnownTypeNames.Unit typeIdentity ->
             typeof<ValueTuple>
-        | IlNamed(typeIdentity, [ elementType ]) when TypeIdentity.hasTopLevelName preludeModuleIdentity "Ref" typeIdentity ->
+        | IlNamed(typeIdentity, [ elementType ]) when TypeIdentity.hasTopLevelName preludeModuleIdentity Stdlib.KnownTypeNames.Ref typeIdentity ->
             typedefof<StrongBox<_>>.MakeGenericType([| resolveClrType state typeParameters elementType |])
-        | IlNamed(typeIdentity, [ elementType ]) when TypeIdentity.hasTopLevelName preludeModuleIdentity "IO" typeIdentity ->
+        | IlNamed(typeIdentity, [ elementType ]) when TypeIdentity.hasTopLevelName preludeModuleIdentity Stdlib.KnownTypeNames.IO typeIdentity ->
             resolveClrType state typeParameters elementType
         | IlNamed(typeIdentity, _) when TypeIdentity.moduleIdentity typeIdentity = preludeModuleIdentity && isDictionaryTypeName (TypeIdentity.name typeIdentity) ->
             typeof<Tuple<string, string, string>>
@@ -553,8 +553,8 @@ module internal IlDotNetBackendEmit =
                                         | ("==" | "!="), IlPrimitive IlBool, IlPrimitive IlBool ->
                                             ensureExpected (IlPrimitive IlBool)
                                         | ("==" | "!="), IlNamed(leftIdentity, []), IlNamed(rightIdentity, [])
-                                            when TypeIdentity.hasTopLevelName preludeModuleIdentity "Bool" leftIdentity
-                                                 && TypeIdentity.hasTopLevelName preludeModuleIdentity "Bool" rightIdentity ->
+                                            when TypeIdentity.hasTopLevelName preludeModuleIdentity Stdlib.KnownTypeNames.Bool leftIdentity
+                                                 && TypeIdentity.hasTopLevelName preludeModuleIdentity Stdlib.KnownTypeNames.Bool rightIdentity ->
                                             ensureExpected (IlPrimitive IlBool)
                                         | ("==" | "!="), IlPrimitive IlString, IlPrimitive IlString ->
                                             ensureExpected (IlPrimitive IlBool)
@@ -567,8 +567,8 @@ module internal IlDotNetBackendEmit =
                                         | ("&&" | "||"), IlPrimitive IlBool, IlPrimitive IlBool ->
                                             ensureExpected (IlPrimitive IlBool)
                                         | ("&&" | "||"), IlNamed(leftIdentity, []), IlNamed(rightIdentity, [])
-                                            when TypeIdentity.hasTopLevelName preludeModuleIdentity "Bool" leftIdentity
-                                                 && TypeIdentity.hasTopLevelName preludeModuleIdentity "Bool" rightIdentity ->
+                                            when TypeIdentity.hasTopLevelName preludeModuleIdentity Stdlib.KnownTypeNames.Bool leftIdentity
+                                                 && TypeIdentity.hasTopLevelName preludeModuleIdentity Stdlib.KnownTypeNames.Bool rightIdentity ->
                                             ensureExpected (IlPrimitive IlBool)
                                         | _ ->
                                             Result.Error
@@ -837,14 +837,14 @@ module internal IlDotNetBackendEmit =
                     | "==", IlPrimitive IlBool, IlPrimitive IlBool ->
                         emitComparisonFromCeq il false
                     | "==", IlNamed(leftIdentity, []), IlNamed(rightIdentity, [])
-                        when TypeIdentity.hasTopLevelName preludeModuleIdentity "Bool" leftIdentity
-                             && TypeIdentity.hasTopLevelName preludeModuleIdentity "Bool" rightIdentity ->
+                        when TypeIdentity.hasTopLevelName preludeModuleIdentity Stdlib.KnownTypeNames.Bool leftIdentity
+                             && TypeIdentity.hasTopLevelName preludeModuleIdentity Stdlib.KnownTypeNames.Bool rightIdentity ->
                         emitComparisonFromCeq il false
                     | "!=", IlPrimitive IlBool, IlPrimitive IlBool ->
                         emitComparisonFromCeq il true
                     | "!=", IlNamed(leftIdentity, []), IlNamed(rightIdentity, [])
-                        when TypeIdentity.hasTopLevelName preludeModuleIdentity "Bool" leftIdentity
-                             && TypeIdentity.hasTopLevelName preludeModuleIdentity "Bool" rightIdentity ->
+                        when TypeIdentity.hasTopLevelName preludeModuleIdentity Stdlib.KnownTypeNames.Bool leftIdentity
+                             && TypeIdentity.hasTopLevelName preludeModuleIdentity Stdlib.KnownTypeNames.Bool rightIdentity ->
                         emitComparisonFromCeq il true
                     | "==", IlPrimitive IlString, IlPrimitive IlString ->
                         emitStringEquality il false
@@ -885,7 +885,7 @@ module internal IlDotNetBackendEmit =
         let rec emitSyntheticFileHandle resultType =
             result {
                 match resultType with
-                | IlNamed(typeIdentity, [ innerType ]) when TypeIdentity.hasTopLevelName preludeModuleIdentity "IO" typeIdentity ->
+                | IlNamed(typeIdentity, [ innerType ]) when TypeIdentity.hasTopLevelName preludeModuleIdentity Stdlib.KnownTypeNames.IO typeIdentity ->
                     return! emitSyntheticFileHandle innerType
                 | IlNamed(typeIdentity, typeArguments) ->
                     let moduleName = TypeIdentity.moduleIdentity typeIdentity |> ModuleIdentity.text
@@ -1044,7 +1044,7 @@ module internal IlDotNetBackendEmit =
                     | intrinsicName, IlPrimitive IlString when intrinsicName = IntrinsicCatalog.BuiltinPreludeShowIntrinsicName ->
                         do! emitBoxedArgument arguments[0] argumentTypes[0]
                         il.Emit(OpCodes.Call, showBuiltinMethod)
-                    | intrinsicName, IlNamed(typeIdentity, []) when intrinsicName = IntrinsicCatalog.BuiltinPreludeCompareIntrinsicName && TypeIdentity.hasTopLevelName preludeModuleIdentity "Ordering" typeIdentity ->
+                    | intrinsicName, IlNamed(typeIdentity, []) when intrinsicName = IntrinsicCatalog.BuiltinPreludeCompareIntrinsicName && TypeIdentity.hasTopLevelName preludeModuleIdentity Stdlib.KnownTypeNames.Ordering typeIdentity ->
                         let comparisonLocal = il.DeclareLocal(typeof<int>)
                         let lessLabel = il.DefineLabel()
                         let greaterLabel = il.DefineLabel()
@@ -1768,7 +1768,7 @@ module internal IlDotNetBackendEmit =
             let isUnitWrapperParameter (_, parameterType) =
                 match parameterType with
                 | IlNamed(typeIdentity, []) ->
-                    TypeIdentity.hasTopLevelName preludeModuleIdentity "Unit" typeIdentity
+                    TypeIdentity.hasTopLevelName preludeModuleIdentity Stdlib.KnownTypeNames.Unit typeIdentity
                 | _ ->
                     false
 

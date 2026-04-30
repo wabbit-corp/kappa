@@ -106,8 +106,8 @@ module Compilation =
         else
             let describeDeclaration (binding: KRuntimeBinding) =
                 match binding.Provenance.DeclarationName with
-                | Some declarationName -> $"{binding.Provenance.ModuleName}.{declarationName}"
-                | None -> binding.Provenance.ModuleName
+                | Some declarationName -> $"{KCoreOrigin.moduleNameText binding.Provenance}.{declarationName}"
+                | None -> KCoreOrigin.moduleNameText binding.Provenance
 
             let describeUse = function
                 | EffectLabelUse labelName -> $"effect label '{labelName}'"

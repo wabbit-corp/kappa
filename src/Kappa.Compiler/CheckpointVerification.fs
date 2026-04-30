@@ -26,6 +26,9 @@ module CheckpointVerification =
         |> List.tryFind (fun document -> String.Equals(document.Source.FilePath, filePath, StringComparison.Ordinal))
         |> Option.map (fun document -> document.Source.GetLocation(TextSpan.FromBounds(0, 0)))
 
+    let private renderedModuleIdentity moduleName =
+        Some(ModuleIdentity.ofDottedTextUnchecked moduleName)
+
     let private provenancePrimaryLocation (documents: ParsedDocument list) (origin: KCoreOrigin) =
         documents
         |> List.tryFind (fun document -> String.Equals(document.Source.FilePath, origin.FilePath, StringComparison.Ordinal))
@@ -38,17 +41,22 @@ module CheckpointVerification =
                     |> Option.filter (fun tokenText -> String.Equals(tokenText, declarationName, StringComparison.Ordinal))
                     |> Option.map (fun _ -> document.Source.GetLocation(token.Span)))))
 
-    let private moduleOriginRelatedLocations (documents: ParsedDocument list) moduleName filePath =
+    let private moduleOriginRelatedLocations (documents: ParsedDocument list) moduleIdentity filePath =
+        let moduleName =
+            moduleIdentity
+            |> Option.map ModuleIdentity.text
+            |> Option.defaultValue "<unknown>"
+
         fileOriginLocation documents filePath
         |> Option.map (fun location -> [ relatedLocation $"module origin: {moduleName}" location ])
         |> Option.defaultValue []
 
-    let private makeModuleDiagnostic (documents: ParsedDocument list) moduleName filePath message =
+    let private makeModuleDiagnostic (documents: ParsedDocument list) moduleIdentity filePath message =
         let location = fileOriginLocation documents filePath
 
         { makeDiagnostic message with
             Location = location
-            RelatedLocations = moduleOriginRelatedLocations documents moduleName filePath }
+            RelatedLocations = moduleOriginRelatedLocations documents moduleIdentity filePath }
 
     let private makeOriginDiagnostic (documents: ParsedDocument list) (origin: KCoreOrigin) message =
         let location =
@@ -57,7 +65,7 @@ module CheckpointVerification =
 
         { makeDiagnostic message with
             Location = location
-            RelatedLocations = moduleOriginRelatedLocations documents origin.ModuleName origin.FilePath }
+            RelatedLocations = moduleOriginRelatedLocations documents origin.ModuleIdentity origin.FilePath }
 
     let private makeDuplicateLocationDiagnostic message role locations =
         match locations with
@@ -117,7 +125,7 @@ module CheckpointVerification =
                     yield
                         makeModuleDiagnostic
                             workspace.Documents
-                            (document.ModuleName |> Option.map SyntaxFacts.moduleNameToText |> Option.defaultValue document.Source.FilePath)
+                            (document.ModuleName |> ModuleIdentity.ofOptionalSegments)
                             document.Source.FilePath
                             $"Checkpoint 'surface-source' requires non-empty line tables for '{document.Source.FilePath}'."
         ]
@@ -156,7 +164,7 @@ module CheckpointVerification =
                     yield
                         makeModuleDiagnostic
                             workspace.Documents
-                            (document.ModuleIdentity |> Option.map SyntaxFacts.moduleNameToText |> Option.defaultValue document.FilePath)
+                            (document.ModuleIdentity |> ModuleIdentity.ofOptionalSegments)
                             document.FilePath
                             $"Checkpoint '{checkpoint}' requires an EOF token for '{document.FilePath}'."
 
@@ -187,7 +195,7 @@ module CheckpointVerification =
                     yield
                         makeModuleDiagnostic
                             workspace.Documents
-                            (document.ModuleIdentity |> Option.map SyntaxFacts.moduleNameToText |> Option.defaultValue document.FilePath)
+                            (document.ModuleIdentity |> ModuleIdentity.ofOptionalSegments)
                             document.FilePath
                             $"Checkpoint '{checkpoint}' requires '{document.FilePath}' to expose resolved phases [{expected}], but found [{actual}]."
 
@@ -198,7 +206,7 @@ module CheckpointVerification =
                     yield
                         makeModuleDiagnostic
                             workspace.Documents
-                            (document.ModuleIdentity |> Option.map SyntaxFacts.moduleNameToText |> Option.defaultValue document.FilePath)
+                            (document.ModuleIdentity |> ModuleIdentity.ofOptionalSegments)
                             document.FilePath
                             $"Checkpoint '{checkpoint}' must not expose BODY_RESOLVE ownership facts for '{document.FilePath}' before BODY_RESOLVE."
         ]
@@ -501,7 +509,7 @@ module CheckpointVerification =
                         yield
                             makeModuleDiagnostic
                                 workspace.Documents
-                                moduleDump.Name
+                                (renderedModuleIdentity moduleDump.Name)
                                 moduleDump.SourceFile
                                 $"Checkpoint 'KRuntimeIR' requires imported runtime module '{importedName}' to be present for module '{moduleDump.Name}'."
                     | _ ->
@@ -546,7 +554,7 @@ module CheckpointVerification =
                         yield
                             makeModuleDiagnostic
                                 workspace.Documents
-                                moduleDump.Name
+                                (renderedModuleIdentity moduleDump.Name)
                                 moduleDump.SourceFile
                                 $"Checkpoint 'KRuntimeIR' requires intrinsic term '{intrinsicName}' in module '{moduleDump.Name}' to be provided by backend profile '{BackendProfile.toPortableName workspace.Backend}'."
 
@@ -777,7 +785,7 @@ module CheckpointVerification =
                                 yield
                                     makeModuleDiagnostic
                                         workspace.Documents
-                                        runtimeModule.Name
+                                        (renderedModuleIdentity runtimeModule.Name)
                                         runtimeModule.SourceFile
                                         $"Checkpoint 'KBackendIR' requires pre-erasure runtime metadata to be removed before backend lowering, but instance head '{runtimeModule.Name}.{instanceInfo.TraitName}[{index}]' still exposes '{headTypeText}'."
             ]
@@ -967,7 +975,7 @@ module CheckpointVerification =
                         yield
                             makeModuleDiagnostic
                                 workspace.Documents
-                                runtimeModule.Name
+                                (renderedModuleIdentity runtimeModule.Name)
                                 runtimeModule.SourceFile
                                 $"Checkpoint 'KBackendIR' requires a backend module for runtime module '{runtimeModuleName}'."
                     | None ->
@@ -980,7 +988,7 @@ module CheckpointVerification =
                         yield
                             makeModuleDiagnostic
                                 workspace.Documents
-                                moduleDump.Name
+                                (renderedModuleIdentity moduleDump.Name)
                                 moduleDump.SourceFile
                                 $"Checkpoint 'KBackendIR' requires imported backend module '{importedName}' to be present for module '{moduleDump.Name}'."
                     | _ ->
@@ -1027,7 +1035,7 @@ module CheckpointVerification =
                     yield
                         makeModuleDiagnostic
                             workspace.Documents
-                            moduleDump.Name
+                            (renderedModuleIdentity moduleDump.Name)
                             moduleDump.SourceFile
                             $"Checkpoint 'KBackendIR' requires unique environment-layout identities within module '{moduleDump.Name}', but '{layoutName}' was duplicated."
 
@@ -1038,7 +1046,7 @@ module CheckpointVerification =
                         yield
                             makeModuleDiagnostic
                                 workspace.Documents
-                                moduleDump.Name
+                                (renderedModuleIdentity moduleDump.Name)
                                 moduleDump.SourceFile
                                 $"Checkpoint 'KBackendIR' requires intrinsic term '{intrinsicName}' in module '{moduleDump.Name}' to be provided by backend profile '{BackendProfile.toPortableName workspace.Backend}'."
 
@@ -1048,7 +1056,7 @@ module CheckpointVerification =
                         yield
                             makeModuleDiagnostic
                                 workspace.Documents
-                                moduleDump.Name
+                                (renderedModuleIdentity moduleDump.Name)
                                 moduleDump.SourceFile
                                 $"Checkpoint 'KBackendIR' requires listed entry point '{moduleDump.Name}.{entryPointName}' to be present as a function."
                     | Some binding when not binding.EntryPoint ->

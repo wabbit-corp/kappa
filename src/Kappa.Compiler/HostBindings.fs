@@ -109,15 +109,15 @@ module HostBindings =
 
     let private tryMapManagedTypeText (ownerType: Type) (clrType: Type) =
         if clrType = typeof<Void> then
-            Some "Unit"
+            Some Stdlib.KnownTypeNames.Unit
         elif clrType = typeof<string> then
-            Some "String"
+            Some Stdlib.KnownTypeNames.String
         elif clrType = typeof<char> then
-            Some "Char"
+            Some Stdlib.KnownTypeNames.Char
         elif clrType = typeof<bool> then
-            Some "Bool"
+            Some Stdlib.KnownTypeNames.Bool
         elif clrType = typeof<float32> || clrType = typeof<float> then
-            Some "Float"
+            Some Stdlib.KnownTypeNames.Float
         elif clrType.IsEnum
              || clrType = typeof<sbyte>
              || clrType = typeof<byte>
@@ -127,7 +127,7 @@ module HostBindings =
              || clrType = typeof<uint32>
              || clrType = typeof<int64>
              || clrType = typeof<uint64> then
-            Some "Int"
+            Some Stdlib.KnownTypeNames.Int
         elif clrType = ownerType then
             Some(ownerType.Name.Split('`')[0])
         else
@@ -148,7 +148,7 @@ module HostBindings =
 
     let private nullaryUnitParameter =
         { Name = "unit"
-          TypeText = "Unit"
+          TypeText = Stdlib.KnownTypeNames.Unit
           IsReceiver = false }
 
     let private assemblyQualifiedTypeName (clrType: Type) =
@@ -548,7 +548,7 @@ module HostBindings =
                   Intrinsic = false
                   Provenance =
                     { FilePath = $"<host:{description.ModuleName}>"
-                      ModuleName = description.ModuleName
+                      ModuleIdentity = Some(ModuleIdentity.ofDottedTextUnchecked description.ModuleName)
                       DeclarationName = Some binding.Name
                       IntroductionKind = "host-binding" } })
 

@@ -74,7 +74,7 @@ module internal IlDotNetEffectBackend =
         typeof<KappaRuntime>.GetMethod("Handle", [| boolType; objectType; objectType; objectType; objectType |])
 
     let private runtimeUnitMethod =
-        typeof<KappaRuntime>.GetMethod("Unit", Type.EmptyTypes)
+        typeof<KappaRuntime>.GetMethod(nameof KappaRuntime.Unit, Type.EmptyTypes)
 
     let private runtimeCreateEffectLabelMethod =
         typeof<KappaRuntime>.GetMethod("CreateEffectLabel", [| stringType; stringType; stringType; typeof<KappaEffectOperationMetadata[]> |])
@@ -233,7 +233,7 @@ module internal IlDotNetEffectBackend =
         match tryResolveConstructor modules currentModule segments with
         | Some(_, constructorInfo)
             when String.Equals(constructorInfo.ModuleName, Stdlib.PreludeModuleText, StringComparison.Ordinal)
-                 && String.Equals(constructorInfo.TypeName, "Bool", StringComparison.Ordinal)
+                 && String.Equals(constructorInfo.TypeName, Stdlib.KnownTypeNames.Bool, StringComparison.Ordinal)
                  && List.isEmpty constructorInfo.FieldTypes ->
             match constructorInfo.Name with
             | "True" -> Some true
@@ -626,13 +626,13 @@ module internal IlDotNetEffectBackend =
                             il.Emit(OpCodes.Bgt, greaterLabel)
                             il.Emit(OpCodes.Br, equalLabel)
                             il.MarkLabel(lessLabel)
-                            do! emitExpression currentModule locals il (KRuntimeName [ "std"; "prelude"; "LT" ])
+                            do! emitExpression currentModule locals il (KRuntimeName (Stdlib.PreludeModuleName @ [ "LT" ]))
                             il.Emit(OpCodes.Br, doneLabel)
                             il.MarkLabel(greaterLabel)
-                            do! emitExpression currentModule locals il (KRuntimeName [ "std"; "prelude"; "GT" ])
+                            do! emitExpression currentModule locals il (KRuntimeName (Stdlib.PreludeModuleName @ [ "GT" ]))
                             il.Emit(OpCodes.Br, doneLabel)
                             il.MarkLabel(equalLabel)
-                            do! emitExpression currentModule locals il (KRuntimeName [ "std"; "prelude"; "EQ" ])
+                            do! emitExpression currentModule locals il (KRuntimeName (Stdlib.PreludeModuleName @ [ "EQ" ]))
                             il.MarkLabel(doneLabel)
                         | _ ->
                             return!

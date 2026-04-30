@@ -76,25 +76,26 @@ module internal KBackendLowering =
             Some(backendOpaqueRepresentation (Some "Function"))
         | _ ->
             match typeText |> Option.bind tryTypeHead with
-            | Some "Int" -> Some BackendRepInt64
-            | Some "Nat" -> Some BackendRepInt64
-            | Some "Integer" -> Some BackendRepInt64
-            | Some "Float" -> Some BackendRepFloat64
-            | Some "Double" -> Some BackendRepFloat64
-            | Some "Real" -> Some BackendRepFloat64
-            | Some "Bool" -> Some BackendRepBoolean
-            | Some "String" -> Some BackendRepString
-            | Some "Char"
-            | Some "UnicodeScalar"
-            | Some "Grapheme" -> Some BackendRepString
-            | Some "Byte" -> Some BackendRepInt64
-            | Some "Bytes" -> Some BackendRepString
-            | Some "HashCode" -> Some BackendRepInt64
-            | Some "Unit" -> Some BackendRepUnit
+            | Some head when head = Stdlib.KnownTypeNames.Int -> Some BackendRepInt64
+            | Some head when head = Stdlib.KnownTypeNames.Nat -> Some BackendRepInt64
+            | Some head when head = Stdlib.KnownTypeNames.Integer -> Some BackendRepInt64
+            | Some head when head = Stdlib.KnownTypeNames.Float -> Some BackendRepFloat64
+            | Some head when head = Stdlib.KnownTypeNames.Double -> Some BackendRepFloat64
+            | Some head when head = Stdlib.KnownTypeNames.Real -> Some BackendRepFloat64
+            | Some head when head = Stdlib.KnownTypeNames.Bool -> Some BackendRepBoolean
+            | Some head when head = Stdlib.KnownTypeNames.String -> Some BackendRepString
+            | Some head
+                when head = Stdlib.KnownTypeNames.Char
+                     || head = Stdlib.KnownTypeNames.UnicodeScalar
+                     || head = Stdlib.KnownTypeNames.Grapheme -> Some BackendRepString
+            | Some head when head = Stdlib.KnownTypeNames.Byte -> Some BackendRepInt64
+            | Some head when head = Stdlib.KnownTypeNames.Bytes -> Some BackendRepString
+            | Some head when head = Stdlib.KnownTypeNames.HashCode -> Some BackendRepInt64
+            | Some head when head = Stdlib.KnownTypeNames.Unit -> Some BackendRepUnit
             | Some head when head.StartsWith("__kappa_dict_", StringComparison.Ordinal) ->
                 Some(BackendRepDictionary(head.Substring("__kappa_dict_".Length)))
-            | Some "IO" -> Some BackendRepIOAction
-            | Some "Ref" -> Some(BackendRepRef(backendOpaqueRepresentation None))
+            | Some head when head = Stdlib.KnownTypeNames.IO -> Some BackendRepIOAction
+            | Some head when head = Stdlib.KnownTypeNames.Ref -> Some(BackendRepRef(backendOpaqueRepresentation None))
             | Some head -> Some(backendOpaqueRepresentation (Some head))
             | None -> None
 

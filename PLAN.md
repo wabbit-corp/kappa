@@ -54,6 +54,7 @@ Current M4 status note: started, not complete. The compiler now has a real effec
 - [ ] Remove the `ModuleName: string` semantic-owner fields from `SurfaceElaboration` payload records such as `TypeFacetInfo`, `TypeAliasInfo`, `BindingSchemeInfo`, `ProjectionInfo`, `TraitInfo`, and `InstanceInfo`. These still force reparsing text back into `ModuleIdentity` during semantic lookup.
 - [ ] Remove other `SurfaceElaboration` stringly semantic carriers that still smuggle module identity as display text, including ambiguity candidates and helper DTOs that should carry resolved `ModuleIdentity` plus separately rendered spelling.
 - [ ] Remove stringly module ownership from origin/provenance helpers such as `declarationOrigin`, `syntheticOrigin`, and downstream `KCoreOrigin` payloads where semantic ownership is still recorded only as rendered text.
+- [ ] Finish the `KCoreOrigin` / `KCoreModule` provenance conversion all the way through runtime lowering, dumps, and verification so later stages do not stringify semantic module identity just to carry provenance.
 - [ ] Replace visible-name environments that collapse declaration kinds into plain `Map<string, ...>` lookup with an explicit binding-group model matching section 2.8.
 - [ ] Rework same-spelling data-family handling so it is represented as one binding group with typed facets instead of separate text-keyed maps plus special cases.
 - [ ] Replace text-based post-resolution module/member lookup in lowering and backend preparation with resolved symbolic references.
@@ -64,7 +65,15 @@ Current M4 status note: started, not complete. The compiler now has a real effec
   [Backend.fs](/D:/ws/kappa/src/Kappa.Compiler/Backend.fs),
   [ZigCcBackendSupport.fs](/D:/ws/kappa/src/Kappa.Compiler/ZigCcBackendSupport.fs).
 - [ ] Continue the CLR backend migration past `IlNamed`. `IlDotNetBackendModel.IlType` now has a structured `TypeIdentity`, and primitive lowering in `IlDotNetBackendInput.fs` no longer matches bare names like `"Int"` or `"Bool"`. Remaining CLR metadata carriers such as `RawDataTypeInfo`, `ConstructorInfo`, `DataTypeInfo`, `ModuleSurface`, and `TraitInstanceInfo` still record semantic ownership as raw text.
+- [ ] Remove the remaining backend stringly stdlib/prelude comparisons surfaced by `scripts/validate_symbolic_names.py`, especially in `IlDotNetBackendEmit.fs`, `IlDotNetEffectBackend.fs`, `ZigCcBackendEmit.fs`, and `ZigCcBackendRuntime.fs`.
 - [ ] Replace the verifier/runtime stringly type carriers that force semantic checks over rendered text, especially `KRuntimeIR` type-text fields and the substring fallback in `CheckpointVerification.runtimeTypeLeaksErasureMetadata`.
+- [ ] Replace meta-surface and query symbolic-name literals that are still hardcoded in semantic code paths:
+  `KRuntimeLowering.fs`,
+  `ResourceChecking.fs`,
+  `TypeSignatures.fs`,
+  `QuerySemantics.fs`,
+  `CoreParsing.fs`,
+  and the shape/query helpers inside `SurfaceElaboration.fs` and `ElaborationEvaluation.fs`.
 - [ ] Replace text-based trait, constructor, and type matching in compile-time evaluation and backend typing with symbolic references.
   Current hot spots:
   [ElaborationEvaluation.fs](/D:/ws/kappa/src/Kappa.Compiler/ElaborationEvaluation.fs),

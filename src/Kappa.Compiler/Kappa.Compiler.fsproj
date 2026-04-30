@@ -16,6 +16,7 @@
     <Compile Include="Diagnostics.fs" />
     <Compile Include="BackendTypes.fs" />
     <Compile Include="Syntax.fs" />
+    <Compile Include="CompilerKnownSymbols.fs" />
     <Compile Include="TypeSignatures.fs" />
     <Compile Include="CoreParsing.fs" />
     <Compile Include="SymbolicIdentity.fs" />

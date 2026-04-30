@@ -282,15 +282,15 @@ module SurfaceElaboration =
         | ExpectDeclarationNode (ExpectTermDeclaration declaration) -> Some declaration.Name
         | _ -> None
 
-    let private declarationOrigin filePath moduleName declaration =
+    let private declarationOrigin filePath moduleIdentity declaration =
         { FilePath = filePath
-          ModuleName = moduleName
+          ModuleIdentity = moduleIdentity
           DeclarationName = declarationName declaration
           IntroductionKind = "source" }
 
-    let private syntheticOrigin filePath moduleName declarationName introductionKind =
+    let private syntheticOrigin filePath moduleIdentity declarationName introductionKind =
         { FilePath = filePath
-          ModuleName = moduleName
+          ModuleIdentity = moduleIdentity
           DeclarationName = Some declarationName
           IntroductionKind = introductionKind }
 
@@ -5031,7 +5031,7 @@ module SurfaceElaboration =
 
             let typeName = syntheticRecordTypeName recordKey
             let constructorName = syntheticRecordConstructorName recordKey
-            let provenance = syntheticOrigin filePath (ModuleIdentity.text moduleIdentity) typeName "synthetic-record"
+            let provenance = syntheticOrigin filePath (Some moduleIdentity) typeName "synthetic-record"
             let typeParameters = TypeSignatures.collectFreeTypeVariables canonicalRecordType
 
             let layout =
@@ -26712,7 +26712,7 @@ module SurfaceElaboration =
             hiddenParameters @ buildBindingParameters environment.VisibleTypeAliases scheme effectiveParameters
 
         let provenance =
-            declarationOrigin filePath (ModuleIdentity.text environment.CurrentModuleIdentity) (LetDeclaration definition)
+            declarationOrigin filePath (Some environment.CurrentModuleIdentity) (LetDeclaration definition)
 
         { Source = LetDeclaration definition
           Binding =
@@ -26765,7 +26765,7 @@ module SurfaceElaboration =
             let provenance =
                 syntheticOrigin
                     filePath
-                    (ModuleIdentity.text traitInfo.ModuleIdentity)
+                    (Some traitInfo.ModuleIdentity)
                     (TraitRuntime.dispatchBindingName traitInfo.Name memberName)
                     "trait-dispatch"
 
@@ -26940,7 +26940,7 @@ module SurfaceElaboration =
                         let provenance =
                             syntheticOrigin
                                 filePath
-                                (ModuleIdentity.text moduleIdentity)
+                                (Some moduleIdentity)
                                 (TraitRuntime.instanceMemberBindingName instanceInfo.TraitName instanceInfo.InstanceKey memberName)
                                 (if isDefaultDefinition then "instance-default-member" else "instance-member")
 
@@ -26969,7 +26969,7 @@ module SurfaceElaboration =
             let provenance =
                 syntheticOrigin
                     filePath
-                    (ModuleIdentity.text moduleIdentity)
+                    (Some moduleIdentity)
                     (TraitRuntime.instanceDictionaryBindingName instanceInfo.TraitName instanceInfo.InstanceKey)
                     "instance-dictionary"
 
@@ -27002,6 +27002,7 @@ module SurfaceElaboration =
             match frontendModule.ModuleIdentity |> moduleIdentityOfOptionalSegments with
             | None ->
                 { Name = moduleName
+                  ModuleIdentity = None
                   SourceFile = frontendModule.FilePath
                   ModuleAttributes = frontendModule.ModuleAttributes
                   Imports = frontendModule.Imports
@@ -27085,7 +27086,7 @@ module SurfaceElaboration =
 
                         frontendModule.Declarations
                         |> List.collect (fun declaration ->
-                            let provenance = declarationOrigin frontendModule.FilePath moduleName declaration
+                            let provenance = declarationOrigin frontendModule.FilePath (Some moduleIdentity) declaration
 
                             let originalDeclaration =
                                 match declaration with
@@ -27152,6 +27153,7 @@ module SurfaceElaboration =
                             []
 
                     { Name = moduleName
+                      ModuleIdentity = Some moduleIdentity
                       SourceFile = frontendModule.FilePath
                       ModuleAttributes = frontendModule.ModuleAttributes
                       Imports = frontendModule.Imports

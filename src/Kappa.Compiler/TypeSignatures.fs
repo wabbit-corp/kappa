@@ -80,34 +80,34 @@ module TypeSignatures =
         SyntaxFacts.moduleNameToText segments
 
     let private unitTypeExpr =
-        TypeName([ "Unit" ], [])
+        TypeName(CompilerKnownSymbols.KnownTypePaths.bare CompilerKnownSymbols.KnownTypeNames.Unit, [])
 
     let private optionTypeExpr inner =
-        TypeName([ "std"; "prelude"; "Option" ], [ inner ])
+        TypeName(CompilerKnownSymbols.KnownTypePaths.prelude CompilerKnownSymbols.KnownTypeNames.Option, [ inner ])
 
     let private intrinsicClassifierName classifier =
         match classifier with
-        | UniverseClassifier -> "Universe"
-        | QuantityClassifier -> "Quantity"
-        | RegionClassifier -> "Region"
-        | ConstraintClassifier -> "Constraint"
-        | RecRowClassifier -> "RecRow"
-        | VarRowClassifier -> "VarRow"
-        | EffRowClassifier -> "EffRow"
-        | LabelClassifier -> "Label"
-        | EffLabelClassifier -> "EffLabel"
+        | UniverseClassifier -> CompilerKnownSymbols.KnownTypeNames.Universe
+        | QuantityClassifier -> CompilerKnownSymbols.KnownTypeNames.Quantity
+        | RegionClassifier -> CompilerKnownSymbols.KnownTypeNames.Region
+        | ConstraintClassifier -> CompilerKnownSymbols.KnownTypeNames.Constraint
+        | RecRowClassifier -> CompilerKnownSymbols.KnownTypeNames.RecRow
+        | VarRowClassifier -> CompilerKnownSymbols.KnownTypeNames.VarRow
+        | EffRowClassifier -> CompilerKnownSymbols.KnownTypeNames.EffRow
+        | LabelClassifier -> CompilerKnownSymbols.KnownTypeNames.Label
+        | EffLabelClassifier -> CompilerKnownSymbols.KnownTypeNames.EffLabel
 
     let private tryIntrinsicClassifier name =
         match name with
-        | [ "Universe" ] -> Some UniverseClassifier
-        | [ "Quantity" ] -> Some QuantityClassifier
-        | [ "Region" ] -> Some RegionClassifier
-        | [ "Constraint" ] -> Some ConstraintClassifier
-        | [ "RecRow" ] -> Some RecRowClassifier
-        | [ "VarRow" ] -> Some VarRowClassifier
-        | [ "EffRow" ] -> Some EffRowClassifier
-        | [ "Label" ] -> Some LabelClassifier
-        | [ "EffLabel" ] -> Some EffLabelClassifier
+        | _ when CompilerKnownSymbols.KnownTypePaths.isBare CompilerKnownSymbols.KnownTypeNames.Universe name -> Some UniverseClassifier
+        | _ when CompilerKnownSymbols.KnownTypePaths.isBare CompilerKnownSymbols.KnownTypeNames.Quantity name -> Some QuantityClassifier
+        | _ when CompilerKnownSymbols.KnownTypePaths.isBare CompilerKnownSymbols.KnownTypeNames.Region name -> Some RegionClassifier
+        | _ when CompilerKnownSymbols.KnownTypePaths.isBare CompilerKnownSymbols.KnownTypeNames.Constraint name -> Some ConstraintClassifier
+        | _ when CompilerKnownSymbols.KnownTypePaths.isBare CompilerKnownSymbols.KnownTypeNames.RecRow name -> Some RecRowClassifier
+        | _ when CompilerKnownSymbols.KnownTypePaths.isBare CompilerKnownSymbols.KnownTypeNames.VarRow name -> Some VarRowClassifier
+        | _ when CompilerKnownSymbols.KnownTypePaths.isBare CompilerKnownSymbols.KnownTypeNames.EffRow name -> Some EffRowClassifier
+        | _ when CompilerKnownSymbols.KnownTypePaths.isBare CompilerKnownSymbols.KnownTypeNames.Label name -> Some LabelClassifier
+        | _ when CompilerKnownSymbols.KnownTypePaths.isBare CompilerKnownSymbols.KnownTypeNames.EffLabel name -> Some EffLabelClassifier
         | _ -> None
 
     let addDefinition name definition (context: DefinitionContext) =
@@ -371,9 +371,9 @@ module TypeSignatures =
                 let typeTokens, nameTokens =
                     match afterQuantity with
                     | head :: rest when Token.isKeyword Keyword.Thunk head ->
-                        { head with Kind = Identifier; Text = "Thunk" } :: typeTokens, rest
+                        { head with Kind = Identifier; Text = CompilerKnownSymbols.KnownTypeNames.Thunk } :: typeTokens, rest
                     | head :: rest when Token.isKeyword Keyword.Lazy head ->
-                        { head with Kind = Identifier; Text = "Need" } :: typeTokens, rest
+                        { head with Kind = Identifier; Text = CompilerKnownSymbols.KnownTypeNames.Need } :: typeTokens, rest
                     | _ ->
                         typeTokens, afterQuantity
 
@@ -2406,7 +2406,7 @@ module TypeSignatures =
     let rec toText typeExpr =
         let renderTypeName name =
             match name with
-            | [ "std"; "prelude"; shortName ] -> shortName
+            | [ "std"; "prelude"; shortName ] when CompilerKnownSymbols.KnownTypePaths.isPrelude shortName name -> shortName
             | _ -> SyntaxFacts.moduleNameToText name
 
         let rec renderAtom current =
