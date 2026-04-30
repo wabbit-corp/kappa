@@ -8012,6 +8012,67 @@ Accessor descriptors and projectors are distinct:
 
 * The spelling `& q x` is not a binder form. Quantity precedes borrowed access.
 
+<!-- types.functions.shared_binder_prefixes -->
+#### 5.2.0 Shared binder prefixes
+
+The following grammar is shared by function binders, lambda binders, record fields, local binders, implicit binders,
+and any other source form that admits an explicit quantity or borrowed access marker.
+
+```text
+quantity ::=
+    '0'
+  | '1'
+  | 'ω'
+  | '<=1'
+  | '>=1'
+  | quantityExpr
+
+borrowMarker ::=
+    '&'
+  | '&' '[' regionRef ']'
+
+binderPrefix ::=
+    quantity
+  | borrowMarker
+  | quantity borrowMarker
+
+explicitBinderBody ::=
+    binderPrefix? ident ':' type
+  | binderPrefix? '_' ':' type
+  | binderPrefix? 'this' ':' type
+  | binderPrefix? 'this' ident ':' type
+
+implicitBinderBody ::=
+    '@' binderPrefix? ident ':' type
+```
+
+`quantityExpr` is an expression checked in a static-object expression position with expected classifier `Quantity`.
+
+`regionRef` must resolve to an explicit region variable already in scope.
+
+If `binderPrefix` is omitted, the binder has quantity `ω` and ordinary access.
+
+If `binderPrefix` is a `borrowMarker` without an explicit quantity, the binder has quantity `ω` and borrowed access.
+
+If `binderPrefix` is `quantity borrowMarker`, the binder has that interval quantity and borrowed access.
+
+The grammar intentionally does not include `borrowMarker quantity`.
+Consequently, these are valid:
+
+```kappa
+(1 & x : A)
+(>=1 &[ρ] x : A)
+(@1 & evidence : C)
+```
+
+and these are invalid:
+
+```kappa
+(& 1 x : A)
+(&[ρ] >=1 x : A)
+(@& 1 evidence : C)
+```
+
 * Non-dependent arrow is sugar:
 
   ```kappa
