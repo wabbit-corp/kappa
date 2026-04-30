@@ -25359,6 +25359,80 @@ Multi-location strategy failures:
 * Each secondary message MUST preserve its own origin and explanation.
 * Users MUST NOT need trace flags merely to discover the source locations of the alternatives that were tried.
 
+<!-- compiler.kfrontir.warning_hygiene -->
+##### 17.2.4.7B Source-oriented warning and suggestion hygiene
+
+Warnings are source-oriented diagnostics.
+
+A warning whose purpose is to report a property of user-written source MUST be computed against the user's apparent
+declarations, binders, clauses, fields, imports, constraints, and annotations. It MUST NOT be computed naively over
+hidden compiler-generated helper code as if that helper code had been written by the user.
+
+Generated-use accounting:
+
+* A generated reference to a user declaration does not by itself count as a user-written use for lint families such as
+  unused binding, unused import, unused field, redundant constraint, redundant pattern, implicit lift, or equivalent
+  source-oriented warnings.
+* The source construct that requested generation, such as a `derive` declaration, macro invocation, prefixed string, or
+  generated bridge binding, may count as a use only of the source-level entities it explicitly names.
+* A generated helper's internal references MUST NOT suppress an otherwise valid warning about a user-written declaration
+  unless this specification explicitly defines that source construct as a semantic use of the declaration for that
+  warning family.
+* A generated helper's internal declarations, binders, constraints, or implicit arguments MUST NOT produce a warning
+  whose primary repair would require the user to edit generated code.
+
+Generated-warning reporting:
+
+If a warning is caused entirely by generated code and there is no faithful source-level repair, the implementation MUST
+either:
+
+* suppress the warning;
+* render it only in a verbose generated-code diagnostic mode; or
+* report it against the generating source construct with a concrete source-level repair.
+
+It MUST NOT force users to disable a whole warning family merely to hide unactionable warnings introduced by generated
+helpers.
+
+Redundancy warning precision:
+
+When a warning reports a redundant constraint, redundant binder, redundant branch, inaccessible right-hand side, unused
+field, unused import, unused implicit evidence, redundant equality, or similar eliminable fragment:
+
+* the primary origin MUST be the eliminable fragment itself;
+* a prerequisite, superclass, equality fact, or earlier premise that merely implies the redundant fragment MUST be
+  related evidence, not the primary blame site;
+* the warning MUST be emitted only when the checker can justify true redundancy or true inaccessibility under the same
+  normalization, opacity, refinement, and instance assumptions used by ordinary checking;
+* inferred, suggested, or hover-rendered signatures SHOULD simplify away constraints already implied by visible
+  supertraits, equality refinements, or row facts before presenting them as user-written recommendations;
+* if the redundancy depends on generated code, the diagnostic MUST identify whether the redundant item was user-written,
+  generated, or source-requested.
+
+Suspicious shadowing:
+
+Kappa's ordinary lexical shadowing semantics remain legal and deterministic.
+
+If an implementation exposes a suspicious-shadowing lint, it SHOULD use family:
+
+```text
+kappa.name.shadowing
+```
+
+and code:
+
+```text
+W_SUSPICIOUS_TOPLEVEL_SHADOWING
+```
+
+for a local pattern binder, function parameter, local binding, or implicit binder that shadows a visible top-level
+declaration of the same spelling.
+
+Whether this lint is enabled by default is implementation-defined unless a later profile standardizes it.
+
+Regardless of whether the lint exists or is enabled, any later diagnostic that mentions both the local binder and the
+shadowed declaration MUST render them distinctly. It MUST NOT print two visually identical names when the explanation
+depends on the fact that they denote different semantic objects.
+
 <!-- compiler.kfrontir.error_explanations -->
 ##### 17.2.4.8 Error explanations
 
