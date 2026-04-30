@@ -9353,21 +9353,24 @@ Normative behavior:
 
 * `subst` is a primitive.
 * When the proof argument is definitionally `refl`, `subst refl v` reduces to `v`.
-* The proof argument `p` has quantity `0`. Equality evidence is erased at runtime and exists only to guide the
-  typechecker.
+* The equality proof argument is not assigned quantity `0` by the definition of equality itself.
+* It is erased when the surrounding ambient demand is `0`, or when the equality type is known to satisfy
+  `RuntimeErased`.
+* A source annotation `@0 p : x = y` is accepted only when the ordinary quantity checker can justify that `p` is not
+  required by runtime-relevant computation.
 
 Derived combinators:
 
 ```kappa
-let sym (@0 a : Type) (@0 x : a) (@0 y : a) (@0 p : x = y) : y = x =
+let sym (@0 a : Type) (@0 x : a) (@0 y : a) (p : x = y) : y = x =
     subst @a @(\i -> i = x) @x @y p refl
 
 let trans (@0 a : Type) (@0 x : a) (@0 y : a) (@0 z : a)
-          (@0 p : x = y) (@0 q : y = z) : x = z =
+          (p : x = y) (q : y = z) : x = z =
     subst @a @(\i -> x = i) @y @z q p
 
 let cong (@0 a : Type) (@0 b : Type) (@0 f : a -> b)
-         (@0 x : a) (@0 y : a) (@0 p : x = y) : f x = f y =
+         (@0 x : a) (@0 y : a) (p : x = y) : f x = f y =
     subst @a @(\i -> f x = f i) @x @y p refl
 ```
 
