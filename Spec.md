@@ -24254,6 +24254,32 @@ the elaboration of defaults for constructors that are not visible.
 Each recursive SCC that is accepted as total-certified MUST record a termination certificate or unsafe assertion record
 in the module interface artifact.
 
+Explicit recursive-group metadata:
+
+A module interface artifact MUST record stable group-membership metadata for every explicit top-level mutual or
+recursive declaration group that is interface-visible.
+
+This requirement applies even when the group is:
+
+* partial;
+* unsafe;
+* not total-certified;
+* not conversion-reducible;
+* accepted only for runtime execution;
+* exported for documentation, auditing, browsing, or tooling.
+
+The metadata MUST include:
+
+* the stable semantic object identity of each group member;
+* the source or synthetic origin of the group;
+* the group kind, such as explicit mutual block, recursive SCC, local-recursive export, generated recursive group, or
+  implementation-defined equivalent;
+* whether the group is total-certified;
+* whether the group is conversion-reducible;
+* any unsafe/debug assertion used to accept it.
+
+Downstream tooling MUST NOT be required to reconstruct explicit source grouping by inspecting implementation bodies.
+
 The certificate or unsafe assertion record contains at least:
 
 * the SCC members by stable declaration identity;
@@ -24296,6 +24322,20 @@ export and compilation fails in the defining module.
 
 A module interface artifact MUST distinguish the semantic object identity of an exported object from the current
 binding-group entries that expose it.
+
+Interface identity noise exclusions:
+
+Source locations, rendered diagnostic text, generated resolved-name IDs, internal binder counters, hash-table insertion
+order, worker scheduling, cache insertion order, and non-semantic generated helper spellings MUST NOT affect the
+semantic identity of a module interface artifact.
+
+Such details MAY appear in source maps, debug information, trace dumps, reproducer bundles, or diagnostic metadata, but
+they MUST be excluded from interface identity and downstream rebuild decisions unless this specification or an explicit
+build profile makes them part of an exported interface.
+
+If a generated helper is interface-visible, its semantic object identity MUST be derived from stable semantic inputs
+such as the owning declaration identity, generated-helper role, source or synthetic origin path, and elaborated type,
+not from allocation order or fresh-name counters.
 
 A conforming implementation MUST permit browsing and querying module interface artifacts, or semantic-object-store
 entries derived from them, without reparsing original source text.
@@ -28800,6 +28840,35 @@ Interface representability:
 
 An implementation MAY realize escaped local nominal family identities using hashes or another stable identity scheme,
 provided equality is at least as fine as the semantic equality above.
+
+<!-- compiler.kcore.module_identity_casing_generated_artifacts -->
+##### 17.3.4.2 Module identity casing in generated artifacts
+
+The case-sensitive module identity rules of §2.1 apply through all generated artifacts.
+
+If Kappa preserves source-level case in module names, one canonical module identity spelling MUST be used consistently
+for:
+
+* import resolution;
+* module interface artifact identity;
+* generated source filenames;
+* generated interface filenames;
+* backend metadata;
+* exported initializer names;
+* exported bridge symbol names;
+* source maps;
+* documentation artifacts;
+* lockfile entries.
+
+A later phase MUST NOT silently lowercase, uppercase, case-fold, or otherwise renormalize a module spelling in a way
+that changes linking, loading, bridge discovery, generated filenames, or exported symbols.
+
+If a backend or host platform requires a case-normalized artifact name, the implementation MUST record a deterministic
+escape or mangling scheme from the canonical module identity to the host artifact name.
+
+Two distinct canonical module identities MUST NOT map to the same generated artifact path or exported symbol under that
+scheme. If they would collide, compilation fails with a provider or artifact collision diagnostic that identifies both
+canonical module identities and the generated artifact name.
 
 <!-- compiler.kcore.semantic_object_stores -->
 #### 17.3.5 Semantic object stores
