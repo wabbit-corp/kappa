@@ -7026,14 +7026,16 @@ Ambient demand `δ` is either `0` or `1`.
   1 · q = q
   ```
 
-  for every ordinary quantity or borrow obligation `q`.
+  for every interval quantity `q`.
 * For an application `f a1 ... an`, if the whole application is checked at ambient demand `δ`, and the selected binder
   for argument `ai` has declared quantity or borrow obligation `qi`, then the runtime demand imposed on `ai` is
   `δ · qi`.
 * Consequently, when `δ = 0`, all subexpressions of the application contribute zero runtime demand, even when the
   function's parameters are declared at quantity `ω`, `1`, `&`, or another runtime-relevant quantity.
-* When `0 · & = 0`, no runtime borrow obligation is created, because the whole expression is erased before runtime.
-* When `1 · & = &`, the ordinary borrow-checking rules apply.
+* For a borrowed binder `(q & x : A)` or `(q &[ρ] x : A)`, ambient demand scales the interval quantity `q`.
+* When `δ · q = 0`, no runtime borrow obligation is created, because the corresponding use is erased before runtime.
+* When `δ · q` has nonzero upper bound, the ordinary borrow-checking rules apply for the duration specified by the
+  borrowed binder's scope.
 
 This rule does not make such values available at runtime. It means the whole application is erased before runtime.
 Thus proof-producing functions may be written and composed like ordinary source functions while still erasing when their
