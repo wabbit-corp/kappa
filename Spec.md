@@ -7966,15 +7966,51 @@ Accessor descriptors and projectors are distinct:
   ```kappa
   (0 x : A) -> B
   (1 x : A) -> B
-  (& x : A) -> B
-  (&[s] x : A) -> B   -- where s is a bound variable of type Region
-  (q x : A) -> B      -- where q is a bound variable of type Quantity
+  (<=1 x : A) -> B
+  (>=1 x : A) -> B
+  (ω x : A) -> B
+  (q x : A) -> B          -- where q is a bound variable of type Quantity
+
+  (& x : A) -> B          -- sugar for (ω & x : A) -> B
+  (&[ρ] x : A) -> B       -- sugar for (ω &[ρ] x : A) -> B
+  (1 & x : A) -> B
+  (q & x : A) -> B
+  (q &[ρ] x : A) -> B     -- where ρ : Region and q : Quantity
+
   (thunk x : A) -> B
   (lazy x : A) -> B
-  (x : A) -> B        -- defaults to ω
+  (q thunk x : A) -> B
+  (q lazy x : A) -> B
+
+  (x : A) -> B            -- defaults to (ω x : A) -> B
   ```
 
   which denotes a function whose result type may depend on `x`.
+
+* In a borrowed dependent arrow, the quantity controls how many times the borrowed binding may or must be demanded.
+  The borrow marker controls access to the underlying place and region lifetime.
+
+  Thus:
+
+  ```kappa
+  (1 & x : A) -> B
+  ```
+
+  means that `x` is a borrowed parameter and that the body must demand `x` exactly once.
+
+  ```kappa
+  (& x : A) -> B
+  ```
+
+  means:
+
+  ```kappa
+  (ω & x : A) -> B
+  ```
+
+  and permits any number of non-consuming demands of `x`.
+
+* The spelling `& q x` is not a binder form. Quantity precedes borrowed access.
 
 * Non-dependent arrow is sugar:
 
