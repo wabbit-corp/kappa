@@ -1908,7 +1908,7 @@ summon :
     (@evidence : t) ->
     t
 
-let summon @evidence = evidence
+let summon (@0 t : Type) (@_ : IsTrait t) @evidence = evidence
 
 raise :
     forall (m : Type -> Type) (a : Type).
@@ -13991,7 +13991,7 @@ summon :
     (@evidence : t) ->
     t
 
-let summon @evidence = evidence
+let summon (@0 t : Type) (@_ : IsTrait t) @evidence = evidence
 ```
 
 `witness` reifies any implicit ordinary value as an ordinary explicit value.

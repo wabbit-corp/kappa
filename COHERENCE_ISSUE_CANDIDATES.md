@@ -31,6 +31,7 @@ search, trait-instance coherence, and associated-member recovery rules.
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | `chalk#750` | `solver_irrelevant_env_ambiguity` | `§12.3.1`, `§12.2.1` | `indirect` | `none` | `single-file` | `positive-check` | `traits.instances.positive_irrelevant_premise_does_not_block_associated_projection` | `accepted-later` | Valuable later guardrail: unrelated premises should not turn a determined associated-member projection into ambiguity. |
 | `chalk#74` | `projection_uniqueness` | `§12.2.1`, `§12.3.1` | `indirect` | `partial` | `single-file` | `positive-check` | `traits.instances.positive_associated_member_from_resolved_dictionary` | `accepted-later` | This is broad solver background rather than a one-line Kappa surface repro, but it reinforces the same projection-uniqueness obligation already represented by the associated-member recovery fixtures. |
+| `hylo#1566` | `conditional_supertrait_source_selection` | `§12.1.1`, `§12.3`, `§15.2.1` | `indirect` | `none` | `single-file` | `negative-diagnostic` | `traits.instances.negative_ambiguous_conditional_supertrait_source` | `hold-spec` | Useful later guardrail if Kappa grows richer conditional-conformance/source-selection behavior: once several refinement paths can imply the same weaker trait, the source-selection rule must be explicit rather than implementation-dependent. |
 
 ## Poor Fits / Background Only
 

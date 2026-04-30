@@ -13,7 +13,7 @@ Search coverage for this note:
 - `granule`: full-corpus keyword scan for `linear`, `linearity`, `nonlinear`, `case`, `match`, `usage`
 - direct body reads so far:
   - `rust#925`, `rust#1243`, `rust#1399`, `rust#1455`, `rust#1566`, `rust#1818`, `rust#1894`, `rust#2041`, `rust#2329`, `rust#8636`, `rust#14273`, `rust#27889`, `rust#30745`
-  - `hylo#3`, `hylo#39`, `hylo#179`, `hylo#410`, `hylo#424`, `hylo#571`, `hylo#674`, `hylo#675`, `hylo#676`, `hylo#688`, `hylo#689`, `hylo#814`, `hylo#850`, `hylo#878`, `hylo#1088`, `hylo#1599`, `hylo#1707`, `hylo#1807`
+  - `hylo#3`, `hylo#39`, `hylo#179`, `hylo#410`, `hylo#424`, `hylo#571`, `hylo#674`, `hylo#675`, `hylo#676`, `hylo#688`, `hylo#689`, `hylo#814`, `hylo#850`, `hylo#878`, `hylo#1088`, `hylo#1510`, `hylo#1512`, `hylo#1523`, `hylo#1534`, `hylo#1599`, `hylo#1600`, `hylo#1707`, `hylo#1807`
   - `granule#4`, `granule#9`, `granule#17`, `granule#23`, `granule#37`, `granule#38`, `granule#42`, `granule#45`, `granule#48`, `granule#52`, `granule#53`, `granule#54`, `granule#56`, `granule#59`, `granule#65`, `granule#195`, `granule#207`, `granule#252`
 
 Purpose: identify ownership, quantity, borrow-lifetime, and path-sensitive resource issues that map cleanly onto
@@ -42,7 +42,9 @@ details that Kappa does not surface directly.
 
 | source | bucket | spec_refs | fit | current_coverage | fixture_kind | expected_outcome | proposed_fixture_root | status | notes |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| `hylo#1510`, `hylo#1512` | `mutable_iteration_borrow_surface` | `§6.1.1`, `§8.7.5`, `§8.8.3` | `indirect` | `none` | `single-file` | `mixed` | `effects.for_loops.*` | `hold-spec` | Kappa does not currently expose `for inout`-style mutable iteration. If it adds such sugar later, the borrowed root and yielded element access mode should be explicit, and lowering must preserve them instead of silently coercing mutable elements to plain values. |
 | `hylo#1599` | `inout_projection_aliasing` | `§5.1.7.2`, `§8.8.3` | `indirect` | `none` | `single-file` | `negative-diagnostic` | `effects.inout.negative_projection_alias_outlives_call` | `accepted-later` | The safety concern is real, but Kappa's `inout` model is linear state threading rather than a first-class returned mutable reference, so the first ownership batch should not pretend the surface forms line up exactly. |
+| `hylo#1600` | `projection_sink_argument_consumption` | `§5.1.5`, `§6.1.1`, `§8.8.3` | `indirect` | `partial` | `single-file` | `negative-diagnostic` | `effects.inout.negative_projection_sink_argument_not_consumed` | `accepted-later` | Useful evidence that projection/subscript lowering must preserve consumption of sink/owned arguments, but Kappa's current projection surface differs enough that this belongs in the later projection / `inout` tranche rather than the first ownership batch. |
 | `hylo#571` | `projection_lifetimes` | `§5.1.7.2`, `§8.8.3` | `indirect` | `none` | `directory-suite` | `mixed` | `effects.inout.*` | `accepted-later` | Good background for projection-call lifetime lowering and overlap checks, but too implementation-shaped for the first ownership batch. |
 
 ## Companion Spec-Derived Staging
@@ -76,6 +78,10 @@ details that Kappa does not surface directly.
 
 - `hylo#1707`
   - terminology / design question rather than a source-level bug.
+
+- `hylo#1534`
+  - backend / emitter crash around iterator lowering. Kappa already has direct iterator-loop semantic coverage, so this is
+    better treated as background evidence than as a fresh ownership fixture.
 
 - `hylo#675`
   - implementation crash around builtin pointer subscripts and mutation, not a clean source-level Kappa regression.
