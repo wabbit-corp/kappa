@@ -24558,6 +24558,100 @@ Unicode diagnostics:
 * `W_UNICODE_BIDI_CONTROL` SHOULD be emitted when source text contains bidirectional control characters outside string
   or byte literals, unless the source position is explicitly permitted by a later Unicode-source-profile section.
 
+<!-- compiler.kfrontir.portable_diagnostic_code_aliases -->
+##### 17.2.4.2B Portable diagnostic-code aliases
+
+Most diagnostic-code spellings are implementation-defined stable identifiers. For selected conformance-sensitive
+diagnostics, this specification additionally defines **portable diagnostic-code aliases**.
+
+A portable diagnostic-code alias is a standardized code spelling that MUST appear in machine-readable diagnostics for
+the corresponding condition.
+
+Rules:
+
+* If a diagnostic condition listed in this subsection is emitted, the diagnostic record MUST expose the listed portable
+  code alias.
+* An implementation MAY also expose its own implementation-specific code, but tooling and conformance tests MUST be able
+  to recover the portable alias without parsing human prose.
+* In JSON output, an implementation MAY represent the portable alias either as the diagnostic `code` itself or as a
+  stable field such as `portableCode`, provided the mapping is documented and stable.
+* A portable diagnostic-code alias MUST NOT be reused for a materially different diagnostic meaning.
+* A diagnostic with a portable alias MUST also use the corresponding standardized diagnostic family of §17.2.4A when
+  one is defined.
+
+Required portable aliases:
+
+```text
+E_SAFE_NAV_GENERIC_AMBIGUOUS
+W_SAFE_NAV_REDUNDANT_RECEIVER_PRESENT
+
+E_QUERY_UNORDERED_PAGING
+
+E_APPLICATION_NON_CALLABLE
+E_APPLICATION_ARGUMENT_MISMATCH
+
+E_TYPE_MISMATCH
+E_MISSING_EXPLICIT_SIGNATURE
+I_INFERRED_SIGNATURE_AVAILABLE
+
+E_CONSTRUCTOR_ARITY_MISMATCH
+E_PATTERN_CONSTRUCTOR_ARITY_MISMATCH
+
+E_NUMERIC_LITERAL_DOMAIN_MISMATCH
+E_MODULE_ALIAS_TYPE_COLLISION
+E_INDEXED_IMPOSSIBLE_REACHABLE
+
+E_QUOTE_MALFORMED_SYNTAX
+E_GENERATED_SYNTAX_INVALID
+E_GENERATED_NAME_COLLISION
+
+E_UNSUPPORTED_DETERMINISTIC
+E_INTERACTIVE_PROTOCOL_VIOLATION
+
+E_BACKEND_GENERATED_NAME_COLLISION
+E_BACKEND_SPECIALIZATION_SEMANTICS
+```
+
+Meanings:
+
+* `E_SAFE_NAV_GENERIC_AMBIGUOUS` is emitted when `?.` cannot decide whether the residual member access should be wrapped
+  or flattened because the residual result type remains unsolved after ordinary inference.
+* `W_SAFE_NAV_REDUNDANT_RECEIVER_PRESENT` MAY be emitted when the active flow facts prove that a `?.` receiver is
+  already present.
+* `E_QUERY_UNORDERED_PAGING` is emitted when `skip` or `take` is used on a query pipeline whose orderedness is
+  `Unordered` at that point.
+* `E_APPLICATION_NON_CALLABLE` is emitted when a value is applied but its elaborated type is not callable at that
+  application site.
+* `E_APPLICATION_ARGUMENT_MISMATCH` is emitted when a callable value is applied to an argument that cannot satisfy the
+  selected binder.
+* `E_TYPE_MISMATCH` is emitted for ordinary expected-versus-actual type mismatch diagnostics.
+* `E_MISSING_EXPLICIT_SIGNATURE` is emitted when a declaration requires an explicit signature and none is available.
+* `I_INFERRED_SIGNATURE_AVAILABLE` MAY be emitted as an informational diagnostic carrying an inferred signature that
+  tooling may insert.
+* `E_CONSTRUCTOR_ARITY_MISMATCH` is emitted when a constructor application supplies too few, too many, duplicated, or
+  otherwise malformed constructor arguments after constructor identity is known.
+* `E_PATTERN_CONSTRUCTOR_ARITY_MISMATCH` is emitted for the analogous malformed constructor pattern.
+* `E_NUMERIC_LITERAL_DOMAIN_MISMATCH` is emitted when literal elaboration fails because the surrounding expected type or
+  selected literal witness is not compatible with the literal domain.
+* `E_MODULE_ALIAS_TYPE_COLLISION` is emitted when a qualified name resolves through a module alias that shadows an
+  unrelated type, constructor, or other declaration spelling and the alias collision is the primary repairable cause.
+* `E_INDEXED_IMPOSSIBLE_REACHABLE` is emitted when `impossible`, `case impossible`, or an equivalent indexed
+  contradiction proof is rejected because the branch remains reachable.
+* `E_QUOTE_MALFORMED_SYNTAX` is emitted when a quotation or quasiquotation contains malformed surface syntax.
+* `E_GENERATED_SYNTAX_INVALID` is emitted when macro-generated syntax cannot be elaborated as ordinary source syntax at
+  the splice site.
+* `E_GENERATED_NAME_COLLISION` is emitted when frontend-generated names collide in a user-observable scope.
+* `E_UNSUPPORTED_DETERMINISTIC` is emitted when an implementation or harness deterministically reports that a requested
+  feature or action is unsupported.
+* `E_INTERACTIVE_PROTOCOL_VIOLATION` is reserved for implementations that expose a machine-readable interactive
+  protocol and detect that a response path would corrupt the protocol stream.
+* `E_BACKEND_GENERATED_NAME_COLLISION` is emitted when backend lowering would produce duplicate or captured target
+  names.
+* `E_BACKEND_SPECIALIZATION_SEMANTICS` is emitted when backend specialization, wrapper erasure, inlining, or
+  representation-class sharing cannot preserve source-level behavior.
+
+These aliases are conformance hooks. They do not require a particular human-readable rendering.
+
 <!-- compiler.kfrontir.origins_ranges_labels -->
 ##### 17.2.4.3 Origins, ranges, and labels
 
