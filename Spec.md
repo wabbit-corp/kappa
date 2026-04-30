@@ -37351,6 +37351,59 @@ In particular:
 MUST NOT depend on worker count, scheduling order, hash-table iteration order, or platform-specific line-ending
 conventions.
 
+<!-- appendix.tests.p0_diagnostic_and_hygiene_conformance -->
+### P0 diagnostic, hygiene, and robustness conformance tests
+
+A portable conformance suite SHOULD include compile-fail, diagnostic, tooling, and backend-legality tests for at least
+the following P0 hooks.
+
+Stable diagnostic aliases:
+
+* ambiguous generic `?.` emits `E_SAFE_NAV_GENERIC_AMBIGUOUS`;
+* redundant `?.` under proven `Some` may emit `W_SAFE_NAV_REDUNDANT_RECEIVER_PRESENT`;
+* `skip` or `take` on an unordered pipeline emits `E_QUERY_UNORDERED_PAGING`;
+* application of a non-callable value emits `E_APPLICATION_NON_CALLABLE`;
+* callable argument mismatch preserves source binder names and emits `E_APPLICATION_ARGUMENT_MISMATCH`;
+* malformed constructor application emits `E_CONSTRUCTOR_ARITY_MISMATCH`;
+* malformed constructor pattern emits `E_PATTERN_CONSTRUCTOR_ARITY_MISMATCH`;
+* numeric literal domain mismatch emits `E_NUMERIC_LITERAL_DOMAIN_MISMATCH`;
+* module-alias/type-name collision emits `E_MODULE_ALIAS_TYPE_COLLISION`;
+* rejected `impossible` branch emits `E_INDEXED_IMPOSSIBLE_REACHABLE`;
+* malformed quotation emits `E_QUOTE_MALFORMED_SYNTAX`.
+
+Diagnostic structure:
+
+* expected/actual mismatch payloads expose structured expected and actual facts;
+* inferred-signature diagnostics expose the inferred signature as structured data;
+* cascade diagnostics are suppressed under the primary root cause;
+* generated-origin diagnostics point primarily at faithful user-written origins;
+* whole-build diagnostics identify the owning target or component.
+
+Macro and reflection hygiene:
+
+* generated binders do not capture user binders;
+* generated holes at distinct source sites remain distinct after helper lowering;
+* generated names exported from one module remain resolvable by semantic identity in another module;
+* malformed generated syntax fails with `E_GENERATED_SYNTAX_INVALID`;
+* `reifyCore` of equivalent reflected terms is observationally equivalent up to hygiene-preserving alpha-renaming;
+* syntax rendering for quoted/generated syntax is stable and does not panic on partial lowered helpers.
+
+Tooling and protocol:
+
+* batch and tooling diagnostics agree for the same complete source;
+* incomplete-file diagnostics identify recovery-derived facts;
+* hole-goal queries show refined indexed equalities and branch-local evidence;
+* case-split generation preserves real constructor identity;
+* machine-readable protocol shutdown/error paths remain framed.
+
+Interface and backend:
+
+* interface identity ignores source locations and generated internal IDs;
+* explicit recursive group metadata appears in interface artifacts even for non-total groups;
+* module casing is preserved consistently through generated artifacts;
+* backend-generated temporaries are fresh under target collision rules;
+* wrapper specialization preserves behavior and does not introduce recursive loops.
+
 <!-- appendices.test_harness.example -->
 ### T.10 Example
 
