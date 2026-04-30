@@ -1903,7 +1903,7 @@ witness :
 let witness @value = value
 
 summon :
-    forall (t : Type).
+    (0 t : Type) ->
     (@_ : IsTrait t) ->
     (@evidence : t) ->
     t
@@ -13986,7 +13986,7 @@ witness :
 let witness @value = value
 
 summon :
-    forall (t : Type).
+    (0 t : Type) ->
     (@_ : IsTrait t) ->
     (@evidence : t) ->
     t
@@ -25101,6 +25101,103 @@ The following kinds of information SHOULD be structured in payloads rather than 
 * boundary contract identity;
 * fix-it applicability; and
 * explanation key.
+
+Expected/actual mismatch payloads:
+
+A diagnostic in family `kappa.type.mismatch`, `kappa.type.hidden-structure-mismatch`,
+`kappa.application.argument-mismatch`, `kappa.type.transport-failed`, or another standardized expected-versus-actual
+checking family MUST expose an expected/actual mismatch payload when the implementation has both sides available.
+
+A mismatch payload has the conceptual shape:
+
+```text
+ExpectedActualPayload =
+    (kind                       : "expected-actual",
+     expected                   : RenderedSemanticFragment,
+     actual                     : RenderedSemanticFragment,
+     expectedOrigin             : Option Origin,
+     actualOrigin               : Origin,
+     mismatchOrigin             : Origin,
+     mismatchKind               : ExpectedActualMismatchKind,
+     mismatchPath               : List MismatchPathStep,
+     obligationIds              : List ObligationId,
+     equalityTransportAttempt   : Option EqualityTransportAttempt,
+     subsumptionAttempt         : Option SubsumptionAttempt,
+     coercionAttempt            : Option CoercionAttempt,
+     implicitInsertionState     : Option ImplicitInsertionSummary,
+     normalizedExpected         : Option RenderedSemanticFragment,
+     normalizedActual           : Option RenderedSemanticFragment,
+     aliasOpacityClarifyStatus  : AliasOpacityClarifySummary,
+     candidateRepairs           : List CandidateRepair)
+```
+
+`ExpectedActualMismatchKind` includes at least:
+
+```text
+expression-type
+application-argument
+function-result
+binder-domain
+implicit-argument
+record-field
+record-update-field
+constructor-argument
+pattern-argument
+variant-member
+effect-row
+capture-set
+quantity
+universe
+kind
+runtime-representation
+associated-member
+subsumption
+coercion
+equality-transport
+```
+
+`MismatchPathStep` describes the smallest stable path to the differing substructure. It includes, when applicable:
+
+```text
+record-field label
+constructor-field constructor field
+function-binder index explicitness sourceBinderName
+type-argument index
+implicit-argument index sourceBinderName
+effect-label label
+variant-member memberIdentity
+capture-region region
+quantity-component lower-or-upper
+associated-member owner memberName
+```
+
+`RenderedSemanticFragment` MUST contain:
+
+* a compact source-like rendering;
+* a fully explicit rendering, or a stable reference by which tooling can request it;
+* the semantic object identity of any named head, when available;
+* the lexical environment or rendering environment needed to interpret the compact rendering;
+* whether the rendering used aliases, unfolded aliases, qualified names, synthetic names, or recovered names.
+
+`CandidateRepair` records a source-preserving edit or user action that would directly address the mismatch. It MUST NOT
+be represented only as human prose. Candidate repairs may include:
+
+* adding a type annotation;
+* inserting an explicit implicit argument;
+* adding an import or qualification;
+* replacing a constructor or field name;
+* adding an equality transport;
+* expanding a transparent alias;
+* changing a quantity annotation;
+* changing an expected result type;
+* enabling a feature gate, only when the gate is genuinely the owning semantic requirement and no more local repair is
+  preferred by §17.2.4.4A.
+
+A diagnostic carrying portable alias `E_TYPE_MISMATCH` MUST expose this payload whenever both expected and actual facts
+are available.
+
+If either side is unavailable because the source program is incomplete or recovery-derived, the payload MUST mark that
+side as unavailable rather than omitting the whole payload.
 
 <!-- compiler.kfrontir.obligation_provenance_diagnostic_selection -->
 ##### 17.2.4.7 Obligation provenance and diagnostic selection
