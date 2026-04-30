@@ -25005,6 +25005,26 @@ A broader feature-gate suggestion MUST NOT be the primary fix when a local delim
 plausible root cause and repairing that local mistake would let the same construct elaborate under the current active
 profile.
 
+Derive and code-generation suggestions:
+
+A diagnostic MUST NOT suggest enabling a derive-related feature gate, switching to another derivation strategy, or
+adding an implementation-defined derive option unless the suggested change would produce code that is statically
+well-formed by Kappa's ordinary checking rules.
+
+In particular, such a suggestion is forbidden when the suggested change would merely defer failure by producing:
+
+* a runtime hole;
+* a bottom-valued member;
+* a missing method body;
+* an admitted proof;
+* a deferred type error;
+* an unsolved implicit or trait obligation;
+* an unsafe placeholder;
+* a generated member whose declared type is not satisfied.
+
+If the implementation knows that a suggested derive strategy is partial, unsafe, non-total, or requires handwritten
+members, the diagnostic MUST say so explicitly and the suggestion MUST NOT be marked `machine-applicable`.
+
 If recovery determines that a local parse repair is the likely root cause, downstream diagnostics that depend only on
 the unrepaired parse shape SHOULD be suppressed and listed in the root diagnostic's `suppressed` field.
 
