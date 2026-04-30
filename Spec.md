@@ -18917,6 +18917,23 @@ Well-formedness:
 * `skip` and `take` are permitted only when the pipeline is Ordered at that point (§10.3.2). Using `skip` or `take` when
   orderedness is Unordered is a compile-time error.
 
+Diagnostic:
+
+Using `skip` or `take` when the current pipeline orderedness is `Unordered` is rejected with diagnostic family
+`kappa.query.orderedness` and portable alias `E_QUERY_UNORDERED_PAGING`.
+
+Payload MUST include:
+
+* paging operation kind, either `skip` or `take`;
+* source origin of the paging clause;
+* orderedness before the paging clause;
+* nearest preceding clause that established or destroyed orderedness;
+* whether a preceding `order by` would make the operation valid;
+* the normalized query-plan node, when available.
+
+The primary message MUST state that paging requires an ordered pipeline. It SHOULD suggest inserting an `order by` only
+when an ordering key is available or can be written locally.
+
 Notes:
 
 * After `group by` orderedness is Unordered until another `order by` is applied.
@@ -26009,6 +26026,24 @@ Payload MUST include:
 
 <!-- compiler.kfrontir.standard_diagnostic_families.query_internal -->
 ##### 17.2.4A.13 Query and internal compiler diagnostics
+
+Family:
+
+```text
+kappa.query.orderedness
+```
+
+Used when a query or comprehension operation requires an `Ordered` pipeline but the current orderedness is
+`Unordered`.
+
+Payload MUST include:
+
+* operation kind;
+* orderedness before the operation;
+* source clause origin;
+* clause that last changed orderedness;
+* normalized plan context when available;
+* local repair hints.
 
 Family:
 
