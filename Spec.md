@@ -20905,22 +20905,24 @@ intrinsic trait IsSubsingleton t => IsTrait (t : Type)
 `IsTrait t` is compiler-issued evidence that `t` is a trait evidence type. User source MUST NOT define `IsTrait`
 instances.
 
-For every well-formed full trait application `Tr args`, the compiler synthesizes:
+For every well-formed full trait application `G = Tr args` in a well-formed telescope `Δ`, the compiler synthesizes:
 
 ```kappa
-IsTrait (Tr args)
+IsTrait G
 ```
 
 and hence:
 
 ```kappa
-IsSubsingleton (Tr args)
+IsSubsingleton G
 ```
 
-The generated `IsSubsingleton (Tr args)` evidence is a trusted consequence of the trait-evidence construction invariant: all
-closed inhabitants of a trait evidence type originate from accepted instance artifacts, intrinsic solver artifacts, or
-assumptions whose provenance is checked at their use boundary, and all artifacts for the same normalized trait head are
-coherent under §15.2.1.
+The associated proof irrelevance is relative to `Δ`: any two well-typed inhabitants of `G` in that telescope are
+propositionally equal.
+
+This invariant is justified because every portable introduction form for trait evidence is an accepted instance
+artifact, intrinsic solver artifact, local assumption, or trusted boundary artifact whose provenance is governed by the
+trait-evidence construction and coherence rules.
 
 `IsTrait T` does not imply `IsProp T` and does not imply `RuntimeErased T`.
 
