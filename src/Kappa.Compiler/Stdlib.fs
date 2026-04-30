@@ -72,16 +72,6 @@ module Stdlib =
         let unicode name = TypeIdentity.topLevel UnicodeModuleIdentity name
         let bytes name = TypeIdentity.topLevel BytesModuleIdentity name
 
-    module KnownTypePaths =
-        let bare = CompilerKnownSymbols.KnownTypePaths.bare
-        let prelude = CompilerKnownSymbols.KnownTypePaths.prelude
-        let hash = CompilerKnownSymbols.KnownTypePaths.hash
-        let unicode = CompilerKnownSymbols.KnownTypePaths.unicode
-        let bytes = CompilerKnownSymbols.KnownTypePaths.bytes
-        let isBare = CompilerKnownSymbols.KnownTypePaths.isBare
-        let isPrelude = CompilerKnownSymbols.KnownTypePaths.isPrelude
-        let isBareOrPrelude = CompilerKnownSymbols.KnownTypePaths.isBareOrPrelude
-
     let PreludeImportSpec =
         { Source = Dotted PreludeModuleName
           Alias = None

@@ -310,26 +310,17 @@ module ResourceChecking =
         | _ ->
             left |> Option.orElse right
 
-    let private bareType name arguments =
-        TypeSignatures.TypeName(CompilerKnownSymbols.KnownTypePaths.bare name, arguments)
-
-    let private isBareTypeName expectedName nameSegments =
-        CompilerKnownSymbols.KnownTypePaths.isBare expectedName nameSegments
-
-    let private isBareOrPreludeTypeName expectedName nameSegments =
-        CompilerKnownSymbols.KnownTypePaths.isBareOrPrelude expectedName nameSegments
-
     let private hasTypeLastSegment expectedName nameSegments =
         CompilerKnownSymbols.KnownTypePaths.hasLastSegment expectedName nameSegments
 
     let private refType argumentType =
-        bareType CompilerKnownSymbols.KnownTypeNames.Ref [ argumentType ]
+        TypeSignatures.knownType CompilerKnownSymbols.RefType [ argumentType ]
 
     let private unwrapIoType typeExpr =
         match typeExpr with
-        | TypeSignatures.TypeName(nameSegments, [ inner ]) when isBareTypeName CompilerKnownSymbols.KnownTypeNames.IO nameSegments -> inner
-        | TypeSignatures.TypeName(nameSegments, [ _; inner ]) when isBareTypeName CompilerKnownSymbols.KnownTypeNames.IO nameSegments -> inner
-        | TypeSignatures.TypeName(nameSegments, [ inner ]) when isBareTypeName CompilerKnownSymbols.KnownTypeNames.UIO nameSegments -> inner
+        | TypeSignatures.TypeName(nameSegments, [ inner ]) when CompilerKnownSymbols.KnownTypes.matchesName CompilerKnownSymbols.IOType nameSegments -> inner
+        | TypeSignatures.TypeName(nameSegments, [ _; inner ]) when CompilerKnownSymbols.KnownTypes.matchesName CompilerKnownSymbols.IOType nameSegments -> inner
+        | TypeSignatures.TypeName(nameSegments, [ inner ]) when CompilerKnownSymbols.KnownTypes.matchesName CompilerKnownSymbols.UIOType nameSegments -> inner
         | other -> other
 
     let private unwrapBindPayloadType typeExpr =
@@ -1280,21 +1271,21 @@ module ResourceChecking =
         | TypeSignatures.TypeName([ "Type" ], []) ->
             true
         | TypeSignatures.TypeName(nameSegments, []) when
-            isBareTypeName CompilerKnownSymbols.KnownTypeNames.Constraint nameSegments
-            || isBareTypeName CompilerKnownSymbols.KnownTypeNames.Quantity nameSegments
-            || isBareTypeName CompilerKnownSymbols.KnownTypeNames.Region nameSegments
-            || isBareTypeName CompilerKnownSymbols.KnownTypeNames.RecRow nameSegments
-            || isBareTypeName CompilerKnownSymbols.KnownTypeNames.VarRow nameSegments
-            || isBareTypeName CompilerKnownSymbols.KnownTypeNames.EffRow nameSegments
-            || isBareTypeName CompilerKnownSymbols.KnownTypeNames.Label nameSegments
-            || isBareTypeName CompilerKnownSymbols.KnownTypeNames.EffLabel nameSegments ->
+            CompilerKnownSymbols.KnownTypes.matchesName CompilerKnownSymbols.ConstraintType nameSegments
+            || CompilerKnownSymbols.KnownTypes.matchesName CompilerKnownSymbols.QuantityType nameSegments
+            || CompilerKnownSymbols.KnownTypes.matchesName CompilerKnownSymbols.RegionType nameSegments
+            || CompilerKnownSymbols.KnownTypes.matchesName CompilerKnownSymbols.RecRowType nameSegments
+            || CompilerKnownSymbols.KnownTypes.matchesName CompilerKnownSymbols.VarRowType nameSegments
+            || CompilerKnownSymbols.KnownTypes.matchesName CompilerKnownSymbols.EffRowType nameSegments
+            || CompilerKnownSymbols.KnownTypes.matchesName CompilerKnownSymbols.LabelType nameSegments
+            || CompilerKnownSymbols.KnownTypes.matchesName CompilerKnownSymbols.EffLabelType nameSegments ->
             true
         | TypeSignatures.TypeName(nameSegments, arguments) ->
-            isBareOrPreludeTypeName CompilerKnownSymbols.KnownTypeNames.Syntax nameSegments
-            || isBareOrPreludeTypeName CompilerKnownSymbols.KnownTypeNames.SyntaxOrigin nameSegments
-            || isBareOrPreludeTypeName CompilerKnownSymbols.KnownTypeNames.SyntaxFragment nameSegments
-            || isBareOrPreludeTypeName CompilerKnownSymbols.KnownTypeNames.Elab nameSegments
-            || isBareOrPreludeTypeName CompilerKnownSymbols.KnownTypeNames.ElabGoal nameSegments
+            CompilerKnownSymbols.KnownTypes.matchesName CompilerKnownSymbols.SyntaxType nameSegments
+            || CompilerKnownSymbols.KnownTypes.matchesName CompilerKnownSymbols.SyntaxOriginType nameSegments
+            || CompilerKnownSymbols.KnownTypes.matchesName CompilerKnownSymbols.SyntaxFragmentType nameSegments
+            || CompilerKnownSymbols.KnownTypes.matchesName CompilerKnownSymbols.ElabType nameSegments
+            || CompilerKnownSymbols.KnownTypes.matchesName CompilerKnownSymbols.ElabGoalType nameSegments
             || hasTypeLastSegment "CoreCtx" nameSegments
             || hasTypeLastSegment "Symbol" nameSegments
             || hasTypeLastSegment "Core" nameSegments
@@ -1536,18 +1527,18 @@ module ResourceChecking =
         let tryOptionPayloadType typeExpr =
             match typeExpr with
             | TypeSignatures.TypeName(nameSegments, [ payloadType ]) when
-                isBareOrPreludeTypeName CompilerKnownSymbols.KnownTypeNames.Option nameSegments ->
+                CompilerKnownSymbols.KnownTypes.matchesName CompilerKnownSymbols.OptionType nameSegments ->
                 Some payloadType
             | _ ->
                 None
 
-        let stringType = bareType CompilerKnownSymbols.KnownTypeNames.String []
-        let unicodeScalarType = bareType CompilerKnownSymbols.KnownTypeNames.UnicodeScalar []
-        let graphemeType = bareType CompilerKnownSymbols.KnownTypeNames.Grapheme []
-        let byteType = bareType CompilerKnownSymbols.KnownTypeNames.Byte []
-        let unitType = bareType CompilerKnownSymbols.KnownTypeNames.Unit []
-        let intType = bareType CompilerKnownSymbols.KnownTypeNames.Int []
-        let doubleType = bareType CompilerKnownSymbols.KnownTypeNames.Double []
+        let stringType = TypeSignatures.knownType CompilerKnownSymbols.StringType []
+        let unicodeScalarType = TypeSignatures.knownType CompilerKnownSymbols.UnicodeScalarType []
+        let graphemeType = TypeSignatures.knownType CompilerKnownSymbols.GraphemeType []
+        let byteType = TypeSignatures.knownType CompilerKnownSymbols.ByteType []
+        let unitType = TypeSignatures.knownType CompilerKnownSymbols.UnitType []
+        let intType = TypeSignatures.knownType CompilerKnownSymbols.IntType []
+        let doubleType = TypeSignatures.knownType CompilerKnownSymbols.DoubleType []
 
         let rec tryProjectRecordType currentType path =
             match path, currentType with
@@ -1650,7 +1641,7 @@ module ResourceChecking =
                         |> Option.map (fun memberType ->
                             match tryOptionPayloadType memberType with
                             | Some _ -> memberType
-                            | None -> bareType CompilerKnownSymbols.KnownTypeNames.Option [ memberType ])))
+                            | None -> TypeSignatures.knownType CompilerKnownSymbols.OptionType [ memberType ])))
             | Elvis(left, right) ->
                 match loop locals left, loop locals right with
                 | Some leftType, Some defaultType ->
@@ -1913,7 +1904,7 @@ module ResourceChecking =
                     yield! loop visited left
                     yield! loop visited right
                 | TypeSignatures.TypeName(nameSegments, TypeSignatures.TypeVariable regionName :: arguments)
-                    when isBareOrPreludeTypeName CompilerKnownSymbols.KnownTypeNames.BorrowView nameSegments ->
+                    when CompilerKnownSymbols.KnownTypes.matchesName CompilerKnownSymbols.BorrowViewType nameSegments ->
                     yield regionName
 
                     for argument in arguments do
@@ -1984,8 +1975,8 @@ module ResourceChecking =
         | TypeSignatures.TypeUniverse _ ->
             false
         | TypeSignatures.TypeName(nameSegments, _) when
-            isBareTypeName CompilerKnownSymbols.KnownTypeNames.IO nameSegments
-            || isBareTypeName CompilerKnownSymbols.KnownTypeNames.UIO nameSegments ->
+            CompilerKnownSymbols.KnownTypes.matchesName CompilerKnownSymbols.IOType nameSegments
+            || CompilerKnownSymbols.KnownTypes.matchesName CompilerKnownSymbols.UIOType nameSegments ->
             false
         | TypeSignatures.TypeName(_, arguments) ->
             arguments |> List.forall typeIsReliableForApplicationBoundary
@@ -2026,8 +2017,8 @@ module ResourceChecking =
         | _ -> false
 
     let private isSuspensionWrapperName (nameSegments: string list) =
-        isBareOrPreludeTypeName CompilerKnownSymbols.KnownTypeNames.Need nameSegments
-        || isBareOrPreludeTypeName CompilerKnownSymbols.KnownTypeNames.Thunk nameSegments
+        CompilerKnownSymbols.KnownTypes.matchesName CompilerKnownSymbols.NeedType nameSegments
+        || CompilerKnownSymbols.KnownTypes.matchesName CompilerKnownSymbols.ThunkType nameSegments
 
     let rec private hasConservativeBoundarySpecialCase typeExpr =
         match typeExpr with
@@ -5336,23 +5327,23 @@ module ResourceChecking =
                 let cardExpr =
                     TypeSignatures.TypeName([ queryCardText mode.Card ], [])
 
-                bareType CompilerKnownSymbols.KnownTypeNames.QueryMode [ useExpr; cardExpr ]
+                TypeSignatures.knownType CompilerKnownSymbols.QueryModeType [ useExpr; cardExpr ]
 
             let baseType =
                 match queryInfo.Mode.Use, queryInfo.Mode.Card, queryInfo.ItemQuantity with
                 | QuerySemantics.Reusable, QuerySemantics.QZeroOrMore, ResourceQuantity.Interval(0, None) ->
-                    bareType CompilerKnownSymbols.KnownTypeNames.Query [ queryInfo.ItemType ]
+                    TypeSignatures.knownType CompilerKnownSymbols.QueryType [ queryInfo.ItemType ]
                 | QuerySemantics.OneShot, QuerySemantics.QZeroOrMore, ResourceQuantity.Interval(0, None) ->
-                    bareType CompilerKnownSymbols.KnownTypeNames.OnceQuery [ queryInfo.ItemType ]
+                    TypeSignatures.knownType CompilerKnownSymbols.OnceQueryType [ queryInfo.ItemType ]
                 | QuerySemantics.Reusable, QuerySemantics.QZeroOrOne, ResourceQuantity.Interval(0, None) ->
-                    bareType CompilerKnownSymbols.KnownTypeNames.OptionalQuery [ queryInfo.ItemType ]
+                    TypeSignatures.knownType CompilerKnownSymbols.OptionalQueryType [ queryInfo.ItemType ]
                 | QuerySemantics.Reusable, QuerySemantics.QOneOrMore, ResourceQuantity.Interval(0, None) ->
-                    bareType CompilerKnownSymbols.KnownTypeNames.NonEmptyQuery [ queryInfo.ItemType ]
+                    TypeSignatures.knownType CompilerKnownSymbols.NonEmptyQueryType [ queryInfo.ItemType ]
                 | QuerySemantics.Reusable, QuerySemantics.QOne, ResourceQuantity.Interval(0, None) ->
-                    bareType CompilerKnownSymbols.KnownTypeNames.SingletonQuery [ queryInfo.ItemType ]
+                    TypeSignatures.knownType CompilerKnownSymbols.SingletonQueryType [ queryInfo.ItemType ]
                 | _ ->
-                    bareType
-                        CompilerKnownSymbols.KnownTypeNames.QueryCore
+                    TypeSignatures.knownType
+                        CompilerKnownSymbols.QueryCoreType
                         [ buildModeExpr queryInfo.Mode; queryQuantityExpr queryInfo.ItemQuantity; queryInfo.ItemType ]
 
             if Set.isEmpty queryInfo.CaptureSet then

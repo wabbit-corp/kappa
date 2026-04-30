@@ -5,6 +5,9 @@ open Kappa.Compiler.ResourceModel
 
 // Extracts quantity and resource-signature information from declarations for the checker.
 module internal ResourceCheckingSignatures =
+    let private matchesKnownType knownType nameSegments =
+        CompilerKnownSymbols.KnownTypes.matchesName knownType nameSegments
+
     let private syntheticIdentifierToken text =
         { Kind = Identifier
           Text = text
@@ -471,14 +474,14 @@ module internal ResourceCheckingSignatures =
         | TypeSignatures.TypeName([ "Type" ], []) ->
             true
         | TypeSignatures.TypeName(nameSegments, []) when
-            CompilerKnownSymbols.KnownTypePaths.isBare CompilerKnownSymbols.KnownTypeNames.Constraint nameSegments
-            || CompilerKnownSymbols.KnownTypePaths.isBare CompilerKnownSymbols.KnownTypeNames.Quantity nameSegments
-            || CompilerKnownSymbols.KnownTypePaths.isBare CompilerKnownSymbols.KnownTypeNames.Region nameSegments
-            || CompilerKnownSymbols.KnownTypePaths.isBare CompilerKnownSymbols.KnownTypeNames.RecRow nameSegments
-            || CompilerKnownSymbols.KnownTypePaths.isBare CompilerKnownSymbols.KnownTypeNames.VarRow nameSegments
-            || CompilerKnownSymbols.KnownTypePaths.isBare CompilerKnownSymbols.KnownTypeNames.EffRow nameSegments
-            || CompilerKnownSymbols.KnownTypePaths.isBare CompilerKnownSymbols.KnownTypeNames.Label nameSegments
-            || CompilerKnownSymbols.KnownTypePaths.isBare CompilerKnownSymbols.KnownTypeNames.EffLabel nameSegments ->
+            matchesKnownType CompilerKnownSymbols.ConstraintType nameSegments
+            || matchesKnownType CompilerKnownSymbols.QuantityType nameSegments
+            || matchesKnownType CompilerKnownSymbols.RegionType nameSegments
+            || matchesKnownType CompilerKnownSymbols.RecRowType nameSegments
+            || matchesKnownType CompilerKnownSymbols.VarRowType nameSegments
+            || matchesKnownType CompilerKnownSymbols.EffRowType nameSegments
+            || matchesKnownType CompilerKnownSymbols.LabelType nameSegments
+            || matchesKnownType CompilerKnownSymbols.EffLabelType nameSegments ->
             true
         | TypeSignatures.TypeArrow(_, parameterType, resultType) ->
             isCompileTimeDefinitionParameterType parameterType

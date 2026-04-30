@@ -63,6 +63,7 @@ Current M4 status note: started, not complete. The compiler now has a real effec
   [IlDotNetBackendModel.fs](/D:/ws/kappa/src/Kappa.Compiler/IlDotNetBackendModel.fs),
   and remaining hosted/runtime boundary models.
 - [ ] Continue the CLR backend migration past `IlNamed`. `IlDotNetBackendModel.IlType` now has a structured `TypeIdentity`, but metadata carriers such as `RawDataTypeInfo`, `ConstructorInfo`, `DataTypeInfo`, `ModuleSurface`, and `TraitInstanceInfo` still record semantic ownership as raw text.
+- [ ] Collapse the overlapping standard-library boundary modules (`Stdlib.fs`, `BundledPrelude.fs`, `BundledStandardModules.fs`, `StandardModules.fs`) into one typed catalog so compiler-known modules, bundled sources, and synthetic modules stop exposing duplicated string/name/path helper surfaces.
 - [ ] Replace verifier/runtime stringly type carriers that force semantic checks over rendered text, especially `KRuntimeIR` type-text fields and the substring fallback in `CheckpointVerification.runtimeTypeLeaksErasureMetadata`.
 - [ ] Replace stringly trait/dictionary conventions that still depend on synthesized textual names or prefixes, including `TraitRuntime.dictionaryTypeName ...`, `__kappa_dict_*` prefix checks, and literal trait-name comparisons such as `InterpolatedMacro`, `LacksRec`, `IsProp`, and `IsTrait`.
 - [ ] Replace text-based trait, constructor, and type matching in compile-time evaluation and backend typing with symbolic references.
@@ -70,6 +71,10 @@ Current M4 status note: started, not complete. The compiler now has a real effec
   [ElaborationEvaluation.fs](/D:/ws/kappa/src/Kappa.Compiler/ElaborationEvaluation.fs),
   [IlDotNetBackendTyping.fs](/D:/ws/kappa/src/Kappa.Compiler/IlDotNetBackendTyping.fs),
   [ZigCcBackendArtifact.fs](/D:/ws/kappa/src/Kappa.Compiler/ZigCcBackendArtifact.fs).
+- [ ] Replace remaining last-segment and ad hoc scoped-path checks for reified static/meta objects with declaration identities instead of `string list` path inspection.
+  Current hot spots:
+  [ResourceChecking.fs](/D:/ws/kappa/src/Kappa.Compiler/ResourceChecking.fs) (`hasTypeLastSegment` over shape/meta carriers),
+  [SurfaceElaboration.fs](/D:/ws/kappa/src/Kappa.Compiler/SurfaceElaboration.fs) (manual `QueryCore`/`QueryMode`/`Res` scoped `TypeName` construction).
 - [ ] Remove fabricated semantic identities such as the `ModuleIdentity.ofSegments [ "__unknown__" ]` fallback that still exists in `SurfaceElaboration.validateFrontendModule`.
 - [ ] Preserve canonical module identity casing through all artifact names and backend metadata per section 17.3.4.2.
 - [ ] Keep bridge/host spelling distinct from Kappa semantic identity.

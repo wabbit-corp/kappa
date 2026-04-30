@@ -269,17 +269,11 @@ module SurfaceElaboration =
 
     let private preludeModuleIdentity = ModuleIdentity.ofSegments Stdlib.PreludeModuleName
 
-    let private bareType name arguments =
-        TypeName(CompilerKnownSymbols.KnownTypePaths.bare name, arguments)
+    let private knownTypeExpr knownType arguments =
+        TypeSignatures.knownType knownType arguments
 
-    let private isBareTypeName expectedName nameSegments =
-        CompilerKnownSymbols.KnownTypePaths.isBare expectedName nameSegments
-
-    let private isBareOrPreludeTypeName expectedName nameSegments =
-        CompilerKnownSymbols.KnownTypePaths.isBareOrPrelude expectedName nameSegments
-
-    let private hasTypeLastSegment expectedName nameSegments =
-        CompilerKnownSymbols.KnownTypePaths.hasLastSegment expectedName nameSegments
+    let private matchesKnownType knownType nameSegments =
+        CompilerKnownSymbols.KnownTypes.matchesName knownType nameSegments
 
     let private declarationName (declaration: TopLevelDeclaration) =
         match declaration with
@@ -2159,84 +2153,84 @@ module SurfaceElaboration =
         collectPattern pattern value Map.empty
 
     let private unitType =
-        bareType CompilerKnownSymbols.KnownTypeNames.Unit []
+        knownTypeExpr CompilerKnownSymbols.UnitType []
 
     let private voidType =
-        bareType CompilerKnownSymbols.KnownTypeNames.Void []
+        knownTypeExpr CompilerKnownSymbols.VoidType []
 
     let private boolType =
-        bareType CompilerKnownSymbols.KnownTypeNames.Bool []
+        knownTypeExpr CompilerKnownSymbols.BoolType []
 
     let private intType =
-        bareType CompilerKnownSymbols.KnownTypeNames.Int []
+        knownTypeExpr CompilerKnownSymbols.IntType []
 
     let private integerType =
-        bareType CompilerKnownSymbols.KnownTypeNames.Integer []
+        knownTypeExpr CompilerKnownSymbols.IntegerType []
 
     let private floatType =
-        bareType CompilerKnownSymbols.KnownTypeNames.Float []
+        knownTypeExpr CompilerKnownSymbols.FloatType []
 
     let private doubleType =
-        bareType CompilerKnownSymbols.KnownTypeNames.Double []
+        knownTypeExpr CompilerKnownSymbols.DoubleType []
 
     let private stringType =
-        bareType CompilerKnownSymbols.KnownTypeNames.String []
+        knownTypeExpr CompilerKnownSymbols.StringType []
 
     let private unicodeScalarType =
-        bareType CompilerKnownSymbols.KnownTypeNames.UnicodeScalar []
+        knownTypeExpr CompilerKnownSymbols.UnicodeScalarType []
 
     let private graphemeType =
-        bareType CompilerKnownSymbols.KnownTypeNames.Grapheme []
+        knownTypeExpr CompilerKnownSymbols.GraphemeType []
 
     let private byteType =
-        bareType CompilerKnownSymbols.KnownTypeNames.Byte []
+        knownTypeExpr CompilerKnownSymbols.ByteType []
 
     let private syntaxType argumentType =
-        bareType CompilerKnownSymbols.KnownTypeNames.Syntax [ argumentType ]
+        knownTypeExpr CompilerKnownSymbols.SyntaxType [ argumentType ]
 
     let private elabType argumentType =
-        bareType CompilerKnownSymbols.KnownTypeNames.Elab [ argumentType ]
+        knownTypeExpr CompilerKnownSymbols.ElabType [ argumentType ]
 
     let private codeType argumentType =
-        bareType CompilerKnownSymbols.KnownTypeNames.Code [ argumentType ]
+        knownTypeExpr CompilerKnownSymbols.CodeType [ argumentType ]
 
     let private ioType argumentType =
-        bareType CompilerKnownSymbols.KnownTypeNames.IO [ argumentType ]
+        knownTypeExpr CompilerKnownSymbols.IOType [ argumentType ]
 
     let private effType effectRow payloadType =
-        bareType CompilerKnownSymbols.KnownTypeNames.Eff [ effectRow; payloadType ]
+        knownTypeExpr CompilerKnownSymbols.EffType [ effectRow; payloadType ]
 
     let private refType argumentType =
-        bareType CompilerKnownSymbols.KnownTypeNames.Ref [ argumentType ]
+        knownTypeExpr CompilerKnownSymbols.RefType [ argumentType ]
 
     let private dictionaryType traitName argumentTypes =
         TypeName([ TraitRuntime.dictionaryTypeName traitName ], argumentTypes)
 
     let private unwrapIoType typeExpr =
         match typeExpr with
-        | TypeName(nameSegments, [ inner ]) when isBareTypeName CompilerKnownSymbols.KnownTypeNames.IO nameSegments -> inner
-        | TypeName(nameSegments, [ _; inner ]) when isBareTypeName CompilerKnownSymbols.KnownTypeNames.IO nameSegments -> inner
-        | TypeName(nameSegments, [ inner ]) when isBareTypeName CompilerKnownSymbols.KnownTypeNames.UIO nameSegments -> inner
+        | TypeName(nameSegments, [ inner ]) when matchesKnownType CompilerKnownSymbols.IOType nameSegments -> inner
+        | TypeName(nameSegments, [ _; inner ]) when matchesKnownType CompilerKnownSymbols.IOType nameSegments -> inner
+        | TypeName(nameSegments, [ inner ]) when matchesKnownType CompilerKnownSymbols.UIOType nameSegments -> inner
         | other -> other
 
     let private tryUnwrapEffType typeExpr =
         match typeExpr with
-        | TypeName(nameSegments, [ effectRow; inner ]) when isBareTypeName CompilerKnownSymbols.KnownTypeNames.Eff nameSegments -> Some(effectRow, inner)
+        | TypeName(nameSegments, [ effectRow; inner ]) when matchesKnownType CompilerKnownSymbols.EffType nameSegments -> Some(effectRow, inner)
         | _ -> None
 
     let rec private tryUnwrapComputationPayloadType typeExpr =
         match typeExpr with
         | TypeCapture(inner, _) -> tryUnwrapComputationPayloadType inner
-        | TypeName(nameSegments, [ _; inner ]) when isBareTypeName CompilerKnownSymbols.KnownTypeNames.Eff nameSegments -> Some inner
-        | TypeName(nameSegments, [ inner ]) when isBareTypeName CompilerKnownSymbols.KnownTypeNames.IO nameSegments -> Some inner
-        | TypeName(nameSegments, [ _; inner ]) when isBareTypeName CompilerKnownSymbols.KnownTypeNames.IO nameSegments -> Some inner
-        | TypeName(nameSegments, [ inner ]) when isBareTypeName CompilerKnownSymbols.KnownTypeNames.UIO nameSegments -> Some inner
+        | TypeName(nameSegments, [ _; inner ]) when matchesKnownType CompilerKnownSymbols.EffType nameSegments -> Some inner
+        | TypeName(nameSegments, [ inner ]) when matchesKnownType CompilerKnownSymbols.IOType nameSegments -> Some inner
+        | TypeName(nameSegments, [ _; inner ]) when matchesKnownType CompilerKnownSymbols.IOType nameSegments -> Some inner
+        | TypeName(nameSegments, [ inner ]) when matchesKnownType CompilerKnownSymbols.UIOType nameSegments -> Some inner
         | _ -> None
 
     let rec private unwrapBindPayloadType typeExpr =
         match typeExpr with
         | TypeCapture(inner, _) -> unwrapBindPayloadType inner
-        | TypeName(nameSegments, [ _; inner ]) when isBareTypeName CompilerKnownSymbols.KnownTypeNames.Eff nameSegments -> inner
+        | TypeName(nameSegments, [ _; inner ]) when matchesKnownType CompilerKnownSymbols.EffType nameSegments -> inner
         | TypeName(_, [ inner ]) -> inner
         | other -> unwrapIoType other
 
@@ -3226,14 +3220,14 @@ module SurfaceElaboration =
                         | TypeName([ "Type" ], []) ->
                             true
                         | TypeName(nameSegments, []) when
-                            isBareTypeName CompilerKnownSymbols.KnownTypeNames.Constraint nameSegments
-                            || isBareTypeName CompilerKnownSymbols.KnownTypeNames.Quantity nameSegments
-                            || isBareTypeName CompilerKnownSymbols.KnownTypeNames.Region nameSegments
-                            || isBareTypeName CompilerKnownSymbols.KnownTypeNames.RecRow nameSegments
-                            || isBareTypeName CompilerKnownSymbols.KnownTypeNames.VarRow nameSegments
-                            || isBareTypeName CompilerKnownSymbols.KnownTypeNames.EffRow nameSegments
-                            || isBareTypeName CompilerKnownSymbols.KnownTypeNames.Label nameSegments
-                            || isBareTypeName CompilerKnownSymbols.KnownTypeNames.EffLabel nameSegments ->
+                            matchesKnownType CompilerKnownSymbols.ConstraintType nameSegments
+                            || matchesKnownType CompilerKnownSymbols.QuantityType nameSegments
+                            || matchesKnownType CompilerKnownSymbols.RegionType nameSegments
+                            || matchesKnownType CompilerKnownSymbols.RecRowType nameSegments
+                            || matchesKnownType CompilerKnownSymbols.VarRowType nameSegments
+                            || matchesKnownType CompilerKnownSymbols.EffRowType nameSegments
+                            || matchesKnownType CompilerKnownSymbols.LabelType nameSegments
+                            || matchesKnownType CompilerKnownSymbols.EffLabelType nameSegments ->
                             true
                         | _ ->
                             false
@@ -4530,7 +4524,7 @@ module SurfaceElaboration =
                 )
             | TypeUnion members ->
                 TypeUnion(members |> List.map (loop visited))
-            | TypeName(nameSegments, [ inner ]) when isBareOrPreludeTypeName CompilerKnownSymbols.KnownTypeNames.IO nameSegments ->
+            | TypeName(nameSegments, [ inner ]) when matchesKnownType CompilerKnownSymbols.IOType nameSegments ->
                 TypeName(nameSegments, [ voidType; loop visited inner ])
             | TypeName([ name ], arguments) ->
                 let normalizedArguments = arguments |> List.map (loop visited)
@@ -4558,10 +4552,10 @@ module SurfaceElaboration =
         match normalizeTypeAliases aliases typeExpr with
         | TypeCapture(inner, _) ->
             tryUnwrapBindablePayloadType aliases inner
-        | TypeName(nameSegments, [ _; inner ]) when isBareTypeName CompilerKnownSymbols.KnownTypeNames.Eff nameSegments -> Some inner
-        | TypeName(nameSegments, [ inner ]) when isBareTypeName CompilerKnownSymbols.KnownTypeNames.IO nameSegments -> Some inner
-        | TypeName(nameSegments, [ _; inner ]) when isBareTypeName CompilerKnownSymbols.KnownTypeNames.IO nameSegments -> Some inner
-        | TypeName(nameSegments, [ inner ]) when isBareTypeName CompilerKnownSymbols.KnownTypeNames.UIO nameSegments -> Some inner
+        | TypeName(nameSegments, [ _; inner ]) when matchesKnownType CompilerKnownSymbols.EffType nameSegments -> Some inner
+        | TypeName(nameSegments, [ inner ]) when matchesKnownType CompilerKnownSymbols.IOType nameSegments -> Some inner
+        | TypeName(nameSegments, [ _; inner ]) when matchesKnownType CompilerKnownSymbols.IOType nameSegments -> Some inner
+        | TypeName(nameSegments, [ inner ]) when matchesKnownType CompilerKnownSymbols.UIOType nameSegments -> Some inner
         | TypeName(_, [ inner ]) -> Some inner
         | _ -> None
 
@@ -4576,7 +4570,7 @@ module SurfaceElaboration =
         | TypeArrow _
         | TypeLambda _ ->
             true
-        | TypeName(nameSegments, _) when isBareOrPreludeTypeName CompilerKnownSymbols.KnownTypeNames.Projector nameSegments ->
+        | TypeName(nameSegments, _) when matchesKnownType CompilerKnownSymbols.ProjectorType nameSegments ->
             true
         | _ ->
             false
@@ -4944,7 +4938,7 @@ module SurfaceElaboration =
 
         match normalize typeExpr with
         | TypeName(nameSegments, [ inner ]) when
-            isBareOrPreludeTypeName CompilerKnownSymbols.KnownTypeNames.Elab nameSegments ->
+            matchesKnownType CompilerKnownSymbols.ElabType nameSegments ->
             Some inner
         | _ -> None
 
@@ -4953,7 +4947,7 @@ module SurfaceElaboration =
 
         match normalize typeExpr with
         | TypeName(nameSegments, [ inner ]) when
-            isBareOrPreludeTypeName CompilerKnownSymbols.KnownTypeNames.Syntax nameSegments ->
+            matchesKnownType CompilerKnownSymbols.SyntaxType nameSegments ->
             Some inner
         | _ -> None
 
@@ -5094,14 +5088,14 @@ module SurfaceElaboration =
         | TypeName([ "Type" ], []) ->
             true
         | TypeName(nameSegments, []) when
-            isBareTypeName CompilerKnownSymbols.KnownTypeNames.Constraint nameSegments
-            || isBareTypeName CompilerKnownSymbols.KnownTypeNames.Quantity nameSegments
-            || isBareTypeName CompilerKnownSymbols.KnownTypeNames.Region nameSegments
-            || isBareTypeName CompilerKnownSymbols.KnownTypeNames.RecRow nameSegments
-            || isBareTypeName CompilerKnownSymbols.KnownTypeNames.VarRow nameSegments
-            || isBareTypeName CompilerKnownSymbols.KnownTypeNames.EffRow nameSegments
-            || isBareTypeName CompilerKnownSymbols.KnownTypeNames.Label nameSegments
-            || isBareTypeName CompilerKnownSymbols.KnownTypeNames.EffLabel nameSegments ->
+            matchesKnownType CompilerKnownSymbols.ConstraintType nameSegments
+            || matchesKnownType CompilerKnownSymbols.QuantityType nameSegments
+            || matchesKnownType CompilerKnownSymbols.RegionType nameSegments
+            || matchesKnownType CompilerKnownSymbols.RecRowType nameSegments
+            || matchesKnownType CompilerKnownSymbols.VarRowType nameSegments
+            || matchesKnownType CompilerKnownSymbols.EffRowType nameSegments
+            || matchesKnownType CompilerKnownSymbols.LabelType nameSegments
+            || matchesKnownType CompilerKnownSymbols.EffLabelType nameSegments ->
             true
         | _ ->
             false
@@ -5126,14 +5120,14 @@ module SurfaceElaboration =
             | TypeName([ "Type" ], []) ->
                 true
             | TypeName(nameSegments, []) when
-                isBareTypeName CompilerKnownSymbols.KnownTypeNames.Constraint nameSegments
-                || isBareTypeName CompilerKnownSymbols.KnownTypeNames.Quantity nameSegments
-                || isBareTypeName CompilerKnownSymbols.KnownTypeNames.Region nameSegments
-                || isBareTypeName CompilerKnownSymbols.KnownTypeNames.RecRow nameSegments
-                || isBareTypeName CompilerKnownSymbols.KnownTypeNames.VarRow nameSegments
-                || isBareTypeName CompilerKnownSymbols.KnownTypeNames.EffRow nameSegments
-                || isBareTypeName CompilerKnownSymbols.KnownTypeNames.Label nameSegments
-                || isBareTypeName CompilerKnownSymbols.KnownTypeNames.EffLabel nameSegments ->
+                matchesKnownType CompilerKnownSymbols.ConstraintType nameSegments
+                || matchesKnownType CompilerKnownSymbols.QuantityType nameSegments
+                || matchesKnownType CompilerKnownSymbols.RegionType nameSegments
+                || matchesKnownType CompilerKnownSymbols.RecRowType nameSegments
+                || matchesKnownType CompilerKnownSymbols.VarRowType nameSegments
+                || matchesKnownType CompilerKnownSymbols.EffRowType nameSegments
+                || matchesKnownType CompilerKnownSymbols.LabelType nameSegments
+                || matchesKnownType CompilerKnownSymbols.EffLabelType nameSegments ->
                 true
             | TypeArrow(_, _, resultType) ->
                 loop resultType
@@ -5788,7 +5782,7 @@ module SurfaceElaboration =
         =
         match normalizeTypeAliases aliases typeExpr with
         | TypeName(nameSegments, [ payloadType ]) when
-            isBareOrPreludeTypeName CompilerKnownSymbols.KnownTypeNames.Option nameSegments ->
+            matchesKnownType CompilerKnownSymbols.OptionType nameSegments ->
             Some payloadType
         | _ ->
             None
@@ -5857,13 +5851,13 @@ module SurfaceElaboration =
 
         match normalize typeExpr with
         | TypeName(nameSegments, [ resultType ]) when
-            isBareOrPreludeTypeName CompilerKnownSymbols.KnownTypeNames.InterpolatedMacro nameSegments ->
+            matchesKnownType CompilerKnownSymbols.InterpolatedMacroType nameSegments ->
             Some resultType
         | TypeName(nameSegments, [ dictionaryConstraint ]) when
-            isBareOrPreludeTypeName CompilerKnownSymbols.KnownTypeNames.Dict nameSegments ->
+            matchesKnownType CompilerKnownSymbols.DictType nameSegments ->
             match normalize dictionaryConstraint with
             | TypeName(innerNameSegments, [ resultType ]) when
-                isBareOrPreludeTypeName CompilerKnownSymbols.KnownTypeNames.InterpolatedMacro innerNameSegments ->
+                matchesKnownType CompilerKnownSymbols.InterpolatedMacroType innerNameSegments ->
                 Some resultType
             | _ ->
                 None
@@ -6259,7 +6253,7 @@ module SurfaceElaboration =
             let rec renderTypedTypeText current =
                 let renderTypeName name =
                     if List.length name = List.length CompilerKnownSymbols.KnownModules.Prelude + 1
-                       && isBareOrPreludeTypeName (List.last name) name then
+                       && (CompilerKnownSymbols.KnownTypes.tryClassifyName name |> Option.isSome) then
                         List.last name
                     else
                         SyntaxFacts.moduleNameToText name
@@ -6338,7 +6332,7 @@ module SurfaceElaboration =
                         ]
                     )
 
-            let listType itemType = bareType CompilerKnownSymbols.KnownTypeNames.List [ itemType ]
+            let listType itemType = knownTypeExpr CompilerKnownSymbols.ListType [ itemType ]
 
             let functionType parameterTypes resultType =
                 parameterTypes
@@ -6676,7 +6670,7 @@ module SurfaceElaboration =
                 let keyType =
                     inferExpressionType state.CurrentLocals keyExpression
                     |> Option.defaultValue (TypeVariable "QueryOrderKey")
-                let pairType = bareType CompilerKnownSymbols.KnownTypeNames.Res [ keyType; currentRowType ]
+                let pairType = knownTypeExpr CompilerKnownSymbols.ResType [ keyType; currentRowType ]
                 let pairListType = listType pairType
                 let insertType = functionType [ pairType; pairListType ] pairListType
                 let sortType = functionType [ rowsType ] pairListType
@@ -7194,7 +7188,7 @@ module SurfaceElaboration =
         let constraintInfo =
             match normalizedParameterType with
             | TypeName(nameSegments, [ argumentType ])
-                when isBareOrPreludeTypeName CompilerKnownSymbols.KnownTypeNames.IsTrait nameSegments
+                when matchesKnownType CompilerKnownSymbols.IsTraitType nameSegments
                      && supportsIntrinsicTraitEvidenceType argumentType ->
                 Some
                     { TraitName = "IsTrait"
@@ -7744,15 +7738,15 @@ module SurfaceElaboration =
         match normalizeTypeAliases aliases expectedType with
         | TypeName(nameSegments, [])
             when isIntegerLiteral
-                 && (isBareTypeName CompilerKnownSymbols.KnownTypeNames.Int nameSegments
-                     || isBareTypeName CompilerKnownSymbols.KnownTypeNames.Integer nameSegments
-                     || isBareTypeName CompilerKnownSymbols.KnownTypeNames.Nat nameSegments) ->
+                 && (matchesKnownType CompilerKnownSymbols.IntType nameSegments
+                     || matchesKnownType CompilerKnownSymbols.IntegerType nameSegments
+                     || matchesKnownType CompilerKnownSymbols.NatType nameSegments) ->
             true
         | TypeName(nameSegments, [])
             when isRealLiteral
-                 && (isBareTypeName CompilerKnownSymbols.KnownTypeNames.Float nameSegments
-                     || isBareTypeName CompilerKnownSymbols.KnownTypeNames.Double nameSegments
-                     || isBareTypeName CompilerKnownSymbols.KnownTypeNames.Real nameSegments) ->
+                 && (matchesKnownType CompilerKnownSymbols.FloatType nameSegments
+                     || matchesKnownType CompilerKnownSymbols.DoubleType nameSegments
+                     || matchesKnownType CompilerKnownSymbols.RealType nameSegments) ->
             true
         | _ ->
             false
@@ -9231,7 +9225,7 @@ module SurfaceElaboration =
             inferValidationExpressionTypeWithContext environment freshCounter localTypes localImplicitTypes inner
             |> Option.bind (function
                 | TypeName(nameSegments, [ innerType ]) when
-                    isBareTypeName CompilerKnownSymbols.KnownTypeNames.Code nameSegments -> Some innerType
+                    matchesKnownType CompilerKnownSymbols.CodeType nameSegments -> Some innerType
                 | _ -> None)
         | Name [ "True" ]
         | Name [ "False" ] ->
@@ -9597,7 +9591,7 @@ module SurfaceElaboration =
                     |> Option.map (fun memberType ->
                         match tryOptionPayloadType environment.VisibleTypeAliases memberType with
                         | Some _ -> memberType
-                        | None -> bareType CompilerKnownSymbols.KnownTypeNames.Option [ memberType ])))
+                        | None -> knownTypeExpr CompilerKnownSymbols.OptionType [ memberType ])))
         | TagTest _ ->
             Some boolType
         | Do statements ->
@@ -10392,9 +10386,9 @@ module SurfaceElaboration =
             let isSupportedArithmeticType normalizedTypeExpr =
                 match normalizedTypeExpr with
                 | TypeName(nameSegments, []) when
-                    isBareOrPreludeTypeName CompilerKnownSymbols.KnownTypeNames.Int nameSegments
-                    || isBareOrPreludeTypeName CompilerKnownSymbols.KnownTypeNames.Float nameSegments
-                    || isBareOrPreludeTypeName CompilerKnownSymbols.KnownTypeNames.Double nameSegments ->
+                    matchesKnownType CompilerKnownSymbols.IntType nameSegments
+                    || matchesKnownType CompilerKnownSymbols.FloatType nameSegments
+                    || matchesKnownType CompilerKnownSymbols.DoubleType nameSegments ->
                     true
                 | _ ->
                     false
@@ -11001,9 +10995,9 @@ module SurfaceElaboration =
             let isSupportedArithmeticType normalizedTypeExpr =
                 match normalizedTypeExpr with
                 | TypeName(nameSegments, []) when
-                    isBareOrPreludeTypeName CompilerKnownSymbols.KnownTypeNames.Int nameSegments
-                    || isBareOrPreludeTypeName CompilerKnownSymbols.KnownTypeNames.Float nameSegments
-                    || isBareOrPreludeTypeName CompilerKnownSymbols.KnownTypeNames.Double nameSegments ->
+                    matchesKnownType CompilerKnownSymbols.IntType nameSegments
+                    || matchesKnownType CompilerKnownSymbols.FloatType nameSegments
+                    || matchesKnownType CompilerKnownSymbols.DoubleType nameSegments ->
                     true
                 | _ ->
                     false
@@ -11235,17 +11229,16 @@ module SurfaceElaboration =
 
             match normalized with
             | TypeName(nameSegments, [ _ ]) when
-                isBareOrPreludeTypeName CompilerKnownSymbols.KnownTypeNames.Syntax nameSegments
-                || isBareOrPreludeTypeName CompilerKnownSymbols.KnownTypeNames.Elab nameSegments
-                || isBareOrPreludeTypeName CompilerKnownSymbols.KnownTypeNames.Code nameSegments
-                || isBareOrPreludeTypeName CompilerKnownSymbols.KnownTypeNames.ClosedCode nameSegments
-                || isBareOrPreludeTypeName CompilerKnownSymbols.KnownTypeNames.RawComprehension nameSegments
-                || isBareOrPreludeTypeName CompilerKnownSymbols.KnownTypeNames.ComprehensionPlan nameSegments ->
+                matchesKnownType CompilerKnownSymbols.SyntaxType nameSegments
+                || matchesKnownType CompilerKnownSymbols.ElabType nameSegments
+                || matchesKnownType CompilerKnownSymbols.CodeType nameSegments
+                || matchesKnownType CompilerKnownSymbols.ClosedCodeType nameSegments
+                || matchesKnownType CompilerKnownSymbols.ComprehensionPlanType nameSegments ->
                 true
             | TypeName(nameSegments, []) when
-                isBareOrPreludeTypeName CompilerKnownSymbols.KnownTypeNames.SyntaxOrigin nameSegments
-                || isBareOrPreludeTypeName CompilerKnownSymbols.KnownTypeNames.SyntaxFragment nameSegments
-                || isBareOrPreludeTypeName CompilerKnownSymbols.KnownTypeNames.ElabGoal nameSegments ->
+                matchesKnownType CompilerKnownSymbols.SyntaxOriginType nameSegments
+                || matchesKnownType CompilerKnownSymbols.SyntaxFragmentType nameSegments
+                || matchesKnownType CompilerKnownSymbols.ElabGoalType nameSegments ->
                 true
             | _ ->
                 isCompileTimeArgumentType environment.VisibleTypeAliases normalized
@@ -11255,15 +11248,15 @@ module SurfaceElaboration =
 
             match normalized with
             | TypeName(nameSegments, [ _ ]) when
-                isBareOrPreludeTypeName CompilerKnownSymbols.KnownTypeNames.Syntax nameSegments
-                || isBareOrPreludeTypeName CompilerKnownSymbols.KnownTypeNames.Elab nameSegments
-                || isBareOrPreludeTypeName CompilerKnownSymbols.KnownTypeNames.Code nameSegments
-                || isBareOrPreludeTypeName CompilerKnownSymbols.KnownTypeNames.ClosedCode nameSegments ->
+                matchesKnownType CompilerKnownSymbols.SyntaxType nameSegments
+                || matchesKnownType CompilerKnownSymbols.ElabType nameSegments
+                || matchesKnownType CompilerKnownSymbols.CodeType nameSegments
+                || matchesKnownType CompilerKnownSymbols.ClosedCodeType nameSegments ->
                 true
             | TypeName(nameSegments, []) when
-                isBareOrPreludeTypeName CompilerKnownSymbols.KnownTypeNames.SyntaxOrigin nameSegments
-                || isBareOrPreludeTypeName CompilerKnownSymbols.KnownTypeNames.SyntaxFragment nameSegments
-                || isBareOrPreludeTypeName CompilerKnownSymbols.KnownTypeNames.ElabGoal nameSegments ->
+                matchesKnownType CompilerKnownSymbols.SyntaxOriginType nameSegments
+                || matchesKnownType CompilerKnownSymbols.SyntaxFragmentType nameSegments
+                || matchesKnownType CompilerKnownSymbols.ElabGoalType nameSegments ->
                 true
             | TypeArrow(_, parameterType, resultType) ->
                 typeMentionsMacroReflectionType parameterType
@@ -11307,13 +11300,13 @@ module SurfaceElaboration =
             let isPureElabPayloadType typeExpr =
                 match normalizeTypeAliases environment.VisibleTypeAliases typeExpr with
                 | TypeName(nameSegments, [ _ ]) when
-                    isBareOrPreludeTypeName CompilerKnownSymbols.KnownTypeNames.Syntax nameSegments
-                    || isBareOrPreludeTypeName CompilerKnownSymbols.KnownTypeNames.Code nameSegments
-                    || isBareOrPreludeTypeName CompilerKnownSymbols.KnownTypeNames.ClosedCode nameSegments ->
+                    matchesKnownType CompilerKnownSymbols.SyntaxType nameSegments
+                    || matchesKnownType CompilerKnownSymbols.CodeType nameSegments
+                    || matchesKnownType CompilerKnownSymbols.ClosedCodeType nameSegments ->
                     true
                 | TypeName(nameSegments, []) when
-                    isBareOrPreludeTypeName CompilerKnownSymbols.KnownTypeNames.SyntaxOrigin nameSegments
-                    || isBareOrPreludeTypeName CompilerKnownSymbols.KnownTypeNames.SyntaxFragment nameSegments ->
+                    matchesKnownType CompilerKnownSymbols.SyntaxOriginType nameSegments
+                    || matchesKnownType CompilerKnownSymbols.SyntaxFragmentType nameSegments ->
                     true
                 | _ when tryInterpolatedMacroResultType environment.VisibleTypeAliases typeExpr |> Option.isSome ->
                     true
@@ -12883,8 +12876,8 @@ module SurfaceElaboration =
             | TypeProject(target, _) ->
                 typeContainsSuspension target
             | TypeName(nameSegments, _) when
-                isBareOrPreludeTypeName CompilerKnownSymbols.KnownTypeNames.Thunk nameSegments
-                || isBareOrPreludeTypeName CompilerKnownSymbols.KnownTypeNames.Need nameSegments ->
+                matchesKnownType CompilerKnownSymbols.ThunkType nameSegments
+                || matchesKnownType CompilerKnownSymbols.NeedType nameSegments ->
                 true
             | TypeName(_, arguments) ->
                 arguments |> List.exists typeContainsSuspension
@@ -13067,10 +13060,10 @@ module SurfaceElaboration =
         let trySuspensionInner typeExpr =
             match normalizeTypeAliases environment.VisibleTypeAliases typeExpr with
             | TypeName(nameSegments, [ inner ]) when
-                isBareOrPreludeTypeName CompilerKnownSymbols.KnownTypeNames.Thunk nameSegments ->
+                matchesKnownType CompilerKnownSymbols.ThunkType nameSegments ->
                 Some inner
             | TypeName(nameSegments, [ inner ]) when
-                isBareOrPreludeTypeName CompilerKnownSymbols.KnownTypeNames.Need nameSegments ->
+                matchesKnownType CompilerKnownSymbols.NeedType nameSegments ->
                 Some inner
             | _ ->
                 None
@@ -13903,7 +13896,7 @@ module SurfaceElaboration =
                 | Some expectedType, Binary(left, "::", right) ->
                     match normalizeExpectedType Map.empty expectedType with
                     | TypeName(nameSegments, [ expectedElementType ]) when
-                        isBareOrPreludeTypeName CompilerKnownSymbols.KnownTypeNames.List nameSegments ->
+                        matchesKnownType CompilerKnownSymbols.ListType nameSegments ->
                         let inferAgainstExpected expectedArgumentType argument =
                             match argument with
                             | Name [ argumentName ] when not (Map.containsKey argumentName locals) ->
@@ -14440,12 +14433,12 @@ module SurfaceElaboration =
                 let isTextBinarySurfaceType typeExpr =
                     match normalizeTypeAliases environment.VisibleTypeAliases typeExpr with
                     | TypeName(nameSegments, []) when
-                        isBareOrPreludeTypeName CompilerKnownSymbols.KnownTypeNames.String nameSegments
-                        || isBareOrPreludeTypeName CompilerKnownSymbols.KnownTypeNames.Bytes nameSegments
-                        || isBareOrPreludeTypeName CompilerKnownSymbols.KnownTypeNames.Byte nameSegments
-                        || isBareOrPreludeTypeName CompilerKnownSymbols.KnownTypeNames.UnicodeScalar nameSegments
-                        || isBareOrPreludeTypeName CompilerKnownSymbols.KnownTypeNames.Grapheme nameSegments
-                        || isBareOrPreludeTypeName CompilerKnownSymbols.KnownTypeNames.Char nameSegments ->
+                        matchesKnownType CompilerKnownSymbols.StringType nameSegments
+                        || matchesKnownType CompilerKnownSymbols.BytesType nameSegments
+                        || matchesKnownType CompilerKnownSymbols.ByteType nameSegments
+                        || matchesKnownType CompilerKnownSymbols.UnicodeScalarType nameSegments
+                        || matchesKnownType CompilerKnownSymbols.GraphemeType nameSegments
+                        || matchesKnownType CompilerKnownSymbols.CharType nameSegments ->
                         true
                     | _ ->
                         false
@@ -18859,9 +18852,9 @@ module SurfaceElaboration =
                         let isSupportedArithmeticType normalizedTypeExpr =
                             match normalizedTypeExpr with
                             | TypeName(nameSegments, []) when
-                                isBareOrPreludeTypeName CompilerKnownSymbols.KnownTypeNames.Int nameSegments
-                                || isBareOrPreludeTypeName CompilerKnownSymbols.KnownTypeNames.Float nameSegments
-                                || isBareOrPreludeTypeName CompilerKnownSymbols.KnownTypeNames.Double nameSegments ->
+                                matchesKnownType CompilerKnownSymbols.IntType nameSegments
+                                || matchesKnownType CompilerKnownSymbols.FloatType nameSegments
+                                || matchesKnownType CompilerKnownSymbols.DoubleType nameSegments ->
                                 true
                             | _ ->
                                 false
@@ -19369,7 +19362,7 @@ module SurfaceElaboration =
                 |> Option.bind TypeSignatures.parseType
                 |> Option.exists (function
                     | TypeName(nameSegments, _) when
-                        isBareOrPreludeTypeName CompilerKnownSymbols.KnownTypeNames.Projector nameSegments -> true
+                        matchesKnownType CompilerKnownSymbols.ProjectorType nameSegments -> true
                     | _ -> false)
 
             match returnTypeIsProjector, body with
@@ -22533,13 +22526,13 @@ module SurfaceElaboration =
                 inferExpressionType localTypes inner
                 |> Option.bind (function
                     | TypeName(nameSegments, [ innerType ]) when
-                        isBareTypeName CompilerKnownSymbols.KnownTypeNames.Syntax nameSegments -> Some innerType
+                        matchesKnownType CompilerKnownSymbols.SyntaxType nameSegments -> Some innerType
                     | _ -> None)
             | TopLevelSyntaxSplice inner ->
                 inferExpressionType localTypes inner
                 |> Option.bind (function
                     | TypeName(nameSegments, [ innerType ]) when
-                        isBareTypeName CompilerKnownSymbols.KnownTypeNames.Syntax nameSegments -> Some innerType
+                        matchesKnownType CompilerKnownSymbols.SyntaxType nameSegments -> Some innerType
                     | _ -> None)
             | CodeQuote inner ->
                 inferExpressionType localTypes inner
@@ -22548,7 +22541,7 @@ module SurfaceElaboration =
                 inferExpressionType localTypes inner
                 |> Option.bind (function
                     | TypeName(nameSegments, [ innerType ]) when
-                        isBareTypeName CompilerKnownSymbols.KnownTypeNames.Code nameSegments -> Some innerType
+                        matchesKnownType CompilerKnownSymbols.CodeType nameSegments -> Some innerType
                     | _ -> None)
             | Name [ "True" ]
             | Name [ "False" ] ->
@@ -22956,7 +22949,7 @@ module SurfaceElaboration =
                         |> Option.map (fun memberType ->
                             match tryOptionPayloadType environment.VisibleTypeAliases memberType with
                             | Some _ -> memberType
-                            | None -> bareType CompilerKnownSymbols.KnownTypeNames.Option [ memberType ])))
+                            | None -> knownTypeExpr CompilerKnownSymbols.OptionType [ memberType ])))
             | TagTest _ ->
                 Some boolType
             | Do statements ->
@@ -23350,7 +23343,7 @@ module SurfaceElaboration =
         and unwrapRefLikeType typeExpr =
             match normalizeTypeAliases environment.VisibleTypeAliases typeExpr with
             | TypeName(nameSegments, [ inner ]) when
-                isBareTypeName CompilerKnownSymbols.KnownTypeNames.Ref nameSegments -> Some inner
+                matchesKnownType CompilerKnownSymbols.RefType nameSegments -> Some inner
             | _ -> None
 
         and substituteProjectionExpression

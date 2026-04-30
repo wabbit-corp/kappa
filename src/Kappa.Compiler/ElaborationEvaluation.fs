@@ -704,7 +704,7 @@ module internal ElaborationEvaluation =
                 let fieldType =
                     parameter.ParameterTypeTokens
                     |> TypeSignatures.parseType
-                    |> Option.defaultValue (TypeSignatures.TypeName(CompilerKnownSymbols.KnownTypePaths.bare CompilerKnownSymbols.KnownTypeNames.Unit, []))
+                    |> Option.defaultValue (TypeSignatures.knownType CompilerKnownSymbols.UnitType [])
                 shapeFieldData fieldName fieldType)
 
         MetaData(

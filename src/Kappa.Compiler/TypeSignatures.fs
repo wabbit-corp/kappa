@@ -79,11 +79,24 @@ module TypeSignatures =
     let private collapsedName (segments: string list) =
         SyntaxFacts.moduleNameToText segments
 
+    let knownType known arguments =
+        TypeName(CompilerKnownSymbols.KnownTypes.canonicalPath known, arguments)
+
     let private unitTypeExpr =
-        TypeName(CompilerKnownSymbols.KnownTypePaths.bare CompilerKnownSymbols.KnownTypeNames.Unit, [])
+        knownType CompilerKnownSymbols.UnitType []
 
     let private optionTypeExpr inner =
-        TypeName(CompilerKnownSymbols.KnownTypePaths.prelude CompilerKnownSymbols.KnownTypeNames.Option, [ inner ])
+        knownType CompilerKnownSymbols.OptionType [ inner ]
+
+    let matchesKnownTypeName known nameSegments =
+        CompilerKnownSymbols.KnownTypes.matchesName known nameSegments
+
+    let tryKnownTypeArguments known typeExpr =
+        match typeExpr with
+        | TypeName(nameSegments, arguments) when matchesKnownTypeName known nameSegments ->
+            Some arguments
+        | _ ->
+            None
 
     let private intrinsicClassifierName classifier =
         match classifier with
@@ -98,16 +111,16 @@ module TypeSignatures =
         | EffLabelClassifier -> CompilerKnownSymbols.KnownTypeNames.EffLabel
 
     let private tryIntrinsicClassifier name =
-        match name with
-        | _ when CompilerKnownSymbols.KnownTypePaths.isBare CompilerKnownSymbols.KnownTypeNames.Universe name -> Some UniverseClassifier
-        | _ when CompilerKnownSymbols.KnownTypePaths.isBare CompilerKnownSymbols.KnownTypeNames.Quantity name -> Some QuantityClassifier
-        | _ when CompilerKnownSymbols.KnownTypePaths.isBare CompilerKnownSymbols.KnownTypeNames.Region name -> Some RegionClassifier
-        | _ when CompilerKnownSymbols.KnownTypePaths.isBare CompilerKnownSymbols.KnownTypeNames.Constraint name -> Some ConstraintClassifier
-        | _ when CompilerKnownSymbols.KnownTypePaths.isBare CompilerKnownSymbols.KnownTypeNames.RecRow name -> Some RecRowClassifier
-        | _ when CompilerKnownSymbols.KnownTypePaths.isBare CompilerKnownSymbols.KnownTypeNames.VarRow name -> Some VarRowClassifier
-        | _ when CompilerKnownSymbols.KnownTypePaths.isBare CompilerKnownSymbols.KnownTypeNames.EffRow name -> Some EffRowClassifier
-        | _ when CompilerKnownSymbols.KnownTypePaths.isBare CompilerKnownSymbols.KnownTypeNames.Label name -> Some LabelClassifier
-        | _ when CompilerKnownSymbols.KnownTypePaths.isBare CompilerKnownSymbols.KnownTypeNames.EffLabel name -> Some EffLabelClassifier
+        match CompilerKnownSymbols.KnownTypes.tryClassifyName name with
+        | Some CompilerKnownSymbols.UniverseType -> Some UniverseClassifier
+        | Some CompilerKnownSymbols.QuantityType -> Some QuantityClassifier
+        | Some CompilerKnownSymbols.RegionType -> Some RegionClassifier
+        | Some CompilerKnownSymbols.ConstraintType -> Some ConstraintClassifier
+        | Some CompilerKnownSymbols.RecRowType -> Some RecRowClassifier
+        | Some CompilerKnownSymbols.VarRowType -> Some VarRowClassifier
+        | Some CompilerKnownSymbols.EffRowType -> Some EffRowClassifier
+        | Some CompilerKnownSymbols.LabelType -> Some LabelClassifier
+        | Some CompilerKnownSymbols.EffLabelType -> Some EffLabelClassifier
         | _ -> None
 
     let addDefinition name definition (context: DefinitionContext) =
@@ -2407,8 +2420,11 @@ module TypeSignatures =
         let renderTypeName name =
             match name with
             | _ when
-                List.length name = List.length CompilerKnownSymbols.KnownModules.Prelude + 1
-                && CompilerKnownSymbols.KnownTypePaths.isPrelude (List.last name) name ->
+                List.take (max 0 (List.length name - 1)) name = CompilerKnownSymbols.KnownModules.Prelude
+                && (CompilerKnownSymbols.KnownTypes.tryClassifyName name
+                    |> Option.exists (fun knownType ->
+                        CompilerKnownSymbols.KnownTypes.acceptedPaths knownType
+                        |> List.exists ((=) name))) ->
                 List.last name
             | _ -> SyntaxFacts.moduleNameToText name
 

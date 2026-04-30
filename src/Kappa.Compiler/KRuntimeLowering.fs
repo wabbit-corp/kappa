@@ -6,6 +6,9 @@ open System.Text
 
 // Lowers KCore into the implementation-defined KRuntimeIR checkpoint.
 module internal KRuntimeLowering =
+    let private matchesKnownType knownType nameSegments =
+        CompilerKnownSymbols.KnownTypes.matchesName knownType nameSegments
+
     let private stableSyntheticSuffix (value: string) =
         let bytes = Encoding.UTF8.GetBytes(value)
         let hash = SHA256.HashData(bytes)
@@ -33,21 +36,21 @@ module internal KRuntimeLowering =
             TypeSignatures.parseType lexResult.Tokens
 
     let private isIntrinsicCompileTimeTraitName nameSegments =
-        Stdlib.KnownTypePaths.isBareOrPrelude Stdlib.KnownTypeNames.IsProp nameSegments
-        || Stdlib.KnownTypePaths.isBareOrPrelude Stdlib.KnownTypeNames.IsTrait nameSegments
+        matchesKnownType CompilerKnownSymbols.IsPropType nameSegments
+        || matchesKnownType CompilerKnownSymbols.IsTraitType nameSegments
 
     let private isCompileTimeOnlyNamedType nameSegments =
-        Stdlib.KnownTypePaths.isBare Stdlib.KnownTypeNames.Universe nameSegments
-        || Stdlib.KnownTypePaths.isBare Stdlib.KnownTypeNames.Constraint nameSegments
-        || Stdlib.KnownTypePaths.isBare Stdlib.KnownTypeNames.Quantity nameSegments
-        || Stdlib.KnownTypePaths.isBare Stdlib.KnownTypeNames.Region nameSegments
-        || Stdlib.KnownTypePaths.isBare Stdlib.KnownTypeNames.RecRow nameSegments
-        || Stdlib.KnownTypePaths.isBare Stdlib.KnownTypeNames.VarRow nameSegments
-        || Stdlib.KnownTypePaths.isBare Stdlib.KnownTypeNames.EffRow nameSegments
-        || Stdlib.KnownTypePaths.isBare Stdlib.KnownTypeNames.Label nameSegments
-        || Stdlib.KnownTypePaths.isBare Stdlib.KnownTypeNames.EffLabel nameSegments
-        || Stdlib.KnownTypePaths.isBareOrPrelude Stdlib.KnownTypeNames.Syntax nameSegments
-        || Stdlib.KnownTypePaths.isBareOrPrelude Stdlib.KnownTypeNames.Code nameSegments
+        matchesKnownType CompilerKnownSymbols.UniverseType nameSegments
+        || matchesKnownType CompilerKnownSymbols.ConstraintType nameSegments
+        || matchesKnownType CompilerKnownSymbols.QuantityType nameSegments
+        || matchesKnownType CompilerKnownSymbols.RegionType nameSegments
+        || matchesKnownType CompilerKnownSymbols.RecRowType nameSegments
+        || matchesKnownType CompilerKnownSymbols.VarRowType nameSegments
+        || matchesKnownType CompilerKnownSymbols.EffRowType nameSegments
+        || matchesKnownType CompilerKnownSymbols.LabelType nameSegments
+        || matchesKnownType CompilerKnownSymbols.EffLabelType nameSegments
+        || matchesKnownType CompilerKnownSymbols.SyntaxType nameSegments
+        || matchesKnownType CompilerKnownSymbols.CodeType nameSegments
 
     let rec private eraseRuntimeTypeExpr typeExpr =
         match typeExpr with
@@ -55,7 +58,7 @@ module internal KRuntimeLowering =
             typeExpr
         | TypeSignatures.TypeUniverse _
         | TypeSignatures.TypeIntrinsic _ ->
-            TypeSignatures.TypeName(Stdlib.KnownTypePaths.bare Stdlib.KnownTypeNames.Unit, [])
+            TypeSignatures.knownType CompilerKnownSymbols.UnitType []
         | TypeSignatures.TypeApply(callee, arguments) ->
             TypeSignatures.TypeApply(eraseRuntimeTypeExpr callee, arguments |> List.map eraseRuntimeTypeExpr)
         | TypeSignatures.TypeLambda(parameterName, parameterSort, body) ->
@@ -74,9 +77,9 @@ module internal KRuntimeLowering =
             match nameSegments with
             | [ "Type" ]
             | _ when isCompileTimeOnlyNamedType nameSegments ->
-                TypeSignatures.TypeName(Stdlib.KnownTypePaths.bare Stdlib.KnownTypeNames.Unit, [])
+                TypeSignatures.knownType CompilerKnownSymbols.UnitType []
             | _ when isIntrinsicCompileTimeTraitName nameSegments ->
-                TypeSignatures.TypeName(Stdlib.KnownTypePaths.bare Stdlib.KnownTypeNames.Unit, [])
+                TypeSignatures.knownType CompilerKnownSymbols.UnitType []
             | _ ->
                 TypeSignatures.TypeName(nameSegments, arguments |> List.map eraseRuntimeTypeExpr)
         | TypeSignatures.TypeArrow(_, parameterType, resultType) ->
@@ -109,9 +112,9 @@ module internal KRuntimeLowering =
 
     let private runtimeValueTypeExpr typeExpr =
         match eraseRuntimeTypeExpr typeExpr with
-        | TypeSignatures.TypeName(nameSegments, [ inner ]) when Stdlib.KnownTypePaths.isBare Stdlib.KnownTypeNames.IO nameSegments -> inner
-        | TypeSignatures.TypeName(nameSegments, [ _; inner ]) when Stdlib.KnownTypePaths.isBare Stdlib.KnownTypeNames.IO nameSegments -> inner
-        | TypeSignatures.TypeName(nameSegments, [ inner ]) when Stdlib.KnownTypePaths.isBare Stdlib.KnownTypeNames.UIO nameSegments -> inner
+        | TypeSignatures.TypeName(nameSegments, [ inner ]) when matchesKnownType CompilerKnownSymbols.IOType nameSegments -> inner
+        | TypeSignatures.TypeName(nameSegments, [ _; inner ]) when matchesKnownType CompilerKnownSymbols.IOType nameSegments -> inner
+        | TypeSignatures.TypeName(nameSegments, [ inner ]) when matchesKnownType CompilerKnownSymbols.UIOType nameSegments -> inner
         | other -> other
 
     let private eraseRuntimeTypeText (text: string) =
@@ -305,8 +308,7 @@ module internal KRuntimeLowering =
         let referencesSelf =
             match typeExpr with
             | TypeSignatures.TypeName(nameSegments, [ constraintType ])
-                when Stdlib.KnownTypePaths.isBare Stdlib.KnownTypeNames.Dict nameSegments
-                     || Stdlib.KnownTypePaths.isPrelude Stdlib.KnownTypeNames.Dict nameSegments ->
+                when matchesKnownType CompilerKnownSymbols.DictType nameSegments ->
                 match constraintType with
                 | TypeSignatures.TypeName(traitNameSegments, _) ->
                     compileTimeTraitNames.Contains(List.last traitNameSegments)
