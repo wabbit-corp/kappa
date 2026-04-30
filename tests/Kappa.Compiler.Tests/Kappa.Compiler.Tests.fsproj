@@ -16,6 +16,7 @@
     <Compile Include="HarnessExecution.fs" />
     <Compile Include="Harness.fs" />
     <Compile Include="ResourceModelTests.fs" />
+    <Compile Include="SymbolicIdentityTests.fs" />
     <Compile Include="FixtureTests.fs" />
     <Compile Include="HostBindingFixture.fs" />
     <Compile Include="Tests.fs" />

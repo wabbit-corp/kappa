@@ -101,6 +101,12 @@ module internal CompilationFrontend =
     let private asciiCaseFoldModuleName (segments: string list) =
         segments |> List.map asciiCaseFoldSegment
 
+    let private moduleIdentityText identity =
+        identity |> ModuleIdentity.text
+
+    let private moduleIdentityOfDottedTextUnchecked text =
+        ModuleIdentity.ofDottedTextUnchecked text
+
     let private modulePathCollisionSortKey sourceRoot (document: ParsedDocument) =
         Path.GetRelativePath(sourceRoot, document.Source.FilePath).Replace('\\', '/')
 
@@ -108,10 +114,10 @@ module internal CompilationFrontend =
         documents
         |> List.filter (fun document -> not (document.Source.FilePath.StartsWith("<", StringComparison.Ordinal)))
         |> List.choose (fun document ->
-            document.ModuleName
-            |> Option.map (fun moduleName ->
-                asciiCaseFoldModuleName moduleName,
-                SyntaxFacts.moduleNameToText moduleName,
+            document.ModuleIdentity
+            |> Option.map (fun moduleIdentity ->
+                ModuleIdentity.asciiCaseFoldKey moduleIdentity,
+                moduleIdentityText moduleIdentity,
                 document))
         |> List.groupBy (fun (foldedModuleName, _, _) -> foldedModuleName)
         |> List.collect (fun (_, entries) ->
@@ -359,10 +365,10 @@ module internal CompilationFrontend =
         | Dotted segments -> SyntaxFacts.moduleNameToText segments
         | Url url -> SyntaxFacts.urlModuleSpecifierText url
 
-    let private moduleSpecifierIdentityText moduleSpecifier =
+    let private namedModuleSpecifierIdentity moduleSpecifier =
         match moduleSpecifier with
-        | Dotted segments -> SyntaxFacts.moduleNameToText segments
-        | Url url -> SyntaxFacts.urlModuleSpecifierIdentityText url
+        | Dotted segments -> Some(ModuleIdentity.ofSegments segments)
+        | Url _ -> None
 
     let private importItemModifierText modifier =
         match modifier with
@@ -440,17 +446,19 @@ module internal CompilationFrontend =
                   Alias = None }
             ]
 
-    let private resolveQualifiedOnlyImportSpec (inventories: Map<string, ModuleExportInventory>) (spec: ImportSpec) =
+    let private resolveQualifiedOnlyImportSpec (inventories: Map<ModuleIdentity, ModuleExportInventory>) (spec: ImportSpec) =
         match spec.Source, spec.Alias, spec.Selection with
         | Dotted moduleSegments, None, QualifiedOnly when moduleSegments.Length >= 2 ->
             let fullModuleName = SyntaxFacts.moduleNameToText moduleSegments
+            let fullModuleIdentity = ModuleIdentity.ofSegments moduleSegments
             let parentModuleSegments = moduleSegments |> List.take (moduleSegments.Length - 1)
             let parentModuleName = SyntaxFacts.moduleNameToText parentModuleSegments
+            let parentModuleIdentity = ModuleIdentity.ofSegments parentModuleSegments
             let itemName = List.last moduleSegments
-            let moduleCandidateExists = Map.containsKey fullModuleName inventories
+            let moduleCandidateExists = Map.containsKey fullModuleIdentity inventories
 
             let itemCandidateExists =
-                match Map.tryFind parentModuleName inventories with
+                match Map.tryFind parentModuleIdentity inventories with
                 | Some inventory -> Set.contains itemName inventory.UnqualifiedBindings
                 | None -> false
 
@@ -882,8 +890,8 @@ module internal CompilationFrontend =
             let specLocation = defaultArg (findImportSpecifierLocation document spec) defaultLocation
 
             match spec.Source with
-            | Dotted name -> Some(SyntaxFacts.moduleNameToText name, specLocation)
-            | Url url -> Some(SyntaxFacts.urlModuleSpecifierIdentityText url, specLocation))
+            | Dotted name -> Some(ModuleIdentity.ofSegments name, specLocation)
+            | Url _ -> None)
 
     let private buildModuleExportInventory backendProfile (documents: ParsedDocument list) =
         let emptyInventory =
@@ -1128,9 +1136,7 @@ module internal CompilationFrontend =
             | UnresolvedBareImport _ ->
                 inventory
             | ResolvedImportSpec resolvedSpec ->
-                let importedModuleName = moduleSpecifierText resolvedSpec.Source
-
-                match Map.tryFind (moduleSpecifierIdentityText resolvedSpec.Source) inventories with
+                match namedModuleSpecifierIdentity resolvedSpec.Source |> Option.bind (fun identity -> Map.tryFind identity inventories) with
                 | None ->
                     inventory
                 | Some importedInventory ->
@@ -1209,20 +1215,20 @@ module internal CompilationFrontend =
         let groupedDocuments =
             documents
             |> List.choose (fun document ->
-            document.ModuleName
-            |> Option.map (fun moduleName -> SyntaxFacts.moduleNameToText moduleName, document))
+            document.ModuleIdentity
+            |> Option.map (fun moduleIdentity -> moduleIdentity, document))
             |> List.groupBy fst
-            |> List.map (fun (moduleNameText, entries) -> moduleNameText, entries |> List.map snd)
+            |> List.map (fun (moduleIdentity, entries) -> moduleIdentity, entries |> List.map snd)
             |> Map.ofList
 
         let syntaxInventories =
             groupedDocuments
-            |> Map.map (fun moduleNameText moduleDocuments ->
+            |> Map.map (fun moduleIdentity moduleDocuments ->
                 let syntaxInventory =
                     moduleDocuments
                     |> List.fold addDocument emptyInventory
 
-                if String.Equals(moduleNameText, Stdlib.PreludeModuleText, StringComparison.Ordinal) then
+                if moduleIdentity = ModuleIdentity.ofSegments Stdlib.PreludeModuleName then
                     let contract = IntrinsicCatalog.bundledPreludeExpectContract ()
 
                     { syntaxInventory with
@@ -1242,17 +1248,25 @@ module internal CompilationFrontend =
                     []
                     []
                     [])
+            |> Map.toList
+            |> List.map (fun (moduleNameText, inventory) -> moduleIdentityOfDottedTextUnchecked moduleNameText, inventory)
+            |> Map.ofList
 
         let withSyntheticModuleInventories inventories =
+            let standardInventories =
+                standardModuleInventories
+                |> Map.toList
+                |> List.map (fun (moduleNameText, inventory) -> moduleIdentityOfDottedTextUnchecked moduleNameText, inventory)
+
             inventories
-            |> fun current -> Map.fold (fun state name inventory -> Map.add name inventory state) current standardModuleInventories
-            |> fun current -> Map.fold (fun state name inventory -> Map.add name inventory state) current hostModuleInventories
+            |> fun current -> standardInventories |> List.fold (fun state (moduleIdentity, inventory) -> Map.add moduleIdentity inventory state) current
+            |> fun current -> Map.fold (fun state moduleIdentity inventory -> Map.add moduleIdentity inventory state) current hostModuleInventories
 
         let rec saturate inventories =
             let nextInventories =
                 groupedDocuments
-                |> Map.map (fun moduleNameText moduleDocuments ->
-                    let directInventory = Map.find moduleNameText syntaxInventories
+                |> Map.map (fun moduleIdentity moduleDocuments ->
+                    let directInventory = Map.find moduleIdentity syntaxInventories
 
                     moduleDocuments
                     |> List.collect (fun document ->
@@ -1399,11 +1413,11 @@ module internal CompilationFrontend =
 
         documents
         |> List.choose (fun document ->
-            document.ModuleName
-            |> Option.map (fun moduleName -> SyntaxFacts.moduleNameToText moduleName, document))
+            document.ModuleIdentity
+            |> Option.map (fun moduleIdentity -> moduleIdentity, document))
         |> List.groupBy fst
-        |> List.map (fun (moduleNameText, entries) ->
-            moduleNameText,
+        |> List.map (fun (moduleIdentity, entries) ->
+            moduleIdentity,
             (entries |> List.map snd |> List.fold addDocument emptyInventory))
         |> Map.ofList
 
@@ -1597,7 +1611,7 @@ module internal CompilationFrontend =
                                 )
                             | ResolvedImportSpec resolvedSpec ->
                                 let importedModuleName = moduleSpecifierText resolvedSpec.Source
-                                let importedModuleIdentity = moduleSpecifierIdentityText resolvedSpec.Source
+                                let importedModuleIdentity = namedModuleSpecifierIdentity resolvedSpec.Source
 
                                 let validateImportItem (item: ImportItem) (inventory: ModuleExportInventory) =
                                     let itemLocation = defaultArg (findTokenLocation document item.Name) defaultLocation
@@ -1635,8 +1649,8 @@ module internal CompilationFrontend =
                                         let ordinaryExists = importItemExists inventory item
 
                                         let escapeExists =
-                                            importEscapeInventories
-                                            |> Map.tryFind importedModuleIdentity
+                                            importedModuleIdentity
+                                            |> Option.bind (fun currentImportedModuleIdentity -> Map.tryFind currentImportedModuleIdentity importEscapeInventories)
                                             |> Option.exists (fun escapeInventory -> importItemExistsViaEscapeHatch escapeInventory item)
 
                                         if not ordinaryExists && not escapeExists then
@@ -1652,7 +1666,7 @@ module internal CompilationFrontend =
                                     | UrlImportInvalid _ ->
                                         ()
                                     | UrlImportValid ->
-                                        match Map.tryFind importedModuleIdentity exportInventories with
+                                        match importedModuleIdentity |> Option.bind (fun identity -> Map.tryFind identity exportInventories) with
                                         | Some inventory ->
                                             match resolvedSpec.Selection with
                                             | Items items ->
@@ -1675,7 +1689,7 @@ module internal CompilationFrontend =
                                                 phase = KFrontIRPhase.phaseName CHECKERS
                                             )
                                 | _ ->
-                                    match Map.tryFind importedModuleIdentity exportInventories with
+                                    match importedModuleIdentity |> Option.bind (fun identity -> Map.tryFind identity exportInventories) with
                                     | Some inventory ->
                                         match resolvedSpec.Selection with
                                         | Items items ->
@@ -1728,10 +1742,10 @@ module internal CompilationFrontend =
     let private buildModuleFixityInventory (documents: ParsedDocument list) =
         documents
         |> List.choose (fun document ->
-            document.ModuleName
-            |> Option.map (fun moduleName -> SyntaxFacts.moduleNameToText moduleName, document))
+            document.ModuleIdentity
+            |> Option.map (fun moduleIdentity -> moduleIdentity, document))
         |> List.groupBy fst
-        |> List.map (fun (moduleNameText, entries) ->
+        |> List.map (fun (moduleIdentity, entries) ->
             let declarations =
                 entries
                 |> List.collect (fun (_, document) ->
@@ -1740,7 +1754,7 @@ module internal CompilationFrontend =
                         | FixityDeclarationNode declaration -> Some declaration
                         | _ -> None))
 
-            moduleNameText, declarations)
+            moduleIdentity, declarations)
         |> Map.ofList
 
     let private selectionImportsFixityName inventory selection name =
@@ -1765,8 +1779,8 @@ module internal CompilationFrontend =
             && not (excludedByExcept ImportNamespace.Term excludedItems)
 
     let private resolveImportedFixitiesForSpecs
-        (exportInventories: Map<string, ModuleExportInventory>)
-        (moduleFixityInventory: Map<string, FixityDeclaration list>)
+        (exportInventories: Map<ModuleIdentity, ModuleExportInventory>)
+        (moduleFixityInventory: Map<ModuleIdentity, FixityDeclaration list>)
         (specs: ImportSpec list)
         =
         specs
@@ -1777,9 +1791,10 @@ module internal CompilationFrontend =
                 | AmbiguousBareImport _
                 | UnresolvedBareImport _ -> spec
 
-            let moduleNameText = moduleSpecifierIdentityText resolvedSpec.Source
+            let moduleIdentity = namedModuleSpecifierIdentity resolvedSpec.Source
 
-            match Map.tryFind moduleNameText exportInventories, Map.tryFind moduleNameText moduleFixityInventory with
+            match moduleIdentity |> Option.bind (fun identity -> Map.tryFind identity exportInventories),
+                  moduleIdentity |> Option.bind (fun identity -> Map.tryFind identity moduleFixityInventory) with
             | Some inventory, Some fixities ->
                 fixities
                 |> List.filter (fun declaration ->
@@ -2110,17 +2125,16 @@ module internal CompilationFrontend =
         let documentsByModule =
             documents
             |> List.choose (fun document ->
-                document.ModuleName
-                |> Option.map (fun moduleName -> SyntaxFacts.moduleNameToText moduleName, document))
+                document.ModuleIdentity
+                |> Option.map (fun moduleIdentity -> moduleIdentity, document))
             |> List.groupBy fst
-            |> List.map (fun (moduleNameText, entries) -> moduleNameText, entries |> List.map snd)
+            |> List.map (fun (moduleIdentity, entries) -> moduleIdentity, entries |> List.map snd)
             |> Map.ofList
 
         for document in documents do
-            match document.ModuleName with
-            | Some moduleName ->
-                let moduleNameText = SyntaxFacts.moduleNameToText moduleName
-                let moduleDocuments = documentsByModule[moduleNameText]
+            match document.ModuleIdentity, document.ModuleName with
+            | Some moduleIdentity, Some moduleName ->
+                let moduleDocuments = documentsByModule[moduleIdentity]
 
                 for declaration in collectExpectDeclarations document do
                     let satisfactionCount =
@@ -2148,7 +2162,7 @@ module internal CompilationFrontend =
                             stage = "KFrontIR",
                             phase = KFrontIRPhase.phaseName CHECKERS
                         )
-            | None ->
+            | _ ->
                 ()
 
         diagnostics.Items
@@ -2173,16 +2187,16 @@ module internal CompilationFrontend =
 
     let detectImportCycles (documents: ParsedDocument list) =
         let diagnostics = ResizeArray<Diagnostic>()
-        let emitted = HashSet<string>()
+        let emitted = HashSet<ModuleIdentity>()
 
         let moduleDocuments =
             documents
             |> List.choose (fun document ->
-                document.ModuleName
-                |> Option.map (fun moduleName -> SyntaxFacts.moduleNameToText moduleName, document))
+                document.ModuleIdentity
+                |> Option.map (fun moduleIdentity -> moduleIdentity, document))
             |> List.groupBy fst
-            |> List.map (fun (moduleName, entries) ->
-                moduleName, entries |> List.map snd)
+            |> List.map (fun (moduleIdentity, entries) ->
+                moduleIdentity, entries |> List.map snd)
             |> Map.ofList
 
         let edgeOrigins =
@@ -2191,23 +2205,23 @@ module internal CompilationFrontend =
                 moduleGroup
                 |> List.collect importedModuleEdges
                 |> List.groupBy fst
-                |> List.choose (fun (moduleName, entries) ->
-                    if moduleDocuments.ContainsKey(moduleName) then
+                |> List.choose (fun (moduleIdentity, entries) ->
+                    if moduleDocuments.ContainsKey(moduleIdentity) then
                         let locations =
                             entries
                             |> List.map snd
                             |> List.sortBy (fun location ->
                                 location.FilePath, location.Start.Line, location.Start.Column, location.End.Line, location.End.Column)
 
-                        Some(moduleName, locations)
+                        Some(moduleIdentity, locations)
                     else
                         None)
                 |> Map.ofList)
 
         let edges = edgeOrigins |> Map.map (fun _ origins -> origins |> Map.keys |> Seq.toList)
 
-        let states = Dictionary<string, int>()
-        let stack = ResizeArray<string>()
+        let states = Dictionary<ModuleIdentity, int>()
+        let stack = ResizeArray<ModuleIdentity>()
 
         let rec visit moduleName =
             let state = states.GetValueOrDefault(moduleName, 0)
@@ -2218,7 +2232,6 @@ module internal CompilationFrontend =
                     let dependency = moduleName
                     let cycleStart = stack |> Seq.findIndex ((=) dependency)
                     let cycle = stack |> Seq.skip cycleStart |> Seq.toList
-                    let message = String.concat " -> " (cycle @ [ dependency ])
                     let cycleEdgeOrigins =
                         (cycle @ [ dependency ])
                         |> List.pairwise
@@ -2244,7 +2257,8 @@ module internal CompilationFrontend =
                         cycleEdgeOrigins
                         |> List.skip 1
                         |> List.map (fun (sourceModule, targetModule, location) ->
-                            { Message = $"Import from module '{sourceModule}' to module '{targetModule}' participates in this cycle."
+                            { Message =
+                                $"Import from module '{moduleIdentityText sourceModule}' to module '{moduleIdentityText targetModule}' participates in this cycle."
                               Location = location })
 
                     diagnostics.Add(
@@ -2253,7 +2267,7 @@ module internal CompilationFrontend =
                             (Some(KFrontIRPhase.phaseName CHECKERS))
                             (Some primaryLocation)
                             relatedLocations
-                            (DiagnosticFact.importCycle cycle)
+                            (DiagnosticFact.importCycle (cycle |> List.map moduleIdentityText))
                     )
             | 2 ->
                 ()

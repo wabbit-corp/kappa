@@ -11,29 +11,32 @@ module internal ElaborationEvaluation =
           Constructors: Set<string> }
 
     type private SurfaceTermDefinition =
-        { ModuleName: string
+        { ModuleIdentity: ModuleIdentity
+          ModuleName: string
           Name: string
           Parameters: Parameter list
           Body: SurfaceExpression option
           IsExpect: bool }
 
     type private SurfaceTypeDefinition =
-        | SurfaceData of moduleName: string * declaration: DataDeclaration
-        | SurfaceAlias of moduleName: string * declaration: TypeAlias
-        | SurfaceEffect of moduleName: string * declaration: EffectDeclaration
-        | SurfaceExpectedType of moduleName: string * name: string
+        | SurfaceData of moduleIdentity: ModuleIdentity * declaration: DataDeclaration
+        | SurfaceAlias of moduleIdentity: ModuleIdentity * declaration: TypeAlias
+        | SurfaceEffect of moduleIdentity: ModuleIdentity * declaration: EffectDeclaration
+        | SurfaceExpectedType of moduleIdentity: ModuleIdentity * name: string
 
     type private SurfaceTraitDefinition =
-        | SurfaceTrait of moduleName: string * declaration: TraitDeclaration
-        | SurfaceExpectedTrait of moduleName: string * name: string
+        | SurfaceTrait of moduleIdentity: ModuleIdentity * declaration: TraitDeclaration
+        | SurfaceExpectedTrait of moduleIdentity: ModuleIdentity * name: string
 
     type private SurfaceConstructorDefinition =
-        { ModuleName: string
+        { ModuleIdentity: ModuleIdentity
+          ModuleName: string
           ParentTypeName: string
           Constructor: DataConstructor }
 
     type private ModuleModel =
-        { ModuleName: string
+        { ModuleIdentity: ModuleIdentity
+          ModuleName: string
           Terms: Map<string, SurfaceTermDefinition>
           Types: Map<string, SurfaceTypeDefinition>
           Traits: Map<string, SurfaceTraitDefinition>
@@ -48,14 +51,15 @@ module internal ElaborationEvaluation =
     type private SyntaxValue =
         { Expression: SurfaceExpression
           CapturedNames: Set<string>
-          ScopeModule: string option }
+          ScopeModule: ModuleIdentity option }
 
     type private MetaField =
         { Name: string
           Value: MetaValue }
 
     and private MetaClosure =
-        { ModuleName: string
+        { ModuleIdentity: ModuleIdentity
+          ModuleName: string
           Parameters: Parameter list
           Body: SurfaceExpression
           MetaBindings: Map<string, MetaValue> }
@@ -86,9 +90,9 @@ module internal ElaborationEvaluation =
           Diagnostics: Diagnostic list }
 
     type private RewriteContext =
-        { Models: Map<string, ModuleModel>
-          Inventories: Map<string, ExportInventory>
-          CurrentModule: string
+        { Models: Map<ModuleIdentity, ModuleModel>
+          Inventories: Map<ModuleIdentity, ExportInventory>
+          CurrentModule: ModuleIdentity
           Source: SourceText
           ObjectBinders: Set<string>
           MetaBindings: Map<string, MetaValue> }
@@ -150,15 +154,14 @@ module internal ElaborationEvaluation =
                     inventory)
             emptyInventory
 
-    let private buildInventories (documents: ParsedDocument list) : Map<string, ExportInventory> =
+    let private buildInventories (documents: ParsedDocument list) : Map<ModuleIdentity, ExportInventory> =
         documents
         |> List.choose (fun document ->
-            document.ModuleName
-            |> Option.map (fun moduleName ->
-                SyntaxFacts.moduleNameToText moduleName, exportInventoryForDocument document))
+            document.ModuleIdentity
+            |> Option.map (fun moduleIdentity -> moduleIdentity, exportInventoryForDocument document))
         |> List.groupBy fst
-        |> List.map (fun (moduleName, entries) ->
-            moduleName,
+        |> List.map (fun (moduleIdentity, entries) ->
+            moduleIdentity,
             (entries |> List.map snd |> List.fold mergeInventory emptyInventory))
         |> Map.ofList
 
@@ -189,7 +192,7 @@ module internal ElaborationEvaluation =
             |> List.filter (fun parameter -> not (Set.contains parameter.Name existingNames)))
         |> Option.defaultValue []
 
-    let private tryParseTopLevelTermDefinition moduleName (signatures: Map<string, BindingSignature>) declaration =
+    let private tryParseTopLevelTermDefinition moduleIdentity moduleName (signatures: Map<string, BindingSignature>) declaration =
         match declaration with
         | LetDeclaration definition when definition.Name.IsSome ->
             let leadingParameters =
@@ -199,7 +202,8 @@ module internal ElaborationEvaluation =
 
             Some(
                 definition.Name.Value,
-                { ModuleName = moduleName
+                { ModuleIdentity = moduleIdentity
+                  ModuleName = moduleName
                   Name = definition.Name.Value
                   Parameters = leadingParameters @ definition.Parameters
                   Body = definition.Body
@@ -208,7 +212,8 @@ module internal ElaborationEvaluation =
         | ProjectionDeclarationNode declaration ->
             Some(
                 declaration.Name,
-                { ModuleName = moduleName
+                { ModuleIdentity = moduleIdentity
+                  ModuleName = moduleName
                   Name = declaration.Name
                   Parameters = []
                   Body = None
@@ -217,7 +222,8 @@ module internal ElaborationEvaluation =
         | ExpectDeclarationNode (ExpectTermDeclaration declaration) ->
             Some(
                 declaration.Name,
-                { ModuleName = moduleName
+                { ModuleIdentity = moduleIdentity
+                  ModuleName = moduleName
                   Name = declaration.Name
                   Parameters = []
                   Body = None
@@ -226,28 +232,29 @@ module internal ElaborationEvaluation =
         | _ ->
             None
 
-    let private tryParseTopLevelTypeDefinition moduleName declaration =
+    let private tryParseTopLevelTypeDefinition moduleIdentity declaration =
         match declaration with
-        | DataDeclarationNode declaration -> Some(declaration.Name, SurfaceData(moduleName, declaration))
-        | TypeAliasNode declaration -> Some(declaration.Name, SurfaceAlias(moduleName, declaration))
-        | EffectDeclarationNode declaration -> Some(declaration.Name, SurfaceEffect(moduleName, declaration))
-        | ExpectDeclarationNode (ExpectTypeDeclaration declaration) -> Some(declaration.Name, SurfaceExpectedType(moduleName, declaration.Name))
+        | DataDeclarationNode declaration -> Some(declaration.Name, SurfaceData(moduleIdentity, declaration))
+        | TypeAliasNode declaration -> Some(declaration.Name, SurfaceAlias(moduleIdentity, declaration))
+        | EffectDeclarationNode declaration -> Some(declaration.Name, SurfaceEffect(moduleIdentity, declaration))
+        | ExpectDeclarationNode (ExpectTypeDeclaration declaration) -> Some(declaration.Name, SurfaceExpectedType(moduleIdentity, declaration.Name))
         | _ -> None
 
-    let private tryParseTopLevelTraitDefinition moduleName declaration =
+    let private tryParseTopLevelTraitDefinition moduleIdentity declaration =
         match declaration with
-        | TraitDeclarationNode declaration -> Some(declaration.Name, SurfaceTrait(moduleName, declaration))
-        | ExpectDeclarationNode (ExpectTraitDeclaration declaration) -> Some(declaration.Name, SurfaceExpectedTrait(moduleName, declaration.Name))
+        | TraitDeclarationNode declaration -> Some(declaration.Name, SurfaceTrait(moduleIdentity, declaration))
+        | ExpectDeclarationNode (ExpectTraitDeclaration declaration) -> Some(declaration.Name, SurfaceExpectedTrait(moduleIdentity, declaration.Name))
         | _ -> None
 
-    let private buildModuleModels (documents: ParsedDocument list) : Map<string, ModuleModel> =
+    let private buildModuleModels (documents: ParsedDocument list) : Map<ModuleIdentity, ModuleModel> =
         documents
         |> List.choose (fun document ->
-            document.ModuleName
-            |> Option.map (fun moduleName -> SyntaxFacts.moduleNameToText moduleName, document))
+            document.ModuleIdentity
+            |> Option.map (fun moduleIdentity -> moduleIdentity, document))
         |> List.groupBy fst
-        |> List.map (fun (moduleName, entries) ->
+        |> List.map (fun (moduleIdentity, entries) ->
             let moduleDocuments = entries |> List.map snd
+            let moduleName = ModuleIdentity.text moduleIdentity
 
             let signatures =
                 moduleDocuments
@@ -262,17 +269,17 @@ module internal ElaborationEvaluation =
                 moduleDocuments
                 |> List.collect (fun document ->
                     document.Syntax.Declarations
-                    |> List.choose (tryParseTopLevelTermDefinition moduleName signatures))
+                    |> List.choose (tryParseTopLevelTermDefinition moduleIdentity moduleName signatures))
                 |> Map.ofList
 
             let types =
                 moduleDocuments
-                |> List.collect (fun document -> document.Syntax.Declarations |> List.choose (tryParseTopLevelTypeDefinition moduleName))
+                |> List.collect (fun document -> document.Syntax.Declarations |> List.choose (tryParseTopLevelTypeDefinition moduleIdentity))
                 |> Map.ofList
 
             let traits =
                 moduleDocuments
-                |> List.collect (fun document -> document.Syntax.Declarations |> List.choose (tryParseTopLevelTraitDefinition moduleName))
+                |> List.collect (fun document -> document.Syntax.Declarations |> List.choose (tryParseTopLevelTraitDefinition moduleIdentity))
                 |> Map.ofList
 
             let constructors =
@@ -284,7 +291,8 @@ module internal ElaborationEvaluation =
                             declaration.Constructors
                             |> List.map (fun constructor ->
                                 constructor.Name,
-                                { ModuleName = moduleName
+                                { ModuleIdentity = moduleIdentity
+                                  ModuleName = moduleName
                                   ParentTypeName = declaration.Name
                                   Constructor = constructor })
                         | _ -> []))
@@ -300,8 +308,9 @@ module internal ElaborationEvaluation =
 
             let imports = moduleDocuments |> List.collect CompilationFrontend.collectImportSpecs
 
-            moduleName,
-            { ModuleName = moduleName
+            moduleIdentity,
+            { ModuleIdentity = moduleIdentity
+              ModuleName = moduleName
               Terms = terms
               Types = types
               Traits = traits
@@ -419,84 +428,84 @@ module internal ElaborationEvaluation =
             exportsConstructor
             && not (excludedItems |> List.exists (exceptMatches ImportNamespace.Constructor name))
 
-    let private resolveVisibleTermReference inventories models moduleName localName =
-        let model = Map.find moduleName models
+    let private resolveVisibleTermReference inventories models moduleIdentity localName =
+        let model = Map.find moduleIdentity models
 
         model.Terms
         |> Map.tryFind localName
-        |> Option.map (fun term -> term.ModuleName, term.Name)
+        |> Option.map (fun term -> term.ModuleIdentity, term.Name)
         |> Option.orElseWith (fun () ->
             model.Imports
             |> List.tryPick (fun spec ->
-                match spec.Source with
-                | Url _ -> None
-                | Dotted importedModuleSegments ->
-                    let importedModuleName = SyntaxFacts.moduleNameToText importedModuleSegments
+                match ModuleIdentity.ofModuleSpecifier spec.Source with
+                | Some importedModuleIdentity ->
                     inventories
-                    |> Map.tryFind importedModuleName
+                    |> Map.tryFind importedModuleIdentity
                     |> Option.bind (fun inventory ->
                         resolveImportedTerms inventory spec.Selection
                         |> Map.tryFind localName
-                        |> Option.map (fun importedName -> importedModuleName, importedName))))
+                        |> Option.map (fun importedName -> importedModuleIdentity, importedName))
+                | None ->
+                    None))
 
-    let private resolveVisibleTypeReference inventories models moduleName localName =
-        let model = Map.find moduleName models
+    let private resolveVisibleTypeReference inventories models moduleIdentity localName =
+        let model = Map.find moduleIdentity models
 
         model.Types
         |> Map.tryFind localName
-        |> Option.map (fun _ -> model.ModuleName, localName)
+        |> Option.map (fun _ -> model.ModuleIdentity, localName)
         |> Option.orElseWith (fun () ->
             model.Imports
             |> List.tryPick (fun spec ->
-                match spec.Source with
-                | Url _ -> None
-                | Dotted importedModuleSegments ->
-                    let importedModuleName = SyntaxFacts.moduleNameToText importedModuleSegments
+                match ModuleIdentity.ofModuleSpecifier spec.Source with
+                | Some importedModuleIdentity ->
                     inventories
-                    |> Map.tryFind importedModuleName
+                    |> Map.tryFind importedModuleIdentity
                     |> Option.bind (fun inventory ->
                         resolveImportedTypes inventory spec.Selection
                         |> Map.tryFind localName
-                        |> Option.map (fun importedName -> importedModuleName, importedName))))
+                        |> Option.map (fun importedName -> importedModuleIdentity, importedName))
+                | None ->
+                    None))
 
-    let private resolveVisibleTraitReference inventories models moduleName localName =
-        let model = Map.find moduleName models
+    let private resolveVisibleTraitReference inventories models moduleIdentity localName =
+        let model = Map.find moduleIdentity models
 
         model.Traits
         |> Map.tryFind localName
-        |> Option.map (fun _ -> model.ModuleName, localName)
+        |> Option.map (fun _ -> model.ModuleIdentity, localName)
         |> Option.orElseWith (fun () ->
             model.Imports
             |> List.tryPick (fun spec ->
-                match spec.Source with
-                | Url _ -> None
-                | Dotted importedModuleSegments ->
-                    let importedModuleName = SyntaxFacts.moduleNameToText importedModuleSegments
+                match ModuleIdentity.ofModuleSpecifier spec.Source with
+                | Some importedModuleIdentity ->
                     inventories
-                    |> Map.tryFind importedModuleName
+                    |> Map.tryFind importedModuleIdentity
                     |> Option.bind (fun inventory ->
                         resolveImportedTraits inventory spec.Selection
                         |> Map.tryFind localName
-                        |> Option.map (fun importedName -> importedModuleName, importedName))))
+                        |> Option.map (fun importedName -> importedModuleIdentity, importedName))
+                | None ->
+                    None))
 
-    let private resolveVisibleConstructorReference inventories models moduleName localName =
-        let model = Map.find moduleName models
+    let private resolveVisibleConstructorReference inventories models moduleIdentity localName =
+        let model = Map.find moduleIdentity models
 
         model.Constructors
         |> Map.tryFind localName
-        |> Option.map (fun constructor -> constructor.ModuleName, constructor.Constructor.Name)
+        |> Option.map (fun constructor -> constructor.ModuleIdentity, constructor.Constructor.Name)
         |> Option.orElseWith (fun () ->
             model.Imports
             |> List.tryPick (fun spec ->
-                match spec.Source with
-                | Url _ -> None
-                | Dotted importedModuleSegments ->
-                    let importedModuleName = SyntaxFacts.moduleNameToText importedModuleSegments
-                    match inventories |> Map.tryFind importedModuleName, models |> Map.tryFind importedModuleName with
+                match ModuleIdentity.ofModuleSpecifier spec.Source with
+                | Some importedModuleIdentity ->
+                    match inventories |> Map.tryFind importedModuleIdentity, models |> Map.tryFind importedModuleIdentity with
                     | Some inventory, Some importedModel when selectionImportsConstructorName importedModel inventory spec.Selection localName ->
-                        Some(importedModuleName, localName)
+                        Some(importedModuleIdentity, localName)
                     | _ ->
-                        None))
+                        None
+                | None ->
+                    None))
 
     let private collectPatternBoundNames pattern =
         let rec loop current =
@@ -642,7 +651,7 @@ module internal ElaborationEvaluation =
 
     let private emptySyntaxValue expression = syntaxValueWithScope None expression
 
-    let private combineSyntaxScopeModules (scopeModules: string option list) =
+    let private combineSyntaxScopeModules (scopeModules: ModuleIdentity option list) =
         match scopeModules with
         | [] -> None
         | first :: rest ->
@@ -650,7 +659,7 @@ module internal ElaborationEvaluation =
             |> List.fold
                 (fun state next ->
                     match state, next with
-                    | Some left, Some right when String.Equals(left, right, StringComparison.Ordinal) -> Some left
+                    | Some left, Some right when left = right -> Some left
                     | _ -> None)
                 first
 
@@ -760,16 +769,16 @@ module internal ElaborationEvaluation =
         | MetaList items -> Some items
         | _ -> None
 
-    let private visibleInstancesForModule models inventories moduleName =
-        let model = Map.find moduleName models
+    let private visibleInstancesForModule models inventories moduleIdentity =
+        let model = Map.find moduleIdentity models
         let importedInstances =
             model.Imports
             |> List.collect (fun spec ->
-                match spec.Source with
-                | Url _ -> []
-                | Dotted segments ->
-                    let importedModuleName = SyntaxFacts.moduleNameToText segments
-                    models |> Map.tryFind importedModuleName |> Option.map (fun imported -> imported.Instances) |> Option.defaultValue [])
+                match ModuleIdentity.ofModuleSpecifier spec.Source with
+                | Some importedModuleIdentity ->
+                    models |> Map.tryFind importedModuleIdentity |> Option.map (fun imported -> imported.Instances) |> Option.defaultValue []
+                | None ->
+                    [])
         model.Instances @ importedInstances
 
     let private tryParseInstanceHeader (declaration: InstanceDeclaration) =
@@ -785,8 +794,8 @@ module internal ElaborationEvaluation =
                 Some(traitName, headTypes)
             | _ -> None)
 
-    let private visibleTypeAliasDefinitions models inventories moduleName =
-        let moduleModel = Map.find moduleName models
+    let private visibleTypeAliasDefinitions models inventories moduleIdentity =
+        let moduleModel = Map.find moduleIdentity models
 
         let localAliases =
             moduleModel.Types
@@ -799,11 +808,9 @@ module internal ElaborationEvaluation =
         let importedAliases =
             moduleModel.Imports
             |> List.collect (fun spec ->
-                match spec.Source with
-                | Url _ -> []
-                | Dotted segments ->
-                    let importedModuleName = SyntaxFacts.moduleNameToText segments
-                    match models |> Map.tryFind importedModuleName, inventories |> Map.tryFind importedModuleName with
+                match ModuleIdentity.ofModuleSpecifier spec.Source with
+                | Some importedModuleIdentity ->
+                    match models |> Map.tryFind importedModuleIdentity, inventories |> Map.tryFind importedModuleIdentity with
                     | Some importedModel, Some inventory ->
                         resolveImportedTypes inventory spec.Selection
                         |> Map.toList
@@ -811,7 +818,9 @@ module internal ElaborationEvaluation =
                             match importedModel.Types |> Map.tryFind importedName with
                             | Some(SurfaceAlias(aliasModule, declaration)) -> Some(aliasModule, importedName, declaration)
                             | _ -> None)
-                    | _ -> [])
+                    | _ -> []
+                | None ->
+                    [])
 
         localAliases @ importedAliases
         |> List.choose (fun (aliasModule, name, declaration) ->
@@ -832,43 +841,43 @@ module internal ElaborationEvaluation =
             TypeSignatures.TypeApply(substituteTypeParameters substitution head, arguments |> List.map (substituteTypeParameters substitution))
         | other -> other
 
-    let rec private normalizeVisibleType models inventories moduleName typeSyntax =
+    let rec private normalizeVisibleType models inventories moduleIdentity typeSyntax =
         match typeSyntax with
         | ParsedTypeExpr(TypeSignatures.TypeName(name, arguments)) ->
             let localName = SyntaxFacts.moduleNameToText name
-            match resolveVisibleTypeReference inventories models moduleName localName with
+            match resolveVisibleTypeReference inventories models moduleIdentity localName with
             | Some(resolvedModule, resolvedName) ->
                 match (Map.find resolvedModule models).Types |> Map.tryFind resolvedName with
                 | Some(SurfaceAlias(aliasModule, declaration)) when not declaration.IsOpaque ->
                     let parsedArguments = arguments |> List.map ParsedTypeExpr
-                    let resolvedAliases = visibleTypeAliasDefinitions models inventories moduleName
+                    let resolvedAliases = visibleTypeAliasDefinitions models inventories moduleIdentity
                     resolvedAliases
                     |> List.tryFind (fun (candidateModule, candidateName, _, _) -> candidateModule = aliasModule && candidateName = resolvedName)
                     |> Option.map (fun (_, _, declaration, body) ->
                         let parameters = TypeSignatures.collectLeadingTypeParameters declaration.HeaderTokens
                         let substitution = List.zip parameters arguments |> Map.ofList
                         ParsedTypeExpr(substituteTypeParameters substitution body))
-                    |> Option.map (normalizeVisibleType models inventories moduleName)
+                    |> Option.map (normalizeVisibleType models inventories moduleIdentity)
                     |> Option.defaultValue typeSyntax
                 | _ -> typeSyntax
             | None -> typeSyntax
         | _ -> typeSyntax
 
-    let private classifyRecordSyntax models inventories moduleName typeSyntax =
-        match normalizeVisibleType models inventories moduleName typeSyntax with
+    let private classifyRecordSyntax models inventories moduleIdentity typeSyntax =
+        match normalizeVisibleType models inventories moduleIdentity typeSyntax with
         | ParsedTypeExpr(TypeSignatures.TypeRecord fields) -> Some(Result.Ok fields)
         | RawTypeTokens tokens when isOpenRecordTypeTokens tokens -> Some(Result.Error DiagnosticCode.DerivingShapeNotClosedRecord)
         | _ -> None
 
-    let private classifyAdtSyntax models inventories moduleName typeSyntax =
-        match normalizeVisibleType models inventories moduleName typeSyntax with
+    let private classifyAdtSyntax models inventories moduleIdentity typeSyntax =
+        match normalizeVisibleType models inventories moduleIdentity typeSyntax with
         | ParsedTypeExpr(TypeSignatures.TypeName(name, _)) ->
             let localName = SyntaxFacts.moduleNameToText name
-            match resolveVisibleTypeReference inventories models moduleName localName with
+            match resolveVisibleTypeReference inventories models moduleIdentity localName with
             | Some(resolvedModule, resolvedName) ->
                 match (Map.find resolvedModule models).Types |> Map.tryFind resolvedName with
                 | Some(SurfaceData(dataModule, declaration)) ->
-                    if declaration.IsOpaque && not (String.Equals(dataModule, moduleName, StringComparison.Ordinal)) then
+                    if declaration.IsOpaque && dataModule <> moduleIdentity then
                         Result.Error DiagnosticCode.DerivingShapeOpaqueRepresentation
                     else
                         let visibility = if declaration.IsOpaque then "ShapeRepresentationOpaque" else "ShapeRepresentationVisible"
@@ -909,7 +918,7 @@ module internal ElaborationEvaluation =
             | MetaClosure closure when List.isEmpty closure.Parameters ->
                 let nextContext =
                     { context with
-                        CurrentModule = closure.ModuleName
+                        CurrentModule = closure.ModuleIdentity
                         MetaBindings = closure.MetaBindings }
                 match evalExpression nextContext closure.Body with
                 | EvalSucceeded(result, resultDiagnostics) -> EvalSucceeded(result, mergeDiagnostics diagnostics resultDiagnostics)
@@ -1150,7 +1159,7 @@ module internal ElaborationEvaluation =
                     if List.isEmpty remainingParameters then
                         let nextContext =
                             { context with
-                                CurrentModule = closure.ModuleName
+                                CurrentModule = closure.ModuleIdentity
                                 MetaBindings = nextBindings }
                         match evalExpression nextContext closure.Body with
                         | EvalSucceeded(value, bodyDiagnostics) -> forceValue value (mergeDiagnostics diagnostics bodyDiagnostics)
@@ -1185,16 +1194,17 @@ module internal ElaborationEvaluation =
             | Some value -> forceValue value []
             | None ->
                 match resolveVisibleTermReference context.Inventories context.Models context.CurrentModule name with
-                | Some(moduleName, termName) ->
-                    let definition = (Map.find moduleName context.Models).Terms[termName]
+                | Some(moduleIdentity, termName) ->
+                    let definition = (Map.find moduleIdentity context.Models).Terms[termName]
                     if definition.IsExpect then
-                        success (MetaBuiltin($"{moduleName}.{termName}", [])) []
+                        success (MetaBuiltin($"{definition.ModuleName}.{termName}", [])) []
                     else
                         match definition.Body with
                         | Some body ->
                             forceValue
                                 (MetaClosure
-                                    { ModuleName = moduleName
+                                    { ModuleIdentity = definition.ModuleIdentity
+                                      ModuleName = definition.ModuleName
                                       Parameters = definition.Parameters
                                       Body = body
                                       MetaBindings = Map.empty })
@@ -1202,11 +1212,13 @@ module internal ElaborationEvaluation =
                         | None -> EvalBlocked
                 | None ->
                     match resolveVisibleTraitReference context.Inventories context.Models context.CurrentModule name with
-                    | Some(moduleName, traitName) -> success (MetaTraitRef(moduleName, traitName)) []
+                    | Some(moduleIdentity, traitName) ->
+                        let traitModuleName = (Map.find moduleIdentity context.Models).ModuleName
+                        success (MetaTraitRef(traitModuleName, traitName)) []
                     | None ->
                         match resolveVisibleConstructorReference context.Inventories context.Models context.CurrentModule name with
-                        | Some(moduleName, constructorName) ->
-                            let constructorDefinition = (Map.find moduleName context.Models).Constructors[constructorName]
+                        | Some(moduleIdentity, constructorName) ->
+                            let constructorDefinition = (Map.find moduleIdentity context.Models).Constructors[constructorName]
                             let parameters = constructorDefinition.Constructor.Parameters |> Option.defaultValue []
 
                             if List.isEmpty parameters then
@@ -1252,7 +1264,14 @@ module internal ElaborationEvaluation =
             | EvalFailed diagnostics -> EvalFailed diagnostics
             | _ -> EvalBlocked
         | Lambda(parameters, body) ->
-            success (MetaClosure { ModuleName = context.CurrentModule; Parameters = parameters; Body = body; MetaBindings = context.MetaBindings }) []
+            success
+                (MetaClosure
+                    { ModuleIdentity = context.CurrentModule
+                      ModuleName = (Map.find context.CurrentModule context.Models).ModuleName
+                      Parameters = parameters
+                      Body = body
+                      MetaBindings = context.MetaBindings })
+                []
         | LocalLet(binding, value, body) ->
             match binding.Pattern with
             | NamePattern name ->
@@ -1568,7 +1587,7 @@ module internal ElaborationEvaluation =
                         if List.isEmpty remainingParameters then
                             let nextContext =
                                 { context with
-                                    CurrentModule = closure.ModuleName
+                                    CurrentModule = closure.ModuleIdentity
                                     MetaBindings = nextBindings }
 
                             match evalExpression nextContext closure.Body with
@@ -1577,7 +1596,7 @@ module internal ElaborationEvaluation =
                                 | MetaClosure forcedClosure when List.isEmpty forcedClosure.Parameters ->
                                     let forcedContext =
                                         { context with
-                                            CurrentModule = forcedClosure.ModuleName
+                                            CurrentModule = forcedClosure.ModuleIdentity
                                             MetaBindings = forcedClosure.MetaBindings }
 
                                     match evalExpression forcedContext forcedClosure.Body with
@@ -2046,14 +2065,13 @@ module internal ElaborationEvaluation =
 
         documents
         |> List.map (fun document ->
-            match document.ModuleName with
+            match document.ModuleIdentity with
             | None -> document
-            | Some moduleName ->
-                let moduleText = SyntaxFacts.moduleNameToText moduleName
+            | Some moduleIdentity ->
                 let context =
                     { Models = models
                       Inventories = inventories
-                      CurrentModule = moduleText
+                      CurrentModule = moduleIdentity
                       Source = document.Source
                       ObjectBinders = Set.empty
                       MetaBindings = Map.empty }

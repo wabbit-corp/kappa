@@ -55,6 +55,9 @@ type ParsedDocument =
         | Some moduleName -> Some moduleName
         | None -> this.InferredModuleName
 
+    member this.ModuleIdentity =
+        this.ModuleName |> Option.map ModuleIdentity.ofSegments
+
 type KFrontIRPhase =
     | RAW
     | IMPORTS

@@ -18,6 +18,7 @@
     <Compile Include="Syntax.fs" />
     <Compile Include="TypeSignatures.fs" />
     <Compile Include="CoreParsing.fs" />
+    <Compile Include="SymbolicIdentity.fs" />
     <Compile Include="CompilationPipeline.fs" />
     <Compile Include="KFrontIR.fs" />
     <Compile Include="KCoreCommon.fs" />
