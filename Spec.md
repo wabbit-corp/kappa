@@ -7175,7 +7175,11 @@ Definitions:
 
 * A **runtime-relevant demand** is a use of a variable in an expression position whose demanded quantity is not `0`.
 * A demand through a parameter annotated `0` does not count toward a positive lower-bound obligation.
-* A demand through a borrowed parameter `&` does count as a runtime-relevant non-consuming demand.
+* A demand through a borrowed parameter counts as a runtime-relevant non-consuming demand of that borrowed binding.
+
+  For example, a binder `(1 & x : A)` must be demanded exactly once on every reachable completion path that leaves
+  `x`'s scope. Such a demand does not consume the underlying borrowed root, but it does discharge the interval usage
+  obligation for `x`.
 * A demand through an interval parameter counts according to the demanded interval of that parameter.
 * Uses appearing only in types, erased proofs, erased implicit arguments, erased indices, or other compile-time-only
   positions do not count.
@@ -7271,9 +7275,14 @@ lower bound zero, or is borrowed.
 For the v1 surface quantities:
 
 ```text
-droppable:      0, &, <=1, ω
-not droppable:  1, >=1
+droppable quantities:      0, <=1, ω
+not droppable quantities:  1, >=1
 ```
+
+Borrowed access does not by itself make a positive-lower-bound binder droppable.
+
+For example, `(1 & x : A)` is not droppable, because its interval quantity is `1`.
+By contrast, `(& x : A)` is droppable because it is sugar for `(ω & x : A)`.
 
 This droppability classification is used by refutable bindings, discarded branch residues, loop exits, and other
 constructs that may abandon values without binding them.
