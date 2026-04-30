@@ -7288,21 +7288,58 @@ Quantities on compile-time binders and fields:
 
 Typing discipline:
 
-* Elaboration infers an interval demand for ordinary binders and a borrow obligation for `&`-annotated binders.
-* A binder annotated with an interval quantity `[l,u]` is accepted iff the inferred demand interval `[l',u']` satisfies
-  `l <= l'` and `u' <= u`.
-* Equivalently, the inferred number of runtime-relevant demands must be within the interval declared by the binder.
-* A binder annotated with `&` is accepted iff all uses are non-consuming and the borrowed view does not escape the borrow
-  scope described in §5.1.6.
+* Elaboration infers an interval demand for each ordinary binder.
+* A quantity-checking obligation has the form:
+
+  ```kappa
+  QuantitySatisfies qcap qdem
+  ```
+
+  where `qcap` is the capability available for the binder and `qdem` is the inferred demand placed on it.
+* A binder annotated with quantity `qcap` is accepted iff the checker can solve:
+
+  ```kappa
+  QuantitySatisfies qcap qdem
+  ```
+
+  for the inferred demand `qdem`.
+* For closed interval quantities:
+
+  ```text
+  qcap = [l, u]
+  qdem = [l', u']
+  ```
+
+  this is equivalent to:
+
+  ```text
+  l <= l'
+  u' <= u
+  ```
 * Sequential composition adds interval usages.
-* Alternative control-flow paths merge interval usages with `⊔`, where `[a,b] ⊔ [c,d] = [min(a,c), max(b,d)]`.
+* Alternative control-flow paths merge interval usages with `⊔`.
 * Pattern components add usages structurally.
 * Or-pattern alternatives merge binder usages with `⊔`.
 * A branch or completion path that is proven unreachable contributes no usage interval.
 * A branch or completion path that exits a scope by `return`, `break`, `continue`, or another source-level completion
   still contributes the usages that occur before that completion.
-* Positive lower-bound obligations, including `1` and `>=1`, must be discharged before such a completion may leave the
-  binder's scope, as specified in §5.1.5A.
+* Positive lower-bound obligations, including `1` and `>=1`, are enforced by the same `QuantitySatisfies` check at the
+  scope boundary, as further specified in §5.1.5A.
+
+A borrowed binder has both an interval quantity and borrowed access.
+
+For a borrowed binder:
+
+```kappa
+(q & x : A)
+(q &[ρ] x : A)
+```
+
+the interval quantity `q` is checked with the same `QuantitySatisfies` rule as ordinary binders.
+The borrowed access marker is checked separately by the borrow, region, capture, path, and non-escape rules of
+§§5.1.5-5.1.7.
+
+Borrowed access is not an inhabitant of `Quantity`.
 
 Borrow binders may optionally name a region variable already in scope:
 
