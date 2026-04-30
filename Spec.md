@@ -27040,6 +27040,87 @@ Adding `import B` may add `B` to the module closure. If `B` contains top-level i
 global instance environment under §12.3. This is a semantic import-environment change and may affect implicit resolution,
 including by introducing ambiguity or coherence failure.
 
+<!-- compiler.kfrontir.tooling_protocol_and_partial_progress -->
+#### 17.2.5C Tooling protocol framing, partial progress, and refined goals
+
+Machine-readable interactive protocols:
+
+If an implementation exposes an IDE, language-server, semantic-query, REPL-control, or other machine-readable compiler
+protocol, protocol mode MUST remain protocol-framed on every success, error, interruption, EOF, shutdown, parse-failure,
+unsupported, and cancellation path.
+
+Rules:
+
+* Structured replies MUST be emitted on the protocol response channel.
+* Human-oriented text MUST be routed to a diagnostic, log, stderr, trace, or other non-protocol channel.
+* A protocol request MUST NOT be answered by raw REPL prose on the structured response stream.
+* Shutdown and EOF MUST produce a documented structured terminal response unless the transport itself is already closed.
+* If a panic or defect is caught and reported, any already-produced structured trace or diagnostic output associated
+  with that request MUST be flushed before the terminal failure response.
+* A violation of these rules is reported with family `kappa.interactive.protocol` and portable alias
+  `E_INTERACTIVE_PROTOCOL_VIOLATION`.
+
+Interactive evaluation:
+
+Interactive evaluation of a user expression MUST produce one of:
+
+* a source-level value or result;
+* an ordinary structured parse, type, effect, quantity, runtime, or backend diagnostic;
+* a documented `unsupported` response;
+* a documented cancellation or timeout response.
+
+It MUST NOT print partially elaborated internal core/parser terms as the primary result unless the request explicitly
+asked for an internal dump. It MUST NOT crash the backend or host process for ordinary user expressions.
+
+Partial syntax progress:
+
+Editor-oriented elaboration, hover, completion, case-split, hole-goal, and semantic-query services SHOULD make bounded
+useful progress on partial syntax trees after syntax errors or missing nodes.
+
+Rules:
+
+* One syntax error in a command SHOULD NOT suppress all later semantic information when later syntax can still be
+  recovered and checked independently.
+* Recovery-derived facts MUST be marked as recovery-derived.
+* Semantic services MUST NOT loop trying to elaborate malformed fragments.
+* If a result is incomplete because a required syntax node is missing, the result MUST identify the missing or recovered
+  node when available.
+
+Hole-goal refinement accuracy:
+
+Hole-goal and semantic-query output MUST report the same branch-local facts that the checker uses.
+
+At minimum, hole-goal queries MUST preserve:
+
+* active constructor refinements;
+* failure-side `LacksCtor` facts and any derived remaining-constructor facts;
+* boolean assumptions from condition positions;
+* equality refinements from indexed pattern matching;
+* transparent-family index reductions available in the branch;
+* stable-alias equalities used to transport refinements;
+* local implicit evidence introduced by constructor choice or implicit record unpacking;
+* quantity and linearity status of local binders;
+* live, consumed, borrowed, and dropped path information;
+* expected erased binders for incomplete higher-order terms.
+
+A hole-goal display MUST NOT show only stale pre-refinement binder types when the checker is using a more refined branch
+context.
+
+Generated proof and program edits:
+
+Case-split, add-clause, make-lemma, hole-refinement, and similar editor actions MUST either produce parseable source
+edits or fail with a structured diagnostic.
+
+Generated edits MUST preserve:
+
+* the real constructor identity of the scrutinee type;
+* all required explicit, implicit, erased, quantity, and region binders;
+* private and nested definitions visible to batch checking;
+* unique generated hole names per source site;
+* valid identifiers or backtick-quoted identifiers where needed.
+
+A tool MUST NOT silently do nothing after accepting an edit-generation request.
+
 <!-- compiler.kfrontir.analysis_sessions_invalidation -->
 #### 17.2.6 Analysis sessions and invalidation
 
