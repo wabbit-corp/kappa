@@ -1289,7 +1289,7 @@ f, re, b, type,
 
 -- iteration and comprehensions
 next,
-toQuery, toBorrowQuery,
+toQuery, toBorrowSourceQuery, toBorrowItemsQuery,
 fromComprehensionPlan, fromComprehensionRaw,
 
 -- proof and equality helpers
@@ -1406,7 +1406,7 @@ Foldable, Traversable, Filterable, FilterMap, Monoid, Iterator, Rangeable,
 
 -- interpolation, comprehensions, literals
 InterpolatedMacro,
-IntoQuery, BorrowIntoQuery, FromComprehensionPlan, FromComprehensionRaw,
+IntoQuery, BorrowSourceIntoQuery, BorrowItemsIntoQuery, FromComprehensionPlan, FromComprehensionRaw,
 FromInteger, FromFloat, FromString,
 
 -- staging
@@ -2211,11 +2211,21 @@ trait IntoQuery (src : Type) =
         (SourceDemand source : src) ->
         QueryCore Mode ItemQuantity Item
 
-trait BorrowIntoQuery (src : Type) =
+trait BorrowSourceIntoQuery (src : Type) =
+    Mode : QueryMode
+    ItemQuantity : Quantity
+    Item : Type
+
+    toBorrowSourceQuery :
+        forall (ρ : Region).
+        (&[ρ] source : src) ->
+        QueryCore Mode ItemQuantity Item captures (ρ)
+
+trait BorrowItemsIntoQuery (src : Type) =
     Card : QueryCard
     Item : Type
 
-    toBorrowQuery :
+    toBorrowItemsQuery :
         forall (ρ : Region).
         (&[ρ] source : src) ->
         QueryCore (QueryMode Reusable Card) ω (BorrowView ρ Item) captures (ρ)
