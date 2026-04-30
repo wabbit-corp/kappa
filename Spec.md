@@ -24982,6 +24982,89 @@ Suppression MUST NOT hide diagnostics that are independent root causes.
 For fixed source inputs, build configuration, backend profile, macro transcript, and implementation version, diagnostic
 selection and suppression MUST be deterministic.
 
+<!-- compiler.kfrontir.diagnostic_quality_invariants -->
+##### 17.2.4.7A Diagnostic quality invariants
+
+A diagnostic is source-facing output, not a dump of the compiler's private digestive tract.
+
+The following requirements apply to all diagnostics whose primary audience is a Kappa programmer.
+
+Root-cause suppression:
+
+* If several diagnostics arise from one malformed binding, missing initializer, duplicate declaration, failed recovery
+  choice, duplicated blocked unification report, or equivalent root cause, the implementation SHOULD emit one primary
+  diagnostic and place the explained downstream diagnostics in `suppressed`.
+* Suppressed diagnostics MUST retain enough structured summary information for tooling to show them on request.
+* Suppression MUST NOT hide independent root causes.
+
+Primary source span anchoring:
+
+* A declaration-level diagnostic MUST keep its primary span anchored to the user-written declaration, signature, clause,
+  modifier, or pragma being rejected.
+* The primary span MUST NOT drift onto adjacent declarations merely because an implementation checked a larger internal
+  region.
+* If a diagnostic concerns a whole declaration group, the primary span SHOULD cover the smallest user-written group that
+  explains the failure and related labels SHOULD identify individual contributing declarations.
+
+Internal-placeholder hygiene:
+
+* Human-facing diagnostics MUST NOT expose raw internal fallback origins, sentinel names, generated metavariable helper
+  names, compiler-only placeholder text, unstable binder IDs, memory addresses, thread IDs, or query keys as the only
+  explanation.
+* If an internal placeholder must be mentioned, the renderer MUST replace it with a stable explanatory phrase such as
+  "an inserted implicit argument", "a generated matcher", or "a recovered missing expression".
+* Hole and placeholder diagnostics MUST report the original source placeholder's local context and expected goal when
+  available, rather than only the later helper metavariable introduced by lowering.
+
+Generated-origin provenance:
+
+* Generated obligations, inserted syntax, macro output, plugin-generated constraints, desugared helpers, and backend
+  helper obligations MUST preserve the nearest user-written origin that caused them.
+* A diagnostic caused by generated syntax MUST use the user-written origin as primary whenever that is faithful.
+* Generated syntax MAY appear as a related origin, expansion note, or verbose trace entry.
+* Macro, plugin, and elaboration-helper APIs that emit derived obligations MUST preserve the current source or synthetic
+  origin chain by default unless the tool deliberately overrides it with another valid origin.
+
+Whole-build diagnostic ownership:
+
+* A diagnostic that is not tied to one source span, such as a package, target, component, backend-profile, provider,
+  lockfile, or whole-compilation-unit diagnostic, MUST still identify the owning unit explicitly.
+* The rendered diagnostic MUST prefer the human-facing package, target, component, module, backend profile, and version
+  names over internal package IDs when such names are available.
+* The structured payload MUST carry the owning unit identity in a stable field.
+
+Function-valued application binder names:
+
+* When an application error is reported for a returned, projected, rebound, or otherwise first-class function value, the
+  diagnostic MUST preserve source binder metadata from the callable type whenever that metadata exists.
+* The renderer SHOULD say which source binder failed, for example `argument value` or `parameter count`, rather than
+  falling back to synthetic names such as `_arg3`.
+* The payload MUST include the argument index, binder explicitness, source binder name when available, rendered binder
+  name, expected binder type, actual argument type when available, and origin of the callable type metadata.
+
+Stable code-fragment rendering:
+
+* Human-readable diagnostics that embed types, constraints, expressions, declarations, or other code fragments in prose
+  MUST use one stable quoting or delimiting convention for those fragments.
+* A renderer MUST NOT mix structural parentheses with prose punctuation in a way that makes the displayed code fragment
+  ambiguous or hard to copy.
+* This rule governs rendering only. It does not constrain the internal representation of diagnostics.
+
+Unresolved-name consistency:
+
+* If the same unresolved identifier appears multiple times in one local error slice, diagnostics SHOULD common up the
+  report or at least assign a consistent inferred role and expected shape to all occurrences.
+* Repeated textual occurrences MUST NOT be treated as unrelated fresh unknowns unless the surface syntax explicitly
+  requests distinct holes or distinct generated binders.
+
+Multi-location strategy failures:
+
+* When overload resolution, termination checking, elaboration search, implicit search, or a similar strategy tries
+  several independent alternatives that fail at different source locations, diagnostics MUST be able to report one
+  primary failure with secondary per-alternative messages.
+* Each secondary message MUST preserve its own origin and explanation.
+* Users MUST NOT need trace flags merely to discover the source locations of the alternatives that were tried.
+
 <!-- compiler.kfrontir.error_explanations -->
 ##### 17.2.4.8 Error explanations
 
