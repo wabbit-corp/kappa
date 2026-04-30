@@ -25456,6 +25456,101 @@ Payload MUST include:
 Family:
 
 ```text
+kappa.quantity.satisfies
+```
+
+Used when an obligation of the form:
+
+```kappa
+QuantitySatisfies qcap qdem
+```
+
+cannot be solved.
+
+Payload MUST include:
+
+* capability quantity expression;
+* demanded quantity expression;
+* normalized capability quantity, if available;
+* normalized demanded quantity, if available;
+* source origin that generated the obligation;
+* whether the obligation came from a binder scope boundary, an application site, a pattern, a projection, a record
+  reconstruction, a comprehension clause, or another source construct;
+* in-scope `QuantitySatisfies` assumptions considered by the solver;
+* unsolved quantity metavariables blocking the decision;
+* whether the failure is a concrete contradiction or an underconstrained symbolic obligation;
+* nearest binder, argument, or field whose quantity caused the obligation;
+* suggested local repair, when evident.
+
+For a concrete failed obligation, the diagnostic SHOULD show the relevant table entry.
+
+Example rejected program:
+
+```kappa
+bad :
+    forall (a : Type).
+    (1 x : a) -> Unit
+
+let bad x =
+    ()
+```
+
+Required diagnostic content:
+
+```text
+cannot prove `QuantitySatisfies 1 0`
+
+the binder `x` is declared linear, so it must be demanded exactly once
+the body demands `x` zero times
+```
+
+Example rejected program:
+
+```kappa
+badPoly :
+    forall (q : Quantity) (a : Type).
+    (q x : a) -> a
+
+let badPoly x =
+    x
+```
+
+Required diagnostic content:
+
+```text
+cannot prove `QuantitySatisfies q 1`
+
+the body demands `x` exactly once
+the quantity `q` is symbolic and may be `0`
+add an explicit premise `QuantitySatisfies q 1 => ...`
+or choose a concrete quantity that satisfies demand `1`
+```
+
+Example rejected program:
+
+```kappa
+badDrop :
+    forall (q : Quantity) (a : Type).
+    (q x : a) -> Unit
+
+let badDrop x =
+    ()
+```
+
+Required diagnostic content:
+
+```text
+cannot prove `QuantitySatisfies q 0`
+
+the body ignores `x`
+the quantity `q` is symbolic and may have a positive lower bound
+add an explicit premise `QuantitySatisfies q 0 => ...`
+or choose a droppable concrete quantity such as `0`, `<=1`, or `ω`
+```
+
+Family:
+
+```text
 kappa.quantity.positive-lower-bound
 ```
 
