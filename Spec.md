@@ -2268,15 +2268,45 @@ If a local binding is inferred to have one-shot query type and has no explicit q
 defaults to `1` rather than to the ordinary default `ω`. Explicitly binding a one-shot query value at a quantity whose
 upper bound is greater than one is a compile-time error.
 
-The `itemQuantity` parameter controls the quantity assigned to the ordinary item binder introduced by `for pat in src`.
-For example, if a source elaborates to `QueryCore mode 1 File`, then `for f in source` binds `f` as a linear row entry.
-If it elaborates to `QueryCore mode ω File`, then `f` is an unrestricted row entry, subject to the ordinary internal
-field quantities of `File` if `File` is a record or another type whose eliminators impose quantity restrictions.
+The `itemQuantity` parameter controls the interval quantity assigned to the ordinary item binder introduced by
+`for pat in src`.
 
-Borrowed queries are represented by ordinary capture annotations. A query value that closes over a borrow has a type of
-the form:
+For example, if a source elaborates to:
 
-    QueryCore mode q item captures (ρ)
+```kappa
+QueryCore mode 1 File
+```
+
+then:
+
+```kappa
+for f in source
+```
+
+binds `f` as a linear row entry.
+
+If a source elaborates to:
+
+```kappa
+QueryCore mode ω File
+```
+
+then `f` is an unrestricted row entry, subject to the ordinary internal field quantities of `File` if `File` is a
+record or another type whose eliminators impose quantity restrictions.
+
+`itemQuantity` is always an interval quantity. It cannot be `&`.
+
+Borrowed yielded items are represented in the item type, usually with:
+
+```kappa
+BorrowView ρ Item
+```
+
+and in the query value's capture annotation:
+
+```kappa
+QueryCore mode q item captures (ρ)
+```
 
 There is no separate borrowed query mode.
 
