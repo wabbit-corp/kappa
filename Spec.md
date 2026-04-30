@@ -20029,6 +20029,28 @@ trait Eq (a : Type) =
 trait Eq a => Ord (a : Type) =
     compare : (& x : a) -> (& y : a) -> Ordering
 
+    compareEqSound :
+        forall (x : a) (y : a).
+        compare x y = EQ -> (x == y) = True
+
+    compareEqComplete :
+        forall (x : a) (y : a).
+        (x == y) = True -> compare x y = EQ
+
+    compareAntisym :
+        forall (x : a) (y : a).
+        compare x y = LT -> compare y x = GT
+
+    compareTransLE :
+        forall (x : a) (y : a) (z : a).
+        (x <= y) = True ->
+        (y <= z) = True ->
+        (x <= z) = True
+
+    compareTotal :
+        forall (x : a) (y : a).
+        Dec ((x <= y) = True)
+
 (/=) :
     forall (a : Type).
     (@_ : Eq a) ->
@@ -20248,8 +20270,6 @@ whether `Tr` is ordinary or intrinsic.
 
 The comparison helper operators are derived from `compare`; they do not consume their operands.
 
-For any lawful `Ord a` instance, `compare x y = EQ` must agree with `(x == y) = True`.
-
 All `Functor`, `Applicative`, and `Monad` instances MUST satisfy the law members declared by the corresponding traits.
 There is no prose-only law: a law is optimization-visible only when it is a member of available coherent trait evidence
 or is supplied by a trusted intrinsic instance declared by this specification.
@@ -20273,8 +20293,8 @@ hand-written instances is required beyond the declared members.
 MUST NOT derive `x = y` from `(x ~= y) = True`; only proof-carrying `Eq` participates in equality reflection (§7.3.3).
 
 In `std.prelude`, `Ord` refines `Eq`, not `Equiv`. Its `compare` operation is non-consuming and receives both operands
-by borrow. Any `Ord a` instance MUST also supply an `Eq a` instance for the same `a`, and its equality classes MUST
-agree with `(==)`.
+by borrow. Any `Ord a` instance MUST also supply an `Eq a` instance for the same `a`, and the required
+`compareEqSound` and `compareEqComplete` members witness that its equality classes agree with `(==)`.
 
 Opaque-token instances:
 
