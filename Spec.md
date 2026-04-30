@@ -6827,20 +6827,77 @@ The only standardized ways for meta-phase computation to re-enter object-languag
 * reifying semantic reflection values back to `Syntax t` and then splicing that syntax.
 
 <!-- types.universes.quantities -->
-#### 5.1.5 Quantities
+#### 5.1.5 Quantities and borrowed binder access
 
-A quantity denotes either a closed interval of permitted exact uses over `ℕ∞`, where `∞` is allowed as an upper bound,
-or the special borrow quantity `&`.
+A quantity denotes a closed interval of permitted exact runtime-relevant demands over `ℕ∞`,
+where `∞` is allowed as an upper bound.
 
 Surface quantities in v1 are:
 
 ```text
 0      ≜ [0,0]     -- Erased; no runtime use is permitted
 1      ≜ [1,1]     -- Linear; exactly one runtime-relevant demand
-&                  -- Borrowed; non-consuming, region-scoped demand
 ω      ≜ [0,∞]     -- Unrestricted; zero or more runtime-relevant demands
 <=1    ≜ [0,1]     -- Affine; at most one runtime-relevant demand
 >=1    ≜ [1,∞]     -- Relevant/strict; at least one runtime-relevant demand
+```
+
+`&` is not a quantity.
+
+`&` is a borrowed access marker on binders. A borrowed binder combines:
+
+* an interval usage quantity `q : Quantity`; and
+* a borrow access mode, optionally naming an explicit region.
+
+The surface forms are:
+
+```kappa
+(& x : A)          -- sugar for (ω & x : A)
+(&[ρ] x : A)       -- sugar for (ω &[ρ] x : A)
+(q & x : A)        -- borrowed binder with interval usage quantity q
+(q &[ρ] x : A)     -- borrowed binder with interval usage quantity q and explicit region ρ
+```
+
+where `ρ : Region`.
+
+The spelling order is fixed:
+
+```text
+quantity, then borrow marker, then binder name
+```
+
+Therefore the following are well-formed binder prefixes:
+
+```kappa
+1 & x
+<=1 & x
+>=1 &[ρ] x
+ω &[ρ] x
+```
+
+and the following are ill-formed:
+
+```kappa
+& 1 x
+&[ρ] 1 x
+1 & 2 x
+```
+
+The informal quantity names are:
+
+```text
+0      erased
+1      linear
+ω      unrestricted
+<=1    affine
+>=1    relevant
+```
+
+The informal borrowed-access names are:
+
+```text
+&       anonymous-region shared borrow
+&[ρ]    shared borrow under explicit region ρ
 ```
 
 `>=1` is a relevance quantity, not an ownership quantity.
@@ -6857,23 +6914,12 @@ Consequences:
 * A `>=1` binding must not be used to model exclusive ownership. Exclusive ownership is expressed by `1`, by `using`,
   by `inout`, or by a library protocol whose binders demand `1`.
 
-The informal names are:
-
-```text
-0      erased
-1      linear
-&      borrowed
-ω      unrestricted
-<=1    affine
->=1    relevant
-```
-
 A value of a relevant binding may be copied, shared, or used more than once according to ordinary interval checking.
 The only extra guarantee of `>=1` over `ω` is non-ignorability.
 
 Quantity variables and polymorphism:
 
-A function may be abstract over its quantity obligations by quantifying over the `Quantity` sort.
+A function may be abstract over its interval usage obligations by quantifying over `Quantity`.
 
 Syntax:
 
@@ -6881,69 +6927,87 @@ Syntax:
 forall (q : Quantity). T
 ```
 
-Within the scope of `q`, it may be used as the quantity annotation on a binder.
+Within the scope of `q`, it may be used as the quantity annotation on an ordinary binder or on a borrowed binder.
 
-Example:
+Examples:
 
 ```kappa
-apply : forall (q : Quantity) (a : Type) (b : Type).
-        (q fn : a -> b) -> (q x : a) -> b
+apply :
+    forall (q : Quantity) (a : Type) (b : Type).
+    (q fn : a -> b) -> (q x : a) -> b
+
+inspectBorrowed :
+    forall (q : Quantity) (a : Type).
+    (q & x : a) -> Unit
 ```
 
 Capability vs demand:
 
-For interval quantities `q1` and `q2`, `q1 ⊆ q2` means the usage permitted by `q1` is contained within the usage
-permitted by `q2`.
+For quantities `q1` and `q2`, `q1 ⊆ q2` means the usage permitted by `q1` is contained within the usage permitted by
+`q2`.
 
-A capability `q_cap` satisfies a demand `q_dem` (written `q_cap ⊑ q_dem`) by the following exhaustive rules:
+A capability `q_cap` satisfies a demand `q_dem`, written `q_cap ⊑ q_dem`, iff:
 
-* If `q_cap` and `q_dem` are both interval quantities, then `q_cap ⊑ q_dem` iff `q_dem ⊆ q_cap`.
-* `& ⊑ &`.
-* `& ⊑ ω`.
-* All other cases involving `&` are false.
-
-These rules govern quantity satisfaction only. They do not themselves introduce a borrow. Borrow introduction for
-contexts that demand `&` is specified separately below.
+```text
+q_dem ⊆ q_cap
+```
 
 The symbol `⊑` is used instead of `≤` to avoid confusion with numeric or subset ordering.
 
-For the six surface quantities of v1, this yields the following complete table:
+For the five surface quantities of v1, this yields the following complete table:
 
 ```text
-q_cap ⊑ q_dem |  0   1   <=1  >=1   ω    &
---------------+------------------------------
-0             | yes no  no   no    no   no
-1             | no  yes no   no    no   no
-<=1           | yes yes yes  no    no   no
->=1           | no  yes no   yes   no   no
-ω             | yes yes yes  yes   yes  no
-&             | no  no  no   no    yes  yes
+q_cap ⊑ q_dem |  0   1   <=1  >=1   ω
+--------------+-----------------------
+0             | yes no  no   no    no
+1             | no  yes no   no    no
+<=1           | yes yes yes  no    no
+>=1           | no  yes no   yes   no
+ω             | yes yes yes  yes   yes
 ```
 
-Equivalently:
+Borrowed access is not part of this relation.
 
-* `1 ⋢ &` and `& ⋢ 1`: owned and borrowed are distinct obligations. An owned resource cannot be permanently coerced into
-  a borrow, and a borrow cannot satisfy a consuming `@1` obligation.
-* `ω ⋢ &`, `<=1 ⋢ &`, `>=1 ⋢ &`, and `0 ⋢ &`: an interval capability does not satisfy a borrowed demand.
+A borrowed binder has an ordinary interval quantity and a borrowed access mode. Its quantity is checked by the same
+interval rules as other binders. Its borrowed access is checked by the borrow, region, capture, and non-escape rules of
+§§5.1.5-5.1.7.
 
 Examples:
 
-* `ω ⊑ 1`, because `[1,1] ⊆ [0,∞]`
-* `ω ⊑ <=1`, because `[0,1] ⊆ [0,∞]`
-* `>=1 ⊑ 1`, because `[1,1] ⊆ [1,∞]`
-* `ω ⊑ >=1`, because `[1,∞] ⊆ [0,∞]`
-* `& ⊑ ω`
-* `& ⊑ &`
-* `1 ⋢ &`
-* `& ⋢ 1`
+```kappa
+(1 & x : A) -> B
+```
+
+introduces `x` as a borrowed parameter and requires exactly one runtime-relevant demand of `x` in the body.
+
+```kappa
+(<=1 & x : A) -> B
+```
+
+introduces `x` as a borrowed parameter and permits zero or one runtime-relevant demand of `x`.
+
+```kappa
+(& x : A) -> B
+```
+
+is sugar for:
+
+```kappa
+(ω & x : A) -> B
+```
+
+and permits any number of non-consuming runtime-relevant demands of `x`.
 
 Addition, multiplication, and control-flow join are defined on interval quantities:
 
-`[a,b] + [c,d] = [a+c, b+d]`
+```text
+[a,b] + [c,d] = [a+c, b+d]
+[a,b] · [c,d] = [a·c, b·d]
+[a,b] ⊔ [c,d] = [min(a,c), max(b,d)]
+```
 
-`[a,b] · [c,d] = [a·c, b·d]`
-
-`[a,b] ⊔ [c,d] = [min(a,c), max(b,d)]`
+Borrowed access does not change these interval operations. A borrowed binder contributes interval usage obligations for
+the borrowed binding while separately imposing borrow-access restrictions on how the underlying place may be used.
 
 Ambient runtime demand:
 
