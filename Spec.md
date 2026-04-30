@@ -24791,6 +24791,41 @@ is covered by a standard test.
 A diagnostic MAY contain multiple fixes. If fixes conflict by overlapping edit ranges, the diagnostic record MUST make
 each fix a separate alternative rather than one combined edit set.
 
+<!-- compiler.kfrontir.local_repair_ranking -->
+##### 17.2.4.4A Local repair ranking
+
+Parser, recovery, and early front-end diagnostics SHOULD prefer repairs that preserve the user's local source intent.
+
+When several plausible repairs exist, diagnostic fixes and help messages MUST be ranked as follows:
+
+1. a source-preserving local token, delimiter, indentation, or punctuation repair;
+2. a local syntactic rewrite that preserves the same language feature;
+3. an import, qualification, or local annotation that preserves the same source construct;
+4. enabling or selecting a broader language feature gate;
+5. an unsafe/debug escape or behavior-changing rewrite.
+
+A broader feature-gate suggestion MUST NOT be the primary fix when a local delimiter, token, or indentation mistake is a
+plausible root cause and repairing that local mistake would let the same construct elaborate under the current active
+profile.
+
+If recovery determines that a local parse repair is the likely root cause, downstream diagnostics that depend only on
+the unrepaired parse shape SHOULD be suppressed and listed in the root diagnostic's `suppressed` field.
+
+Examples of local repairs include:
+
+* inserting a missing closing delimiter;
+* inserting parentheses around an operator section or projected expression;
+* replacing a token whose spelling is invalid in that local grammar position;
+* removing an invalid record wildcard or rest marker;
+* changing indentation to match the enclosing block;
+* writing an explicit singleton import or module-only import form.
+
+A machine-applicable local repair MUST edit only source origins and MUST preserve unrelated concrete syntax and trivia
+where possible.
+
+If a diagnostic suggests enabling a feature gate, the diagnostic MUST report the owning feature gate and the provenance
+of the current gate setting under §1.2.
+
 <!-- compiler.kfrontir.human_readable_rendering -->
 ##### 17.2.4.5 Human-readable rendering
 
