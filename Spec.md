@@ -29434,7 +29434,7 @@ At or before publication of KBackendIR, the implementation MUST validate that:
 * if the selected backend lacks `rt-multishot-effects`, all reachable effect operation invocations must be one-shot,
   abortive, or otherwise lowerable without persistent multi-shot resumption behavior;
 * handler, resumption, and multi-shot continuation lowering preserves the optimization-stability requirements of
-  §17.4.6A;
+  §17.4.6B;
 * any internal multi-return or join-point lowering of `Completion`, `Match`, projection/projector-elimination control,
   or implementation-generated boolean / constructor-refinement / case-split control satisfies §17.4.7A;
 * data, variant, and record layout choices are fixed consistently with §§14.5-14.6;
@@ -29527,8 +29527,70 @@ A change that does not alter the erased calling convention, selected runtime rep
 `BackendFingerprint(profile)` inputs SHOULD preserve previously computed KBackendIR and target-lowering results where
 possible.
 
+<!-- compiler.kbackendir.wrapper_specialization_stability -->
+#### 17.4.6A Wrapper specialization and generated-name stability
+
+Representation-class specialization, inlining, wrapper erasure, dictionary specialization, closure conversion, and
+newtype-like optimization MUST preserve source-level behavior.
+
+Single-constructor wrappers:
+
+If a data type has exactly one visible constructor and that constructor has exactly one runtime-relevant payload field,
+an implementation MAY represent the wrapper and payload identically when permitted by visibility, opacity, ABI, bridge,
+and dynamic-representation rules.
+
+Such representation sharing MUST NOT:
+
+* introduce self-recursive loops;
+* change which function body is called;
+* change termination behavior;
+* change observable allocation, finalization, interruption, or defect behavior except where allocation is explicitly
+  unobservable;
+* change `DynRep`, `DynamicType`, bridge, FFI, or exported ABI behavior;
+* make an opaque wrapper's representation observable outside its permitted visibility boundary;
+* collapse two semantically distinct nominal types in diagnostics, reflection, interface browsing, or dynamic
+  representation.
+
+If an implementation cannot prove that a wrapper specialization is observationally equivalent, it MUST decline that
+optimization.
+
+A backend failure to preserve this rule is a compile-time backend legality error with portable alias
+`E_BACKEND_SPECIALIZATION_SEMANTICS`.
+
+Generated temporary freshness:
+
+Backend lowering of applicative/idiom sugar, comprehensions, `do` notation, pattern matching, active patterns,
+projection/projector eliminators, record updates, handler lowering, bridge stubs, and target-language helper code MUST
+introduce generated target names that are fresh within the emitted target scope.
+
+A generated backend binding MUST NOT collide with:
+
+* another generated binding in the same emitted target scope;
+* a user-written exported symbol;
+* a backend-reserved helper symbol;
+* a host ABI symbol selected for export;
+* a generated bridge or wrapper symbol in the same linkage scope.
+
+The freshness check is semantic, not merely textual. If the selected target language has case-insensitive linkage,
+mangled-name truncation, namespace flattening, overloaded symbol tables, or separate term/type labels, the
+implementation MUST check freshness under the target's actual collision rules.
+
+If freshness cannot be guaranteed, compilation fails with portable alias `E_BACKEND_GENERATED_NAME_COLLISION`.
+
+Equivalent pattern-dispatch lowering:
+
+Two semantically equivalent clause sets for one function SHOULD lower to backend decision structures of comparable
+quality.
+
+An implementation MAY use heuristics, but it SHOULD NOT produce order-of-magnitude artifact-size, startup-cost, or
+initialization-work differences solely because a broad wildcard arm or large constructor arm appears earlier or later in
+source order when the source partitions are semantically equivalent.
+
+This is an optimizer-quality requirement rather than a source-acceptance rule. Failure to meet it does not change
+program meaning, but implementations SHOULD expose profiling or dump information sufficient to diagnose such pathologies.
+
 <!-- compiler.kbackendir.resumption_optimization_stability -->
-#### 17.4.6A Resumption and handler optimization stability
+#### 17.4.6B Resumption and handler optimization stability
 
 Optimization, specialization, inlining, closure conversion, CPS conversion, stack copying, defunctionalization,
 join-point lowering, tail-resumptive lowering, and target-profile lowering MUST preserve the observable handler and
