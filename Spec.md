@@ -25074,6 +25074,114 @@ Payload MUST include:
 * demanded operation for the later use;
 * path-restoration origin if one exists.
 
+<!-- compiler.kfrontir.standard_diagnostic_families.quantity_borrow_confusion -->
+##### 17.2.4A.4A Diagnostics for quantity/borrow confusion
+
+Family:
+
+```text
+kappa.quantity.borrow-not-quantity
+```
+
+Used when `&` appears where an expression of classifier `Quantity` is expected.
+
+The diagnostic MUST say that `&` is borrowed binder access, not a quantity.
+
+Example rejected declaration:
+
+```kappa
+trait Bad =
+    SourceDemand : Quantity
+    SourceDemand = &
+```
+
+Payload MUST include:
+
+* the source expression written as a quantity;
+* the expected classifier `Quantity`;
+* the source origin;
+* the enclosing declaration, trait member, or query-associated member when applicable;
+* the reason `&` is invalid in that position; and
+* a repair hint using either a borrowed binder form or an interval quantity.
+
+Required diagnostic content:
+
+```text
+`&` is not a Quantity.
+`&` is a borrowed binder access marker.
+Use a borrowed binder such as `(& x : A)` or `(1 & x : A)`,
+or use an interval quantity such as `1`, `<=1`, `>=1`, or `ω`.
+```
+
+Family:
+
+```text
+kappa.binder.bad-borrow-prefix-order
+```
+
+Used when a binder is written with borrowed access before quantity.
+
+Example rejected binder:
+
+```kappa
+(& 1 x : A) -> B
+```
+
+Payload MUST include:
+
+* the rejected binder prefix spelling;
+* the parsed or recovered binder context;
+* the source origin; and
+* the canonical quantity-first repair.
+
+Required diagnostic content:
+
+```text
+Borrowed binder prefixes are written quantity-first.
+Write `(1 & x : A)`, not `(& 1 x : A)`.
+```
+
+Family:
+
+```text
+kappa.query.borrow-not-item-quantity
+```
+
+Used when a query trait attempts to use borrowed access as `ItemQuantity`.
+
+Payload MUST include:
+
+* the query trait or associated member being checked;
+* the rejected `ItemQuantity` expression;
+* the source origin;
+* the expected classifier `Quantity`; and
+* query-specific repair hints.
+
+Family:
+
+```text
+kappa.query.borrow-not-source-demand
+```
+
+Used when a query trait attempts to use borrowed access as `SourceDemand`.
+
+Payload MUST include:
+
+* the query trait or associated member being checked;
+* the rejected `SourceDemand` expression;
+* the source origin;
+* the expected classifier `Quantity`; and
+* query-specific repair hints.
+
+Required repair hints for `kappa.query.borrow-not-item-quantity` and
+`kappa.query.borrow-not-source-demand`:
+
+```text
+Use `BorrowSourceIntoQuery` for borrowed-source conversion.
+Use `BorrowItemsIntoQuery` for borrowed yielded item views.
+Use `BorrowView ρ A` plus `captures (ρ)` for borrowed query items.
+```
+
 <!-- compiler.kfrontir.standard_diagnostic_families.borrow_capture_region -->
 ##### 17.2.4A.5 Borrow, capture, and region diagnostics
 
