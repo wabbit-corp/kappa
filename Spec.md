@@ -7341,6 +7341,61 @@ The borrowed access marker is checked separately by the borrow, region, capture,
 
 Borrowed access is not an inhabitant of `Quantity`.
 
+<!-- types.universes.quantities.application_site_obligations -->
+##### Quantity obligations at application sites
+
+When an expression `arg` is supplied to a parameter whose binder demands quantity `qdem`, elaboration determines the
+capability `qcap` available for `arg`.
+
+The application is accepted only if the checker can solve:
+
+```kappa
+QuantitySatisfies qcap qdem
+```
+
+Examples:
+
+```kappa
+takesLinear : (1 x : A) -> B
+```
+
+Calling `takesLinear y` requires:
+
+```kappa
+QuantitySatisfies qy 1
+```
+
+where `qy` is the capability available for `y`.
+
+```kappa
+takesAffine : (<=1 x : A) -> B
+```
+
+Calling `takesAffine y` requires:
+
+```kappa
+QuantitySatisfies qy <=1
+```
+
+A value available at `ω` satisfies this demand.
+A value available at `1` does not, because a linear value may not be silently ignored by an affine callee.
+
+If the demanded quantity is symbolic, the same rule applies:
+
+```kappa
+takesQ :
+    forall (q : Quantity) (a : Type).
+    (q x : a) -> Unit
+```
+
+Calling `takesQ @q y` requires:
+
+```kappa
+QuantitySatisfies qy q
+```
+
+If this cannot be solved intrinsically, it must be supplied by explicit or implicit evidence.
+
 Borrow binders may optionally name a region variable already in scope:
 
 ```kappa
