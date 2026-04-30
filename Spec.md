@@ -8497,8 +8497,9 @@ elaboration (§5.5.1.1). Each field also carries the quantity determined by the 
 not fixed by annotation or context, it defaults to `ω`.
 
 Field order in the source literal is not semantically significant. The compiler builds the field-dependency graph for
-the literal, performs a topological sort to obtain a dependency-respecting order, and then resolves names, typechecks
-fields, and evaluates field expressions in that reordered sequence.
+the literal, performs a topological sort to obtain a dependency-respecting order, and then resolves names and typechecks
+fields against that dependency-respecting order. Runtime evaluation order is not reordered: user-written field
+expressions are evaluated exactly once in source order as specified by §5.5.1.1.
 
 After elaboration, the resulting record value is definitionally equal to its canonical field-order normalization
 (§14.6).
@@ -8507,12 +8508,19 @@ Well-formedness:
 
 * In a record value `(f1 = e1, f2 = e2, ...)`, sibling references may be written explicitly as `this.label`. A bare
   identifier `label` is shorthand for `this.label` only when that reading is unambiguous; otherwise `this.label` is
-  required. The compiler reorders the fields to a dependency-respecting sequence before name resolution and evaluation.
+  required.
+* In a record value initializer, a runtime-relevant reference to `this.f` or to a bare identifier that resolves as
+  sibling-field shorthand for `f` is valid only if field `f` appears earlier in source order and has already been
+  evaluated into its temporary.
+* A reference to a later source field is rejected unless the referenced field is compile-time-only and its value is
+  already available during elaboration without runtime evaluation.
 * If the combined dependency graph for the literal, including expression-level references, contains a cycle, the literal
   is a compile-time error.
 * Record field punning is permitted: in a record value, an entry written as just `label` is treated as `label = label`.
 * In such a punned entry, `label` resolves in the surrounding scope before reordering, and the resolved term must have
   the field type required for that label.
+* The dependency graph may reorder fields for typechecking, substitution, canonical identity, and definitional
+  equality. It does not change the source-order runtime evaluation of user-written field expressions.
 * A record literal may be checked directly against an ordinary record type.
 * Expected-type-directed suspension insertion:
   * When a record literal is checked against an expected record type, and a field is declared with type `Thunk T` or
