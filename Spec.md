@@ -12888,6 +12888,40 @@ Typing:
   rules of §5.1.7. Thus nested safe-navigation such as `a?.b?.c` preserves the correct overlap/disjointness behavior of
   the original borrowed path.
 * If the residual body has type `U` where `U` is not of the form `Option _`, then the safe chain has type `Option U`.
+
+Diagnostics:
+
+If the residual type of a safe-navigation member access remains unsolved after ordinary inference and the compiler
+therefore cannot decide whether the result should be wrapped or flattened, compilation fails with diagnostic family
+`kappa.type.mismatch` and portable alias `E_SAFE_NAV_GENERIC_AMBIGUOUS`.
+
+The diagnostic payload MUST include:
+
+* the safe-navigation chain source text or structured chain representation;
+* the prefix expression and its type;
+* the residual member access;
+* the unsolved residual result type variable or stable explanatory placeholder;
+* whether wrapping and flattening were both still viable;
+* annotations, expected types, or ordinary combinators that would disambiguate the expression.
+
+A conforming implementation MAY emit warning `W_SAFE_NAV_REDUNDANT_RECEIVER_PRESENT` when all active flow facts prove
+that the receiver of `?.` is already present.
+
+Such a warning is permitted only when the checker can justify the presence fact from one of:
+
+* success-side `HasCtor` evidence for `Option.Some`;
+* failure-side finite-constructor narrowing that leaves only `Option.Some`;
+* stable-alias transport of either fact;
+* an explicit unwrap or branch-local refinement whose proof is still in scope.
+
+The warning payload MUST include:
+
+* the receiver expression;
+* the flow fact proving presence;
+* the origin of that flow fact;
+* whether replacing `?.` with `.` is machine-applicable.
+
+This warning MUST NOT fire when the receiver may be absent on any reachable path.
 * If the residual body has type `Option U`, then the safe chain has type `Option U`.
 
 Precedence:
@@ -25381,6 +25415,28 @@ Payload MUST include:
 * origins or provider identities for both interpretations; and
 * concrete rewrites that force either interpretation.
 
+Family:
+
+```text
+kappa.name.module-alias-collision
+```
+
+Used when a qualified name in type, term, trait, constructor, or pattern position resolves through a module alias that
+shadows an unrelated declaration spelling, and that alias collision is the primary repairable cause.
+
+Payload MUST include:
+
+* qualified spelling;
+* module alias selected;
+* module or provider identity denoted by the alias;
+* shadowed declaration spelling and kind;
+* declaration origin of the alias;
+* declaration origin of the shadowed name, when available;
+* downstream mismatch that would have occurred without this diagnostic;
+* suggested repairs such as renaming the alias, qualifying the type, or changing the import.
+
+The diagnostic MUST use portable alias `E_MODULE_ALIAS_TYPE_COLLISION`.
+
 <!-- compiler.kfrontir.standard_diagnostic_families.type_equality -->
 ##### 17.2.4A.2 Type and equality diagnostics
 
@@ -25532,6 +25588,73 @@ A human renderer MUST make the insoluble obligation the primary explanation. It 
 identical-looking expected/actual signature pair when the ambiguity check failed because a hidden obligation could not
 be solved.
 
+Family:
+
+```text
+kappa.type.literal-domain-mismatch
+```
+
+Used when integer, floating, string, Unicode scalar, grapheme, or byte literal elaboration fails because the
+surrounding context expects an incompatible domain or because no suitable literal witness is available.
+
+Payload MUST include:
+
+* literal kind;
+* literal source text;
+* literal decoded payload when available;
+* expected type when available;
+* selected literal trait or suffix handler, if any;
+* missing or rejected witness details, if any;
+* whether defaulting was attempted;
+* whether failure arose before or after suffix desugaring.
+
+The primary message SHOULD foreground the user-visible mismatch, for example "expected `T` but found an integer
+literal". Missing instance or witness details SHOULD be rendered as supporting notes unless they are the actual primary
+cause.
+
+Family:
+
+```text
+kappa.type.missing-signature
+```
+
+Used when a declaration requires an explicit signature under §6.2 or another rule and no acceptable signature is
+available.
+
+Payload MUST include:
+
+* declaration name;
+* declaration kind;
+* export status;
+* rule requiring the signature;
+* inferred signature when available;
+* whether the inferred signature is safe to expose as a fix;
+* source origin of the declaration.
+
+The diagnostic MUST use portable alias `E_MISSING_EXPLICIT_SIGNATURE`.
+
+Family:
+
+```text
+kappa.type.inferred-signature
+```
+
+Used for informational or warning diagnostics that expose an inferred signature to tooling.
+
+Payload MUST include:
+
+* declaration name;
+* declaration kind;
+* inferred signature as structured syntax or source-like text;
+* generalized binders;
+* inferred captures;
+* inferred effects;
+* inferred constraints;
+* source origin where a signature could be inserted.
+
+When emitted as an informational diagnostic, this diagnostic MUST use portable alias
+`I_INFERRED_SIGNATURE_AVAILABLE`.
+
 <!-- compiler.kfrontir.standard_diagnostic_families.implicit_trait_proof -->
 ##### 17.2.4A.3 Implicit, trait, and proof-search diagnostics
 
@@ -25642,6 +25765,30 @@ Payload MUST include:
 * inhabitance summary when available; and
 * completion candidates when the inhabitance summary is `Contractible` or `Finite n` within the implementation's
   completion threshold.
+
+Family:
+
+```text
+kappa.proof.impossible-reachable
+```
+
+Used when `impossible`, `case impossible`, or an indexed contradiction proof is rejected because the branch or remainder
+is still reachable.
+
+Payload MUST include:
+
+* impossible form kind;
+* scrutinee type or proposition being refuted;
+* active constructor, index, boolean, and equality refinements;
+* uncovered or still-reachable residual pattern shape when available;
+* contradiction that was expected;
+* reason the contradiction was not derivable;
+* inhabitance-summary result used for the decision.
+
+The primary diagnostic MUST explain the branch-reachability problem directly. It MUST NOT report only a leaked implicit
+binder, missing skolem, or internal contradiction-search artifact.
+
+This diagnostic MUST use portable alias `E_INDEXED_IMPOSSIBLE_REACHABLE`.
 
 <!-- compiler.kfrontir.standard_diagnostic_families.quantity_ownership -->
 ##### 17.2.4A.4 Quantity and ownership diagnostics
@@ -26129,6 +26276,74 @@ Payload MUST include:
 * reason the branch is unreachable, or reason the compiler cannot prove it unreachable;
 * preceding cases or guards that caused the reachability state.
 
+Family:
+
+```text
+kappa.pattern.constructor-arity
+```
+
+Used when a constructor pattern supplies the wrong number of positional arguments, duplicates named fields, omits
+required fields in a context where omission is not permitted, or supplies fields not declared by the constructor.
+
+Payload MUST include:
+
+* constructor identity;
+* constructor source or interface origin;
+* expected constructor parameter telescope;
+* supplied positional count;
+* supplied named fields;
+* missing required fields;
+* duplicated fields;
+* unexpected fields;
+* whether the pattern is source-written or generated.
+
+The diagnostic MUST use portable alias `E_PATTERN_CONSTRUCTOR_ARITY_MISMATCH`.
+
+Family:
+
+```text
+kappa.constructor.arity
+```
+
+Used for the analogous malformed constructor application.
+
+Payload MUST include:
+
+* constructor identity;
+* constructor source or interface origin;
+* expected constructor parameter telescope;
+* supplied positional count;
+* supplied named fields;
+* missing required fields;
+* duplicated fields;
+* unexpected fields;
+* defaulted parameters considered;
+* implicit insertion attempted.
+
+The diagnostic MUST use portable alias `E_CONSTRUCTOR_ARITY_MISMATCH`.
+
+Family:
+
+```text
+kappa.pattern.exhaustiveness-residual
+```
+
+Used when an exhaustiveness or incompleteness diagnostic reports uncovered cases.
+
+Payload MUST include:
+
+* scrutinee type;
+* active refinements;
+* covered pattern summaries;
+* residual uncovered pattern shapes;
+* whether residual shapes are source-level constructors, variant members, record shapes, boolean cases, or lowered
+  helper shapes;
+* any view-like, active-pattern, alias-pattern, or helper-lowering step that affected the residual display.
+
+The renderer MUST preserve enough source-level constructor or member detail to tell the user which real cases remain
+uncovered. It MUST NOT collapse residual cases to a content-free skeleton when the distinguishing constructor or member
+information is available.
+
 <!-- compiler.kfrontir.standard_diagnostic_families.termination -->
 ##### 17.2.4A.9 Termination diagnostics
 
@@ -26174,6 +26389,48 @@ Payload MUST include:
 
 A macro-defined diagnostic may use a more specific implementation- or package-defined family, but it MUST still expose
 the expansion stack and origin information required here.
+
+Family:
+
+```text
+kappa.syntax.quotation
+```
+
+Used when syntax quotation, quasiquotation, interpolation into quoted syntax, or generated syntax fails before ordinary
+object-language elaboration.
+
+Payload MUST include:
+
+* quotation form;
+* active language profile;
+* owning grammar or subgrammar;
+* source origin of the malformed quoted form;
+* recovery choice, if any;
+* generated-origin chain when the quoted syntax was generated;
+* whether ordinary source parsing would reject the same fragment.
+
+Malformed quoted syntax MUST use portable alias `E_QUOTE_MALFORMED_SYNTAX`.
+
+Family:
+
+```text
+kappa.syntax.generated-invalid
+```
+
+Used when macro-generated, plugin-generated, or elaboration-generated syntax is not valid source for the grammar and
+feature profile at the splice site.
+
+Payload MUST include:
+
+* generating macro, plugin, or elaboration helper identity when available;
+* splice or generated-use origin;
+* nearest user-written origin;
+* active language profile;
+* feature gate required if the syntax is gated;
+* parser or elaborator rejection reason;
+* generated syntax rendering or stable fallback rendering when available.
+
+The diagnostic MUST use portable alias `E_GENERATED_SYNTAX_INVALID`.
 
 <!-- compiler.kfrontir.standard_diagnostics.derivation_shape -->
 ##### 17.2.4A.10A Derivation-shape diagnostics
@@ -26396,6 +26653,47 @@ Payload MUST include:
 * input keys, redacted when necessary for stability;
 * source declarations, modules, or phases involved when available;
 * whether the cycle is a user-facing source error or an internal compiler limitation.
+
+Family:
+
+```text
+kappa.unsupported.deterministic
+```
+
+Used when a compiler, backend, harness, editor query, interactive evaluator, or protocol endpoint deterministically
+reports that a requested behavior is unsupported by the selected implementation or profile.
+
+Payload MUST include:
+
+* unsupported action;
+* selected language profile;
+* selected backend profile when relevant;
+* selected build or test target when relevant;
+* required capability or feature gate when known;
+* whether source analysis continued after the unsupported result;
+* any buffered diagnostics or trace chunks flushed before the result.
+
+The diagnostic MUST use portable alias `E_UNSUPPORTED_DETERMINISTIC`.
+
+Family:
+
+```text
+kappa.interactive.protocol
+```
+
+Used when a machine-readable interactive protocol would otherwise be corrupted by unframed text, an unstructured
+shutdown path, or a reply on the wrong channel.
+
+Payload MUST include:
+
+* protocol name or family;
+* request kind;
+* protocol phase;
+* expected response channel;
+* actual response channel or unframed output kind;
+* whether structured diagnostics were preserved.
+
+The diagnostic MUST use portable alias `E_INTERACTIVE_PROTOCOL_VIOLATION`.
 
 Family:
 
