@@ -7006,19 +7006,97 @@ Syntax:
 forall (q : Quantity). T
 ```
 
-Within the scope of `q`, it may be used as the quantity annotation on an ordinary binder or on a borrowed binder.
+Within the scope of `q`, it may be used as the quantity annotation on a binder.
 
-Examples:
+Example:
 
 ```kappa
 apply :
     forall (q : Quantity) (a : Type) (b : Type).
     (q fn : a -> b) -> (q x : a) -> b
-
-inspectBorrowed :
-    forall (q : Quantity) (a : Type).
-    (q & x : a) -> Unit
 ```
+
+When the checker cannot decide a symbolic quantity-satisfaction fact by normalization and the built-in quantity rules,
+it emits an ordinary intrinsic trait obligation:
+
+```kappa
+QuantitySatisfies qcap qdem
+```
+
+Such an obligation may be discharged by:
+
+* the intrinsic quantity solver;
+* an in-scope implicit evidence variable;
+* an explicit evidence argument; or
+* an explicit `=>` premise in the declaration type.
+
+A declaration is accepted only if every generated `QuantitySatisfies` obligation is solved or explicitly represented in
+the declaration's type.
+
+The compiler MUST NOT silently add `QuantitySatisfies` premises to an exported declaration's interface.
+
+If a non-exported local declaration is in a context where ordinary trait-obligation inference and generalization are
+otherwise permitted, `QuantitySatisfies` obligations follow the same generalization rule as other trait obligations.
+Otherwise, an unsolved generated `QuantitySatisfies` obligation is a compile-time error.
+
+Examples:
+
+```kappa
+useOnce :
+    forall (q : Quantity) (a : Type).
+    QuantitySatisfies q 1 =>
+    (q x : a) -> a
+
+let useOnce x =
+    x
+```
+
+The body demands `x` exactly once, so the implementation requires:
+
+```kappa
+QuantitySatisfies q 1
+```
+
+This cannot be proven for arbitrary `q`, because `q` may be `0`.
+The explicit premise makes the requirement part of the function's interface.
+
+```kappa
+ignore :
+    forall (q : Quantity) (a : Type).
+    QuantitySatisfies q 0 =>
+    (q x : a) -> Unit
+
+let ignore x =
+    ()
+```
+
+The body demands `x` zero times, so the implementation requires:
+
+```kappa
+QuantitySatisfies q 0
+```
+
+This cannot be proven for arbitrary `q`, because `q` may be `1` or `>=1`.
+The premise says precisely that the caller supplied a droppable capability.
+
+By contrast:
+
+```kappa
+ignoreUnrestricted :
+    forall (a : Type).
+    (ω x : a) -> Unit
+
+let ignoreUnrestricted x =
+    ()
+```
+
+is accepted without an explicit premise, because:
+
+```kappa
+QuantitySatisfies ω 0
+```
+
+is solved by the intrinsic quantity table.
 
 Capability vs demand:
 
