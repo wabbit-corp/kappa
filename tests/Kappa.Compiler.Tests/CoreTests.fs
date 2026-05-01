@@ -631,6 +631,35 @@ module CoreTestsShard0 =
 
         Assert.False(workspace.HasErrors, sprintf "Expected imported kind-qualified type alias to resolve, got %A" workspace.Diagnostics)
 
+    [<Fact>]
+    let ``unqualified same-spelling data-family aliases keep constructor term semantics`` () =
+        let librarySource =
+            [
+                "module library"
+                "data Box ="
+                "    Box"
+            ]
+            |> String.concat "\n"
+
+        let mainSource =
+            [
+                "module main"
+                "import library.(Box as AliasBox)"
+                "termValue : AliasBox"
+                "let termValue = AliasBox"
+            ]
+            |> String.concat "\n"
+
+        let workspace =
+            compileInMemoryWorkspace
+                "memory-same-spelling-binding-group-alias-root"
+                [
+                    "library.kp", librarySource
+                    "main.kp", mainSource
+                ]
+
+        Assert.False(workspace.HasErrors, sprintf "Expected same-spelling alias binding group to compile, got %A" workspace.Diagnostics)
+
 
     [<Fact>]
     let ``compilation rejects refl when function type equality changes binder quantity`` () =

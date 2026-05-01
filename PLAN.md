@@ -49,6 +49,7 @@ Current M4 status note: started, not complete. The compiler now has a real effec
   Ordinary term lookup and ambiguity now route through `VisibleOrdinaryGroups`, and qualified type/trait/static-object resolution now goes through structured `VisibleStaticGroups`, `VisibleQualifiedTypeFacets`, `VisibleQualifiedTraits`, and `VisibleModulePaths`.
   The remaining gap is the deeper same-spelling binding-group model itself: type/trait/static-object membership is still assembled from split maps instead of one first-class binding-group representation.
 - [ ] Rework same-spelling data-family handling so it is represented as one binding group with typed facets instead of separate text-keyed maps plus special cases.
+  Unqualified import aliases like `import M.(Box as AliasBox)` now preserve the constructor/type pairing across term and type positions, but the implementation still accomplishes that through import-time constructor/type rewrites rather than one first-class same-spelling binding-group object.
 - [ ] Finish the provenance/ownership conversion so `KCoreOrigin`, `KCoreModule`, runtime lowering, dumps, and verification carry structured semantic identity end-to-end rather than rendered text.
 - [ ] Replace text-based post-resolution lookup in lowering and backend preparation with resolved symbolic references.
   Current hot spots:

@@ -482,6 +482,17 @@ module SurfaceElaboration =
     let private projectionIdentity moduleIdentity name =
         topLevelDeclarationIdentity moduleIdentity name ProjectionDeclaration
 
+    let private aliasImportedSameSpellingConstructorBinding localTypeName (bindingInfo: BindingSchemeInfo) =
+        let originalTypeName = bindingInfo.ConstructorTypeName |> Option.defaultValue bindingInfo.Name
+        let qualifiedOriginalType =
+            TypeName((ModuleIdentity.segments bindingInfo.ModuleIdentity) @ [ originalTypeName ], [])
+
+        let substitution = Map.ofList [ originalTypeName, qualifiedOriginalType ]
+
+        { bindingInfo with
+            ConstructorTypeName = Some localTypeName
+            Scheme = TypeSignatures.applySchemeSubstitution substitution bindingInfo.Scheme }
+
     let private bindingSchemeInfo identity isPattern scheme typeTokens parameterLayouts constructorTypeName defaultArguments =
         { Identity = identity
           IsPattern = isPattern
@@ -4091,17 +4102,28 @@ module SurfaceElaboration =
                                     None
                                 elif String.Equals(item.Name, name, StringComparison.Ordinal)
                                      && itemImportsConstructorName item then
-                                    Some(importedItemLocalName item)
+                                    Some(importedItemLocalName item, false)
+                                elif item.Namespace.IsNone
+                                     && info.ConstructorTypeName
+                                        |> Option.exists (fun typeName -> String.Equals(typeName, item.Name, StringComparison.Ordinal))
+                                     && String.Equals(item.Name, name, StringComparison.Ordinal) then
+                                    Some(importedItemLocalName item, true)
                                 else
                                     match info.ConstructorTypeName with
                                     | Some typeName when itemImportsConstructorsOfType typeName item ->
-                                        Some name
+                                        Some(name, false)
                                     | _ ->
                                         None)
 
                     match importedName with
-                    | Some localName ->
-                        appendVisibleCandidate localName (OrdinaryVisibleConstructorCandidate(candidatePriority, info)) current
+                    | Some(localName, sameSpellingAlias) ->
+                        let aliasedInfo =
+                            if sameSpellingAlias && not (String.Equals(localName, name, StringComparison.Ordinal)) then
+                                aliasImportedSameSpellingConstructorBinding localName info
+                            else
+                                info
+
+                        appendVisibleCandidate localName (OrdinaryVisibleConstructorCandidate(candidatePriority, aliasedInfo)) current
                     | None ->
                         current) withBindings
 
@@ -4168,7 +4190,15 @@ module SurfaceElaboration =
                             false
 
                     let withConstructorName =
-                        if itemImportsConstructorName item then
+                        let importsSameSpellingConstructor =
+                            item.Namespace.IsNone
+                            && (constructorInfo
+                                |> Option.exists (fun info ->
+                                    String.Equals(info.Name, item.Name, StringComparison.Ordinal)
+                                    && (info.ConstructorTypeName
+                                        |> Option.exists (fun typeName -> String.Equals(typeName, item.Name, StringComparison.Ordinal)))))
+
+                        if itemImportsConstructorName item || importsSameSpellingConstructor then
                             match constructorInfo with
                             | Some info when Set.contains item.Name importedModule.ExportedConstructors && constructorAccessAllowed info item ->
                                 Set.add (importedItemLocalName item) current
@@ -4596,12 +4626,14 @@ module SurfaceElaboration =
         (environment: BindingLoweringEnvironment)
         (staticObjects: Map<string list, StaticObjectInfo>)
         =
+        let visibleStaticGroups =
+            buildVisibleStaticGroups
+                environment.VisibleTypeFacets
+                staticObjects
+                environment.VisibleTraits
+
         { environment with
-            VisibleStaticGroups =
-                buildVisibleStaticGroups
-                    environment.VisibleTypeFacets
-                    staticObjects
-                    environment.VisibleTraits
+            VisibleStaticGroups = visibleStaticGroups
             VisibleStaticObjects = staticObjects }
 
     let private mergeVisibleRecordTypes (surfaceIndex: Map<ModuleIdentity, ModuleSurfaceInfo>) moduleIdentity =
@@ -5543,7 +5575,23 @@ module SurfaceElaboration =
 
                         TypeName(qualifiedName, arguments |> List.map loop)
                     | _ ->
-                        TypeName(nameSegments, arguments |> List.map loop)
+                        let aliasedSameSpellingTypeName =
+                            environment.VisibleConstructors
+                            |> Map.toSeq
+                            |> Seq.tryPick (fun (localName, bindingInfo) ->
+                                if not (String.Equals(localName, name, StringComparison.Ordinal))
+                                   && String.Equals(bindingInfo.Name, name, StringComparison.Ordinal)
+                                   && (bindingInfo.ConstructorTypeName
+                                       |> Option.exists (fun constructorTypeName -> String.Equals(constructorTypeName, name, StringComparison.Ordinal))) then
+                                    Some localName
+                                else
+                                    None)
+
+                        match aliasedSameSpellingTypeName with
+                        | Some localAlias ->
+                            TypeName([ localAlias ], arguments |> List.map loop)
+                        | None ->
+                            TypeName(nameSegments, arguments |> List.map loop)
                 | _ ->
                     TypeName(nameSegments, arguments |> List.map loop)
             | TypeArrow(quantity, parameterType, resultType) ->
