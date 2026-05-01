@@ -703,6 +703,7 @@ type MacroExpansionDiagnosticEvidence =
     | WarnElabMessage of message: string
     | FailElabWithCode of code: DiagnosticCode * message: string
     | WarnElabWithCode of code: DiagnosticCode * message: string
+    | SyntaxValueEscapesCapturedBindings of capturedNames: string list
 
 type NumericLiteralOutOfRangeEvidence =
     { LiteralText: string }
@@ -1912,6 +1913,15 @@ module DiagnosticFact =
                 descriptorFor DiagnosticCode.ElaborationFailed "fail-elab" message
             | WarnElabMessage message ->
                 descriptorFor DiagnosticCode.SourceWarning "warn-elab" message
+            | SyntaxValueEscapesCapturedBindings capturedNames ->
+                descriptor
+                    DiagnosticCode.ElaborationFailed
+                    None
+                    "Syntax value escapes the scope where one or more captured local binders are available."
+                    (payload
+                        "macro-expansion-diagnostic"
+                        [ field "reason" (DiagnosticPayloadText "syntax-value-escapes-captured-bindings")
+                          field "captured-names" (DiagnosticPayloadTextList capturedNames) ])
             | FailElabWithCode(code, message) ->
                 descriptor
                     code

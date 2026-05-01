@@ -324,9 +324,6 @@ module internal ElaborationEvaluation =
     let private makeDiagnostic severity fact stage phase source =
         Diagnostics.create severity fact (Some(defaultLocation source)) [] (Some stage) (Some phase)
 
-    let private makeMacroSimpleError kind message source =
-        makeDiagnostic Error (DiagnosticFact.simple kind message) "macro-expansion" (KFrontIRPhase.phaseName BODY_RESOLVE) source
-
     let private makeMacroError message source =
         makeDiagnostic Error (DiagnosticFact.macroExpansion (FailElabMessage message)) "macro-expansion" (KFrontIRPhase.phaseName BODY_RESOLVE) source
 
@@ -1962,13 +1959,16 @@ module internal ElaborationEvaluation =
                 | EvalSucceeded(MetaSyntax syntaxValue, diagnostics) when Set.isSubset syntaxValue.CapturedNames currentContext.ObjectBinders ->
                     { Expression = alphaRenameExpression syntaxValue.Expression
                       Diagnostics = diagnostics }
-                | EvalSucceeded(MetaSyntax _, diagnostics) ->
+                | EvalSucceeded(MetaSyntax syntaxValue, diagnostics) ->
                     { Expression = Literal LiteralValue.Unit
                       Diagnostics =
                         diagnostics
-                        @ [ makeMacroSimpleError
-                                SimpleDiagnosticKind.TypeEqualityMismatch
-                                "Syntax value escapes the scope where one or more captured local binders are available."
+                        @ [ makeDiagnostic
+                                Error
+                                (DiagnosticFact.macroExpansion
+                                    (SyntaxValueEscapesCapturedBindings(Set.toList syntaxValue.CapturedNames)))
+                                "macro-expansion"
+                                (KFrontIRPhase.phaseName BODY_RESOLVE)
                                 currentContext.Source ] }
                 | EvalFailed diagnostics -> { Expression = Literal LiteralValue.Unit; Diagnostics = diagnostics }
                 | _ -> { Expression = TopLevelSyntaxSplice inner; Diagnostics = [] }

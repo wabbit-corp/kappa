@@ -4254,11 +4254,17 @@ module SmokeTestsShard4 =
         let bag = DiagnosticBag()
         bag.AddError(DiagnosticFact.macroExpansion (FailElabMessage "macro failed"))
         bag.AddError(DiagnosticFact.macroExpansion (FailElabWithCode(DiagnosticCode.UnsupportedSyntax, "typed macro failure")))
+        bag.AddError(DiagnosticFact.macroExpansion (SyntaxValueEscapesCapturedBindings [ "x"; "file" ]))
         bag.AddError(DiagnosticFact.numericLiteralOutOfRange "999999999999999999999")
 
         let diagnostics = bag.Items
         let failElabDiagnostic = diagnostics |> List.find (fun item -> item.Code = DiagnosticCode.ElaborationFailed)
         let failElabWithDiagnostic = diagnostics |> List.find (fun item -> item.Code = DiagnosticCode.UnsupportedSyntax)
+        let escapedSyntaxDiagnostic =
+            diagnostics
+            |> List.find (fun item ->
+                item.Code = DiagnosticCode.ElaborationFailed
+                && tryFindPayloadText "reason" item = Some "syntax-value-escapes-captured-bindings")
         let numericDiagnostic = diagnostics |> List.find (fun item -> item.Code = DiagnosticCode.NumericLiteralOutOfRange)
 
         Assert.Equal("macro-expansion-diagnostic", failElabDiagnostic.Payload.Kind)
@@ -4269,6 +4275,13 @@ module SmokeTestsShard4 =
         Assert.Equal(Some "fail-elab-with", tryFindPayloadText "reason" failElabWithDiagnostic)
         Assert.Equal(Some "typed macro failure", tryFindPayloadText "message" failElabWithDiagnostic)
         Assert.Equal(Some "E_UNSUPPORTED_SYNTAX", tryFindPayloadText "diagnostic-code" failElabWithDiagnostic)
+
+        Assert.Equal("macro-expansion-diagnostic", escapedSyntaxDiagnostic.Payload.Kind)
+        Assert.Equal(
+            "Syntax value escapes the scope where one or more captured local binders are available.",
+            escapedSyntaxDiagnostic.Message
+        )
+        Assert.Equal(Some [ "x"; "file" ], tryFindPayloadTextList "captured-names" escapedSyntaxDiagnostic)
 
         Assert.Equal("numeric-literal-out-of-range", numericDiagnostic.Payload.Kind)
         Assert.Equal(Some "999999999999999999999", tryFindPayloadText "literal-text" numericDiagnostic)
