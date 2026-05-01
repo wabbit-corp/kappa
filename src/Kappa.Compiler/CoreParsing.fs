@@ -4747,18 +4747,25 @@ type private ExpressionParser
                 if this.Current.Kind = InterpolationEnd then
                     this.Advance() |> ignore
                 else
-                    diagnostics.AddError(DiagnosticFact.simple SimpleDiagnosticKind.ExpectedSyntaxToken "Expected the interpolation to end before the string resumes.",
+                    diagnostics.AddError(
+                        DiagnosticFact.coreExpressionParsing ExpectedInterpolationEndBeforeStringResumes,
                         source.GetLocation(this.Current.Span)
                     )
             | InterpolatedStringEnd ->
                 this.Advance() |> ignore
                 closed <- true
             | _ ->
-                diagnostics.AddError(DiagnosticFact.simple SimpleDiagnosticKind.ExpectedSyntaxToken "Expected interpolated string content.", source.GetLocation(this.Current.Span))
+                diagnostics.AddError(
+                    DiagnosticFact.coreExpressionParsing ExpectedInterpolatedStringContent,
+                    source.GetLocation(this.Current.Span)
+                )
                 closed <- true
 
         if not closed then
-            diagnostics.AddError(DiagnosticFact.simple SimpleDiagnosticKind.ExpectedSyntaxToken "Unterminated interpolated string.", source.GetLocation(startToken.Span))
+            diagnostics.AddError(
+                DiagnosticFact.coreExpressionParsing UnterminatedInterpolatedString,
+                source.GetLocation(startToken.Span)
+            )
 
         PrefixedString(prefix, List.ofSeq parts)
 

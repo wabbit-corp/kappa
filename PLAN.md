@@ -104,7 +104,7 @@ Current M4 status note: started, not complete. The compiler now has a real effec
 - [ ] Finish `CoreParsing.fs` diagnostics conversion for the remaining record and patch structural paths.
   Named application and record-literal field diagnostics now route through `CoreExpressionParsingEvidence`, but record-patch item validation still uses raw simple diagnostics.
 - [ ] Finish `CoreParsing.fs` diagnostics conversion for the remaining primary-expression recovery paths.
-  Local `let ... in ...` recovery, missing `)` recovery, and the generic “expected expression” path now route through `CoreExpressionParsingEvidence`, but interpolated-string recovery and a few selector/name recovery helpers still use raw detail strings.
+  Local `let ... in ...` recovery, missing `)` recovery, the generic “expected expression” path, and interpolated-string recovery now route through `CoreExpressionParsingEvidence`, but a few selector/name recovery helpers still use raw detail strings.
 - [ ] Finish `CoreParsing.fs` diagnostics conversion for projection headers, accessor clauses, and projection-specific binder validation.
   Projection-body diagnostics now route through `CoreExpressionParsingEvidence`, but projection place-binder, accessor-clause, and header/result-type diagnostics still use raw detail strings.
 - [ ] Finish `CoreParsing.fs` diagnostics conversion for remaining handler/record-patch validation diagnostics.

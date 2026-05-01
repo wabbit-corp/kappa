@@ -3743,6 +3743,9 @@ module SmokeTestsShard4 =
         bag.AddError(DiagnosticFact.coreExpressionParsing ExpectedLocalLetEquals)
         bag.AddError(DiagnosticFact.coreExpressionParsing ExpectedExpressionCloseParenthesis)
         bag.AddError(DiagnosticFact.coreExpressionParsing ExpectedExpression)
+        bag.AddError(DiagnosticFact.coreExpressionParsing ExpectedInterpolationEndBeforeStringResumes)
+        bag.AddError(DiagnosticFact.coreExpressionParsing ExpectedInterpolatedStringContent)
+        bag.AddError(DiagnosticFact.coreExpressionParsing UnterminatedInterpolatedString)
 
         let diagnostics = bag.Items
         let usingDiagnostic =
@@ -3864,6 +3867,18 @@ module SmokeTestsShard4 =
         let expressionDiagnostic =
             diagnostics
             |> List.find (fun item -> item.Message = "Expected an expression.")
+
+        let interpolationEndDiagnostic =
+            diagnostics
+            |> List.find (fun item -> item.Message = "Expected the interpolation to end before the string resumes.")
+
+        let interpolatedStringContentDiagnostic =
+            diagnostics
+            |> List.find (fun item -> item.Message = "Expected interpolated string content.")
+
+        let unterminatedInterpolatedStringDiagnostic =
+            diagnostics
+            |> List.find (fun item -> item.Message = "Unterminated interpolated string.")
 
         Assert.Equal("core-expression-parsing", usingDiagnostic.Payload.Kind)
         Assert.Contains(
@@ -4044,6 +4059,24 @@ module SmokeTestsShard4 =
             fun field ->
                 field.Name = "reason"
                 && field.Value = DiagnosticPayloadText "expected-expression"
+        )
+        Assert.Contains(
+            interpolationEndDiagnostic.Payload.Fields,
+            fun field ->
+                field.Name = "reason"
+                && field.Value = DiagnosticPayloadText "expected-interpolation-end-before-string-resumes"
+        )
+        Assert.Contains(
+            interpolatedStringContentDiagnostic.Payload.Fields,
+            fun field ->
+                field.Name = "reason"
+                && field.Value = DiagnosticPayloadText "expected-interpolated-string-content"
+        )
+        Assert.Contains(
+            unterminatedInterpolatedStringDiagnostic.Payload.Fields,
+            fun field ->
+                field.Name = "reason"
+                && field.Value = DiagnosticPayloadText "unterminated-interpolated-string"
         )
 
     [<Fact>]
@@ -4483,6 +4516,63 @@ module SmokeTestsShard4 =
         Assert.Equal("core-expression-parsing", localLetEqualsDiagnostic.Payload.Kind)
         Assert.Equal("core-expression-parsing", expressionCloseParenthesisDiagnostic.Payload.Kind)
         Assert.Equal("core-expression-parsing", expressionDiagnostic.Payload.Kind)
+
+    [<Fact>]
+    let ``parser reports structured interpolated string recovery diagnostics`` () =
+        let sourceText =
+            [
+                "module main"
+                "let bad = f\"${x\""
+            ]
+            |> String.concat "\n"
+
+        let _, lexed, parsed =
+            lexAndParse
+                "main.kp"
+                sourceText
+
+        Assert.NotEmpty(lexed.Diagnostics)
+
+        let interpolationEndDiagnostic =
+            parsed.Diagnostics
+            |> List.find (fun diagnostic ->
+                tryFindPayloadText "reason" diagnostic = Some "expected-interpolation-end-before-string-resumes")
+
+        let unterminatedDiagnostic =
+            parsed.Diagnostics
+            |> List.find (fun diagnostic ->
+                tryFindPayloadText "reason" diagnostic = Some "unterminated-interpolated-string")
+
+        Assert.Equal("core-expression-parsing", interpolationEndDiagnostic.Payload.Kind)
+        Assert.Equal("core-expression-parsing", unterminatedDiagnostic.Payload.Kind)
+
+    [<Fact>]
+    let ``parser reports structured unexpected interpolated string content diagnostics`` () =
+        let source = createSource "__interpolated_string_content__.kp" "f\"oops"
+        let diagnostics = DiagnosticBag()
+        let startText = SyntaxFacts.encodePrefixedStringStart "f" 0
+
+        let tokens =
+            [
+                { Kind = InterpolatedStringStart
+                  Text = startText
+                  Span = { Start = 0; Length = 2 } }
+                { Kind = Identifier
+                  Text = "oops"
+                  Span = { Start = 2; Length = 4 } }
+                { Kind = EndOfFile
+                  Text = ""
+                  Span = { Start = 6; Length = 0 } }
+            ]
+
+        let _ = CoreParsing.parseExpression FixityTable.empty source diagnostics tokens
+
+        let diagnostic =
+            diagnostics.Items
+            |> List.find (fun item ->
+                tryFindPayloadText "reason" item = Some "expected-interpolated-string-content")
+
+        Assert.Equal("core-expression-parsing", diagnostic.Payload.Kind)
 
 
     [<Fact>]

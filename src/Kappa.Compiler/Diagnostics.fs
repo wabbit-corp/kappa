@@ -885,6 +885,9 @@ type CoreExpressionParsingEvidence =
     | ExpectedLocalLetEquals
     | ExpectedExpressionCloseParenthesis
     | ExpectedExpression
+    | ExpectedInterpolationEndBeforeStringResumes
+    | ExpectedInterpolatedStringContent
+    | UnterminatedInterpolatedString
 
 and CoreHeaderContext =
     | TopLevelFunctionHeader
@@ -2580,6 +2583,17 @@ module DiagnosticFact =
             | ExpectedExpression ->
                 descriptor DiagnosticCode.ExpectedSyntaxToken None "Expected an expression."
                     (payload "core-expression-parsing" [ field "reason" (DiagnosticPayloadText "expected-expression") ])
+            | ExpectedInterpolationEndBeforeStringResumes ->
+                descriptor DiagnosticCode.ExpectedSyntaxToken None "Expected the interpolation to end before the string resumes."
+                    (payload
+                        "core-expression-parsing"
+                        [ field "reason" (DiagnosticPayloadText "expected-interpolation-end-before-string-resumes") ])
+            | ExpectedInterpolatedStringContent ->
+                descriptor DiagnosticCode.ExpectedSyntaxToken None "Expected interpolated string content."
+                    (payload "core-expression-parsing" [ field "reason" (DiagnosticPayloadText "expected-interpolated-string-content") ])
+            | UnterminatedInterpolatedString ->
+                descriptor DiagnosticCode.ExpectedSyntaxToken None "Unterminated interpolated string."
+                    (payload "core-expression-parsing" [ field "reason" (DiagnosticPayloadText "unterminated-interpolated-string") ])
         | UnicodeScalarLiteralDiagnostic evidence ->
             match evidence with
             | UnicodeScalarInvalidLiteralForm ->
