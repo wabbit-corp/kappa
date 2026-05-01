@@ -15794,11 +15794,8 @@ module SurfaceElaboration =
                     else
                         match tryInferSiblingBindingType Set.empty calleeName with
                         | Some calleeType when not (isCallableValidationType environment.VisibleTypeAliases calleeType) ->
-                            [
-                                makeDiagnostic
-                                    SimpleDiagnosticKind.ApplicationNonCallable
-                                    $"Expression of type '{TypeSignatures.toText (normalize calleeType)}' is not callable."
-                            ]
+                            [ makeSurfaceElaborationDiagnostic
+                                (ApplicationExpressionNotCallable(TypeSignatures.toText (normalize calleeType))) ]
                         | Some calleeType ->
                             localApplicationExpectedArgumentDiagnostics currentLocals Map.empty calleeType arguments
                         | None ->
@@ -15807,11 +15804,8 @@ module SurfaceElaboration =
             let literalApplicationDiagnostics currentLocals callee =
                 match inferWithSiblingFallback currentLocals callee with
                 | Some calleeType when not (isCallableValidationType environment.VisibleTypeAliases calleeType) ->
-                    [
-                        makeDiagnostic
-                            SimpleDiagnosticKind.ApplicationNonCallable
-                            $"Expression of type '{TypeSignatures.toText (normalize calleeType)}' is not callable."
-                    ]
+                    [ makeSurfaceElaborationDiagnostic
+                        (ApplicationExpressionNotCallable(TypeSignatures.toText (normalize calleeType))) ]
                 | _ ->
                     []
 
@@ -18303,11 +18297,11 @@ module SurfaceElaboration =
                                 | Some receiverType when not (Set.contains memberName knownValueNames) ->
                                     [ makeNameUnresolvedDiagnostic memberName ]
                                 | Some receiverType ->
-                                    [
-                                        makeDiagnostic
-                                            SimpleDiagnosticKind.TypeEqualityMismatch
-                                            $"Member access '.{memberName}' is not well-formed for receiver type '{TypeSignatures.toText receiverType}'."
-                                    ]
+                                    [ makeSurfaceElaborationDiagnostic
+                                        (MemberAccessNotWellFormedForReceiverType(
+                                            memberName,
+                                            TypeSignatures.toText receiverType
+                                        )) ]
                                 | None ->
                                     []
 
@@ -18336,17 +18330,13 @@ module SurfaceElaboration =
                             | Some _ ->
                                 []
                             | None ->
-                                [ makeDiagnostic
-                                      SimpleDiagnosticKind.SafeNavigationAmbiguous
-                                      $"Safe-navigation `?.` requires knowing the result type of '{memberText navigation}' to decide whether to wrap or flatten." ]
+                                [ makeSurfaceElaborationDiagnostic
+                                    (SafeNavigationRequiresKnownResultType(memberText navigation)) ]
                         | None ->
-                            [ makeDiagnostic
-                                  SimpleDiagnosticKind.SafeNavigationReceiverNotOption
-                                  "Safe-navigation `?.` requires its receiver to have type `Option T` for some `T`." ]
+                            [ makeSurfaceElaborationDiagnostic SafeNavigationReceiverMustBeOption ]
                     | None ->
-                        [ makeDiagnostic
-                              SimpleDiagnosticKind.SafeNavigationAmbiguous
-                              $"Safe-navigation `?.` requires knowing the result type of '{memberText navigation}' to decide whether to wrap or flatten." ]
+                        [ makeSurfaceElaborationDiagnostic
+                            (SafeNavigationRequiresKnownResultType(memberText navigation)) ]
 
                 receiverDiagnostics @ argumentDiagnostics @ builtinDiagnostics
             | TagTest(receiver, _) ->
@@ -19251,11 +19241,10 @@ module SurfaceElaboration =
                                                         apparentCalleeType
                                                         arguments
                                                 else
-                                                    [
-                                                        makeDiagnostic
-                                                            SimpleDiagnosticKind.ApplicationNonCallable
-                                                            $"Expression of type '{TypeSignatures.toText (normalizeTypeAliases environment.VisibleTypeAliases apparentCalleeType)}' is not callable."
-                                                    ]
+                                                    [ makeSurfaceElaborationDiagnostic
+                                                        (ApplicationExpressionNotCallable(
+                                                            TypeSignatures.toText (normalizeTypeAliases environment.VisibleTypeAliases apparentCalleeType)
+                                                        )) ]
 
                                         if not (List.isEmpty structuralDiagnostics) then
                                             structuralDiagnostics
@@ -19319,17 +19308,18 @@ module SurfaceElaboration =
                                                 inferValidationExpressionType environment (ref freshCounter.Value) locals argument
                                                 |> Option.map TypeSignatures.toText
                                                 |> Option.defaultValue "_")
-                                            |> String.concat ", "
 
                                         let traitOwnerText =
                                             traitMemberOwners
                                             |> List.map (fun traitInfo -> traitInfo.Name)
-                                            |> String.concat ", "
 
                                         [
-                                            makeDiagnostic
-                                                SimpleDiagnosticKind.TypeEqualityMismatch
-                                                $"Overloaded trait member '{calleeName}' from [{traitOwnerText}] could not be resolved for argument types '{inferredArgumentTypes}'."
+                                            makeSurfaceElaborationDiagnostic
+                                                (OverloadedTraitMemberUnresolvedForArgumentTypes(
+                                                    calleeName,
+                                                    traitOwnerText,
+                                                    inferredArgumentTypes
+                                                ))
                                         ]
                                     | None
                                         when allowUnresolvedCallDiagnostics
@@ -19401,11 +19391,8 @@ module SurfaceElaboration =
                                         | _ when isCallableValidationType environment.VisibleTypeAliases normalizedCalleeType ->
                                             []
                                         | _ ->
-                                            [
-                                                makeDiagnostic
-                                                    SimpleDiagnosticKind.ApplicationNonCallable
-                                                    $"Expression of type '{TypeSignatures.toText normalizedCalleeType}' is not callable."
-                                            ]
+                                            [ makeSurfaceElaborationDiagnostic
+                                                (ApplicationExpressionNotCallable(TypeSignatures.toText normalizedCalleeType)) ]
                                     | None ->
                                         []
 
@@ -19418,9 +19405,7 @@ module SurfaceElaboration =
                 match inferValidationExpressionType environment freshCounter locals left with
                 | Some leftType when tryOptionPayloadType environment.VisibleTypeAliases leftType |> Option.isNone ->
                     diagnostics
-                    @ [ makeDiagnostic
-                            SimpleDiagnosticKind.ElvisReceiverNotOption
-                            "Elvis `?:` requires its left-hand side to have type `Option T` for some `T`." ]
+                    @ [ makeSurfaceElaborationDiagnostic ElvisReceiverMustBeOption ]
                 | _ ->
                     diagnostics
             | Binary(left, operatorName, right) ->

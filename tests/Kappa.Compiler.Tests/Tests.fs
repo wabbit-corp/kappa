@@ -2969,6 +2969,31 @@ module SmokeTestsShard3 =
 
         Assert.Equal(Some "Missing", tryFindPayloadText "spelling" diagnostic)
 
+    [<Fact>]
+    let ``source compilation reports application non callable payloads`` () =
+        let workspace =
+            compileInMemoryWorkspace
+                "memory-application-noncallable-root"
+                [
+                    "main.kp",
+                    [
+                        "module main"
+                        "value : Int"
+                        "let value = \"hi\" 1"
+                    ]
+                    |> String.concat "\n"
+                ]
+
+        Assert.True(workspace.HasErrors, "Expected applying a string literal as a function to be rejected.")
+
+        let diagnostic =
+            workspace.Diagnostics
+            |> List.find (fun item -> item.Code = DiagnosticCode.ApplicationNonCallable)
+
+        Assert.Equal("surface-elaboration-diagnostic", diagnostic.Payload.Kind)
+        Assert.Equal(Some "application-expression-not-callable", tryFindPayloadText "reason" diagnostic)
+        Assert.Equal(Some "String", tryFindPayloadText "callee-type-text" diagnostic)
+
 
     [<Fact>]
     let ``lexer reports malformed prefixed numeric literals directly`` () =
@@ -3974,6 +3999,12 @@ module SmokeTestsShard4 =
         bag.AddError(DiagnosticFact.surfaceElaboration NamedApplicationRequiresPreservedParameterMetadata)
         bag.AddError(DiagnosticFact.surfaceElaboration ImplicitApplicationArgumentAmbiguous)
         bag.AddError(DiagnosticFact.surfaceElaboration QuantityZeroImplicitCannotSatisfyRuntimeParameter)
+        bag.AddError(DiagnosticFact.surfaceElaboration (ApplicationExpressionNotCallable "String"))
+        bag.AddError(DiagnosticFact.surfaceElaboration (OverloadedTraitMemberUnresolvedForArgumentTypes("score", [ "Score"; "Ord" ], [ "Int"; "String" ])))
+        bag.AddError(DiagnosticFact.surfaceElaboration (MemberAccessNotWellFormedForReceiverType("length", "Int")))
+        bag.AddError(DiagnosticFact.surfaceElaboration (SafeNavigationRequiresKnownResultType "value.name"))
+        bag.AddError(DiagnosticFact.surfaceElaboration SafeNavigationReceiverMustBeOption)
+        bag.AddError(DiagnosticFact.surfaceElaboration ElvisReceiverMustBeOption)
         bag.AddError(DiagnosticFact.surfaceElaboration (TraitConstraintUnresolved "Eq Int"))
         bag.AddError(DiagnosticFact.surfaceElaboration (ImplicitTraitConstraintUnresolved "Show Int"))
         bag.AddError(DiagnosticFact.surfaceElaboration (TraitConstraintAmbiguous("Score Int", [ "left.ScoreInt"; "right.ScoreInt" ])))
@@ -4129,6 +4160,42 @@ module SmokeTestsShard4 =
                 item.Code = DiagnosticCode.TypeEqualityMismatch
                 && tryFindPayloadText "reason" item = Some "quantity-zero-implicit-cannot-satisfy-runtime-parameter")
 
+        let applicationNonCallableDiagnostic =
+            diagnostics
+            |> List.find (fun item ->
+                item.Code = DiagnosticCode.ApplicationNonCallable
+                && tryFindPayloadText "reason" item = Some "application-expression-not-callable")
+
+        let overloadedTraitMemberDiagnostic =
+            diagnostics
+            |> List.find (fun item ->
+                item.Code = DiagnosticCode.TypeEqualityMismatch
+                && tryFindPayloadText "reason" item = Some "overloaded-trait-member-unresolved-for-argument-types")
+
+        let memberAccessDiagnostic =
+            diagnostics
+            |> List.find (fun item ->
+                item.Code = DiagnosticCode.TypeEqualityMismatch
+                && tryFindPayloadText "reason" item = Some "member-access-not-well-formed-for-receiver-type")
+
+        let safeNavigationAmbiguousDiagnostic =
+            diagnostics
+            |> List.find (fun item ->
+                item.Code = DiagnosticCode.SafeNavigationAmbiguous
+                && tryFindPayloadText "reason" item = Some "safe-navigation-requires-known-result-type")
+
+        let safeNavigationReceiverDiagnostic =
+            diagnostics
+            |> List.find (fun item ->
+                item.Code = DiagnosticCode.SafeNavigationReceiverNotOption
+                && tryFindPayloadText "reason" item = Some "safe-navigation-receiver-must-be-option")
+
+        let elvisReceiverDiagnostic =
+            diagnostics
+            |> List.find (fun item ->
+                item.Code = DiagnosticCode.ElvisReceiverNotOption
+                && tryFindPayloadText "reason" item = Some "elvis-receiver-must-be-option")
+
         let unresolvedConstraintDiagnostic =
             diagnostics
             |> List.find (fun item ->
@@ -4245,6 +4312,20 @@ module SmokeTestsShard4 =
         Assert.Equal(
             "A quantity-0 local implicit value cannot satisfy a runtime implicit parameter.",
             quantityZeroImplicitDiagnostic.Message
+        )
+        Assert.Equal(Some "String", tryFindPayloadText "callee-type-text" applicationNonCallableDiagnostic)
+        Assert.Equal(Some [ "Score"; "Ord" ], tryFindPayloadTextList "trait-owners" overloadedTraitMemberDiagnostic)
+        Assert.Equal(Some [ "Int"; "String" ], tryFindPayloadTextList "argument-types" overloadedTraitMemberDiagnostic)
+        Assert.Equal(Some "length", tryFindPayloadText "member-name" memberAccessDiagnostic)
+        Assert.Equal(Some "Int", tryFindPayloadText "receiver-type-text" memberAccessDiagnostic)
+        Assert.Equal(Some "value.name", tryFindPayloadText "member-text" safeNavigationAmbiguousDiagnostic)
+        Assert.Equal(
+            "Safe-navigation `?.` requires its receiver to have type `Option T` for some `T`.",
+            safeNavigationReceiverDiagnostic.Message
+        )
+        Assert.Equal(
+            "Elvis `?:` requires its left-hand side to have type `Option T` for some `T`.",
+            elvisReceiverDiagnostic.Message
         )
         Assert.Equal("Trait constraint 'Eq Int' could not be resolved.", unresolvedConstraintDiagnostic.Message)
         Assert.Equal("Implicit trait constraint 'Show Int' could not be resolved.", unresolvedImplicitConstraintDiagnostic.Message)

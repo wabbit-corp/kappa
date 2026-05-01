@@ -883,6 +883,12 @@ type SurfaceElaborationDiagnosticEvidence =
     | NamedApplicationRequiresPreservedParameterMetadata
     | ImplicitApplicationArgumentAmbiguous
     | QuantityZeroImplicitCannotSatisfyRuntimeParameter
+    | ApplicationExpressionNotCallable of calleeTypeText: string
+    | OverloadedTraitMemberUnresolvedForArgumentTypes of memberName: string * traitOwners: string list * argumentTypes: string list
+    | MemberAccessNotWellFormedForReceiverType of memberName: string * receiverTypeText: string
+    | SafeNavigationRequiresKnownResultType of memberText: string
+    | SafeNavigationReceiverMustBeOption
+    | ElvisReceiverMustBeOption
     | TraitConstraintUnresolved of constraintText: string
     | ImplicitTraitConstraintUnresolved of constraintText: string
     | TraitConstraintAmbiguous of constraintText: string * candidateTexts: string list
@@ -2627,6 +2633,64 @@ module DiagnosticFact =
                     (payload
                         "surface-elaboration-diagnostic"
                         [ field "reason" (DiagnosticPayloadText "quantity-zero-implicit-cannot-satisfy-runtime-parameter") ])
+            | ApplicationExpressionNotCallable calleeTypeText ->
+                descriptor
+                    DiagnosticCode.ApplicationNonCallable
+                    None
+                    $"Expression of type '{calleeTypeText}' is not callable."
+                    (payload
+                        "surface-elaboration-diagnostic"
+                        [ field "reason" (DiagnosticPayloadText "application-expression-not-callable")
+                          field "callee-type-text" (DiagnosticPayloadText calleeTypeText) ])
+            | OverloadedTraitMemberUnresolvedForArgumentTypes(memberName, traitOwners, argumentTypes) ->
+                let traitOwnerText = String.concat ", " traitOwners
+                let argumentTypeText = String.concat ", " argumentTypes
+
+                descriptor
+                    DiagnosticCode.TypeEqualityMismatch
+                    None
+                    $"Overloaded trait member '{memberName}' from [{traitOwnerText}] could not be resolved for argument types '{argumentTypeText}'."
+                    (payload
+                        "surface-elaboration-diagnostic"
+                        [ field "reason" (DiagnosticPayloadText "overloaded-trait-member-unresolved-for-argument-types")
+                          field "member-name" (DiagnosticPayloadText memberName)
+                          field "trait-owners" (DiagnosticPayloadTextList traitOwners)
+                          field "argument-types" (DiagnosticPayloadTextList argumentTypes) ])
+            | MemberAccessNotWellFormedForReceiverType(memberName, receiverTypeText) ->
+                descriptor
+                    DiagnosticCode.TypeEqualityMismatch
+                    None
+                    $"Member access '.{memberName}' is not well-formed for receiver type '{receiverTypeText}'."
+                    (payload
+                        "surface-elaboration-diagnostic"
+                        [ field "reason" (DiagnosticPayloadText "member-access-not-well-formed-for-receiver-type")
+                          field "member-name" (DiagnosticPayloadText memberName)
+                          field "receiver-type-text" (DiagnosticPayloadText receiverTypeText) ])
+            | SafeNavigationRequiresKnownResultType memberText ->
+                descriptor
+                    DiagnosticCode.SafeNavigationAmbiguous
+                    None
+                    $"Safe-navigation `?.` requires knowing the result type of '{memberText}' to decide whether to wrap or flatten."
+                    (payload
+                        "surface-elaboration-diagnostic"
+                        [ field "reason" (DiagnosticPayloadText "safe-navigation-requires-known-result-type")
+                          field "member-text" (DiagnosticPayloadText memberText) ])
+            | SafeNavigationReceiverMustBeOption ->
+                descriptor
+                    DiagnosticCode.SafeNavigationReceiverNotOption
+                    None
+                    "Safe-navigation `?.` requires its receiver to have type `Option T` for some `T`."
+                    (payload
+                        "surface-elaboration-diagnostic"
+                        [ field "reason" (DiagnosticPayloadText "safe-navigation-receiver-must-be-option") ])
+            | ElvisReceiverMustBeOption ->
+                descriptor
+                    DiagnosticCode.ElvisReceiverNotOption
+                    None
+                    "Elvis `?:` requires its left-hand side to have type `Option T` for some `T`."
+                    (payload
+                        "surface-elaboration-diagnostic"
+                        [ field "reason" (DiagnosticPayloadText "elvis-receiver-must-be-option") ])
             | TraitConstraintUnresolved constraintText ->
                 descriptor
                     DiagnosticCode.TypeEqualityMismatch
