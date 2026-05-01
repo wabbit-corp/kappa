@@ -3754,6 +3754,10 @@ module SmokeTestsShard4 =
         bag.AddError(DiagnosticFact.coreExpressionParsing ExpectedRecordPatchItem)
         bag.AddError(DiagnosticFact.coreExpressionParsing ExpectedProjectionThen)
         bag.AddError(DiagnosticFact.coreExpressionParsing ExpectedProjectionElse)
+        bag.AddError(DiagnosticFact.coreExpressionParsing ExpectedProjectionAccessorClauseArrow)
+        bag.AddError(DiagnosticFact.coreExpressionParsing ExpectedProjectionSetAccessor)
+        bag.AddError(DiagnosticFact.coreExpressionParsing ProjectionSetAccessorRequiresTypedParameter)
+        bag.AddError(DiagnosticFact.coreExpressionParsing ProjectionSetAccessorUsesOrdinaryParameter)
 
         let diagnostics = bag.Items
         let usingDiagnostic =
@@ -3919,6 +3923,22 @@ module SmokeTestsShard4 =
         let projectionElseDiagnostic =
             diagnostics
             |> List.find (fun item -> item.Message = "Expected 'else' in the projection body.")
+
+        let projectionAccessorArrowDiagnostic =
+            diagnostics
+            |> List.find (fun item -> item.Message = "Expected '->' in the projection accessor clause.")
+
+        let projectionSetAccessorDiagnostic =
+            diagnostics
+            |> List.find (fun item -> item.Message = "Expected a projection set accessor.")
+
+        let projectionSetTypedParameterDiagnostic =
+            diagnostics
+            |> List.find (fun item -> item.Message = "Projection set accessors require a typed parameter.")
+
+        let projectionSetOrdinaryParameterDiagnostic =
+            diagnostics
+            |> List.find (fun item -> item.Message = "Projection set accessors use an ordinary '(name : Type)' parameter.")
 
         Assert.Equal("core-expression-parsing", usingDiagnostic.Payload.Kind)
         Assert.Contains(
@@ -4165,6 +4185,30 @@ module SmokeTestsShard4 =
             fun field ->
                 field.Name = "reason"
                 && field.Value = DiagnosticPayloadText "expected-projection-else"
+        )
+        Assert.Contains(
+            projectionAccessorArrowDiagnostic.Payload.Fields,
+            fun field ->
+                field.Name = "reason"
+                && field.Value = DiagnosticPayloadText "expected-projection-accessor-clause-arrow"
+        )
+        Assert.Contains(
+            projectionSetAccessorDiagnostic.Payload.Fields,
+            fun field ->
+                field.Name = "reason"
+                && field.Value = DiagnosticPayloadText "expected-projection-set-accessor"
+        )
+        Assert.Contains(
+            projectionSetTypedParameterDiagnostic.Payload.Fields,
+            fun field ->
+                field.Name = "reason"
+                && field.Value = DiagnosticPayloadText "projection-set-accessor-requires-typed-parameter"
+        )
+        Assert.Contains(
+            projectionSetOrdinaryParameterDiagnostic.Payload.Fields,
+            fun field ->
+                field.Name = "reason"
+                && field.Value = DiagnosticPayloadText "projection-set-accessor-uses-ordinary-parameter"
         )
 
     [<Fact>]
@@ -4684,6 +4728,54 @@ module SmokeTestsShard4 =
 
         Assert.Equal("core-expression-parsing", thenDiagnostic.Payload.Kind)
         Assert.Equal("core-expression-parsing", elseDiagnostic.Payload.Kind)
+
+    [<Fact>]
+    let ``parser reports structured projection accessor diagnostics`` () =
+        let sourceText =
+            [
+                "module main"
+                "projection badArrow (place this : Int) : Int ="
+                "    get this"
+                "projection badSetAccessor (place this : Int) : Int ="
+                "    set value -> this"
+                "projection badSetTyped (place this : Int) : Int ="
+                "    set (value) -> this"
+                "projection badSetOrdinary (place this : Int) : Int ="
+                "    set (@value : Int) -> this"
+            ]
+            |> String.concat "\n"
+
+        let _, lexed, parsed =
+            lexAndParse
+                "main.kp"
+                sourceText
+
+        Assert.Empty(lexed.Diagnostics)
+
+        let arrowDiagnostic =
+            parsed.Diagnostics
+            |> List.find (fun diagnostic ->
+                tryFindPayloadText "reason" diagnostic = Some "expected-projection-accessor-clause-arrow")
+
+        let setAccessorDiagnostic =
+            parsed.Diagnostics
+            |> List.find (fun diagnostic ->
+                tryFindPayloadText "reason" diagnostic = Some "expected-projection-set-accessor")
+
+        let typedParameterDiagnostic =
+            parsed.Diagnostics
+            |> List.find (fun diagnostic ->
+                tryFindPayloadText "reason" diagnostic = Some "projection-set-accessor-requires-typed-parameter")
+
+        let ordinaryParameterDiagnostic =
+            parsed.Diagnostics
+            |> List.find (fun diagnostic ->
+                tryFindPayloadText "reason" diagnostic = Some "projection-set-accessor-uses-ordinary-parameter")
+
+        Assert.Equal("core-expression-parsing", arrowDiagnostic.Payload.Kind)
+        Assert.Equal("core-expression-parsing", setAccessorDiagnostic.Payload.Kind)
+        Assert.Equal("core-expression-parsing", typedParameterDiagnostic.Payload.Kind)
+        Assert.Equal("core-expression-parsing", ordinaryParameterDiagnostic.Payload.Kind)
 
     [<Fact>]
     let ``parser reports structured local let and expression recovery diagnostics`` () =

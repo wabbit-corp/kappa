@@ -6845,11 +6845,17 @@ module CoreParsing =
                         match parameter.TypeTokens with
                         | Some typeTokens ->
                             if parameter.IsImplicit || parameter.IsInout || Option.isSome parameter.Quantity then
-                                diagnostics.AddError(DiagnosticFact.simple SimpleDiagnosticKind.ExpectedSyntaxToken "Projection set accessors use an ordinary '(name : Type)' parameter.", source.GetLocation(startSpan))
+                                diagnostics.AddError(
+                                    DiagnosticFact.coreExpressionParsing ProjectionSetAccessorUsesOrdinaryParameter,
+                                    source.GetLocation(startSpan)
+                                )
 
                             Some(ProjectionSet(parameter.Name, typeTokens, parseExpr bodyTokens))
                         | None ->
-                            diagnostics.AddError(DiagnosticFact.simple SimpleDiagnosticKind.ExpectedSyntaxToken "Projection set accessors require a typed parameter.", source.GetLocation(startSpan))
+                            diagnostics.AddError(
+                                DiagnosticFact.coreExpressionParsing ProjectionSetAccessorRequiresTypedParameter,
+                                source.GetLocation(startSpan)
+                            )
                             None
                     | None ->
                         None
@@ -6857,10 +6863,16 @@ module CoreParsing =
                     diagnostics.AddError(DiagnosticFact.simple SimpleDiagnosticKind.ExpectedSyntaxToken "Expected a projection set accessor parameter of the form '(name : Type)'.", source.GetLocation(startSpan))
                     None
             | token :: _ ->
-                diagnostics.AddError(DiagnosticFact.simple SimpleDiagnosticKind.ExpectedSyntaxToken "Expected a projection set accessor.", source.GetLocation(token.Span))
+                diagnostics.AddError(
+                    DiagnosticFact.coreExpressionParsing ExpectedProjectionSetAccessor,
+                    source.GetLocation(token.Span)
+                )
                 None
             | [] ->
-                diagnostics.AddError(DiagnosticFact.simple SimpleDiagnosticKind.ExpectedSyntaxToken "Expected a projection set accessor.", source.GetLocation(TextSpan.FromBounds(source.Length, source.Length)))
+                diagnostics.AddError(
+                    DiagnosticFact.coreExpressionParsing ExpectedProjectionSetAccessor,
+                    source.GetLocation(TextSpan.FromBounds(source.Length, source.Length))
+                )
                 None
 
         let parseAccessorClause clauseTokens =
@@ -6888,9 +6900,15 @@ module CoreParsing =
             | None ->
                 match clauseTokens with
                 | token :: _ ->
-                    diagnostics.AddError(DiagnosticFact.simple SimpleDiagnosticKind.ExpectedSyntaxToken "Expected '->' in the projection accessor clause.", source.GetLocation(token.Span))
+                    diagnostics.AddError(
+                        DiagnosticFact.coreExpressionParsing ExpectedProjectionAccessorClauseArrow,
+                        source.GetLocation(token.Span)
+                    )
                 | [] ->
-                    diagnostics.AddError(DiagnosticFact.simple SimpleDiagnosticKind.ExpectedSyntaxToken "Expected '->' in the projection accessor clause.", source.GetLocation(TextSpan.FromBounds(source.Length, source.Length)))
+                    diagnostics.AddError(
+                        DiagnosticFact.coreExpressionParsing ExpectedProjectionAccessorClauseArrow,
+                        source.GetLocation(TextSpan.FromBounds(source.Length, source.Length))
+                    )
 
                 None
 

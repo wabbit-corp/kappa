@@ -896,6 +896,10 @@ type CoreExpressionParsingEvidence =
     | ExpectedRecordPatchItem
     | ExpectedProjectionThen
     | ExpectedProjectionElse
+    | ExpectedProjectionAccessorClauseArrow
+    | ExpectedProjectionSetAccessor
+    | ProjectionSetAccessorRequiresTypedParameter
+    | ProjectionSetAccessorUsesOrdinaryParameter
 
 and CoreHeaderContext =
     | TopLevelFunctionHeader
@@ -2649,6 +2653,36 @@ module DiagnosticFact =
                     None
                     "Expected 'else' in the projection body."
                     (payload "core-expression-parsing" [ field "reason" (DiagnosticPayloadText "expected-projection-else") ])
+            | ExpectedProjectionAccessorClauseArrow ->
+                descriptor
+                    DiagnosticCode.ExpectedSyntaxToken
+                    None
+                    "Expected '->' in the projection accessor clause."
+                    (payload
+                        "core-expression-parsing"
+                        [ field "reason" (DiagnosticPayloadText "expected-projection-accessor-clause-arrow") ])
+            | ExpectedProjectionSetAccessor ->
+                descriptor
+                    DiagnosticCode.ExpectedSyntaxToken
+                    None
+                    "Expected a projection set accessor."
+                    (payload "core-expression-parsing" [ field "reason" (DiagnosticPayloadText "expected-projection-set-accessor") ])
+            | ProjectionSetAccessorRequiresTypedParameter ->
+                descriptor
+                    DiagnosticCode.ExpectedSyntaxToken
+                    None
+                    "Projection set accessors require a typed parameter."
+                    (payload
+                        "core-expression-parsing"
+                        [ field "reason" (DiagnosticPayloadText "projection-set-accessor-requires-typed-parameter") ])
+            | ProjectionSetAccessorUsesOrdinaryParameter ->
+                descriptor
+                    DiagnosticCode.ExpectedSyntaxToken
+                    None
+                    "Projection set accessors use an ordinary '(name : Type)' parameter."
+                    (payload
+                        "core-expression-parsing"
+                        [ field "reason" (DiagnosticPayloadText "projection-set-accessor-uses-ordinary-parameter") ])
         | UnicodeScalarLiteralDiagnostic evidence ->
             match evidence with
             | UnicodeScalarInvalidLiteralForm ->
