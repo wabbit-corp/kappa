@@ -13828,28 +13828,35 @@ module SurfaceElaboration =
             | _ ->
                 false
 
-        let expectedMismatchDiagnostic locals refinements context expectedType actualType =
+        let expectedMismatchDiagnostic locals refinements mismatchKind context expectedType actualType =
             let expectedType = normalizeExpectedType refinements expectedType
             let actualType = normalizeExpectedType refinements actualType
+            let expectedText = TypeSignatures.toText expectedType
+            let actualText = TypeSignatures.toText actualType
 
-            let message =
+            let reason =
                 if typeContainsLocalTermVariable locals expectedType
                    || typeContainsLocalTermVariable locals actualType then
-                    $"{context} requires equality transport evidence for dependent expected type '{TypeSignatures.toText expectedType}', but the argument has type '{TypeSignatures.toText actualType}'."
+                    DependentEqualityTransportRequired
                 elif
                     match expectedType, actualType with
                     | TypeArrow _, TypeArrow _ -> true
                     | _ -> false
                 then
-                    $"{context} has incompatible function quantity: expected '{TypeSignatures.toText expectedType}' but found '{TypeSignatures.toText actualType}'."
+                    FunctionQuantityIncompatible
                 elif typeContainsUnion expectedType then
-                    $"{context} does not match the expected union type '{TypeSignatures.toText expectedType}'; no valid union injection or widening applies from '{TypeSignatures.toText actualType}'."
+                    UnionCompatibilityFailed
                 elif typeContainsSuspension expectedType then
-                    $"{context} does not match the expected suspension type '{TypeSignatures.toText expectedType}' from expression type '{TypeSignatures.toText actualType}'."
+                    SuspensionCompatibilityFailed
                 else
-                    $"{context} type mismatch: expected '{TypeSignatures.toText expectedType}' but found '{TypeSignatures.toText actualType}'."
+                    GeneralExpectedActualMismatch
 
-            makeDiagnostic SimpleDiagnosticKind.TypeEqualityMismatch message
+            Diagnostics.errorFact
+                "KFrontIR"
+                (Some(KFrontIRPhase.phaseName CORE_LOWERING))
+                None
+                []
+                (DiagnosticFact.expectedActualTypeMismatch context expectedText actualText mismatchKind reason)
 
         let expectedTypeDiagnostics locals refinements context expectedType expression =
             match tryNumericLiteralRangeDiagnostic expectedType expression with
@@ -13858,13 +13865,13 @@ module SurfaceElaboration =
             | None ->
                 match tryInferNumericExpressionTypeFromContext environment expectedType expression with
                 | Some actualType when not (expectedTypeAccepts locals refinements expectedType actualType) ->
-                    [ expectedMismatchDiagnostic locals refinements context expectedType actualType ]
+                    [ expectedMismatchDiagnostic locals refinements ExpressionTypeMismatch context expectedType actualType ]
                 | Some _ ->
                     []
                 | None ->
                     match inferValidationExpressionType environment freshCounter locals expression with
                     | Some actualType when not (expectedTypeAccepts locals refinements expectedType actualType) ->
-                        [ expectedMismatchDiagnostic locals refinements context expectedType actualType ]
+                        [ expectedMismatchDiagnostic locals refinements ExpressionTypeMismatch context expectedType actualType ]
                     | _ ->
                         []
 
@@ -13883,7 +13890,13 @@ module SurfaceElaboration =
                     if expectedTypeAccepts locals refinements expectedPayload actualPayload then
                         []
                     else
-                        [ expectedMismatchDiagnostic locals refinements context expectedPayload actualPayload ]
+                        [ expectedMismatchDiagnostic
+                            locals
+                            refinements
+                            ExpressionTypeMismatch
+                            context
+                            expectedPayload
+                            actualPayload ]
                 | _ ->
                     expectedTypeDiagnostics locals refinements context expectedType expression
             | _ ->
@@ -14509,7 +14522,13 @@ module SurfaceElaboration =
                 match definition.ReturnTypeTokens |> Option.bind TypeSignatures.parseType, signatureExpectedBodyType with
                 | Some annotatedReturnType, Some signatureReturnType
                     when not (expectedTypeAccepts locals Map.empty signatureReturnType annotatedReturnType) ->
-                    [ expectedMismatchDiagnostic locals Map.empty "Definition result annotation" signatureReturnType annotatedReturnType ]
+                    [ expectedMismatchDiagnostic
+                        locals
+                        Map.empty
+                        FunctionResultMismatch
+                        "Definition result annotation"
+                        signatureReturnType
+                        annotatedReturnType ]
                 | _ ->
                     []
 
@@ -14671,17 +14690,25 @@ module SurfaceElaboration =
                                 if expectedTypeAccepts locals Map.empty expectedElementType headType then
                                     []
                                 else
-                                    [ expectedMismatchDiagnostic locals Map.empty "List cons head" expectedElementType headType ]
+                                    [ expectedMismatchDiagnostic
+                                        locals
+                                        Map.empty
+                                        ExpressionTypeMismatch
+                                        "List cons head"
+                                        expectedElementType
+                                        headType ]
 
                             let tailDiagnostics =
                                 if expectedTypeAccepts locals Map.empty expectedType tailType then
                                     []
                                 else
-                                    [
-                                        makeDiagnostic
-                                            SimpleDiagnosticKind.TypeEqualityMismatch
-                                            $"List cons tail must have type '{TypeSignatures.toText expectedType}', but found '{TypeSignatures.toText tailType}'."
-                                    ]
+                                    [ expectedMismatchDiagnostic
+                                        locals
+                                        Map.empty
+                                        ExpressionTypeMismatch
+                                        "List cons tail"
+                                        expectedType
+                                        tailType ]
 
                             headDiagnostics @ tailDiagnostics
                         | _ ->
@@ -15099,7 +15126,13 @@ module SurfaceElaboration =
                         if expectedTypeAccepts locals Map.empty expectedPayload actualPayload then
                             []
                         else
-                            [ expectedMismatchDiagnostic locals Map.empty "Definition body" expectedPayload actualPayload ]
+                            [ expectedMismatchDiagnostic
+                                locals
+                                Map.empty
+                                ExpressionTypeMismatch
+                                "Definition body"
+                                expectedPayload
+                                actualPayload ]
                     | _ ->
                         []
                 | _ ->
@@ -15118,7 +15151,13 @@ module SurfaceElaboration =
                     when not (expectedTypeIsCallableLike expectedType) ->
                     match inferValidationExpressionType environment freshCounter locals body with
                     | Some actualType ->
-                        [ expectedMismatchDiagnostic locals Map.empty "Definition body" expectedType actualType ]
+                        [ expectedMismatchDiagnostic
+                            locals
+                            Map.empty
+                            ExpressionTypeMismatch
+                            "Definition body"
+                            expectedType
+                            actualType ]
                     | None ->
                         []
                 | _ ->
@@ -15131,7 +15170,13 @@ module SurfaceElaboration =
                          && (canCompareInferredValidationTypes locals expectedType actualType
                              || needsDependentTransportComparison locals expectedType actualType)
                          && not (expectedTypeAccepts locals Map.empty expectedType actualType) ->
-                    [ expectedMismatchDiagnostic locals Map.empty "Definition body" expectedType actualType ]
+                    [ expectedMismatchDiagnostic
+                        locals
+                        Map.empty
+                        ExpressionTypeMismatch
+                        "Definition body"
+                        expectedType
+                        actualType ]
                 | _ ->
                     []
 
@@ -15146,7 +15191,13 @@ module SurfaceElaboration =
                          && (typeMentionsMacroReflectionType expectedType
                              || typeMentionsMacroReflectionType actualType)
                          && not (expectedTypeAccepts locals Map.empty expectedType actualType) ->
-                    [ expectedMismatchDiagnostic locals Map.empty "Definition body" expectedType actualType ]
+                    [ expectedMismatchDiagnostic
+                        locals
+                        Map.empty
+                        ExpressionTypeMismatch
+                        "Definition body"
+                        expectedType
+                        actualType ]
                 | _ ->
                     []
 
@@ -15169,7 +15220,13 @@ module SurfaceElaboration =
                     when isTextBinarySurfaceType expectedType
                          && isTextBinarySurfaceType actualType
                          && not (expectedTypeAccepts locals Map.empty expectedType actualType) ->
-                    [ expectedMismatchDiagnostic locals Map.empty "Definition body" expectedType actualType ]
+                    [ expectedMismatchDiagnostic
+                        locals
+                        Map.empty
+                        ExpressionTypeMismatch
+                        "Definition body"
+                        expectedType
+                        actualType ]
                 | _ ->
                     []
 
@@ -15193,7 +15250,13 @@ module SurfaceElaboration =
                     | TypeRecord _ ->
                         []
                     | _ ->
-                        [ expectedMismatchDiagnostic locals Map.empty "Definition body" expectedType actualType ]
+                        [ expectedMismatchDiagnostic
+                            locals
+                            Map.empty
+                            ExpressionTypeMismatch
+                            "Definition body"
+                            expectedType
+                            actualType ]
                 | _ ->
                     []
 
@@ -15223,7 +15286,13 @@ module SurfaceElaboration =
                          && (canCompareInferredValidationTypes locals expectedType actualType
                              || needsDependentTransportComparison locals expectedType actualType)
                          && not (expectedTypeAccepts locals Map.empty expectedType actualType) ->
-                    [ expectedMismatchDiagnostic locals Map.empty "Definition body" expectedType actualType ]
+                    [ expectedMismatchDiagnostic
+                        locals
+                        Map.empty
+                        ExpressionTypeMismatch
+                        "Definition body"
+                        expectedType
+                        actualType ]
                 | _ ->
                     []
 
@@ -15550,6 +15619,7 @@ module SurfaceElaboration =
                                                     expectedMismatchDiagnostic
                                                         locals
                                                         refinements
+                                                        ApplicationArgumentMismatch
                                                         "Application argument"
                                                         parameterType
                                                         argumentType
@@ -15670,6 +15740,7 @@ module SurfaceElaboration =
                                             expectedMismatchDiagnostic
                                                 locals
                                                 refinements
+                                                ApplicationArgumentMismatch
                                                 "Application argument"
                                                 nextParameterType
                                                 nextArgumentType
@@ -19026,7 +19097,13 @@ module SurfaceElaboration =
                                                         canCompareInferredValidationTypes locals parameterType argumentType
                                                         && not (expectedTypeAccepts locals refinements parameterType argumentType)
                                                     then
-                                                        [ expectedMismatchDiagnostic locals refinements "Application argument" parameterType argumentType ]
+                                                        [ expectedMismatchDiagnostic
+                                                            locals
+                                                            refinements
+                                                            ApplicationArgumentMismatch
+                                                            "Application argument"
+                                                            parameterType
+                                                            argumentType ]
                                                     else
                                                         walk restParameters restArguments
                                                 | None ->
@@ -19489,7 +19566,13 @@ module SurfaceElaboration =
                                 inferValidationExpressionType environment freshCounter locals right
                             with
                             | Some leftType, Some rightType ->
-                                [ expectedMismatchDiagnostic locals refinements "Comparison operator operands" leftType rightType ]
+                                [ expectedMismatchDiagnostic
+                                    locals
+                                    refinements
+                                    ExpressionTypeMismatch
+                                    "Comparison operator operands"
+                                    leftType
+                                    rightType ]
                             | _ ->
                                 []
 
@@ -19531,7 +19614,13 @@ module SurfaceElaboration =
                                 inferValidationExpressionType environment freshCounter locals right
                             with
                             | Some leftType, Some rightType ->
-                                [ expectedMismatchDiagnostic locals refinements "Range operator operands" leftType rightType ]
+                                [ expectedMismatchDiagnostic
+                                    locals
+                                    refinements
+                                    ExpressionTypeMismatch
+                                    "Range operator operands"
+                                    leftType
+                                    rightType ]
                             | _ ->
                                 []
 

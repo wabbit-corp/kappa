@@ -3609,14 +3609,33 @@ module SmokeTestsShard4 =
         )
 
     [<Fact>]
-    let ``frontend url import and refl diagnostics render from typed evidence`` () =
+    let ``frontend url import and type mismatch diagnostics render from typed evidence`` () =
         let bag = DiagnosticBag()
         bag.AddError(DiagnosticFact.urlImportRefPinRequiresLock "https://example.com/mod.kp#ref=main")
         bag.AddError(DiagnosticFact.reflRequiresDefinitionallyEqualSides)
+        bag.AddError(
+            DiagnosticFact.expectedActualTypeMismatch
+                "Application argument"
+                "Int"
+                "String"
+                ApplicationArgumentMismatch
+                GeneralExpectedActualMismatch
+        )
 
         let diagnostics = bag.Items
         let urlDiagnostic = diagnostics |> List.find (fun item -> item.Code = DiagnosticCode.UrlImportRefPinRequiresLock)
-        let reflDiagnostic = diagnostics |> List.find (fun item -> item.Code = DiagnosticCode.TypeEqualityMismatch)
+
+        let reflDiagnostic =
+            diagnostics
+            |> List.find (fun item ->
+                item.Code = DiagnosticCode.TypeEqualityMismatch
+                && tryFindPayloadText "reason" item = Some "refl-requires-definitionally-equal-sides")
+
+        let expectedActualDiagnostic =
+            diagnostics
+            |> List.find (fun item ->
+                item.Code = DiagnosticCode.TypeEqualityMismatch
+                && tryFindPayloadText "reason" item = Some "general-expected-actual-mismatch")
 
         Assert.Equal(
             "URL import 'https://example.com/mod.kp#ref=main' uses a ref pin, but this toolchain has no recorded immutable resolution for it in package mode.",
@@ -3641,6 +3660,18 @@ module SmokeTestsShard4 =
                 field.Name = "reason"
                 && field.Value = DiagnosticPayloadText "refl-requires-definitionally-equal-sides"
         )
+
+        Assert.Equal(
+            "Application argument type mismatch: expected 'Int' but found 'String'.",
+            expectedActualDiagnostic.Message
+        )
+        Assert.Equal("expected-actual", expectedActualDiagnostic.Payload.Kind)
+        Assert.Equal(Some "kappa.application.argument-mismatch", expectedActualDiagnostic.Family)
+        Assert.Equal(Some "Application argument", tryFindPayloadText "context" expectedActualDiagnostic)
+        Assert.Equal(Some "Int", tryFindPayloadText "expected" expectedActualDiagnostic)
+        Assert.Equal(Some "String", tryFindPayloadText "actual" expectedActualDiagnostic)
+        Assert.Equal(Some "application-argument-mismatch", tryFindPayloadText "mismatch-kind" expectedActualDiagnostic)
+        Assert.Equal(Some "general-expected-actual-mismatch", tryFindPayloadText "reason" expectedActualDiagnostic)
 
     [<Fact>]
     let ``typechecking diagnostics render from typed evidence`` () =
@@ -7660,6 +7691,35 @@ module SmokeTestsShard6 =
 
         Assert.Equal("surface-elaboration-diagnostic", diagnostic.Payload.Kind)
         Assert.Equal(Some "loop", tryFindPayloadText "binding-name" diagnostic)
+
+    [<Fact>]
+    let ``source compilation reports expected actual payloads for definition body mismatches`` () =
+        let workspace =
+            compileInMemoryWorkspace
+                "memory-definition-body-expected-actual-root"
+                [
+                    "main.kp",
+                    [
+                        "module main"
+                        "main : Int"
+                        "let main = \"nope\""
+                    ]
+                    |> String.concat "\n"
+                ]
+
+        Assert.True(workspace.HasErrors, "Expected the mismatched definition body to be rejected.")
+
+        let diagnostic =
+            workspace.Diagnostics
+            |> List.find (fun item ->
+                item.Code = DiagnosticCode.TypeEqualityMismatch
+                && item.Payload.Kind = "expected-actual")
+
+        Assert.Equal(Some "Definition body", tryFindPayloadText "context" diagnostic)
+        Assert.Equal(Some "expression-type-mismatch", tryFindPayloadText "mismatch-kind" diagnostic)
+        Assert.Equal(Some "general-expected-actual-mismatch", tryFindPayloadText "reason" diagnostic)
+        Assert.Equal(Some "Int", tryFindPayloadText "expected" diagnostic)
+        Assert.Equal(Some "String", tryFindPayloadText "actual" diagnostic)
 
     [<Fact>]
     let ``source compilation rejects constructors that expose runtime Type metadata`` () =

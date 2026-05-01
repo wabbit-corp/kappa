@@ -787,8 +787,28 @@ type UrlImportPackageModeEvidence =
     | UrlImportUnpinnedInPackageMode of specifierText: string
     | UrlImportRefPinRequiresLock of specifierText: string
 
+type ExpectedActualMismatchKind =
+    | ExpressionTypeMismatch
+    | ApplicationArgumentMismatch
+    | FunctionResultMismatch
+    | RecordFieldMismatch
+    | RecordUpdateFieldMismatch
+
+type ExpectedActualMismatchReason =
+    | DependentEqualityTransportRequired
+    | FunctionQuantityIncompatible
+    | UnionCompatibilityFailed
+    | SuspensionCompatibilityFailed
+    | GeneralExpectedActualMismatch
+
 type TypeEqualityMismatchEvidence =
     | ReflRequiresDefinitionallyEqualSides
+    | ExpectedActualTypeMismatch of
+        context: string
+        * expectedText: string
+        * actualText: string
+        * mismatchKind: ExpectedActualMismatchKind
+        * reason: ExpectedActualMismatchReason
 
 type TypecheckingDiagnosticEvidence =
     | ProjectionCapabilityRequiredAtSite of capability: string
@@ -1476,6 +1496,17 @@ module DiagnosticFact =
     let reflRequiresDefinitionallyEqualSides =
         TypeEqualityMismatchDiagnostic ReflRequiresDefinitionallyEqualSides
 
+    let expectedActualTypeMismatch context expectedText actualText mismatchKind reason =
+        TypeEqualityMismatchDiagnostic(
+            TypeEqualityMismatchEvidence.ExpectedActualTypeMismatch(
+                context,
+                expectedText,
+                actualText,
+                mismatchKind,
+                reason
+            )
+        )
+
     let typechecking evidence =
         TypecheckingDiagnostic evidence
 
@@ -1490,6 +1521,41 @@ module DiagnosticFact =
 
     let corePatternParsing evidence =
         CorePatternParsingDiagnostic evidence
+
+    let private expectedActualMismatchKindText mismatchKind =
+        match mismatchKind with
+        | ExpressionTypeMismatch -> "expression-type-mismatch"
+        | ApplicationArgumentMismatch -> "application-argument-mismatch"
+        | FunctionResultMismatch -> "function-result-mismatch"
+        | RecordFieldMismatch -> "record-field-mismatch"
+        | RecordUpdateFieldMismatch -> "record-update-field-mismatch"
+
+    let private expectedActualMismatchReasonText reason =
+        match reason with
+        | DependentEqualityTransportRequired -> "dependent-equality-transport-required"
+        | FunctionQuantityIncompatible -> "function-quantity-incompatible"
+        | UnionCompatibilityFailed -> "union-compatibility-failed"
+        | SuspensionCompatibilityFailed -> "suspension-compatibility-failed"
+        | GeneralExpectedActualMismatch -> "general-expected-actual-mismatch"
+
+    let private expectedActualMismatchFamily mismatchKind reason =
+        match reason, mismatchKind with
+        | DependentEqualityTransportRequired, _ -> Some "kappa.type.transport-failed"
+        | _, ApplicationArgumentMismatch -> Some "kappa.application.argument-mismatch"
+        | _ -> Some "kappa.type.mismatch"
+
+    let private expectedActualMismatchMessage context expectedText actualText reason =
+        match reason with
+        | DependentEqualityTransportRequired ->
+            $"{context} requires equality transport evidence for dependent expected type '{expectedText}', but the argument has type '{actualText}'."
+        | FunctionQuantityIncompatible ->
+            $"{context} has incompatible function quantity: expected '{expectedText}' but found '{actualText}'."
+        | UnionCompatibilityFailed ->
+            $"{context} does not match the expected union type '{expectedText}'; no valid union injection or widening applies from '{actualText}'."
+        | SuspensionCompatibilityFailed ->
+            $"{context} does not match the expected suspension type '{expectedText}' from expression type '{actualText}'."
+        | GeneralExpectedActualMismatch ->
+            $"{context} type mismatch: expected '{expectedText}' but found '{actualText}'."
 
     let coreExpressionParsing evidence =
         CoreExpressionParsingDiagnostic evidence
@@ -1985,6 +2051,18 @@ module DiagnosticFact =
                     (payload
                         "type-equality-mismatch"
                         [ field "reason" (DiagnosticPayloadText "refl-requires-definitionally-equal-sides") ])
+            | ExpectedActualTypeMismatch(context, expectedText, actualText, mismatchKind, reason) ->
+                descriptor
+                    DiagnosticCode.TypeEqualityMismatch
+                    (expectedActualMismatchFamily mismatchKind reason)
+                    (expectedActualMismatchMessage context expectedText actualText reason)
+                    (payload
+                        "expected-actual"
+                        [ field "reason" (DiagnosticPayloadText (expectedActualMismatchReasonText reason))
+                          field "context" (DiagnosticPayloadText context)
+                          field "expected" (DiagnosticPayloadText expectedText)
+                          field "actual" (DiagnosticPayloadText actualText)
+                          field "mismatch-kind" (DiagnosticPayloadText (expectedActualMismatchKindText mismatchKind)) ])
         | TypecheckingDiagnostic evidence ->
             match evidence with
             | ProjectionCapabilityRequiredAtSite capability ->
