@@ -4,7 +4,9 @@ module SmokeTestSupport
 open System
 open System.IO
 open System.Numerics
+open System.Reflection
 open System.Runtime.InteropServices
+open Microsoft.FSharp.Reflection
 open Kappa.Compiler
 open Harness
 open Xunit
@@ -4436,6 +4438,109 @@ module SmokeTestsShard4 =
 
         Assert.Equal("target-checkpoint-diagnostic", unknownTargetDiagnostic.Payload.Kind)
         Assert.Equal(Some "jvm.class", tryFindPayloadText "checkpoint" unknownTargetDiagnostic)
+
+    [<Fact>]
+    let ``intrinsic catalog does not silently treat unknown intrinsics as nullary`` () =
+        let catalogType = typeof<DiagnosticBag>.Assembly.GetType("Kappa.Compiler.IntrinsicCatalog")
+
+        if isNull catalogType then
+            failwith "Expected Kappa.Compiler.IntrinsicCatalog to exist."
+
+        let tryFindIntrinsicSpecMethod =
+            catalogType.GetMethod("tryFindIntrinsicSpec", BindingFlags.Static ||| BindingFlags.Public ||| BindingFlags.NonPublic)
+
+        let intrinsicRuntimeArityMethod =
+            catalogType.GetMethod("intrinsicRuntimeArity", BindingFlags.Static ||| BindingFlags.Public ||| BindingFlags.NonPublic)
+
+        if isNull tryFindIntrinsicSpecMethod then
+            failwith "Expected IntrinsicCatalog.tryFindIntrinsicSpec to exist."
+
+        if isNull intrinsicRuntimeArityMethod then
+            failwith "Expected IntrinsicCatalog.intrinsicRuntimeArity to exist."
+
+        let getSpecProperties name =
+            let specOption = tryFindIntrinsicSpecMethod.Invoke(null, [| box name |])
+
+            if isNull specOption then
+                "None", None
+            else
+                let unionCase, unionFields = FSharpValue.GetUnionFields(specOption, specOption.GetType())
+
+                let getPropertyValue propertyName (target: obj) =
+                    let property =
+                        target.GetType().GetProperty(propertyName, BindingFlags.Instance ||| BindingFlags.Public ||| BindingFlags.NonPublic)
+
+                    if isNull property then
+                        failwithf "Expected intrinsic spec property %s to exist on %s." propertyName (target.GetType().FullName)
+
+                    property.GetValue(target)
+
+                match unionCase.Name, unionFields with
+                | "Some", [| spec |] ->
+                    let runtimeArity = getPropertyValue "RuntimeArity" spec :?> int
+                    let lowered = getPropertyValue "LoweredResultRepresentation" spec
+                    let executed = getPropertyValue "ExecutedResultRepresentation" spec
+                    unionCase.Name, Some(runtimeArity, lowered, executed)
+                | "None", _ -> unionCase.Name, None
+                | other ->
+                    failwithf "Unexpected intrinsic spec option shape for %s: %A" name other
+
+        let optionCaseName (optionValue: obj) =
+            if isNull optionValue then
+                "None"
+            else
+                let optionCase, _ = FSharpValue.GetUnionFields(optionValue, optionValue.GetType())
+                optionCase.Name
+
+        let knownCase, knownSpec = getSpecProperties "show"
+
+        Assert.Equal("Some", knownCase)
+
+        let runtimeArity, loweredResultRepresentationOption, executedResultRepresentationOption =
+            knownSpec |> Option.get
+
+        let loweredCase, loweredFields =
+            FSharpValue.GetUnionFields(loweredResultRepresentationOption, loweredResultRepresentationOption.GetType())
+
+        let executedCase, executedFields =
+            FSharpValue.GetUnionFields(executedResultRepresentationOption, executedResultRepresentationOption.GetType())
+
+        Assert.Equal(1, runtimeArity)
+        Assert.Equal("Some", loweredCase.Name)
+        Assert.Equal(BackendRepString, unbox loweredFields[0])
+        Assert.Equal("Some", executedCase.Name)
+        Assert.Equal(BackendRepString, unbox executedFields[0])
+
+        let derivedCase, derivedSpec = getSpecProperties "<|"
+        Assert.Equal("Some", derivedCase)
+
+        let derivedArity, derivedLowered, derivedExecuted =
+            derivedSpec |> Option.get
+
+        Assert.Equal(2, derivedArity)
+        Assert.Equal("None", optionCaseName derivedLowered)
+        Assert.Equal("None", optionCaseName derivedExecuted)
+
+        let stdlibDerivedCase, stdlibDerivedSpec = getSpecProperties "omitImplicitFieldArgument"
+        Assert.Equal("Some", stdlibDerivedCase)
+
+        let stdlibDerivedArity, stdlibDerivedLowered, stdlibDerivedExecuted =
+            stdlibDerivedSpec |> Option.get
+
+        Assert.Equal(1, stdlibDerivedArity)
+        Assert.Equal("None", optionCaseName stdlibDerivedLowered)
+        Assert.Equal("None", optionCaseName stdlibDerivedExecuted)
+
+        let unknownCase, unknownSpec = getSpecProperties "__missing_intrinsic__"
+        Assert.Equal("None", unknownCase)
+        Assert.True(unknownSpec.IsNone)
+
+        let ex =
+            Assert.ThrowsAny<TargetInvocationException>(fun () ->
+                intrinsicRuntimeArityMethod.Invoke(null, [| box "__missing_intrinsic__" |]) |> ignore)
+
+        Assert.IsType<ArgumentException>(ex.InnerException) |> ignore
+        Assert.Contains("__missing_intrinsic__", ex.InnerException.Message)
 
     [<Fact>]
     let ``checkpoint verification diagnostics render from typed evidence`` () =

@@ -872,27 +872,36 @@ module internal KBackendLowering =
                 (argumentRepresentations: KBackendRepresentationClass list)
                 (fallbackResultRepresentation: KBackendRepresentationClass)
                 : Result<KBackendExpression * KBackendRepresentationClass, BackendLoweringErrorEvidence> =
-                match resolveRuntimeName runtimeModule locals [ runtimeName ] with
-                | Result.Ok(resolvedName, _) ->
-                    lowerResolvedCall loweredArguments argumentRepresentations fallbackResultRepresentation resolvedName
-                | Result.Error _ when availableRuntimeIntrinsics.Contains runtimeName ->
+                let lowerCatalogIntrinsicRuntimeCall runtimeName =
                     let resolvedName =
                         BackendIntrinsicName(Stdlib.PreludeModuleText, runtimeName, Some fallbackResultRepresentation)
 
                     lowerResolvedCall loweredArguments argumentRepresentations fallbackResultRepresentation resolvedName
+
+                let shouldPreferCatalogIntrinsic resolvedName =
+                    match resolvedName with
+                    | BackendGlobalBindingName(moduleName, bindingName, _)
+                        when availableRuntimeIntrinsics.Contains bindingName ->
+                        let bindingInfo = context.BindingInfos[moduleName, bindingName]
+
+                        match IntrinsicCatalog.tryFindIntrinsicSpec bindingName with
+                        | Some spec ->
+                            bindingInfo.Arity > spec.RuntimeArity
+                            && List.length loweredArguments = spec.RuntimeArity
+                        | None ->
+                            false
+                    | _ ->
+                        false
+
+                match resolveRuntimeName runtimeModule locals [ runtimeName ] with
+                | Result.Ok(resolvedName, _) when shouldPreferCatalogIntrinsic resolvedName ->
+                    lowerCatalogIntrinsicRuntimeCall runtimeName
+                | Result.Ok(resolvedName, _) ->
+                    lowerResolvedCall loweredArguments argumentRepresentations fallbackResultRepresentation resolvedName
+                | Result.Error _ when availableRuntimeIntrinsics.Contains runtimeName ->
+                    lowerCatalogIntrinsicRuntimeCall runtimeName
                 | Result.Error _ ->
                     Result.Error(UnresolvedRuntimeName runtimeName)
-
-            let lowerIntrinsicRuntimeCall
-                (runtimeName: string)
-                (loweredArguments: KBackendExpression list)
-                (argumentRepresentations: KBackendRepresentationClass list)
-                (fallbackResultRepresentation: KBackendRepresentationClass)
-                : Result<KBackendExpression * KBackendRepresentationClass, BackendLoweringErrorEvidence> =
-                let resolvedName =
-                    BackendIntrinsicName(Stdlib.PreludeModuleText, runtimeName, Some fallbackResultRepresentation)
-
-                lowerResolvedCall loweredArguments argumentRepresentations fallbackResultRepresentation resolvedName
 
             let executedIntrinsicRepresentation runtimeName argumentRepresentations =
                 match runtimeName, argumentRepresentations with
@@ -1397,7 +1406,8 @@ module internal KBackendLowering =
                             | "negate" -> operandRepresentation
                             | _ -> backendOpaqueRepresentation None
 
-                        lowerIntrinsicRuntimeCall
+                        lowerNamedRuntimeCall
+                            locals
                             operatorName
                             [ loweredOperand ]
                             [ operandRepresentation ]
@@ -1457,7 +1467,8 @@ module internal KBackendLowering =
                                     | _ ->
                                         backendOpaqueRepresentation None
 
-                                lowerIntrinsicRuntimeCall
+                                lowerNamedRuntimeCall
+                                    locals
                                     operatorName
                                     [ loweredLeft; loweredRight ]
                                     [ leftRepresentation; rightRepresentation ]
