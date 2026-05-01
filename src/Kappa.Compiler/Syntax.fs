@@ -818,33 +818,33 @@ module SyntaxFacts =
             let pinText = text.Substring(hashIndex + 1)
 
             if String.IsNullOrWhiteSpace(baseUrl) then
-                Result.Error "URL module specifier must include a non-empty base URL."
+                Result.Error MissingBaseUrl
             elif String.IsNullOrWhiteSpace(pinText) then
-                Result.Error "URL module pin cannot be empty."
+                Result.Error EmptyPin
             elif pinText.StartsWith("sha256:", StringComparison.OrdinalIgnoreCase) then
                 let digest = pinText.Substring("sha256:".Length)
 
                 if String.IsNullOrWhiteSpace(digest) then
-                    Result.Error "sha256 URL pins must include a hexadecimal digest."
+                    Result.Error MissingSha256Digest
                 elif digest |> Seq.forall Uri.IsHexDigit then
                     Result.Ok
                         { OriginalText = text
                           BaseUrl = baseUrl
                           Pin = Some(Sha256Pin(digest.ToLowerInvariant())) }
                 else
-                    Result.Error $"Invalid sha256 URL pin '{pinText}'."
+                    Result.Error(InvalidSha256Digest pinText)
             elif pinText.StartsWith("ref:", StringComparison.Ordinal) then
                 let reference = pinText.Substring("ref:".Length)
 
                 if String.IsNullOrWhiteSpace(reference) then
-                    Result.Error "ref URL pins must include a non-empty reference."
+                    Result.Error EmptyRefPin
                 else
                     Result.Ok
                         { OriginalText = text
                           BaseUrl = baseUrl
                           Pin = Some(RefPin reference) }
             else
-                Result.Error $"Unsupported URL pin '{pinText}'. Expected 'sha256:<hex>' or 'ref:<text>'."
+                Result.Error(UnsupportedPin pinText)
 
     let urlModuleSpecifierText (specifier: UrlModuleSpecifier) =
         specifier.OriginalText
@@ -1092,7 +1092,7 @@ module SyntaxFacts =
                         { Literal = SurfaceIntegerLiteral(value, text.Substring(0, text.Length - (scanned.Suffix |> Option.map String.length |> Option.defaultValue 0)), scanned.Suffix)
                           Suffix = scanned.Suffix }
                 | None ->
-                    Result.Error $"Invalid integer literal '{text}'."
+                    Result.Error(InvalidNumericLiteral text)
             | FloatLiteral ->
                 let builder = StringBuilder()
                 builder.Append(scanned.IntegralDigits) |> ignore
@@ -1128,11 +1128,22 @@ module SyntaxFacts =
                     { Literal = SurfaceRealLiteral(decimalValue, sourceText, scanned.Suffix)
                       Suffix = scanned.Suffix }
             | _ ->
-                Result.Error $"Invalid numeric literal '{text}'."
+                Result.Error(InvalidNumericLiteral text)
         | _ ->
-            Result.Error $"Invalid numeric literal '{text}'."
+            Result.Error(InvalidNumericLiteral text)
 
-    let tryUnescapeStringContent (value: string) =
+    let private renderStringLiteralDecodeError error =
+        match error with
+        | UnknownEscapeSequence escapeText -> $"Unknown escape sequence '{escapeText}'."
+        | InvalidUnicodeEscape escapeText -> $"Invalid Unicode escape '{escapeText}'."
+        | UnterminatedEscapeSequence -> "Unterminated escape sequence."
+        | UnterminatedUnicodeEscapeSequence -> "Unterminated Unicode escape sequence."
+        | InvalidMultilineClosingDelimiterIndentation -> "Invalid multiline string closing delimiter indentation."
+        | MultilineContentIndentationMismatch -> "A multiline string content line does not match the closing delimiter indentation."
+        | InvalidRawMultilineStringLiteral -> "Invalid raw multiline string literal."
+        | InvalidRawStringLiteral -> "Invalid raw string literal."
+
+    let tryUnescapeStringContentDetailed (value: string) =
         let builder = StringBuilder()
         let mutable index = 0
         let mutable error = None
@@ -1142,21 +1153,21 @@ module SyntaxFacts =
             | Some rune ->
                 builder.Append(rune.ToString()) |> ignore
             | None ->
-                error <- Some $"Invalid Unicode escape '{escapePrefix}'."
+                error <- Some(InvalidUnicodeEscape escapePrefix)
 
         let appendHexScalar escapePrefix (codePointText: string) =
             match Int32.TryParse(codePointText, Globalization.NumberStyles.HexNumber, null) with
             | true, value ->
                 appendRuneFromValue escapePrefix value
             | _ ->
-                error <- Some $"Invalid Unicode escape '{escapePrefix}'."
+                error <- Some(InvalidUnicodeEscape escapePrefix)
 
         while index < value.Length && error.IsNone do
             if value[index] <> '\\' then
                 builder.Append(value[index]) |> ignore
                 index <- index + 1
             elif index + 1 >= value.Length then
-                error <- Some "Unterminated escape sequence."
+                error <- Some UnterminatedEscapeSequence
             else
                 match value[index + 1] with
                 | '\\' ->
@@ -1190,13 +1201,13 @@ module SyntaxFacts =
                     let closingBrace = value.IndexOf('}', index + 3)
 
                     if closingBrace < 0 then
-                        error <- Some "Unterminated Unicode escape sequence."
+                        error <- Some UnterminatedUnicodeEscapeSequence
                         index <- value.Length
                     else
                         let codePointText = value.Substring(index + 3, closingBrace - (index + 3))
 
                         if String.IsNullOrWhiteSpace(codePointText) || codePointText.Length > 6 then
-                            error <- Some $"Invalid Unicode escape '\\u{{{codePointText}}}'."
+                            error <- Some(InvalidUnicodeEscape $"\\u{{{codePointText}}}")
                         else
                             appendHexScalar ($"\\u{{{codePointText}}}") codePointText
 
@@ -1206,11 +1217,15 @@ module SyntaxFacts =
                     appendHexScalar ($"\\u{codePointText}") codePointText
                     index <- index + 6
                 | other ->
-                    error <- Some $"Unknown escape sequence '\\{other}'."
+                    error <- Some(UnknownEscapeSequence $"\\{other}")
 
         match error with
         | Some message -> Result.Error message
         | None -> Result.Ok(builder.ToString())
+
+    let tryUnescapeStringContent (value: string) =
+        tryUnescapeStringContentDetailed value
+        |> Result.mapError renderStringLiteralDecodeError
 
     let private normalizeStringLineEndings (value: string) =
         value.Replace("\r\n", "\n").Replace('\r', '\n')
@@ -1232,7 +1247,7 @@ module SyntaxFacts =
         let closingIndent = body.Substring(closingLineStart)
 
         if closingIndent |> Seq.exists (fun character -> character <> ' ') then
-            Result.Error "Invalid multiline string closing delimiter indentation."
+            Result.Error InvalidMultilineClosingDelimiterIndentation
         else
             let content =
                 if closingLineStart = 0 then
@@ -1253,7 +1268,7 @@ module SyntaxFacts =
                     elif line.StartsWith(closingIndent, StringComparison.Ordinal) then
                         dedented.Add(line.Substring(closingIndent.Length))
                     else
-                        error <- Some "A multiline string content line does not match the closing delimiter indentation."
+                        error <- Some MultilineContentIndentationMismatch
 
             match error with
             | Some message -> Result.Error message
@@ -1274,7 +1289,7 @@ module SyntaxFacts =
         let value = normalizeStringLineEndings value
 
         let tryDecodeOrdinary body =
-            tryUnescapeStringContent body
+            tryUnescapeStringContentDetailed body
 
         match tryParseHashesBeforeQuote value with
         | Some hashCount ->
@@ -1290,7 +1305,7 @@ module SyntaxFacts =
                 let closingDelimiter = "\"\"\"" + trailingHashes
 
                 if value.Length < hashCount + 6 || not (value.EndsWith(closingDelimiter, StringComparison.Ordinal)) then
-                    Result.Error "Invalid raw multiline string literal."
+                    Result.Error InvalidRawMultilineStringLiteral
                 else
                     let body = value.Substring(hashCount + 3, value.Length - (hashCount + 3) - closingDelimiter.Length)
                     tryApplyFixedDedent body
@@ -1298,7 +1313,7 @@ module SyntaxFacts =
                 let closingDelimiter = "\"" + trailingHashes
 
                 if value.Length < hashCount + 2 || not (value.EndsWith(closingDelimiter, StringComparison.Ordinal)) then
-                    Result.Error "Invalid raw string literal."
+                    Result.Error InvalidRawStringLiteral
                 else
                     Result.Ok(value.Substring(hashCount + 1, value.Length - (hashCount + 1) - closingDelimiter.Length))
         | None when value.StartsWith("\"\"\"", StringComparison.Ordinal) && value.EndsWith("\"\"\"", StringComparison.Ordinal) ->

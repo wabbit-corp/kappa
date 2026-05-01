@@ -1,5 +1,8 @@
 # Open Alignment Plan
 
+Backlog provenance note:
+The sections below are the active execution plan. `TODO.md` remains the consolidated review backlog, and new additive items pulled from it should keep an explicit provenance trail back to `TODO.md` and the relevant `reviews/*.md` files.
+
 ## 1. `KBackendIR` shape and lowering semantics
 
 - [ ] Audit the current `KBackendIR` model in `src/Kappa.Compiler/KBackendIR.fs` and its lowering path against `Spec.md` sections 17.4 and 17.4.1.
@@ -102,11 +105,90 @@ Current M4 status note: started, not complete. The compiler now has a real effec
 ## 9. Structured diagnostics only
 
 - [ ] Remove the remaining string escape hatches from `Diagnostics.fs`, especially `SimpleDiagnosticEvidence.Detail` and `CodeDetailEvidence.Detail`, so compiler phases cannot smuggle raw prose into emitted diagnostics.
-- [ ] Finish `Parser.fs` diagnostics conversion by replacing the remaining dynamic raw-string parse failures, especially string-literal decoding and URL module-specifier parsing.
-- [ ] Finish `CoreParsing.fs` diagnostics conversion for dynamic literal and Unicode decode failures.
+- [x] Finish `Parser.fs` diagnostics conversion by replacing the remaining dynamic raw-string parse failures, especially string-literal decoding and URL module-specifier parsing.
+- [ ] Finish `CoreParsing.fs` diagnostics conversion for the remaining dynamic literal and Unicode decode failures after string-literal decode: character/grapheme/byte decode failures.
 - [ ] Finish `CoreParsing.fs` diagnostics conversion for the remaining structural frontend paths: queries/comprehensions, handlers, projection bodies, function/local-function headers, record/application/update forms, and expression-tail validation.
 - [ ] Convert `Lexer.fs` diagnostics to typed evidence ADTs with centralized formatting.
 - [ ] Convert elaboration/typechecking diagnostics to typed evidence ADTs with centralized formatting.
 - [ ] Convert backend/lowering diagnostics to typed evidence ADTs with centralized formatting.
 - [ ] Convert checkpoint verification and target-checkpoint diagnostics to typed evidence ADTs with centralized formatting.
 - [ ] Preserve machine-readable payload structure as the primary contract, and keep tests asserting codes/families/payload fields rather than exact prose except where the spec mandates wording-sensitive content.
+
+## 10. Foundations and frontend spec coverage
+
+- [ ] Replace the current split intrinsic facts with one authoritative intrinsic manifest consumed by frontend import validation, elaboration, runtime lowering, interpreter, CLR lowering, Zig lowering, and backend verification.
+  References: `TODO.md` §1; `reviews/principles1.md`; `reviews/backend1.md`; `reviews/general1.md`.
+- [ ] Finish unifying standard-library/module descriptors so import validation, elaboration, runtime injection, and backends all consume the same module catalog and capability/support metadata.
+  References: `TODO.md` §1, §8, §8A; `reviews/principles1.md`; `reviews/general1.md`; `reviews/unicode1.md`.
+- [ ] Align identifier, keyword, and module/path-derived name handling with the lexical spec, including the ASCII-vs-Unicode identifier decision and the token model exposed to tooling.
+  References: `TODO.md` §2, §12; `reviews/frontend1.md`; `reviews/general1.md`; `reviews/unicode1.md`.
+- [ ] Complete the missing surface-language coverage for `do` blocks, `try` / `except` / `finally` / `try match`, `derive`, and `decreases`/totality syntax, with end-to-end lowering and diagnostics rather than reserved-word-only support.
+  References: `TODO.md` §3, §5B, §12; `reviews/frontend1.md`; `reviews/traits1.md`; `reviews/tests1.md`.
+- [ ] Finish the KFrontIR query/error-tolerance model beyond honest phase reporting, including declaration/query-level lazy resolution, error-tolerant placeholders, and tooling-facing checker facts.
+  References: `TODO.md` §4; `reviews/frontend1.md`.
+- [ ] Reconcile the spec's explicit top-level-signature rule with the current compiler/tests, instead of leaving exported definition inference as an undocumented implementation exception.
+  References: `TODO.md` §5; `reviews/tests1.md`.
+- [ ] Keep numeric literals abstract until target-type and representation resolution are complete, and remove any fallback path that silently lowers unhandled numeric literals to semantically wrong runtime values.
+  References: `TODO.md` §5, §8; `reviews/principles1.md`; `reviews/general1.md`.
+- [ ] Audit projections, accessors, and projector descriptors for full spec coverage across parsing, elaboration, lowering, and diagnostics.
+  References: `TODO.md` §5; `reviews/general1.md`.
+
+## 11. Macros, staging, traits, and QTT
+
+- [ ] Implement a real elaboration-time evaluator for `Elab`, real splice execution for `$(...)`, hygienic `Syntax` values, stage-aware substitution, the missing public `Syntax`/reflection APIs, and a distinct `Code` staging model that does not erase to the inner expression.
+  References: `TODO.md` §5A; `reviews/macros1.md`; `reviews/observability1.md`.
+- [ ] Make macro-expansion incrementality/observability real once elaboration-time execution exists, including fingerprints over macro definitions, imports, configuration, and expansion environment.
+  References: `TODO.md` §5A, §11A; `reviews/macros1.md`; `reviews/observability1.md`.
+- [ ] Rebuild trait/instance semantics around explicit evidence objects: constrained-instance premises, supertrait projection, stronger instance validation, Paterson-style termination checks, richer coherence, rigid-vs-instantiable matching, constrained members, and local instances/deriving policy.
+  References: `TODO.md` §5B; `reviews/traits1.md`.
+- [ ] Route `derive` through synthetic instance generation on the same validation/coherence/runtime path as handwritten instances, rather than through a parallel backend-specific mechanism.
+  References: `TODO.md` §3, §5B; `reviews/frontend1.md`; `reviews/traits1.md`.
+- [ ] Rework the resource checker so demand tracking, linear discharge, loop upper bounds, abrupt completion, quantity-variable handling, hidden borrow roots, explicit borrow regions, and whole-application borrow overlap follow the QTT rules instead of the current approximations.
+  References: `TODO.md` §6; `reviews/qtt1.md`.
+- [ ] Delete duplicate signature/quantity reparsing in resource checking and consume parsed signature/type structures directly.
+  References: `TODO.md` §6; `reviews/qtt1.md`.
+
+## 12. Effects, queries, runtime surface, and Unicode/hash semantics
+
+- [ ] Finish effect-row semantics beyond the current self-label approximation, including distinct label identity vs interface identity and typed operation telescopes for handlers/operations.
+  References: `TODO.md` §7; `reviews/effects1.md`.
+- [ ] Replace parser-time comprehension lowering with a post-resolution query/comprehension plan, and implement real `IntoQuery` / `BorrowIntoQuery`, first-class `Query`/`OnceQuery`/`QueryCore` carriers, custom sinks, borrowed/refutable clauses, grouping, map conflict policy, orderedness proofs, multi-key ordering, and honest plan observability.
+  References: `TODO.md` §7A; `reviews/queries1.md`.
+- [ ] Align the prelude/runtime contract with actual runtime availability, and stop treating prelude exposure as proof that interpreter/CLR/Zig semantics exist.
+  References: `TODO.md` §8, §9; `reviews/general1.md`; `reviews/backend1.md`.
+- [ ] Replace fake file/data intrinsics with real runtime behavior or explicit test-runtime gating.
+  References: `TODO.md` §8; `reviews/principles1.md`; `reviews/backend1.md`.
+- [ ] Make `std.hash.Hashable` a real trait or replace all fallback behavior with explicit builtin evidence, then fix the streaming-hash API/state model, structural framing, fixed byte order, and backend/runtime support so hash semantics match the declared surface.
+  References: `TODO.md` §5, §8A; `reviews/principles1.md`; `reviews/unicode1.md`; `reviews/backend1.md`.
+- [ ] Implement or retract the missing `std.unicode`/`std.bytes` surface terms, Unicode warning emitters, Unicode location/column policy, pinned Unicode-behavior policy, and backend/runtime representations for `Bytes`, `Byte`, `UnicodeScalar`, `Grapheme`, and embedded NUL strings.
+  References: `TODO.md` §8A; `reviews/unicode1.md`; `reviews/backend1.md`; `reviews/zig1.md`.
+
+## 13. Backend capability model and target backends
+
+- [ ] Either expand `KBackendIR` to model the spec-required runtime/control structures or explicitly narrow the supported backend contract and reflect that restriction in documentation, checkpoints, and capability diagnostics.
+  References: `TODO.md` §9; `reviews/backend1.md`.
+- [ ] Add a real backend capability model, separate source-name availability from lowering support from target implementation availability, and reject unsupported reachable constructs before target lowering with capability diagnostics.
+  References: `TODO.md` §8, §9, §11; `reviews/backend1.md`; `reviews/general1.md`; `reviews/zig1.md`.
+- [ ] Replace text-based backend representation selection with resolved representation metadata, and make checkpoint verification prove real lowerability for the selected target instead of only shallow structural well-formedness.
+  References: `TODO.md` §1, §9; `reviews/backend1.md`; `reviews/principles1.md`.
+- [ ] Fix the concrete cross-backend semantic mismatches already identified: raw-bit float equality, `&&` / `||` evaluation/short-circuit behavior, numeric/operator lowering edge cases, and `Char` / `UnicodeScalar` / `Grapheme` / `Byte` representation mismatches.
+  References: `TODO.md` §9, §10, §11; `reviews/backend1.md`; `reviews/dotnet1.md`; `reviews/zig1.md`.
+- [ ] Pick one canonical CLR-facing representation for `Char`, `UnicodeScalar`, `Grapheme`, and `Byte`, and make host interop, runtime lowering, IL typing, and emission agree on it.
+  References: `TODO.md` §10; `reviews/dotnet1.md`; `reviews/backend1.md`.
+- [ ] Make the `dotnet` toolchain runner collect stdout/stderr asynchronously so large child output cannot deadlock build/run/publish helpers.
+  References: `TODO.md` §10; `reviews/dotnet1.md`.
+- [ ] Tighten the Zig backend around real lowered/runtime data: restrict intrinsic exposure to implemented capability, generate trait dispatch from lowered IR instead of syntax scans, support or reject first-class intrinsic values explicitly, use injective collision-checked symbol generation, make closure environment names globally unique, and fix C-string/NUL/prefixed-string behavior.
+  References: `TODO.md` §11; `reviews/zig1.md`; `reviews/backend1.md`.
+
+## 14. Tests, harness, and conformance bookkeeping
+
+- [ ] Split the suite into explicit categories such as spec conformance, compiler regression, backend regression, and integration, so green runs describe what they actually prove.
+  References: `TODO.md` §12; `reviews/tests1.md`.
+- [ ] Add targeted regression coverage for the reviewed frontend/module/import gaps, QTT failure shapes, effects/handlers failure shapes, backend/runtime capability failures, Unicode/bytes/hash semantics, trait/instance/deriving semantics, CLR backend edge cases, and Zig backend edge cases.
+  References: `TODO.md` §12; `reviews/frontend1.md`; `reviews/qtt1.md`; `reviews/effects1.md`; `reviews/backend1.md`; `reviews/unicode1.md`; `reviews/traits1.md`; `reviews/dotnet1.md`; `reviews/zig1.md`.
+- [ ] Replace weak negative assertions with diagnostic-code assertions, expected spans/modules where practical, and prose checks only as a secondary layer.
+  References: `TODO.md` §12; `reviews/tests1.md`.
+- [ ] Keep URL import tests labeled as policy/staging tests until there is a real resolver/mock-resolver, and make archive/toolchain-dependent suites explicit integration tests that cannot silently discover zero meaningful cases.
+  References: `TODO.md` §12; `reviews/tests1.md`.
+- [ ] Remove stale `.trx` artifacts unless they are deliberate golden observability assets, and keep promoting staged spec-derived tests from `new-tests/` into the live fixture suite as parser/elaboration/harness support lands.
+  References: `TODO.md` §12; `reviews/tests1.md`; `new-tests/README.md`.

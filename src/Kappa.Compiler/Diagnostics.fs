@@ -809,6 +809,8 @@ type CorePatternParsingEvidence =
     | NamedConstructorPatternsCannotTakePositionalSubpatterns
     | OnlyConstructorPatternsMayTakeArguments
     | UnexpectedTrailingPatternTokens
+    | InvalidStringLiteralPattern of StringLiteralDecodeError
+    | InvalidNumericLiteralPattern of NumericLiteralParseError
 
 type CoreExpressionParsingEvidence =
     | UnterminatedParameterBinder
@@ -833,6 +835,9 @@ type CoreExpressionParsingEvidence =
     | ExpectedWhileDo
     | DoBlockMustContainAtLeastOneStatement
     | ExpectedLambdaBodyArrow
+    | InvalidStringLiteralExpression of StringLiteralDecodeError
+    | InvalidNumericLiteralExpression of NumericLiteralParseError
+    | InvalidStringTextSegment of StringLiteralDecodeError
 
 type ParserNameExpectationRole =
     | BindingName
@@ -922,6 +927,8 @@ type ParserSyntaxEvidence =
     | OpacityModifierNotApplicableToProjectionDeclaration
     | OpacityAndTotalityNotApplicableToEffectDeclaration
     | VisibilityOpacityAndTotalityNotApplicableToInstanceDeclaration
+    | InvalidStringLiteral of StringLiteralDecodeError
+    | InvalidUrlModuleSpecifier of specifierText: string * UrlModuleSpecifierParseError
 
 type QttCardinalityEffect =
     | Discard
@@ -1377,6 +1384,76 @@ module DiagnosticFact =
         | InstanceDeclarationTarget -> "instance declarations"
         | TermDeclarationsOnly -> "term declarations"
 
+    let private stringLiteralDecodeErrorTag error =
+        match error with
+        | UnknownEscapeSequence _ -> "unknown-escape-sequence"
+        | InvalidUnicodeEscape _ -> "invalid-unicode-escape"
+        | UnterminatedEscapeSequence -> "unterminated-escape-sequence"
+        | UnterminatedUnicodeEscapeSequence -> "unterminated-unicode-escape-sequence"
+        | InvalidMultilineClosingDelimiterIndentation -> "invalid-multiline-closing-delimiter-indentation"
+        | MultilineContentIndentationMismatch -> "multiline-content-indentation-mismatch"
+        | InvalidRawMultilineStringLiteral -> "invalid-raw-multiline-string-literal"
+        | InvalidRawStringLiteral -> "invalid-raw-string-literal"
+
+    let private stringLiteralDecodeErrorMessage error =
+        match error with
+        | UnknownEscapeSequence escapeText -> $"unknown escape sequence '{escapeText}'"
+        | InvalidUnicodeEscape escapeText -> $"invalid Unicode escape '{escapeText}'"
+        | UnterminatedEscapeSequence -> "unterminated escape sequence"
+        | UnterminatedUnicodeEscapeSequence -> "unterminated Unicode escape sequence"
+        | InvalidMultilineClosingDelimiterIndentation -> "invalid multiline string closing delimiter indentation"
+        | MultilineContentIndentationMismatch -> "a multiline string content line does not match the closing delimiter indentation"
+        | InvalidRawMultilineStringLiteral -> "invalid raw multiline string literal"
+        | InvalidRawStringLiteral -> "invalid raw string literal"
+
+    let private stringLiteralDecodeErrorFields error =
+        let baseFields =
+            [ field "string-literal-error" (DiagnosticPayloadText(stringLiteralDecodeErrorTag error)) ]
+
+        match error with
+        | UnknownEscapeSequence escapeText
+        | InvalidUnicodeEscape escapeText ->
+            baseFields @ [ field "escape-text" (DiagnosticPayloadText escapeText) ]
+        | _ ->
+            baseFields
+
+    let private urlModuleSpecifierParseErrorTag error =
+        match error with
+        | MissingBaseUrl -> "missing-base-url"
+        | EmptyPin -> "empty-pin"
+        | MissingSha256Digest -> "missing-sha256-digest"
+        | InvalidSha256Digest _ -> "invalid-sha256-digest"
+        | EmptyRefPin -> "empty-ref-pin"
+        | UnsupportedPin _ -> "unsupported-pin"
+
+    let private urlModuleSpecifierParseErrorMessage error =
+        match error with
+        | MissingBaseUrl -> "the base URL is empty"
+        | EmptyPin -> "the URL pin is empty"
+        | MissingSha256Digest -> "sha256 pins must include a hexadecimal digest"
+        | InvalidSha256Digest _ -> "sha256 pins must use a hexadecimal digest"
+        | EmptyRefPin -> "ref pins must include a non-empty reference"
+        | UnsupportedPin _ -> "the pin must use 'sha256:<hex>' or 'ref:<text>'"
+
+    let private urlModuleSpecifierParseErrorFields error =
+        let baseFields =
+            [ field "url-parse-error" (DiagnosticPayloadText(urlModuleSpecifierParseErrorTag error)) ]
+
+        match error with
+        | InvalidSha256Digest pinText
+        | UnsupportedPin pinText ->
+            baseFields @ [ field "pin-text" (DiagnosticPayloadText pinText) ]
+        | _ ->
+            baseFields
+
+    let private numericLiteralParseErrorTag error =
+        match error with
+        | InvalidNumericLiteral _ -> "invalid-numeric-literal"
+
+    let private numericLiteralParseErrorText error =
+        match error with
+        | InvalidNumericLiteral tokenText -> tokenText
+
     let describe fact =
         match fact with
         | SimpleDiagnostic evidence ->
@@ -1673,6 +1750,25 @@ module DiagnosticFact =
                         "parser-syntax"
                         [ field "reason" (DiagnosticPayloadText "expected-name")
                           field "name-role" (DiagnosticPayloadText(parserNameRoleText role)) ])
+            | InvalidStringLiteral error ->
+                descriptor
+                    DiagnosticCode.ExpectedSyntaxToken
+                    None
+                    $"String literal text is invalid: {stringLiteralDecodeErrorMessage error}."
+                    (payload
+                        "parser-syntax"
+                        ([ field "reason" (DiagnosticPayloadText "invalid-string-literal") ]
+                         @ stringLiteralDecodeErrorFields error))
+            | InvalidUrlModuleSpecifier(specifierText, error) ->
+                descriptor
+                    DiagnosticCode.ExpectedSyntaxToken
+                    None
+                    $"URL module specifier '{specifierText}' is invalid: {urlModuleSpecifierParseErrorMessage error}."
+                    (payload
+                        "parser-syntax"
+                        ([ field "reason" (DiagnosticPayloadText "invalid-url-module-specifier")
+                           field "specifier-text" (DiagnosticPayloadText specifierText) ]
+                         @ urlModuleSpecifierParseErrorFields error))
             | ExpectedColonInExpectTermDeclaration ->
                 descriptor
                     DiagnosticCode.ExpectedSyntaxToken
@@ -2094,6 +2190,25 @@ module DiagnosticFact =
                     None
                     "Unexpected tokens at the end of the pattern."
                     (payload "core-pattern-parsing" [ field "reason" (DiagnosticPayloadText "unexpected-trailing-pattern-tokens") ])
+            | InvalidStringLiteralPattern error ->
+                descriptor
+                    DiagnosticCode.ExpectedSyntaxToken
+                    None
+                    $"String literal pattern text is invalid: {stringLiteralDecodeErrorMessage error}."
+                    (payload
+                        "core-pattern-parsing"
+                        ([ field "reason" (DiagnosticPayloadText "invalid-string-literal-pattern") ]
+                         @ stringLiteralDecodeErrorFields error))
+            | InvalidNumericLiteralPattern error ->
+                descriptor
+                    DiagnosticCode.ExpectedSyntaxToken
+                    None
+                    $"Numeric literal pattern text is invalid: '{numericLiteralParseErrorText error}'."
+                    (payload
+                        "core-pattern-parsing"
+                        [ field "reason" (DiagnosticPayloadText "invalid-numeric-literal-pattern")
+                          field "numeric-literal-error" (DiagnosticPayloadText(numericLiteralParseErrorTag error))
+                          field "token-text" (DiagnosticPayloadText(numericLiteralParseErrorText error)) ])
         | CoreExpressionParsingDiagnostic evidence ->
             match evidence with
             | UnterminatedParameterBinder ->
@@ -2162,6 +2277,34 @@ module DiagnosticFact =
             | ExpectedLambdaBodyArrow ->
                 descriptor DiagnosticCode.ExpectedSyntaxToken None "Expected '->' after the lambda parameters."
                     (payload "core-expression-parsing" [ field "reason" (DiagnosticPayloadText "expected-lambda-body-arrow") ])
+            | InvalidStringLiteralExpression error ->
+                descriptor
+                    DiagnosticCode.ExpectedSyntaxToken
+                    None
+                    $"String literal text is invalid: {stringLiteralDecodeErrorMessage error}."
+                    (payload
+                        "core-expression-parsing"
+                        ([ field "reason" (DiagnosticPayloadText "invalid-string-literal-expression") ]
+                         @ stringLiteralDecodeErrorFields error))
+            | InvalidNumericLiteralExpression error ->
+                descriptor
+                    DiagnosticCode.ExpectedSyntaxToken
+                    None
+                    $"Numeric literal text is invalid: '{numericLiteralParseErrorText error}'."
+                    (payload
+                        "core-expression-parsing"
+                        [ field "reason" (DiagnosticPayloadText "invalid-numeric-literal-expression")
+                          field "numeric-literal-error" (DiagnosticPayloadText(numericLiteralParseErrorTag error))
+                          field "token-text" (DiagnosticPayloadText(numericLiteralParseErrorText error)) ])
+            | InvalidStringTextSegment error ->
+                descriptor
+                    DiagnosticCode.ExpectedSyntaxToken
+                    None
+                    $"String text segment is invalid: {stringLiteralDecodeErrorMessage error}."
+                    (payload
+                        "core-expression-parsing"
+                        ([ field "reason" (DiagnosticPayloadText "invalid-string-text-segment") ]
+                         @ stringLiteralDecodeErrorFields error))
         | QttLinearDropDiagnostic evidence ->
             match evidence with
             | ShadowedBindingMustConsumePreviousValue shadowedBindingName ->

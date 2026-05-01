@@ -1201,15 +1201,21 @@ type private TokenParser
                 let value =
                     match SyntaxFacts.tryDecodeStringLiteral token.Text with
                     | Result.Ok decoded -> decoded
-                    | Result.Error message ->
-                        diagnostics.AddError(DiagnosticFact.simple SimpleDiagnosticKind.ExpectedSyntaxToken message, source.GetLocation(token.Span))
+                    | Result.Error error ->
+                        diagnostics.AddError(
+                            DiagnosticFact.parserSyntax (InvalidStringLiteral error),
+                            source.GetLocation(token.Span)
+                        )
                         SyntaxFacts.trimStringQuotes token.Text
 
                 match SyntaxFacts.tryParseUrlModuleSpecifier value with
                 | Result.Ok specifier ->
                     Url specifier
-                | Result.Error message ->
-                    diagnostics.AddError(DiagnosticFact.simple SimpleDiagnosticKind.ExpectedSyntaxToken message, source.GetLocation(token.Span))
+                | Result.Error error ->
+                    diagnostics.AddError(
+                        DiagnosticFact.parserSyntax (InvalidUrlModuleSpecifier(value, error)),
+                        source.GetLocation(token.Span)
+                    )
                     Url
                         { OriginalText = value
                           BaseUrl = value

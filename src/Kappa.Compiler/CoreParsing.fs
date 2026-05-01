@@ -695,8 +695,11 @@ type private PatternParser(tokens: Token list, source: SourceText, diagnostics: 
                         )
 
                         LiteralPattern(LiteralValue.Integer 0L)
-            | Result.Error message ->
-                diagnostics.AddError(DiagnosticFact.simple SimpleDiagnosticKind.ExpectedSyntaxToken message, source.GetLocation(token.Span))
+            | Result.Error error ->
+                diagnostics.AddError(
+                    DiagnosticFact.corePatternParsing (InvalidNumericLiteralPattern error),
+                    source.GetLocation(token.Span)
+                )
                 LiteralPattern(LiteralValue.Integer 0L)
         | FloatLiteral ->
             match SyntaxFacts.tryParseNumericLiteral token.Text with
@@ -726,14 +729,20 @@ type private PatternParser(tokens: Token list, source: SourceText, diagnostics: 
                         )
 
                         LiteralPattern(LiteralValue.Float 0.0)
-            | Result.Error message ->
-                diagnostics.AddError(DiagnosticFact.simple SimpleDiagnosticKind.ExpectedSyntaxToken message, source.GetLocation(token.Span))
+            | Result.Error error ->
+                diagnostics.AddError(
+                    DiagnosticFact.corePatternParsing (InvalidNumericLiteralPattern error),
+                    source.GetLocation(token.Span)
+                )
                 LiteralPattern(LiteralValue.Float 0.0)
         | StringLiteral ->
             match SyntaxFacts.tryDecodeStringLiteral token.Text with
             | Result.Ok value -> LiteralPattern(LiteralValue.String value)
-            | Result.Error message ->
-                diagnostics.AddError(DiagnosticFact.simple SimpleDiagnosticKind.ExpectedSyntaxToken message, source.GetLocation(token.Span))
+            | Result.Error error ->
+                diagnostics.AddError(
+                    DiagnosticFact.corePatternParsing (InvalidStringLiteralPattern error),
+                    source.GetLocation(token.Span)
+                )
                 LiteralPattern(LiteralValue.String(SyntaxFacts.trimStringQuotes token.Text))
         | CharacterLiteral ->
             match SyntaxFacts.tryDecodeCharacterLiteral token.Text with
@@ -1380,8 +1389,11 @@ type private ExpressionParser
         match SyntaxFacts.tryDecodeStringLiteral token.Text with
         | Result.Ok value ->
             value
-        | Result.Error message ->
-            diagnostics.AddError(DiagnosticFact.simple SimpleDiagnosticKind.ExpectedSyntaxToken message, source.GetLocation(token.Span))
+        | Result.Error error ->
+            diagnostics.AddError(
+                DiagnosticFact.coreExpressionParsing (InvalidStringLiteralExpression error),
+                source.GetLocation(token.Span)
+            )
             SyntaxFacts.trimStringQuotes token.Text
 
     member private this.DecodeCharacterLiteral(token: Token) =
@@ -2985,11 +2997,14 @@ type private ExpressionParser
                 | MapCollection -> Apply(Name [ CompilerKnownSymbols.KnownTypeNames.Map ], [ listNil ])
 
     member private this.DecodeStringTextSegment(token: Token) =
-        match SyntaxFacts.tryUnescapeStringContent token.Text with
+        match SyntaxFacts.tryUnescapeStringContentDetailed token.Text with
         | Result.Ok value ->
             value
-        | Result.Error message ->
-            diagnostics.AddError(DiagnosticFact.simple SimpleDiagnosticKind.ExpectedSyntaxToken message, source.GetLocation(token.Span))
+        | Result.Error error ->
+            diagnostics.AddError(
+                DiagnosticFact.coreExpressionParsing (InvalidStringTextSegment error),
+                source.GetLocation(token.Span)
+            )
             token.Text
 
     member private this.TryParseStandaloneExpression(tokens: Token list) =
@@ -5758,8 +5773,11 @@ type private ExpressionParser
             match SyntaxFacts.tryParseNumericLiteral token.Text with
             | Result.Ok parsed ->
                 NumericLiteral parsed.Literal
-            | Result.Error message ->
-                diagnostics.AddError(DiagnosticFact.simple SimpleDiagnosticKind.ExpectedSyntaxToken message, source.GetLocation(token.Span))
+            | Result.Error error ->
+                diagnostics.AddError(
+                    DiagnosticFact.coreExpressionParsing (InvalidNumericLiteralExpression error),
+                    source.GetLocation(token.Span)
+                )
                 Literal(Integer 0L)
         | FloatLiteral ->
             let token = this.Advance()
@@ -5767,8 +5785,11 @@ type private ExpressionParser
             match SyntaxFacts.tryParseNumericLiteral token.Text with
             | Result.Ok parsed ->
                 NumericLiteral parsed.Literal
-            | Result.Error message ->
-                diagnostics.AddError(DiagnosticFact.simple SimpleDiagnosticKind.ExpectedSyntaxToken message, source.GetLocation(token.Span))
+            | Result.Error error ->
+                diagnostics.AddError(
+                    DiagnosticFact.coreExpressionParsing (InvalidNumericLiteralExpression error),
+                    source.GetLocation(token.Span)
+                )
                 Literal(Float 0.0)
         | StringLiteral ->
             let token = this.Advance()

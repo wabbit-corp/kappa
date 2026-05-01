@@ -64,6 +64,16 @@ let private diagnosticsSummary diagnostics =
     |> List.map (fun diagnostic -> $"{DiagnosticCode.toIdentifier diagnostic.Code}: {diagnostic.Message}")
     |> String.concat Environment.NewLine
 
+let private tryFindPayloadText fieldName (diagnostic: Diagnostic) =
+    diagnostic.Payload.Fields
+    |> List.tryPick (fun field ->
+        if field.Name <> fieldName then
+            None
+        else
+            match field.Value with
+            | DiagnosticPayloadText value -> Some value
+            | DiagnosticPayloadTextList _ -> None)
+
 let rec private tryFindLocalScopedEffect expression =
     match expression with
     | LocalScopedEffect(declaration, _) ->
@@ -357,8 +367,36 @@ module SmokeTestsShard0 =
                 sourceText
 
         Assert.Empty(lexed.Diagnostics)
-        Assert.Equal<DiagnosticCode list>([ DiagnosticCode.ExpectedSyntaxToken ], parsed.Diagnostics |> List.map (fun diagnostic -> diagnostic.Code))
-        Assert.Contains(parsed.Diagnostics, fun diagnostic -> diagnostic.Message.Contains("sha256", StringComparison.Ordinal))
+        let diagnostic = Assert.Single(parsed.Diagnostics)
+        Assert.Equal(DiagnosticCode.ExpectedSyntaxToken, diagnostic.Code)
+        Assert.Equal("parser-syntax", diagnostic.Payload.Kind)
+        Assert.Equal(Some "invalid-url-module-specifier", tryFindPayloadText "reason" diagnostic)
+        Assert.Equal(Some "invalid-sha256-digest", tryFindPayloadText "url-parse-error" diagnostic)
+        Assert.Equal(Some "sha256:not-hex", tryFindPayloadText "pin-text" diagnostic)
+
+
+    [<Fact>]
+    let ``parser rejects malformed string literal module specifiers with structured payload`` () =
+        let sourceText =
+            [
+                "module demo.hello"
+                "import \"https://example.com/lib\\q\".*"
+            ]
+            |> String.concat "\n"
+
+        let _, lexed, parsed =
+            lexAndParse
+                "demo/hello.kp"
+                sourceText
+
+        Assert.Empty(lexed.Diagnostics)
+
+        let diagnostic = Assert.Single(parsed.Diagnostics)
+        Assert.Equal(DiagnosticCode.ExpectedSyntaxToken, diagnostic.Code)
+        Assert.Equal("parser-syntax", diagnostic.Payload.Kind)
+        Assert.Equal(Some "invalid-string-literal", tryFindPayloadText "reason" diagnostic)
+        Assert.Equal(Some "unknown-escape-sequence", tryFindPayloadText "string-literal-error" diagnostic)
+        Assert.Equal(Some "\\q", tryFindPayloadText "escape-text" diagnostic)
 
 
     [<Fact>]
@@ -3586,11 +3624,48 @@ module SmokeTestsShard4 =
         )
 
     [<Fact>]
+    let ``parser dynamic diagnostics render from typed evidence`` () =
+        let bag = DiagnosticBag()
+        bag.AddError(DiagnosticFact.parserSyntax (InvalidStringLiteral(UnknownEscapeSequence "\\q")))
+        bag.AddError(
+            DiagnosticFact.parserSyntax
+                (InvalidUrlModuleSpecifier("https://example.com/lib#sha256:not-hex", InvalidSha256Digest "sha256:not-hex"))
+        )
+
+        let diagnostics = bag.Items
+        let literalDiagnostic =
+            diagnostics
+            |> List.find (fun item -> item.Message = "String literal text is invalid: unknown escape sequence '\\q'.")
+
+        let urlDiagnostic =
+            diagnostics
+            |> List.find (fun item -> item.Message = "URL module specifier 'https://example.com/lib#sha256:not-hex' is invalid: sha256 pins must use a hexadecimal digest.")
+
+        Assert.Equal(DiagnosticCode.ExpectedSyntaxToken, literalDiagnostic.Code)
+        Assert.Equal("parser-syntax", literalDiagnostic.Payload.Kind)
+        Assert.Contains(
+            literalDiagnostic.Payload.Fields,
+            fun field ->
+                field.Name = "string-literal-error"
+                && field.Value = DiagnosticPayloadText "unknown-escape-sequence"
+        )
+
+        Assert.Equal(DiagnosticCode.ExpectedSyntaxToken, urlDiagnostic.Code)
+        Assert.Equal("parser-syntax", urlDiagnostic.Payload.Kind)
+        Assert.Contains(
+            urlDiagnostic.Payload.Fields,
+            fun field ->
+                field.Name = "url-parse-error"
+                && field.Value = DiagnosticPayloadText "invalid-sha256-digest"
+        )
+
+    [<Fact>]
     let ``core pattern parsing diagnostics render from typed evidence`` () =
         let bag = DiagnosticBag()
         bag.AddError(DiagnosticFact.corePatternParsing (NumericLiteralSuffixesNotPermittedInPatterns "1u8"))
         bag.AddError(DiagnosticFact.corePatternParsing ExpectedRecordPatternFieldLabel)
         bag.AddError(DiagnosticFact.corePatternParsing OrPatternAlternativesMustBindSameNames)
+        bag.AddError(DiagnosticFact.corePatternParsing (InvalidNumericLiteralPattern(InvalidNumericLiteral "1e+")))
 
         let diagnostics = bag.Items
         let literalDiagnostic =
@@ -3604,6 +3679,10 @@ module SmokeTestsShard4 =
         let orPatternDiagnostic =
             diagnostics
             |> List.find (fun item -> item.Code = DiagnosticCode.OrPatternBinderMismatch)
+
+        let invalidNumericDiagnostic =
+            diagnostics
+            |> List.find (fun item -> item.Message = "Numeric literal pattern text is invalid: '1e+'.")
 
         Assert.Equal("core-pattern-parsing", literalDiagnostic.Payload.Kind)
         Assert.Contains(
@@ -3623,6 +3702,13 @@ module SmokeTestsShard4 =
 
         Assert.Equal("Each or-pattern alternative must bind the same set of names.", orPatternDiagnostic.Message)
         Assert.Equal("core-pattern-parsing", orPatternDiagnostic.Payload.Kind)
+        Assert.Equal(DiagnosticCode.ExpectedSyntaxToken, invalidNumericDiagnostic.Code)
+        Assert.Contains(
+            invalidNumericDiagnostic.Payload.Fields,
+            fun field ->
+                field.Name = "numeric-literal-error"
+                && field.Value = DiagnosticPayloadText "invalid-numeric-literal"
+        )
 
     [<Fact>]
     let ``core expression parsing diagnostics render from typed evidence`` () =
@@ -3630,6 +3716,8 @@ module SmokeTestsShard4 =
         bag.AddError(DiagnosticFact.coreExpressionParsing ExpectedUsingBindingArrow)
         bag.AddError(DiagnosticFact.coreExpressionParsing MatchExpressionMustDeclareAtLeastOneCase)
         bag.AddError(DiagnosticFact.coreExpressionParsing UnexpectedIndentationInIndentedCaseBody)
+        bag.AddError(DiagnosticFact.coreExpressionParsing (InvalidNumericLiteralExpression(InvalidNumericLiteral "1e+")))
+        bag.AddError(DiagnosticFact.coreExpressionParsing (InvalidStringTextSegment(UnknownEscapeSequence "\\q")))
 
         let diagnostics = bag.Items
         let usingDiagnostic =
@@ -3643,6 +3731,14 @@ module SmokeTestsShard4 =
         let indentationDiagnostic =
             diagnostics
             |> List.find (fun item -> item.Code = DiagnosticCode.UnexpectedIndentation)
+
+        let invalidNumericDiagnostic =
+            diagnostics
+            |> List.find (fun item -> item.Message = "Numeric literal text is invalid: '1e+'.")
+
+        let invalidStringSegmentDiagnostic =
+            diagnostics
+            |> List.find (fun item -> item.Message = "String text segment is invalid: unknown escape sequence '\\q'.")
 
         Assert.Equal("core-expression-parsing", usingDiagnostic.Payload.Kind)
         Assert.Contains(
@@ -3662,6 +3758,18 @@ module SmokeTestsShard4 =
 
         Assert.Equal("Unexpected indentation.", indentationDiagnostic.Message)
         Assert.Equal("core-expression-parsing", indentationDiagnostic.Payload.Kind)
+        Assert.Contains(
+            invalidNumericDiagnostic.Payload.Fields,
+            fun field ->
+                field.Name = "numeric-literal-error"
+                && field.Value = DiagnosticPayloadText "invalid-numeric-literal"
+        )
+        Assert.Contains(
+            invalidStringSegmentDiagnostic.Payload.Fields,
+            fun field ->
+                field.Name = "string-literal-error"
+                && field.Value = DiagnosticPayloadText "unknown-escape-sequence"
+        )
 
 
     [<Fact>]

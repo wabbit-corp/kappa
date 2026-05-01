@@ -35,8 +35,9 @@ let private decodeAssertionText (directiveName: string) (filePath: string) lineN
     if trimmed.StartsWith("\"", StringComparison.Ordinal) then
         match SyntaxFacts.tryDecodeStringLiteral trimmed with
         | Result.Ok decoded -> decoded
-        | Result.Error message ->
-            invalidOp $"{directiveName} expects valid string literal text ({filePath}:{lineNumber}): {message}"
+        | Result.Error error ->
+            let detail = (DiagnosticFact.describe (DiagnosticFact.parserSyntax (InvalidStringLiteral error))).Message
+            invalidOp $"{directiveName} expects valid string literal text ({filePath}:{lineNumber}): {detail}"
     else
         trimmed
 
@@ -156,8 +157,9 @@ let private parseStringLiteralArguments (directiveName: string) (filePath: strin
         match SyntaxFacts.tryDecodeStringLiteral literalText with
         | Result.Ok value ->
             values.Add(value)
-        | Result.Error message ->
-            invalidOp $"{directiveName} expects valid string literal text ({filePath}:{lineNumber}): {message}"
+        | Result.Error error ->
+            let detail = (DiagnosticFact.describe (DiagnosticFact.parserSyntax (InvalidStringLiteral error))).Message
+            invalidOp $"{directiveName} expects valid string literal text ({filePath}:{lineNumber}): {detail}"
 
         skipWhitespace ()
 
