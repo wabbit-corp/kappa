@@ -1096,6 +1096,237 @@ module BackendTestsShard4 =
             )
 
     [<Fact>]
+    let ``dotnet backend reports structured unsupported lowered type form failures`` () =
+        let workspace =
+            compileInMemoryWorkspaceWithBackend
+                "memory-dotnet-unsupported-type-form-root"
+                "dotnet"
+                [
+                    "main.kp",
+                    [
+                        "module main"
+                        "data Box : Type ="
+                        "    Box Int"
+                        "result : Box"
+                        "let result = Box 0"
+                    ]
+                    |> String.concat "\n"
+                ]
+
+        Assert.False(workspace.HasErrors, sprintf "Expected no frontend diagnostics, got %A" workspace.Diagnostics)
+
+        let driftedClrAssemblyIR =
+            workspace.ClrAssemblyIR
+            |> List.map (fun moduleDump ->
+                if moduleDump.Name = "main" then
+                    { moduleDump with
+                        Bindings =
+                            moduleDump.Bindings
+                            |> List.map (fun binding ->
+                                if binding.Name = "result" then
+                                    { binding with ReturnTypeText = Some "List (Int -> Int)" }
+                                else
+                                    binding) }
+                else
+                    moduleDump)
+
+        let outputDirectory = createScratchDirectory "dotnet-unsupported-type-form"
+
+        match Backend.emitDotNetArtifact { workspace with ClrAssemblyIR = driftedClrAssemblyIR } "main.result" outputDirectory DotNetDeployment.Managed with
+        | Result.Ok artifact ->
+            failwithf "Expected dotnet artifact emission to reject unsupported lowered type forms, but emitted '%s'." artifact.GeneratedFilePath
+        | Result.Error message ->
+            Assert.Equal(
+                "The CLR-backed dotnet profile could not lower 'main.result': The CLR dotnet backend could not lower this type form.",
+                message
+            )
+
+    [<Fact>]
+    let ``dotnet backend reports structured constructor generic inference failures`` () =
+        let workspace =
+            compileInMemoryWorkspaceWithBackend
+                "memory-dotnet-constructor-generic-inference-root"
+                "dotnet"
+                [
+                    "main.kp",
+                    [
+                        "module main"
+                        "data PhantomPair (a : Type) (b : Type) ="
+                        "    PhantomPair a"
+                        "result : PhantomPair Int String"
+                        "let result = PhantomPair 1"
+                    ]
+                    |> String.concat "\n"
+                ]
+
+        Assert.False(workspace.HasErrors, sprintf "Expected no frontend diagnostics, got %A" workspace.Diagnostics)
+
+        let driftedClrAssemblyIR =
+            workspace.ClrAssemblyIR
+            |> List.map (fun moduleDump ->
+                if moduleDump.Name = "main" then
+                    { moduleDump with
+                        Bindings =
+                            moduleDump.Bindings
+                            |> List.map (fun binding ->
+                                if binding.Name = "result" then
+                                    { binding with ReturnTypeText = None }
+                                else
+                                    binding) }
+                else
+                    moduleDump)
+
+        let outputDirectory = createScratchDirectory "dotnet-constructor-generic-inference"
+
+        match Backend.emitDotNetArtifact { workspace with ClrAssemblyIR = driftedClrAssemblyIR } "main.result" outputDirectory DotNetDeployment.Managed with
+        | Result.Ok artifact ->
+            failwithf "Expected dotnet artifact emission to reject unresolved constructor type arguments, but emitted '%s'." artifact.GeneratedFilePath
+        | Result.Error message ->
+            Assert.Equal(
+                "The CLR-backed dotnet profile could not lower 'main.result': The CLR dotnet backend could not infer concrete type arguments for constructor 'PhantomPair'.",
+                message
+            )
+
+    [<Fact>]
+    let ``dotnet backend reports structured binding generic inference failures`` () =
+        let workspace =
+            compileInMemoryWorkspaceWithBackend
+                "memory-dotnet-binding-generic-inference-root"
+                "dotnet"
+                [
+                    "main.kp",
+                    [
+                        "module main"
+                        "helper : Int -> Int"
+                        "let helper x = x"
+                        "let result = helper 1"
+                    ]
+                    |> String.concat "\n"
+                ]
+
+        Assert.False(workspace.HasErrors, sprintf "Expected no frontend diagnostics, got %A" workspace.Diagnostics)
+
+        let driftedClrAssemblyIR =
+            workspace.ClrAssemblyIR
+            |> List.map (fun moduleDump ->
+                if moduleDump.Name = "main" then
+                    { moduleDump with
+                        Bindings =
+                            moduleDump.Bindings
+                            |> List.map (fun binding ->
+                                if binding.Name = "helper" then
+                                    { binding with
+                                        Body = None
+                                        ReturnTypeText = Some "a" }
+                                else
+                                    binding) }
+                else
+                    moduleDump)
+
+        let outputDirectory = createScratchDirectory "dotnet-binding-generic-inference"
+
+        match Backend.emitDotNetArtifact { workspace with ClrAssemblyIR = driftedClrAssemblyIR } "main.result" outputDirectory DotNetDeployment.Managed with
+        | Result.Ok artifact ->
+            failwithf "Expected dotnet artifact emission to reject unresolved binding type arguments, but emitted '%s'." artifact.GeneratedFilePath
+        | Result.Error message ->
+            Assert.Equal(
+                "The CLR-backed dotnet profile could not lower 'main.result': The CLR dotnet backend could not infer concrete type arguments for 'helper'.",
+                message
+            )
+
+    [<Fact>]
+    let ``dotnet backend reports structured constructor type unification failures`` () =
+        let workspace =
+            compileInMemoryWorkspaceWithBackend
+                "memory-dotnet-constructor-type-unification-root"
+                "dotnet"
+                [
+                    "main.kp",
+                    [
+                        "module main"
+                        "data Box : Type ="
+                        "    Box Int"
+                        "result : Box"
+                        "let result = Box 0"
+                    ]
+                    |> String.concat "\n"
+                ]
+
+        Assert.False(workspace.HasErrors, sprintf "Expected no frontend diagnostics, got %A" workspace.Diagnostics)
+
+        let driftedClrAssemblyIR =
+            workspace.ClrAssemblyIR
+            |> List.map (fun moduleDump ->
+                if moduleDump.Name = "main" then
+                    { moduleDump with
+                        Bindings =
+                            moduleDump.Bindings
+                            |> List.map (fun binding ->
+                                if binding.Name = "result" then
+                                    { binding with ReturnTypeText = Some "String" }
+                                else
+                                    binding) }
+                else
+                    moduleDump)
+
+        let outputDirectory = createScratchDirectory "dotnet-constructor-type-unification"
+
+        match Backend.emitDotNetArtifact { workspace with ClrAssemblyIR = driftedClrAssemblyIR } "main.result" outputDirectory DotNetDeployment.Managed with
+        | Result.Ok artifact ->
+            failwithf "Expected dotnet artifact emission to reject constructor type unification failures, but emitted '%s'." artifact.GeneratedFilePath
+        | Result.Error message ->
+            Assert.Equal(
+                "The CLR-backed dotnet profile could not lower 'main.result': The CLR dotnet backend could not unify Box with String.",
+                message
+            )
+
+    [<Fact>]
+    let ``dotnet backend reports structured binding type unification failures`` () =
+        let workspace =
+            compileInMemoryWorkspaceWithBackend
+                "memory-dotnet-binding-type-unification-root"
+                "dotnet"
+                [
+                    "main.kp",
+                    [
+                        "module main"
+                        "helper : Int -> Int"
+                        "let helper x = x"
+                        "result : Int"
+                        "let result = helper 1"
+                    ]
+                    |> String.concat "\n"
+                ]
+
+        Assert.False(workspace.HasErrors, sprintf "Expected no frontend diagnostics, got %A" workspace.Diagnostics)
+
+        let driftedClrAssemblyIR =
+            workspace.ClrAssemblyIR
+            |> List.map (fun moduleDump ->
+                if moduleDump.Name = "main" then
+                    { moduleDump with
+                        Bindings =
+                            moduleDump.Bindings
+                            |> List.map (fun binding ->
+                                if binding.Name = "result" then
+                                    { binding with ReturnTypeText = Some "String" }
+                                else
+                                    binding) }
+                else
+                    moduleDump)
+
+        let outputDirectory = createScratchDirectory "dotnet-binding-type-unification"
+
+        match Backend.emitDotNetArtifact { workspace with ClrAssemblyIR = driftedClrAssemblyIR } "main.result" outputDirectory DotNetDeployment.Managed with
+        | Result.Ok artifact ->
+            failwithf "Expected dotnet artifact emission to reject binding type unification failures, but emitted '%s'." artifact.GeneratedFilePath
+        | Result.Error message ->
+            Assert.Equal(
+                "The CLR-backed dotnet profile could not lower 'main.result': The CLR dotnet backend could not unify Int with String.",
+                message
+            )
+
+    [<Fact>]
     let ``dotnet backend reports structured constructor pattern resolution failures`` () =
         let workspace =
             compileInMemoryWorkspaceWithBackend

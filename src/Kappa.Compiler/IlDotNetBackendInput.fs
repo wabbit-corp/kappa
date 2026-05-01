@@ -458,7 +458,11 @@ module internal IlDotNetBackendInput =
                 | TypeSignatures.TypeVariable name ->
                     return! tryResolveTypeName rawModules currentModule typeParameters [ name ]
                 | _ ->
-                    return! Result.Error "IL backend could not lower this type form."
+                    return!
+                        Result.Error(
+                            DiagnosticFact.ClrBackendEmitterError.message
+                                ClrUnsupportedLoweredTypeForm
+                        )
             }
 
         let rec parseQualifiedName remaining segments =
@@ -703,7 +707,13 @@ module internal IlDotNetBackendInput =
                         | Some existingPrimitive, Some actualPrimitive when existingPrimitive = actualPrimitive ->
                             Result.Ok substitution
                         | _ ->
-                            Result.Error $"IL backend could not unify {formatIlType existing} with {formatIlType actual}."
+                            Result.Error(
+                                DiagnosticFact.ClrBackendEmitterError.message
+                                    (ClrTypeUnificationFailed(
+                                        formatIlType existing,
+                                        formatIlType actual
+                                    ))
+                            )
                     | None ->
                         Result.Ok(substitution |> Map.add name actual)
                 | IlNamed(leftIdentity, leftArguments), IlNamed(rightIdentity, rightArguments)
@@ -714,7 +724,13 @@ module internal IlDotNetBackendInput =
                             stateResult |> Result.bind (fun state -> unifyTypes state leftArgument rightArgument))
                         (Result.Ok substitution)
                 | _ ->
-                    Result.Error $"IL backend could not unify {formatIlType template} with {formatIlType actual}."
+                    Result.Error(
+                        DiagnosticFact.ClrBackendEmitterError.message
+                            (ClrTypeUnificationFailed(
+                                formatIlType template,
+                                formatIlType actual
+                            ))
+                    )
 
     let internal constructorResultType (constructorInfo: ConstructorInfo) =
         IlNamed(constructorInfo.ResultType, constructorInfo.TypeParameters |> List.map IlTypeParameter)
@@ -1034,8 +1050,12 @@ module internal IlDotNetBackendInput =
                 let resultType = substituteType substitution (constructorResultType constructorInfo)
 
                 if containsTypeParametersOutside allowedTypeParameters resultType then
-                    Result.Error
-                        $"IL backend could not infer concrete type arguments for constructor '{DeclarationIdentity.name constructorInfo.Identity}'."
+                    Result.Error(
+                        DiagnosticFact.ClrBackendEmitterError.message
+                            (ClrConstructorTypeArgumentInferenceFailed(
+                                DeclarationIdentity.name constructorInfo.Identity
+                            ))
+                    )
                 else
                     Result.Ok resultType)
 
@@ -1096,7 +1116,9 @@ module internal IlDotNetBackendInput =
                 let resultType = substituteType substitution bindingInfo.ReturnType
 
                 if containsTypeParametersOutside allowedTypeParameters resultType then
-                    Result.Error
-                        $"IL backend could not infer concrete type arguments for '{bindingInfo.Binding.Name}'."
+                    Result.Error(
+                        DiagnosticFact.ClrBackendEmitterError.message
+                            (ClrBindingTypeArgumentInferenceFailed bindingInfo.Binding.Name)
+                    )
                 else
                     Result.Ok(substitution, resultType))

@@ -873,6 +873,10 @@ type ClrBackendEmitterErrorEvidence =
     | ClrBindingReturnTypeMismatch of moduleName: string * bindingName: string * expectedTypeText: string * actualTypeText: string
     | ClrTypeResolutionFailed of typeText: string
     | ClrBindingArityMismatch of bindingName: string * expectedArity: int * actualArity: int
+    | ClrUnsupportedLoweredTypeForm
+    | ClrConstructorTypeArgumentInferenceFailed of constructorName: string
+    | ClrBindingTypeArgumentInferenceFailed of bindingName: string
+    | ClrTypeUnificationFailed of leftTypeText: string * rightTypeText: string
     | ClrPatternLiteralTypeMismatch of literalTypeText: string * expectedTypeText: string
     | ClrExpressionTypeMismatch of expectedTypeText: string * actualTypeText: string
     | ClrOrPatternAlternativesBindDifferentNames
@@ -1824,6 +1828,14 @@ module DiagnosticFact =
                 $"The CLR dotnet backend could not resolve type '{typeText}'."
             | ClrBindingArityMismatch(bindingName, expectedArity, actualArity) ->
                 $"The CLR dotnet backend expected '{bindingName}' to receive {expectedArity} argument(s), but received {actualArity}."
+            | ClrUnsupportedLoweredTypeForm ->
+                "The CLR dotnet backend could not lower this type form."
+            | ClrConstructorTypeArgumentInferenceFailed constructorName ->
+                $"The CLR dotnet backend could not infer concrete type arguments for constructor '{constructorName}'."
+            | ClrBindingTypeArgumentInferenceFailed bindingName ->
+                $"The CLR dotnet backend could not infer concrete type arguments for '{bindingName}'."
+            | ClrTypeUnificationFailed(leftTypeText, rightTypeText) ->
+                $"The CLR dotnet backend could not unify {leftTypeText} with {rightTypeText}."
             | ClrPatternLiteralTypeMismatch(literalTypeText, expectedTypeText) ->
                 $"The CLR dotnet backend cannot match literal of type {literalTypeText} against {expectedTypeText}."
             | ClrExpressionTypeMismatch(expectedTypeText, actualTypeText) ->
