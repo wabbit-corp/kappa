@@ -656,7 +656,7 @@ module internal IlDotNetBackendTyping =
                     | KRuntimeUnary(operatorName, _) ->
                         Result.Error $"IL backend does not support unary operator '{operatorName}' yet."
                     | KRuntimeBinary(left, operatorName, right) ->
-                        if IntrinsicCatalog.isBuiltinBinaryOperator operatorName then
+                        if KnownPreludeSemantics.isBuiltinBinaryOperator operatorName then
                             let builtinResult =
                                 result {
                                     match operatorName, right with
@@ -794,7 +794,7 @@ module internal IlDotNetBackendTyping =
                     | KRuntimeApply(KRuntimeName segments, arguments) ->
                         let nameText = String.concat "." segments
                         match segments, arguments with
-                        | [ operatorName ], [ left; right ] when IntrinsicCatalog.isBuiltinBinaryOperator operatorName ->
+                        | [ operatorName ], [ left; right ] when KnownPreludeSemantics.isBuiltinBinaryOperator operatorName ->
                             inferExpressionType
                                 currentModule
                                 localTypes

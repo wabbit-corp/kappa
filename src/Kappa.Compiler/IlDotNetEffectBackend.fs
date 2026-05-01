@@ -601,7 +601,7 @@ module internal IlDotNetEffectBackend =
                         | _ ->
                             return!
                                 Result.Error
-                                    $"The effectful dotnet backend expected intrinsic '{IntrinsicCatalog.BuiltinPreludeShowIntrinsicName}' to receive 1 argument, but received {List.length arguments}."
+                                    $"The effectful dotnet backend expected intrinsic '{KnownPreludeSemantics.BuiltinPreludeShowHelperName}' to receive 1 argument, but received {List.length arguments}."
                     }
 
                 let emitBuiltinCompareApply (arguments: KRuntimeExpression list) =
@@ -637,7 +637,7 @@ module internal IlDotNetEffectBackend =
                         | _ ->
                             return!
                                 Result.Error
-                                    $"The effectful dotnet backend expected intrinsic '{IntrinsicCatalog.BuiltinPreludeCompareIntrinsicName}' to receive 2 arguments, but received {List.length arguments}."
+                                    $"The effectful dotnet backend expected intrinsic '{KnownPreludeSemantics.BuiltinPreludeCompareHelperName}' to receive 2 arguments, but received {List.length arguments}."
                     }
 
                 let emitTraitCall traitName memberName dictionary arguments =
@@ -1548,9 +1548,9 @@ module internal IlDotNetEffectBackend =
                     }
                 | KRuntimeApply(KRuntimeName segments, arguments) ->
                     match segments with
-                    | [ intrinsicName ] when String.Equals(intrinsicName, IntrinsicCatalog.BuiltinPreludeShowIntrinsicName, StringComparison.Ordinal) ->
+                    | [ intrinsicName ] when String.Equals(intrinsicName, KnownPreludeSemantics.BuiltinPreludeShowHelperName, StringComparison.Ordinal) ->
                         emitBuiltinShowApply arguments
-                    | [ intrinsicName ] when String.Equals(intrinsicName, IntrinsicCatalog.BuiltinPreludeCompareIntrinsicName, StringComparison.Ordinal) ->
+                    | [ intrinsicName ] when String.Equals(intrinsicName, KnownPreludeSemantics.BuiltinPreludeCompareHelperName, StringComparison.Ordinal) ->
                         emitBuiltinCompareApply arguments
                     | _ ->
                         match tryResolveConstructor state.Modules currentModule segments with

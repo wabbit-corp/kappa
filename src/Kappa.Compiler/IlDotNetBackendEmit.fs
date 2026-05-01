@@ -519,7 +519,7 @@ module internal IlDotNetBackendEmit =
                 | KRuntimeUnary(operatorName, _) ->
                     Result.Error $"IL backend does not support unary operator '{operatorName}' yet."
                 | KRuntimeBinary(left, operatorName, right) ->
-                    if IntrinsicCatalog.isBuiltinBinaryOperator operatorName then
+                    if KnownPreludeSemantics.isBuiltinBinaryOperator operatorName then
                         let builtinResult =
                             result {
                                 match operatorName, right with
@@ -633,7 +633,7 @@ module internal IlDotNetBackendEmit =
                 | KRuntimeApply(KRuntimeName segments, arguments) ->
                     let nameText = String.concat "." segments
                     match segments, arguments with
-                    | [ operatorName ], [ left; right ] when IntrinsicCatalog.isBuiltinBinaryOperator operatorName ->
+                    | [ operatorName ], [ left; right ] when KnownPreludeSemantics.isBuiltinBinaryOperator operatorName ->
                         infer (KRuntimeBinary(left, operatorName, right)) expectedType
                     | _ ->
                         match tryResolveBinding modules currentModule segments with
@@ -1041,10 +1041,10 @@ module internal IlDotNetBackendEmit =
                         il.Emit(OpCodes.Neg)
                     | ("and" | "or"), _ ->
                         il.Emit(if name = "and" then OpCodes.And else OpCodes.Or)
-                    | intrinsicName, IlPrimitive IlString when intrinsicName = IntrinsicCatalog.BuiltinPreludeShowIntrinsicName ->
+                    | intrinsicName, IlPrimitive IlString when intrinsicName = KnownPreludeSemantics.BuiltinPreludeShowHelperName ->
                         do! emitBoxedArgument arguments[0] argumentTypes[0]
                         il.Emit(OpCodes.Call, showBuiltinMethod)
-                    | intrinsicName, IlNamed(typeIdentity, []) when intrinsicName = IntrinsicCatalog.BuiltinPreludeCompareIntrinsicName && TypeIdentity.hasTopLevelName preludeModuleIdentity Stdlib.KnownTypeNames.Ordering typeIdentity ->
+                    | intrinsicName, IlNamed(typeIdentity, []) when intrinsicName = KnownPreludeSemantics.BuiltinPreludeCompareHelperName && TypeIdentity.hasTopLevelName preludeModuleIdentity Stdlib.KnownTypeNames.Ordering typeIdentity ->
                         let comparisonLocal = il.DeclareLocal(typeof<int>)
                         let lessLabel = il.DefineLabel()
                         let greaterLabel = il.DefineLabel()
@@ -1519,7 +1519,7 @@ module internal IlDotNetBackendEmit =
                 il.MarkLabel(endLabel)
             }
         | KRuntimeBinary(left, operatorName, right) ->
-            if IntrinsicCatalog.isEagerBuiltinBinaryOperator operatorName then
+            if KnownPreludeSemantics.isEagerBuiltinBinaryOperator operatorName then
                 emitBuiltinBinary operatorName left right
             else
                 emitExpression
@@ -1549,7 +1549,7 @@ module internal IlDotNetBackendEmit =
         | KRuntimeApply(KRuntimeName segments, arguments) ->
             let nameText = String.concat "." segments
             match segments, arguments with
-            | [ operatorName ], [ left; right ] when IntrinsicCatalog.isBuiltinBinaryOperator operatorName ->
+            | [ operatorName ], [ left; right ] when KnownPreludeSemantics.isBuiltinBinaryOperator operatorName ->
                 emitExpression state currentModule typeParameters localValues expectedType il (KRuntimeBinary(left, operatorName, right))
             | _ ->
                 match tryResolveBinding state.Environment.Modules currentModule segments with

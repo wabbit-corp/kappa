@@ -68,11 +68,8 @@ module internal ClrAssemblyLowering =
             KRuntimeSequence(lowerExpression first, lowerExpression second)
         | BackendWhile(condition, body) ->
             KRuntimeWhile(lowerExpression condition, lowerExpression body)
-        | BackendCall(BackendName(BackendIntrinsicName(_, operatorName, _)), [ operand ], _, _)
-            when IntrinsicCatalog.isBuiltinUnaryIntrinsic operatorName ->
-            KRuntimeUnary(operatorName, lowerExpression operand)
         | BackendCall(BackendName(BackendIntrinsicName(_, operatorName, _)), [ left; right ], _, _)
-            when IntrinsicCatalog.isBuiltinBinaryOperator operatorName ->
+            when KnownPreludeSemantics.isBuiltinBinaryOperator operatorName ->
             KRuntimeBinary(lowerExpression left, operatorName, lowerExpression right)
         | BackendCall(BackendName(BackendConstructorName(moduleName, _, constructorName, _, _, _)), arguments, _, _) ->
             let loweredArguments = arguments |> List.map lowerExpression

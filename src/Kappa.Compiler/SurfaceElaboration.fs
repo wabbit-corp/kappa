@@ -7547,22 +7547,22 @@ module SurfaceElaboration =
                 Some Stdlib.PreludeModuleIdentity,
                 "builtin-prelude"
             | "Eq", [ argumentType ] ->
-                IntrinsicCatalog.tryCanonicalBuiltinPreludeEqHeadTypeText argumentType
+                KnownPreludeSemantics.tryCanonicalBuiltinPreludeEqHeadTypeText argumentType
                 |> Option.map List.singleton,
                 Some Stdlib.PreludeModuleIdentity,
                 "builtin-prelude"
             | "Ord", [ argumentType ] ->
-                IntrinsicCatalog.tryCanonicalBuiltinPreludeOrdHeadTypeText argumentType
+                KnownPreludeSemantics.tryCanonicalBuiltinPreludeOrdHeadTypeText argumentType
                 |> Option.map List.singleton,
                 Some Stdlib.PreludeModuleIdentity,
                 "builtin-prelude"
             | "Show", [ argumentType ] ->
-                IntrinsicCatalog.tryCanonicalBuiltinPreludeShowHeadTypeText argumentType
+                KnownPreludeSemantics.tryCanonicalBuiltinPreludeShowHeadTypeText argumentType
                 |> Option.map List.singleton,
                 Some Stdlib.PreludeModuleIdentity,
                 "builtin-prelude"
             | "Rangeable", [ argumentType ] ->
-                IntrinsicCatalog.tryCanonicalBuiltinPreludeRangeableHeadTypeText argumentType
+                KnownPreludeSemantics.tryCanonicalBuiltinPreludeRangeableHeadTypeText argumentType
                 |> Option.map List.singleton,
                 Some Stdlib.PreludeModuleIdentity,
                 "builtin-prelude"

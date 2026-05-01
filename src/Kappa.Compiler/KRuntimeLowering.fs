@@ -398,7 +398,7 @@ module internal KRuntimeLowering =
 
             let buildMemberBinding
                 (traitDeclaration: TraitDeclaration)
-                (spec: IntrinsicCatalog.BuiltinPreludeTraitInstanceSpec)
+                (spec: KnownPreludeSemantics.BuiltinPreludeTraitInstanceSpec)
                 instanceKey
                 (memberName, lowering)
                 : string * KRuntimeBinding
@@ -406,8 +406,10 @@ module internal KRuntimeLowering =
                 let traitTypeParameters =
                     TypeSignatures.collectLeadingTypeParameters traitDeclaration.HeaderTokens
 
+                let headTypeText = TypeIdentity.name spec.HeadTypeIdentity
+
                 let headTypeExprs =
-                    [ spec.HeadTypeText ] |> List.map parseHeadType
+                    [ headTypeText ] |> List.map parseHeadType
 
                 let substitution =
                     if List.length traitTypeParameters = List.length headTypeExprs then
@@ -448,14 +450,14 @@ module internal KRuntimeLowering =
 
                 let body =
                     match lowering, valueParameterNames with
-                    | IntrinsicCatalog.ForwardToBuiltinBinaryOperator operatorName, [ leftName; rightName ] ->
+                    | KnownPreludeSemantics.ForwardToBuiltinBinaryOperator operatorName, [ leftName; rightName ] ->
                         KRuntimeBinary(KRuntimeName [ leftName ], operatorName, KRuntimeName [ rightName ])
-                    | IntrinsicCatalog.ForwardToIntrinsicTerm intrinsicName, _ ->
+                    | KnownPreludeSemantics.ForwardToIntrinsicTerm intrinsicName, _ ->
                         KRuntimeApply(
                             KRuntimeName [ intrinsicName ],
                             valueParameterNames |> List.map (fun parameterName -> KRuntimeName [ parameterName ])
                         )
-                    | IntrinsicCatalog.ForwardToBuiltinBinaryOperator operatorName, _ ->
+                    | KnownPreludeSemantics.ForwardToBuiltinBinaryOperator operatorName, _ ->
                         invalidOp
                             $"Builtin prelude member '{traitDeclaration.Name}.{memberName}' expected two runtime arguments for operator '{operatorName}'."
 
@@ -474,7 +476,7 @@ module internal KRuntimeLowering =
                    Provenance = makeProvenance bindingName "builtin-prelude-instance-member" })
 
             let synthesizedArtifacts : (KRuntimeBinding list * KRuntimeTraitInstance) list =
-                IntrinsicCatalog.builtinPreludeTraitInstanceSpecs ()
+                KnownPreludeSemantics.builtinPreludeTraitInstanceSpecs ()
                 |> List.map (fun spec ->
                     let traitDeclaration =
                         traitDeclarationsByName
@@ -482,7 +484,8 @@ module internal KRuntimeLowering =
                         |> Option.defaultWith (fun () ->
                             invalidOp $"Builtin prelude instance synthesis could not find trait '{spec.TraitName}' in std.prelude.")
 
-                    let instanceKey = $"builtin-prelude:{spec.TraitName}:{spec.HeadTypeText}"
+                    let headTypeText = TypeIdentity.name spec.HeadTypeIdentity
+                    let instanceKey = $"builtin-prelude:{spec.TraitName}:{headTypeText}"
 
                     let memberBindingNames, memberBindingDeclarations =
                         spec.MemberLowerings
@@ -490,7 +493,7 @@ module internal KRuntimeLowering =
                         |> List.unzip
 
                     let dictionaryHeadTypeText =
-                        TypeSignatures.TypeName([ spec.TraitName ], [ parseHeadType spec.HeadTypeText ]) |> TypeSignatures.toText
+                        TypeSignatures.TypeName([ spec.TraitName ], [ parseHeadType headTypeText ]) |> TypeSignatures.toText
 
                     let dictionaryBindingName =
                         TraitRuntime.instanceDictionaryBindingName spec.TraitName instanceKey
@@ -507,7 +510,7 @@ module internal KRuntimeLowering =
                     let traitInstance : KRuntimeTraitInstance =
                         { TraitName = spec.TraitName
                           InstanceKey = instanceKey
-                          HeadTypeTexts = [ spec.HeadTypeText ]
+                          HeadTypeTexts = [ headTypeText ]
                           MemberBindings =
                             List.zip
                                 memberBindingNames

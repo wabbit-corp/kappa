@@ -350,7 +350,7 @@ module Interpreter =
                 | _ -> None
 
         let tryCreateBuiltinFunction name =
-            if IntrinsicCatalog.isBuiltinBinaryOperator name then
+            if KnownPreludeSemantics.isBuiltinBinaryOperator name then
                 Some(BuiltinFunctionValue { Name = name; Arguments = [] })
             else
                 None
@@ -365,9 +365,9 @@ module Interpreter =
             match name with
             | "True" when isPreludeModule -> Some(BooleanValue true)
             | "False" when isPreludeModule -> Some(BooleanValue false)
-            | intrinsicName when isPreludeModule && intrinsicName = IntrinsicCatalog.BuiltinPreludeShowIntrinsicName ->
+            | intrinsicName when isPreludeModule && intrinsicName = KnownPreludeSemantics.BuiltinPreludeShowHelperName ->
                 Some(BuiltinFunctionValue { Name = "show"; Arguments = [] })
-            | intrinsicName when isPreludeModule && intrinsicName = IntrinsicCatalog.BuiltinPreludeCompareIntrinsicName ->
+            | intrinsicName when isPreludeModule && intrinsicName = KnownPreludeSemantics.BuiltinPreludeCompareHelperName ->
                 Some(BuiltinFunctionValue { Name = "compare"; Arguments = [] })
             | "pure"
             | ">>="
@@ -1671,12 +1671,12 @@ module Interpreter =
                 error $"Intrinsic '{builtin.Name}' is not supported for {RuntimeValue.format value} and {RuntimeValue.format state}."
             | ("hashBool" | "hashUnicodeScalar" | "hashGrapheme" | "hashString" | "hashBytes" | "hashInt" | "hashInteger" | "hashFloatRaw" | "hashDoubleRaw" | "hashNatTag"), _ ->
                 error $"Intrinsic '{builtin.Name}' received too many arguments."
-            | name, [ left; right ] when IntrinsicCatalog.isBuiltinBinaryOperator name ->
+            | name, [ left; right ] when KnownPreludeSemantics.isBuiltinBinaryOperator name ->
                 applyBuiltinBinary name left right
                 |> Result.map Some
-            | name, arguments when IntrinsicCatalog.isBuiltinBinaryOperator name && List.length arguments < 2 ->
+            | name, arguments when KnownPreludeSemantics.isBuiltinBinaryOperator name && List.length arguments < 2 ->
                 ok None
-            | name, _ when IntrinsicCatalog.isBuiltinBinaryOperator name ->
+            | name, _ when KnownPreludeSemantics.isBuiltinBinaryOperator name ->
                 error $"Operator '{name}' received too many arguments."
             | _ ->
                 error $"Unknown builtin '{builtin.Name}'."
@@ -2040,7 +2040,7 @@ module Interpreter =
                             | None ->
                                 match tryCreateIntrinsicTermValue Stdlib.PreludeModuleText name with
                                 | Some intrinsicValue
-                                    when IntrinsicCatalog.hiddenRuntimePreludeIntrinsicTermNames.Contains name ->
+                                    when KnownPreludeSemantics.hiddenRuntimeHelperTermNames.Contains name ->
                                     ok intrinsicValue
                                 | _ ->
                                     error $"Name '{name}' is not in scope."

@@ -819,9 +819,9 @@ module internal IlDotNetBackendInput =
         | "and", [ IlPrimitive IlBool; IlPrimitive IlBool ]
         | "or", [ IlPrimitive IlBool; IlPrimitive IlBool ] ->
             Some([ IlPrimitive IlBool; IlPrimitive IlBool ], IlPrimitive IlBool)
-        | intrinsicName, [ valueType ] when intrinsicName = IntrinsicCatalog.BuiltinPreludeShowIntrinsicName ->
+        | intrinsicName, [ valueType ] when intrinsicName = KnownPreludeSemantics.BuiltinPreludeShowHelperName ->
             Some([ valueType ], IlPrimitive IlString)
-        | intrinsicName, [ leftType; rightType ] when intrinsicName = IntrinsicCatalog.BuiltinPreludeCompareIntrinsicName && leftType = rightType ->
+        | intrinsicName, [ leftType; rightType ] when intrinsicName = KnownPreludeSemantics.BuiltinPreludeCompareHelperName && leftType = rightType ->
             Some([ leftType; rightType ], IlNamed(preludeTypeIdentity Stdlib.KnownTypeNames.Ordering, []))
         | _ ->
             None

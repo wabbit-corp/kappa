@@ -1419,7 +1419,7 @@ module internal ZigCcBackendEmit =
                           ValueExpression = resultValue }
                 | _ ->
                     return! Result.Error "zig intrinsic 'writeRef' expected exactly 2 arguments."
-            | intrinsicName when intrinsicName = IntrinsicCatalog.BuiltinPreludeCompareIntrinsicName ->
+            | intrinsicName when intrinsicName = KnownPreludeSemantics.BuiltinPreludeCompareHelperName ->
                 match argumentValues with
                 | [ leftValue; rightValue ] ->
                     let statements, resultValue =
@@ -1430,7 +1430,7 @@ module internal ZigCcBackendEmit =
                           ValueExpression = resultValue }
                 | _ ->
                     return! Result.Error $"zig intrinsic '{intrinsicName}' expected exactly 2 arguments."
-            | intrinsicName when intrinsicName = IntrinsicCatalog.BuiltinPreludeShowIntrinsicName ->
+            | intrinsicName when intrinsicName = KnownPreludeSemantics.BuiltinPreludeShowHelperName ->
                 match argumentValues with
                 | [ value ] ->
                     let statements, resultValue =

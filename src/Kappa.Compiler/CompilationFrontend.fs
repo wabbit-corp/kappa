@@ -814,7 +814,7 @@ module internal CompilationFrontend =
                 |> Set.ofList
 
             if moduleName = Stdlib.PreludeModuleName then
-                Set.union satisfiedExpectTerms IntrinsicCatalog.hiddenRuntimePreludeIntrinsicTermNames
+                Set.union satisfiedExpectTerms KnownPreludeSemantics.hiddenRuntimeHelperTermNames
             else
                 satisfiedExpectTerms
         | None ->

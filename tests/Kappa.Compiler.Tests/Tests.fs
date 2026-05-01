@@ -4541,6 +4541,11 @@ module SmokeTestsShard4 =
         Assert.Equal("None", optionCaseName erasedForallDerivedLowered)
         Assert.Equal("None", optionCaseName erasedForallDerivedExecuted)
 
+        for ordinaryPreludeName in [ "True"; "False"; "not"; "and"; "or" ] do
+            let ordinaryCase, ordinarySpec = getSpecProperties ordinaryPreludeName
+            Assert.Equal("None", ordinaryCase)
+            Assert.True(ordinarySpec.IsNone)
+
         let unknownCase, unknownSpec = getSpecProperties "__missing_intrinsic__"
         Assert.Equal("None", unknownCase)
         Assert.True(unknownSpec.IsNone)

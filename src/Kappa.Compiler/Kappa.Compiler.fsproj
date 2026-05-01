@@ -21,6 +21,7 @@
     <Compile Include="SymbolicIdentity.fs" />
     <Compile Include="CompilerKnownSymbols.fs" />
     <Compile Include="TypeSignatures.fs" />
+    <Compile Include="KnownPreludeSemantics.fs" />
     <Compile Include="SignatureTokenAnalysis.fs" />
     <Compile Include="CoreParsing.fs" />
     <Compile Include="CompilationPipeline.fs" />
