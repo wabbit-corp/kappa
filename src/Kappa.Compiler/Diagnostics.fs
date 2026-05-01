@@ -894,6 +894,8 @@ type CoreExpressionParsingEvidence =
     | RecordPatchExtensionMustBeTopLevelLabel
     | ExpectedRecordPatchPath
     | ExpectedRecordPatchItem
+    | ExpectedProjectionThen
+    | ExpectedProjectionElse
 
 and CoreHeaderContext =
     | TopLevelFunctionHeader
@@ -2635,6 +2637,18 @@ module DiagnosticFact =
                     None
                     "Expected a record patch item of the form 'path = expr' or 'name := expr'."
                     (payload "core-expression-parsing" [ field "reason" (DiagnosticPayloadText "expected-record-patch-item") ])
+            | ExpectedProjectionThen ->
+                descriptor
+                    DiagnosticCode.ExpectedSyntaxToken
+                    None
+                    "Expected 'then' in the projection body."
+                    (payload "core-expression-parsing" [ field "reason" (DiagnosticPayloadText "expected-projection-then") ])
+            | ExpectedProjectionElse ->
+                descriptor
+                    DiagnosticCode.ExpectedSyntaxToken
+                    None
+                    "Expected 'else' in the projection body."
+                    (payload "core-expression-parsing" [ field "reason" (DiagnosticPayloadText "expected-projection-else") ])
         | UnicodeScalarLiteralDiagnostic evidence ->
             match evidence with
             | UnicodeScalarInvalidLiteralForm ->

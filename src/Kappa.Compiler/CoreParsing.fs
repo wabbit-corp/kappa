@@ -6907,12 +6907,18 @@ module CoreParsing =
         let parseIfBody rest =
             match splitTopLevelAtKeyword Keyword.Then rest with
             | None ->
-                diagnostics.AddError(DiagnosticFact.simple SimpleDiagnosticKind.ExpectedSyntaxToken "Expected 'then' in the projection body.", source.GetLocation(TextSpan.FromBounds(source.Length, source.Length)))
+                diagnostics.AddError(
+                    DiagnosticFact.coreExpressionParsing ExpectedProjectionThen,
+                    source.GetLocation(TextSpan.FromBounds(source.Length, source.Length))
+                )
                 parseYield rest
             | Some(conditionTokens, afterThen) ->
                 match splitTopLevelAtKeyword Keyword.Else afterThen with
                 | None ->
-                    diagnostics.AddError(DiagnosticFact.simple SimpleDiagnosticKind.ExpectedSyntaxToken "Expected 'else' in the projection body.", source.GetLocation(TextSpan.FromBounds(source.Length, source.Length)))
+                    diagnostics.AddError(
+                        DiagnosticFact.coreExpressionParsing ExpectedProjectionElse,
+                        source.GetLocation(TextSpan.FromBounds(source.Length, source.Length))
+                    )
                     parseYield afterThen
                 | Some(whenTrueTokens, whenFalseTokens) ->
                     let condition =

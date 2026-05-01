@@ -106,14 +106,14 @@ Current M4 status note: started, not complete. The compiler now has a real effec
 - [ ] Finish `CoreParsing.fs` diagnostics conversion for the remaining primary-expression recovery paths.
   Local `let ... in ...` recovery, missing `)` recovery, the generic “expected expression” path, and interpolated-string recovery now route through `CoreExpressionParsingEvidence`, but a few selector/name recovery helpers still use raw detail strings.
 - [ ] Finish `CoreParsing.fs` diagnostics conversion for projection headers, accessor clauses, and projection-specific binder validation.
-  Projection-body diagnostics now route through `CoreExpressionParsingEvidence`, but projection place-binder, accessor-clause, and header/result-type diagnostics still use raw detail strings.
+  Projection-body diagnostics now route through `CoreExpressionParsingEvidence`, including malformed body heads, missing projection-match case structure, and missing `then` / `else` in projection `if` bodies. Projection place-binder, accessor-clause, and header/result-type diagnostics still use raw detail strings.
 - [ ] Finish `CoreParsing.fs` diagnostics conversion for remaining handler/projection validation diagnostics.
   Handler-expression syntax and return-clause validation diagnostics now route through `CoreExpressionParsingEvidence`.
   Query/comprehension diagnostics now route through `CoreExpressionParsingEvidence`, including generator/group/join/left-join/conflict-clause errors, unordered `skip` / `take`, unsupported comprehension clauses, and missing trailing `yield`.
   Function and local-function header diagnostics now route through `CoreExpressionParsingEvidence`, and both sites share the same header-parameter parser loop with only the header context varying.
   Expression-tail diagnostics now route through `CoreExpressionParsingEvidence` for missing effect-label names, missing constructor names after `is`, safe-navigation member access failures, chained tag tests, explicit member projection failures, unexpected trailing tokens, and record-update close failures.
   Named-application block field diagnostics and `seal` diagnostics now also route through `CoreExpressionParsingEvidence`; record literal field diagnostics and the remaining generic kind-selector / selector recovery cases are still stringly.
-  Projection-body diagnostics now route through `CoreExpressionParsingEvidence` for malformed body heads, missing indented match case blocks, missing `case` clauses, and missing projection-case arrows.
+  Projection-body diagnostics now route through `CoreExpressionParsingEvidence` for malformed body heads, missing indented match case blocks, missing `case` clauses, missing projection-case arrows, and missing `then` / `else` in projection `if` bodies.
 - [ ] Convert `Lexer.fs` diagnostics to typed evidence ADTs with centralized formatting.
 - [ ] Convert elaboration/typechecking diagnostics to typed evidence ADTs with centralized formatting.
 - [ ] Convert backend/lowering diagnostics to typed evidence ADTs with centralized formatting.
