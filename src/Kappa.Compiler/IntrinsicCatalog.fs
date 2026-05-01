@@ -24,185 +24,11 @@ module internal IntrinsicCatalog =
           HeadTypeText: string
           MemberLowerings: (string * BuiltinPreludeTraitMemberLowering) list }
 
-    let private aggregateDiagnostics diagnostics =
-        diagnostics
-        |> List.map (fun diagnostic -> diagnostic.Message)
-        |> String.concat Environment.NewLine
-
-    let private trimSignificantTokens (tokens: Token list) =
-        tokens
-        |> List.filter (fun token ->
-            match token.Kind with
-            | Newline
-            | Indent
-            | Dedent
-            | EndOfFile -> false
-            | _ -> true)
-
-    let private splitTopLevelArrows (tokens: Token list) =
-        let rec loop depth current remaining segments =
-            match remaining with
-            | [] ->
-                List.rev ((List.rev current) :: segments)
-            | token :: tail when token.Kind = LeftParen ->
-                loop (depth + 1) (token :: current) tail segments
-            | token :: tail when token.Kind = RightParen ->
-                loop (max 0 (depth - 1)) (token :: current) tail segments
-            | token :: tail when token.Kind = Arrow && depth = 0 ->
-                loop depth [] tail ((List.rev current) :: segments)
-            | token :: tail ->
-                loop depth (token :: current) tail segments
-
-        loop 0 [] tokens []
-
-    let private bindingSignatureBodyTokens (tokens: Token list) =
-        let tokenArray = trimSignificantTokens tokens |> List.toArray
-
-        let mutable parenDepth = 0
-        let mutable braceDepth = 0
-        let mutable bracketDepth = 0
-        let mutable bodyStart = 0
-
-        for index = 0 to tokenArray.Length - 1 do
-            match tokenArray[index].Kind with
-            | LeftParen -> parenDepth <- parenDepth + 1
-            | RightParen -> parenDepth <- max 0 (parenDepth - 1)
-            | LeftBrace -> braceDepth <- braceDepth + 1
-            | RightBrace -> braceDepth <- max 0 (braceDepth - 1)
-            | LeftBracket -> bracketDepth <- bracketDepth + 1
-            | RightBracket -> bracketDepth <- max 0 (bracketDepth - 1)
-            | Operator when parenDepth = 0 && braceDepth = 0 && bracketDepth = 0 && String.Equals(tokenArray[index].Text, "=>", StringComparison.Ordinal) ->
-                bodyStart <- index + 1
-            | Equals when parenDepth = 0 && braceDepth = 0 && bracketDepth = 0 && index + 1 < tokenArray.Length ->
-                match tokenArray[index + 1] with
-                | { Kind = Operator; Text = ">" } ->
-                    bodyStart <- index + 2
-                | _ ->
-                    ()
-            | _ ->
-                ()
-
-        let stripLeadingForall startIndex =
-            if startIndex >= tokenArray.Length then
-                startIndex
-            else
-                match tokenArray[startIndex] with
-                | token when Token.isKeyword Keyword.Forall token ->
-                    let mutable index = startIndex + 1
-                    let mutable parsed = true
-                    let mutable foundDot = false
-                    let mutable nextIndex = startIndex
-
-                    while parsed && not foundDot && index < tokenArray.Length do
-                        match tokenArray[index] with
-                        | token when Token.isName token ->
-                            index <- index + 1
-                        | { Kind = LeftParen } ->
-                            let mutable depth = 1
-                            let mutable innerIndex = index + 1
-
-                            while depth > 0 && innerIndex < tokenArray.Length do
-                                match tokenArray[innerIndex].Kind with
-                                | LeftParen -> depth <- depth + 1
-                                | RightParen -> depth <- depth - 1
-                                | _ -> ()
-
-                                innerIndex <- innerIndex + 1
-
-                            if depth = 0 then
-                                index <- innerIndex
-                            else
-                                parsed <- false
-                        | { Kind = Dot } ->
-                            foundDot <- true
-                            nextIndex <- index + 1
-                        | _ ->
-                            parsed <- false
-
-                    if parsed && foundDot then nextIndex else startIndex
-                | _ ->
-                    startIndex
-
-        let bodyStart = stripLeadingForall bodyStart
-        List.ofArray tokenArray[bodyStart..]
-
-    let private parameterHasErasedRuntimeQuantity (tokens: Token list) =
-        let significant = trimSignificantTokens tokens
-
-        let binderTokens =
-            match significant with
-            | { Kind = LeftParen } :: rest ->
-                match List.rev rest with
-                | { Kind = RightParen } :: reversedInner -> trimSignificantTokens (List.rev reversedInner)
-                | _ -> significant
-            | _ ->
-                significant
-
-        match binderTokens with
-        | { Kind = AtSign } :: { Kind = IntegerLiteral; Text = "0" } :: _ -> true
-        | { Kind = IntegerLiteral; Text = "0" } :: _ -> true
-        | _ -> false
-
-    let private runtimeArityFromTypeTokens tokens =
-        let segments =
-            tokens
-            |> bindingSignatureBodyTokens
-            |> splitTopLevelArrows
-            |> List.filter (List.isEmpty >> not)
-
-        if List.length segments <= 1 then
-            0
-        else
-            segments
-            |> List.take (segments.Length - 1)
-            |> List.sumBy (fun segment -> if parameterHasErasedRuntimeQuantity segment then 0 else 1)
-
-    let private parseSourceBackedDeclarations virtualPath loadText =
-        let source = SourceText.From(virtualPath, loadText ())
-        let lexed = Lexer.tokenize source
-
-        if not (List.isEmpty lexed.Diagnostics) then
-            invalidOp
-                $"Bundled stdlib module '{virtualPath}' failed to lex for intrinsic catalog extraction:{Environment.NewLine}{aggregateDiagnostics lexed.Diagnostics}"
-
-        let parsed = Parser.parseWithInitialFixities FixityTable.empty source lexed.Tokens
-
-        if not (List.isEmpty parsed.Diagnostics) then
-            invalidOp
-                $"Bundled stdlib module '{virtualPath}' failed to parse for intrinsic catalog extraction:{Environment.NewLine}{aggregateDiagnostics parsed.Diagnostics}"
-
-        parsed.Syntax.Declarations
-
-    let private parseBundledPreludeDeclarations () =
-        parseSourceBackedDeclarations StandardLibraryCatalog.preludeVirtualPath StandardLibraryCatalog.loadPreludeText
-
-    let private tokenizeTypeText context typeText =
-        let source = SourceText.From($"__intrinsic_catalog__.{context}.kp", typeText)
-        let lexed = Lexer.tokenize source
-
-        if not (List.isEmpty lexed.Diagnostics) then
-            invalidOp
-                $"Standard-library intrinsic type '{context}' failed to lex for intrinsic catalog extraction:{Environment.NewLine}{aggregateDiagnostics lexed.Diagnostics}"
-
-        lexed.Tokens
-
-    let private tryCatalogSurfaceIntrinsicSpec
-        (intrinsicTermNames: Set<string>)
-        (term: StandardLibraryCatalog.StandardLibraryTermDescription)
-        =
-        if intrinsicTermNames.Contains term.Name then
-            Some(
-                term.Name,
-                { RuntimeArity = runtimeArityFromTypeTokens (tokenizeTypeText term.Name term.TypeText)
-                  LoweredResultRepresentation = None
-                  ExecutedResultRepresentation = None }
-            )
-        else
-            None
-
     let private bundledPreludeExpectContractValue =
         lazy
-            (let declarations = parseBundledPreludeDeclarations ()
+            (let declarations =
+                 StandardLibrarySourceParsing.trySourceBackedDeclarations CompilerKnownSymbols.KnownModules.Prelude
+                 |> Option.defaultWith (fun () -> invalidOp "Bundled prelude must be source-backed.")
 
              let collect chooser =
                  declarations
@@ -506,30 +332,19 @@ module internal IntrinsicCatalog =
     let private derivedStandardLibraryIntrinsicSpecsValue =
         lazy
             (StandardLibraryCatalog.all
-             |> List.collect (function
-                 | StandardLibraryCatalog.SourceBacked moduleInfo ->
-                     let intrinsicTermNames = moduleInfo.Surface.IntrinsicTermNames
-                     let catalogSurfaceTerms =
-                         moduleInfo.Surface.Terms
-                         |> List.choose (tryCatalogSurfaceIntrinsicSpec intrinsicTermNames)
+             |> List.collect (fun moduleInfo ->
+                 let moduleName = StandardLibraryCatalog.moduleName moduleInfo
+                 let intrinsicTermNames =
+                     StandardLibrarySourceParsing.tryEffectiveIntrinsicTermNames moduleName
+                     |> Option.defaultValue Set.empty
 
-                     if not (List.isEmpty catalogSurfaceTerms) then
-                         catalogSurfaceTerms
-                     else
-                         parseSourceBackedDeclarations moduleInfo.VirtualPath moduleInfo.LoadText
-                         |> List.choose (function
-                             | ExpectDeclarationNode (ExpectTermDeclaration declaration)
-                                 when Set.isEmpty intrinsicTermNames || intrinsicTermNames.Contains declaration.Name ->
-                                 Some(
-                                     declaration.Name,
-                                     intrinsicSpec (runtimeArityFromTypeTokens declaration.TypeTokens) None None
-                                 )
-                             | _ -> None)
-                 | StandardLibraryCatalog.Synthetic moduleInfo ->
-                     let intrinsicTermNames = moduleInfo.Surface.IntrinsicTermNames
-
-                     moduleInfo.Surface.Terms
-                     |> List.choose (tryCatalogSurfaceIntrinsicSpec intrinsicTermNames))
+                 intrinsicTermNames
+                 |> Set.toList
+                 |> List.choose (fun termName ->
+                     StandardLibrarySourceParsing.tryIntrinsicTermTypeTokens moduleName termName
+                     |> Option.map (fun typeTokens ->
+                         termName,
+                         intrinsicSpec (SignatureTokenAnalysis.runtimeArityFromTypeTokens typeTokens) None None)))
              |> Map.ofList)
 
     let tryFindIntrinsicSpec name =

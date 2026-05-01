@@ -20,121 +20,15 @@ module internal ResourceCheckingSignatures =
         | Some segments -> [ simple; $"{SyntaxFacts.moduleNameToText segments}.{simple}" ]
         | None -> [ simple ]
 
-    let private splitTopLevelArrows (tokens: Token list) =
-        let rec loop depth current remaining segments =
-            match remaining with
-            | [] ->
-                List.rev ((List.rev current) :: segments)
-            | token :: tail when token.Kind = LeftParen ->
-                loop (depth + 1) (token :: current) tail segments
-            | token :: tail when token.Kind = RightParen ->
-                loop (max 0 (depth - 1)) (token :: current) tail segments
-            | token :: tail when token.Kind = Arrow && depth = 0 ->
-                loop depth [] tail ((List.rev current) :: segments)
-            | token :: tail ->
-                loop depth (token :: current) tail segments
-
-        loop 0 [] tokens []
-
-    let private bindingSignatureBodyTokens (tokens: Token list) =
-        let tokenArray =
-            tokens
-            |> List.filter (fun token ->
-                match token.Kind with
-                | Newline
-                | Indent
-                | Dedent
-                | EndOfFile -> false
-                | _ -> true)
-            |> List.toArray
-
-        let mutable parenDepth = 0
-        let mutable braceDepth = 0
-        let mutable bracketDepth = 0
-        let mutable bodyStart = 0
-
-        for index = 0 to tokenArray.Length - 1 do
-            match tokenArray[index].Kind with
-            | LeftParen -> parenDepth <- parenDepth + 1
-            | RightParen -> parenDepth <- max 0 (parenDepth - 1)
-            | LeftBrace -> braceDepth <- braceDepth + 1
-            | RightBrace -> braceDepth <- max 0 (braceDepth - 1)
-            | LeftBracket -> bracketDepth <- bracketDepth + 1
-            | RightBracket -> bracketDepth <- max 0 (bracketDepth - 1)
-            | Operator when parenDepth = 0 && braceDepth = 0 && bracketDepth = 0 && String.Equals(tokenArray[index].Text, "=>", StringComparison.Ordinal) ->
-                bodyStart <- index + 1
-            | Equals when parenDepth = 0 && braceDepth = 0 && bracketDepth = 0 && index + 1 < tokenArray.Length ->
-                match tokenArray[index + 1] with
-                | { Kind = Operator; Text = ">" } ->
-                    bodyStart <- index + 2
-                | _ ->
-                    ()
-            | _ ->
-                ()
-
-        let stripLeadingForall startIndex =
-            if startIndex >= tokenArray.Length then
-                startIndex
-            else
-                match tokenArray[startIndex] with
-                | token when Token.isKeyword Keyword.Forall token ->
-                    let mutable index = startIndex + 1
-                    let mutable parsed = true
-                    let mutable foundDot = false
-                    let mutable nextIndex = startIndex
-
-                    while parsed && not foundDot && index < tokenArray.Length do
-                        match tokenArray[index] with
-                        | token when Token.isName token ->
-                            index <- index + 1
-                        | { Kind = LeftParen } ->
-                            let mutable depth = 1
-                            let mutable innerIndex = index + 1
-
-                            while depth > 0 && innerIndex < tokenArray.Length do
-                                match tokenArray[innerIndex].Kind with
-                                | LeftParen -> depth <- depth + 1
-                                | RightParen -> depth <- depth - 1
-                                | _ -> ()
-
-                                innerIndex <- innerIndex + 1
-
-                            if depth = 0 then
-                                index <- innerIndex
-                            else
-                                parsed <- false
-                        | { Kind = Dot } ->
-                            nextIndex <- index + 1
-                            foundDot <- true
-                        | _ ->
-                            parsed <- false
-
-                    if parsed && foundDot then nextIndex else startIndex
-                | _ ->
-                    startIndex
-
-        let bodyStart = stripLeadingForall bodyStart
-        List.ofArray tokenArray[bodyStart..]
-
     let private quantityFromSignatureSegment (tokens: Token list) =
-        let trimSignificant tokens =
-            tokens
-            |> List.filter (fun token ->
-                match token.Kind with
-                | Newline
-                | Indent
-                | Dedent
-                | EndOfFile -> false
-                | _ -> true)
-
-        let significant = trimSignificant tokens
+        let significant = SignatureTokenAnalysis.significantTokens tokens
 
         let binderTokens =
             match significant with
             | { Kind = LeftParen } :: rest ->
                 match List.rev rest with
                 | { Kind = RightParen } :: reversedInner ->
-                    reversedInner |> List.rev |> trimSignificant
+                    reversedInner |> List.rev |> SignatureTokenAnalysis.significantTokens
                 | _ ->
                     significant
             | _ ->
@@ -196,8 +90,8 @@ module internal ResourceCheckingSignatures =
         | None ->
             let segments =
                 tokens
-                |> bindingSignatureBodyTokens
-                |> splitTopLevelArrows
+                |> SignatureTokenAnalysis.bindingSignatureBodyTokens
+                |> SignatureTokenAnalysis.splitTopLevelArrows
                 |> List.filter (List.isEmpty >> not)
 
             if List.length segments <= 1 then
@@ -209,14 +103,7 @@ module internal ResourceCheckingSignatures =
 
     let private signatureParameterTypeTokens tokens =
         let trimSignificant tokens =
-            tokens
-            |> List.filter (fun token ->
-                match token.Kind with
-                | Newline
-                | Indent
-                | Dedent
-                | EndOfFile -> false
-                | _ -> true)
+            SignatureTokenAnalysis.significantTokens tokens
 
         let stripBinderShell tokens =
             match trimSignificant tokens with
@@ -265,8 +152,8 @@ module internal ResourceCheckingSignatures =
 
         let segments =
             tokens
-            |> bindingSignatureBodyTokens
-            |> splitTopLevelArrows
+            |> SignatureTokenAnalysis.bindingSignatureBodyTokens
+            |> SignatureTokenAnalysis.splitTopLevelArrows
             |> List.filter (List.isEmpty >> not)
 
         if List.length segments <= 1 then
@@ -345,8 +232,8 @@ module internal ResourceCheckingSignatures =
 
         let segments =
             tokens
-            |> bindingSignatureBodyTokens
-            |> splitTopLevelArrows
+            |> SignatureTokenAnalysis.bindingSignatureBodyTokens
+            |> SignatureTokenAnalysis.splitTopLevelArrows
             |> List.filter (List.isEmpty >> not)
 
         if List.length segments <= 1 then
@@ -380,8 +267,8 @@ module internal ResourceCheckingSignatures =
 
         let segments =
             tokens
-            |> bindingSignatureBodyTokens
-            |> splitTopLevelArrows
+            |> SignatureTokenAnalysis.bindingSignatureBodyTokens
+            |> SignatureTokenAnalysis.splitTopLevelArrows
             |> List.filter (List.isEmpty >> not)
 
         if List.length segments <= 1 then
@@ -422,8 +309,8 @@ module internal ResourceCheckingSignatures =
 
         let segments =
             tokens
-            |> bindingSignatureBodyTokens
-            |> splitTopLevelArrows
+            |> SignatureTokenAnalysis.bindingSignatureBodyTokens
+            |> SignatureTokenAnalysis.splitTopLevelArrows
             |> List.filter (List.isEmpty >> not)
 
         if List.length segments <= 1 then
@@ -438,8 +325,8 @@ module internal ResourceCheckingSignatures =
 
     let private signatureReturnTypeTokens tokens =
         tokens
-        |> bindingSignatureBodyTokens
-        |> splitTopLevelArrows
+        |> SignatureTokenAnalysis.bindingSignatureBodyTokens
+        |> SignatureTokenAnalysis.splitTopLevelArrows
         |> List.filter (List.isEmpty >> not)
         |> List.tryLast
 

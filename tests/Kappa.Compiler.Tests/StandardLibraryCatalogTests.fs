@@ -3,6 +3,9 @@ module StandardLibraryCatalogTests
 open Kappa.Compiler
 open Xunit
 
+let private tokenTexts (tokens: Token list) =
+    tokens |> List.map (fun token -> token.Text)
+
 [<Fact>]
 let ``standard library catalog distinguishes source-backed and synthetic modules`` () =
     let prelude =
@@ -40,3 +43,29 @@ let ``standard library catalog unifies bundled and synthetic surface inventories
     Assert.Contains(CompilerKnownSymbols.KnownTypeNames.HashCode, hashTypeNames)
     Assert.Equal(Some "NormalizationForm -> String -> String", unicodeTermType)
     Assert.Contains("failNow", testingTerms)
+
+[<Fact>]
+let ``standard library catalog exposes bundled prelude bootstrap fixity declarations`` () =
+    let fixities = StandardLibrarySourceParsing.preludeBootstrapFixityDeclarations ()
+
+    Assert.NotEmpty(fixities)
+    Assert.Contains(fixities, fun declaration -> declaration.OperatorName = "<|")
+    Assert.Contains(fixities, fun declaration -> declaration.OperatorName = "<")
+
+[<Fact>]
+let ``standard library catalog resolves intrinsic term type tokens across source and catalog modules`` () =
+    let preludeTypeText =
+        StandardLibrarySourceParsing.tryIntrinsicTermTypeTokens CompilerKnownSymbols.KnownModules.Prelude "<|"
+        |> Option.map tokenTexts
+
+    let derivingShapeTypeText =
+        StandardLibrarySourceParsing.tryIntrinsicTermTypeTokens [ "std"; "deriving"; "shape" ] "omitImplicitFieldArgument"
+        |> Option.map tokenTexts
+
+    let hashTypeText =
+        StandardLibrarySourceParsing.tryIntrinsicTermTypeTokens CompilerKnownSymbols.KnownModules.Hash "hashUnit"
+        |> Option.map tokenTexts
+
+    Assert.Equal(Some [ "("; "a"; "->"; "b"; ")"; "->"; "a"; "->"; "b" ], preludeTypeText)
+    Assert.Equal(Some [ "ShapeField"; "->"; "FieldArgument" ], derivingShapeTypeText)
+    Assert.Equal(Some [ "("; "1"; "state"; ":"; "HashState"; ")"; "->"; "HashState" ], hashTypeText)

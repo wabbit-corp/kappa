@@ -12,30 +12,10 @@ module internal IlDotNetBackendInput =
     open IlDotNetBackendModel
 
     let internal significantTokens (tokens: Token list) =
-        tokens
-        |> List.filter (fun token ->
-            match token.Kind with
-            | Newline
-            | Indent
-            | Dedent
-            | EndOfFile -> false
-            | _ -> true)
+        SignatureTokenAnalysis.significantTokens tokens
 
     let internal splitTopLevelArrows (tokens: Token list) =
-        let rec loop depth current remaining segments =
-            match remaining with
-            | [] ->
-                List.rev ((List.rev current) :: segments)
-            | token :: tail when token.Kind = LeftParen ->
-                loop (depth + 1) (token :: current) tail segments
-            | token :: tail when token.Kind = RightParen ->
-                loop (max 0 (depth - 1)) (token :: current) tail segments
-            | token :: tail when token.Kind = Arrow && depth = 0 ->
-                loop depth [] tail ((List.rev current) :: segments)
-            | token :: tail ->
-                loop depth (token :: current) tail segments
-
-        loop 0 [] tokens []
+        SignatureTokenAnalysis.splitTopLevelArrows tokens
 
     let internal collectParenthesizedTokens (tokens: Token list) =
         let rec loop depth current remaining =

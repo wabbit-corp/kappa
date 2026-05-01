@@ -952,74 +952,7 @@ module SurfaceElaboration =
                 None)
 
     let private bindingSignatureBodyTokens (tokens: Token list) =
-        let tokenArray = significantTokens tokens |> List.toArray
-        let mutable parenDepth = 0
-        let mutable braceDepth = 0
-        let mutable bracketDepth = 0
-        let mutable bodyStart = 0
-
-        for index = 0 to tokenArray.Length - 1 do
-            match tokenArray[index].Kind with
-            | LeftParen -> parenDepth <- parenDepth + 1
-            | RightParen -> parenDepth <- max 0 (parenDepth - 1)
-            | LeftBrace -> braceDepth <- braceDepth + 1
-            | RightBrace -> braceDepth <- max 0 (braceDepth - 1)
-            | LeftBracket -> bracketDepth <- bracketDepth + 1
-            | RightBracket -> bracketDepth <- max 0 (bracketDepth - 1)
-            | Operator when parenDepth = 0 && braceDepth = 0 && bracketDepth = 0 && String.Equals(tokenArray[index].Text, "=>", StringComparison.Ordinal) ->
-                bodyStart <- index + 1
-            | Equals when parenDepth = 0 && braceDepth = 0 && bracketDepth = 0 && index + 1 < tokenArray.Length ->
-                match tokenArray[index + 1] with
-                | { Kind = Operator; Text = ">" } ->
-                    bodyStart <- index + 2
-                | _ ->
-                    ()
-            | _ ->
-                ()
-
-        let stripLeadingForall startIndex =
-            if startIndex >= tokenArray.Length then
-                startIndex
-            else
-                match tokenArray[startIndex] with
-                | token when Token.isKeyword Keyword.Forall token ->
-                    let mutable index = startIndex + 1
-                    let mutable parsed = true
-                    let mutable bodyIndex = startIndex
-                    let mutable foundDot = false
-
-                    while parsed && not foundDot && index < tokenArray.Length do
-                        match tokenArray[index] with
-                        | token when Token.isName token ->
-                            index <- index + 1
-                        | { Kind = LeftParen } ->
-                            let mutable depth = 1
-                            let mutable innerIndex = index + 1
-
-                            while depth > 0 && innerIndex < tokenArray.Length do
-                                match tokenArray[innerIndex].Kind with
-                                | LeftParen -> depth <- depth + 1
-                                | RightParen -> depth <- depth - 1
-                                | _ -> ()
-
-                                innerIndex <- innerIndex + 1
-
-                            if depth = 0 then
-                                index <- innerIndex
-                            else
-                                parsed <- false
-                        | { Kind = Dot } ->
-                            bodyIndex <- index + 1
-                            foundDot <- true
-                        | _ ->
-                            parsed <- false
-
-                    if parsed && foundDot then bodyIndex else startIndex
-                | _ ->
-                    startIndex
-
-        bodyStart <- stripLeadingForall bodyStart
-        List.ofArray tokenArray[bodyStart..]
+        SignatureTokenAnalysis.bindingSignatureBodyTokens tokens
 
     let private splitSignatureParameterTokens (tokens: Token list) =
         let bodyTokens = bindingSignatureBodyTokens tokens

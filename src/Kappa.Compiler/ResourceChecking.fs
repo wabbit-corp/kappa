@@ -3565,37 +3565,6 @@ module ResourceChecking =
                 | _ ->
                     false)
 
-    let private splitTopLevelArrows (tokens: Token list) =
-        let tokenArray = trimSignificantTokens tokens |> List.toArray
-        let segments = ResizeArray<Token list>()
-        let current = ResizeArray<Token>()
-        let mutable depth = 0
-
-        for token in tokenArray do
-            match token.Kind with
-            | LeftParen
-            | LeftBracket
-            | LeftBrace
-            | LeftSetBrace ->
-                depth <- depth + 1
-                current.Add(token)
-            | RightParen
-            | RightBracket
-            | RightBrace
-            | RightSetBrace ->
-                depth <- max 0 (depth - 1)
-                current.Add(token)
-            | Arrow when depth = 0 ->
-                segments.Add(List.ofSeq current)
-                current.Clear()
-            | _ ->
-                current.Add(token)
-
-        if current.Count > 0 then
-            segments.Add(List.ofSeq current)
-
-        segments |> Seq.toList
-
     let private definitionReturnTypeTokens (document: ParsedDocument) (definition: LetDefinition) =
         definition.ReturnTypeTokens
         |> Option.orElseWith (fun () ->
@@ -3604,7 +3573,7 @@ module ResourceChecking =
                 document.Syntax.Declarations
                 |> List.tryPick (function
                     | SignatureDeclaration signature when String.Equals(signature.Name, name, StringComparison.Ordinal) ->
-                        splitTopLevelArrows signature.TypeTokens
+                        SignatureTokenAnalysis.splitTopLevelArrows signature.TypeTokens
                         |> List.tryLast
                     | _ ->
                         None)))

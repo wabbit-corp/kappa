@@ -132,6 +132,8 @@ Current M4 status note: started, not complete. The compiler now has a real effec
 - [ ] Replace the current split intrinsic facts with one authoritative intrinsic manifest consumed by frontend import validation, elaboration, runtime lowering, interpreter, CLR lowering, Zig lowering, and backend verification.
 - `IntrinsicCatalog` now exposes a typed intrinsic-spec lookup, derives bundled-prelude \`expect term\` runtime arity structurally from authoritative parsed declarations, and no longer treats unknown intrinsic names as implicitly nullary. It is still not authoritative across the compiler: arity/result/availability/backends are still duplicated outside that catalog.
   References: `TODO.md` §1; `reviews/principles1.md`; `reviews/backend1.md`; `reviews/general1.md`.
+- [ ] Split true intrinsic ABI contracts from compiler-known prelude/backend special cases.
+  Ordinary surface names such as `Bool`, `not`, builtin operator spellings, trait helper lowering, and other backend-known semantics should not be modeled as “intrinsics” just because the compiler recognizes them. `IntrinsicCatalog` should end up owning only actual compiler/runtime contract terms, while ordinary-but-known surface semantics move into a separate typed model.
 - [ ] Finish unifying standard-library/module descriptors so import validation, elaboration, runtime injection, and backends all consume the same module catalog and capability/support metadata.
   References: `TODO.md` §1, §8, §8A; `reviews/principles1.md`; `reviews/general1.md`; `reviews/unicode1.md`.
 - [ ] Align identifier, keyword, and module/path-derived name handling with the lexical spec, including the ASCII-vs-Unicode identifier decision and the token model exposed to tooling.

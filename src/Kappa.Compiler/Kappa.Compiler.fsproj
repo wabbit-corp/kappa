@@ -21,6 +21,7 @@
     <Compile Include="SymbolicIdentity.fs" />
     <Compile Include="CompilerKnownSymbols.fs" />
     <Compile Include="TypeSignatures.fs" />
+    <Compile Include="SignatureTokenAnalysis.fs" />
     <Compile Include="CoreParsing.fs" />
     <Compile Include="CompilationPipeline.fs" />
     <Compile Include="KFrontIR.fs" />
@@ -32,6 +33,7 @@
     <Compile Include="Lexer.fs" />
     <Compile Include="EffectSemantics.fs" />
     <Compile Include="Parser.fs" />
+    <Compile Include="StandardLibrarySourceParsing.fs" />
     <Compile Include="IntrinsicCatalog.fs" />
     <Compile Include="Stdlib.fs" />
     <Compile Include="HostBindings.fs" />

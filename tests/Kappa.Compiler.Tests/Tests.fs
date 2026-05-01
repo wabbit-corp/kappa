@@ -4531,6 +4531,16 @@ module SmokeTestsShard4 =
         Assert.Equal("None", optionCaseName stdlibDerivedLowered)
         Assert.Equal("None", optionCaseName stdlibDerivedExecuted)
 
+        let erasedForallDerivedCase, erasedForallDerivedSpec = getSpecProperties "tryInspectAdt"
+        Assert.Equal("Some", erasedForallDerivedCase)
+
+        let erasedForallDerivedArity, erasedForallDerivedLowered, erasedForallDerivedExecuted =
+            erasedForallDerivedSpec |> Option.get
+
+        Assert.Equal(1, erasedForallDerivedArity)
+        Assert.Equal("None", optionCaseName erasedForallDerivedLowered)
+        Assert.Equal("None", optionCaseName erasedForallDerivedExecuted)
+
         let unknownCase, unknownSpec = getSpecProperties "__missing_intrinsic__"
         Assert.Equal("None", unknownCase)
         Assert.True(unknownSpec.IsNone)
