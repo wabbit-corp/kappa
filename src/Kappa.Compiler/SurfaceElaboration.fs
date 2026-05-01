@@ -17592,11 +17592,8 @@ module SurfaceElaboration =
                     let kindText = kindSelectorText kind
                     let nameText = SyntaxFacts.moduleNameToText nameSegments
 
-                    [
-                        makeDiagnostic
-                            SimpleDiagnosticKind.StaticObjectUnresolved
-                            $"No {kindText} static object named '{nameText}' is visible."
-                    ]
+                    [ makeSurfaceElaborationDiagnostic
+                        (StaticObjectUnresolvedByKind(kindText, nameText)) ]
             | Name(root :: fieldName :: _) ->
                 let receiverResolvesAsMemberCall =
                     (environment.VisibleBindings

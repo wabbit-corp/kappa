@@ -925,6 +925,7 @@ type SurfaceElaborationDiagnosticEvidence =
     | ConstructorTermCannotSatisfyTypeValuedDefinitionBody
     | ElaborationFailureFromFailElabWith of errorCode: string * elaborationMessage: string
     | StaticConstructorRequiresPreservedStaticObjectIdentity of memberName: string
+    | StaticObjectUnresolvedByKind of kindSelector: string * nameText: string
     | PatternHeadResolvedToOrdinaryTerm of headName: string
     | ActivePatternLinearlyConsumesScrutineeInRefutableContext of patternName: string * context: string
     | MatchReturningActivePatternNotPermittedInPlainLetQuestion of patternName: string
@@ -3060,6 +3061,16 @@ module DiagnosticFact =
                         "surface-elaboration-diagnostic"
                         [ field "reason" (DiagnosticPayloadText "static-constructor-requires-preserved-static-object-identity")
                           field "member-name" (DiagnosticPayloadText memberName) ])
+            | StaticObjectUnresolvedByKind(kindSelector, nameText) ->
+                descriptor
+                    DiagnosticCode.StaticObjectUnresolved
+                    None
+                    $"No {kindSelector} static object named '{nameText}' is visible."
+                    (payload
+                        "surface-elaboration-diagnostic"
+                        [ field "reason" (DiagnosticPayloadText "static-object-unresolved-by-kind")
+                          field "kind-selector" (DiagnosticPayloadText kindSelector)
+                          field "name-text" (DiagnosticPayloadText nameText) ])
             | PatternHeadResolvedToOrdinaryTerm headName ->
                 descriptor
                     DiagnosticCode.PatternHeadNotConstructorOrActivePattern

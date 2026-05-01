@@ -4206,6 +4206,7 @@ module SmokeTestsShard4 =
         bag.AddError(DiagnosticFact.surfaceElaboration (ConstructorDefaultReferencesUnavailableBinder("name", "title")))
         bag.AddError(DiagnosticFact.surfaceElaboration (ConstructorDefaultTypeMismatch("active", "Int", "Bool")))
         bag.AddError(DiagnosticFact.surfaceElaboration (ConstructorDefaultCouldNotBeChecked "active"))
+        bag.AddError(DiagnosticFact.surfaceElaboration (StaticObjectUnresolvedByKind("type", "Missing")))
         bag.AddError(DiagnosticFact.surfaceElaboration (TraitConstraintUnresolved "Eq Int"))
         bag.AddError(DiagnosticFact.surfaceElaboration (ImplicitTraitConstraintUnresolved "Show Int"))
         bag.AddError(DiagnosticFact.surfaceElaboration (TraitConstraintAmbiguous("Score Int", [ "left.ScoreInt"; "right.ScoreInt" ])))
@@ -4217,7 +4218,17 @@ module SmokeTestsShard4 =
         bag.AddError(DiagnosticFact.surfaceElaboration (ElaborationFailureFromFailElabWith("KAPPA_TEST", "boom")))
 
         let diagnostics = bag.Items
-        let staticObjectDiagnostic = diagnostics |> List.find (fun item -> item.Code = DiagnosticCode.StaticObjectUnresolved)
+        let staticObjectDiagnostic =
+            diagnostics
+            |> List.find (fun item ->
+                item.Code = DiagnosticCode.StaticObjectUnresolved
+                && tryFindPayloadText "reason" item = Some "static-constructor-requires-preserved-static-object-identity")
+
+        let staticObjectByKindDiagnostic =
+            diagnostics
+            |> List.find (fun item ->
+                item.Code = DiagnosticCode.StaticObjectUnresolved
+                && tryFindPayloadText "reason" item = Some "static-object-unresolved-by-kind")
         let patternHeadDiagnostic = diagnostics |> List.find (fun item -> item.Code = DiagnosticCode.PatternHeadNotConstructorOrActivePattern)
 
         let linearityDiagnostic =
@@ -4737,6 +4748,9 @@ module SmokeTestsShard4 =
         Assert.Equal(Some "Int", tryFindPayloadText "actual-type-text" constructorDefaultTypeDiagnostic)
         Assert.Equal(Some "Bool", tryFindPayloadText "expected-type-text" constructorDefaultTypeDiagnostic)
         Assert.Equal(Some "active", tryFindPayloadText "parameter-name" constructorDefaultUncheckedDiagnostic)
+        Assert.Equal(Some "static-constructor-requires-preserved-static-object-identity", tryFindPayloadText "reason" staticObjectDiagnostic)
+        Assert.Equal(Some "type", tryFindPayloadText "kind-selector" staticObjectByKindDiagnostic)
+        Assert.Equal(Some "Missing", tryFindPayloadText "name-text" staticObjectByKindDiagnostic)
         Assert.Equal("Trait constraint 'Eq Int' could not be resolved.", unresolvedConstraintDiagnostic.Message)
         Assert.Equal("Implicit trait constraint 'Show Int' could not be resolved.", unresolvedImplicitConstraintDiagnostic.Message)
         Assert.Equal(Some "Score Int", tryFindPayloadText "constraint-text" ambiguousConstraintDiagnostic)
