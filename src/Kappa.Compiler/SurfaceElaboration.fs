@@ -12118,11 +12118,11 @@ module SurfaceElaboration =
 
             loop body
 
-        let tryExtractFailElabDiagnosticMessage body =
+        let tryExtractFailElabDiagnosticEvidence body =
             let rec fromExpression current =
                 match current with
                 | Apply(Name [ "failElabWith" ], [ Literal(LiteralValue.String code); Literal(LiteralValue.String message); _ ]) ->
-                    Some($"{code}: {message}")
+                    Some(ElaborationFailureFromFailElabWith(code, message))
                 | Apply(Name [ calleeName ], arguments) ->
                     topLevelDefinitionsByName
                     |> Map.tryFind calleeName
@@ -12238,7 +12238,7 @@ module SurfaceElaboration =
                         instanceInfo.Members
                         |> Map.tryFind "buildInterpolated"
                         |> Option.bind (fun memberDefinition ->
-                            memberDefinition.Body |> Option.bind tryExtractFailElabDiagnosticMessage))))
+                            memberDefinition.Body |> Option.bind tryExtractFailElabDiagnosticEvidence))))
 
         let comprehensionSinkItemTypesEqual expectedItemType actualItemType =
             let normalize = normalizeTypeAliases environment.VisibleTypeAliases
@@ -12729,20 +12729,12 @@ module SurfaceElaboration =
                 if List.isEmpty escapedNames then
                     []
                 else
-                    let escapedText = String.concat ", " escapedNames
-
-                    [
-                        makeDiagnostic
-                            SimpleDiagnosticKind.TypeEqualityMismatch
-                            $"Syntax value captures binder(s) '{escapedText}' that do not remain in scope at the binding site; captured locals and borrows cannot escape through Syntax."
-                    ]
+                    [ makeSurfaceElaborationDiagnostic
+                        (SyntaxCarrierEscapesCapturedBindings escapedNames) ]
             | None ->
                 []
 
         let prefixedStringPrefixDiagnostics locals lexicalNames prefix =
-            let mismatchMessage =
-                $"Prefixed string prefix '{prefix}' must resolve to a term of type 'Elab (InterpolatedMacro t)' for some 't', or to an elaboration-time trait evidence value."
-
             let prefixType =
                 locals
                 |> Map.tryFind prefix
@@ -12763,13 +12755,16 @@ module SurfaceElaboration =
 
                 match resolvedResultType with
                 | Some _ -> []
-                | None -> [ makeDiagnostic SimpleDiagnosticKind.TypeEqualityMismatch mismatchMessage ]
+                | None ->
+                    [ makeSurfaceElaborationDiagnostic
+                        (PrefixedStringPrefixMustResolveToInterpolatedMacro prefix) ]
             | None when Set.contains prefix lexicalNames ->
                 []
             | None when allowUnresolvedCallDiagnostics && not (Set.contains prefix knownValueNames) ->
                 [ makeNameUnresolvedDiagnostic prefix ]
             | None when Set.contains prefix knownSurfaceTermNames ->
-                [ makeDiagnostic SimpleDiagnosticKind.TypeEqualityMismatch mismatchMessage ]
+                [ makeSurfaceElaborationDiagnostic
+                    (PrefixedStringPrefixMustResolveToInterpolatedMacro prefix) ]
             | None ->
                 []
 
@@ -14481,7 +14476,8 @@ module SurfaceElaboration =
                             unstableDependencies
                             |> List.exists (fun dependencyName -> expectedText.Contains($"{root}.{dependencyName}", StringComparison.Ordinal) |> not)
                         then
-                            [ makeDiagnostic SimpleDiagnosticKind.TypeEqualityMismatch "Projected field type does not match the declared result type." ]
+                            [ makeSurfaceElaborationDiagnostic
+                                ProjectedFieldTypeDoesNotMatchDeclaredResultType ]
                         else
                             []
                 | None ->
@@ -14801,7 +14797,8 @@ module SurfaceElaboration =
                          && TypeSignatures.definitionallyEqual
                              (normalizeTypeAliases environment.VisibleTypeAliases expectedType)
                              typeObjectType ->
-                    [ makeDiagnostic SimpleDiagnosticKind.TypeEqualityMismatch "A data constructor term cannot satisfy a Type-valued definition body; use an explicit kind-qualified type object when the type facet is intended." ]
+                    [ makeSurfaceElaborationDiagnostic
+                        ConstructorTermCannotSatisfyTypeValuedDefinitionBody ]
                 | _ ->
                     []
 
@@ -17300,8 +17297,8 @@ module SurfaceElaboration =
                 @ topLevelSpliceTypeDiagnostics inner
                 @ topLevelSpliceElabPhaseDiagnostics inner
                 @ topLevelSpliceLinearityDiagnostics inner
-                @ (tryExtractFailElabDiagnosticMessage inner
-                   |> Option.map (fun message -> [ makeDiagnostic SimpleDiagnosticKind.ElaborationFailed message ])
+                @ (tryExtractFailElabDiagnosticEvidence inner
+                   |> Option.map (fun evidence -> [ makeSurfaceElaborationDiagnostic evidence ])
                    |> Option.defaultValue [])
             | TypeSyntaxTokens _ ->
                 []
@@ -19666,7 +19663,7 @@ module SurfaceElaboration =
             | PrefixedString(prefix, parts) ->
                 prefixedStringPrefixDiagnostics locals lexicalNames prefix
                 @ (tryResolvePrefixedStringFailureDiagnostic prefix
-                   |> Option.map (fun message -> [ makeDiagnostic SimpleDiagnosticKind.ElaborationFailed message ])
+                   |> Option.map (fun evidence -> [ makeSurfaceElaborationDiagnostic evidence ])
                    |> Option.defaultValue [])
                 @ (parts
                    |> List.collect (function

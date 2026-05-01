@@ -738,7 +738,12 @@ module SmokeTestsShard0 =
                 ]
 
         Assert.True(workspace.HasErrors, "Expected a local value that shadows a prelude string macro dictionary to be rejected.")
-        Assert.Contains(workspace.Diagnostics, fun diagnostic -> diagnostic.Code = DiagnosticCode.TypeEqualityMismatch && diagnostic.Message.Contains("InterpolatedMacro", StringComparison.Ordinal))
+        Assert.Contains(
+            workspace.Diagnostics,
+            fun diagnostic ->
+                diagnostic.Code = DiagnosticCode.TypeEqualityMismatch
+                && tryFindPayloadText "reason" diagnostic = Some "prefixed-string-prefix-must-resolve-to-interpolated-macro"
+        )
         Assert.DoesNotContain(workspace.Diagnostics, fun diagnostic -> diagnostic.Code = DiagnosticCode.NameUnresolved && diagnostic.Message.Contains("'f'", StringComparison.Ordinal))
 
 
@@ -3380,6 +3385,7 @@ module SmokeTestsShard3 =
             workspace.Diagnostics,
             fun diagnostic ->
                 diagnostic.Code = DiagnosticCode.ElaborationFailed
+                && diagnostic.Payload.Kind = "elaboration-failed"
                 && diagnostic.Message.Contains("macro rejected this declaration", StringComparison.Ordinal)
         )
 
@@ -3909,6 +3915,11 @@ module SmokeTestsShard4 =
         bag.AddError(DiagnosticFact.surfaceElaboration (ImplicitTraitConstraintUnresolved "Show Int"))
         bag.AddError(DiagnosticFact.surfaceElaboration (TraitConstraintAmbiguous("Score Int", [ "left.ScoreInt"; "right.ScoreInt" ])))
         bag.AddError(DiagnosticFact.surfaceElaboration (TraitSupertraitEvidenceUnsatisfied("Ord", "Eq Int")))
+        bag.AddError(DiagnosticFact.surfaceElaboration (SyntaxCarrierEscapesCapturedBindings [ "x"; "file" ]))
+        bag.AddError(DiagnosticFact.surfaceElaboration (PrefixedStringPrefixMustResolveToInterpolatedMacro "f"))
+        bag.AddError(DiagnosticFact.surfaceElaboration ProjectedFieldTypeDoesNotMatchDeclaredResultType)
+        bag.AddError(DiagnosticFact.surfaceElaboration ConstructorTermCannotSatisfyTypeValuedDefinitionBody)
+        bag.AddError(DiagnosticFact.surfaceElaboration (ElaborationFailureFromFailElabWith("KAPPA_TEST", "boom")))
 
         let diagnostics = bag.Items
         let staticObjectDiagnostic = diagnostics |> List.find (fun item -> item.Code = DiagnosticCode.StaticObjectUnresolved)
@@ -4079,6 +4090,36 @@ module SmokeTestsShard4 =
                 item.Code = DiagnosticCode.TraitSupertraitUnsatisfied
                 && tryFindPayloadText "reason" item = Some "trait-supertrait-evidence-unsatisfied")
 
+        let syntaxCarrierEscapeDiagnostic =
+            diagnostics
+            |> List.find (fun item ->
+                item.Code = DiagnosticCode.TypeEqualityMismatch
+                && tryFindPayloadText "reason" item = Some "syntax-carrier-escapes-captured-bindings")
+
+        let prefixedStringPrefixDiagnostic =
+            diagnostics
+            |> List.find (fun item ->
+                item.Code = DiagnosticCode.TypeEqualityMismatch
+                && tryFindPayloadText "reason" item = Some "prefixed-string-prefix-must-resolve-to-interpolated-macro")
+
+        let projectedFieldDiagnostic =
+            diagnostics
+            |> List.find (fun item ->
+                item.Code = DiagnosticCode.TypeEqualityMismatch
+                && tryFindPayloadText "reason" item = Some "projected-field-type-does-not-match-declared-result-type")
+
+        let constructorTypeBodyDiagnostic =
+            diagnostics
+            |> List.find (fun item ->
+                item.Code = DiagnosticCode.TypeEqualityMismatch
+                && tryFindPayloadText "reason" item = Some "constructor-term-cannot-satisfy-type-valued-definition-body")
+
+        let failElabWithDiagnostic =
+            diagnostics
+            |> List.find (fun item ->
+                item.Code = DiagnosticCode.ElaborationFailed
+                && tryFindPayloadText "reason" item = Some "elaboration-failure-from-fail-elab-with")
+
         Assert.Equal("surface-elaboration-diagnostic", staticObjectDiagnostic.Payload.Kind)
         Assert.Equal(Some "Some", tryFindPayloadText "member-name" staticObjectDiagnostic)
         Assert.Equal(Some "Bad", tryFindPayloadText "head-name" patternHeadDiagnostic)
@@ -4148,6 +4189,15 @@ module SmokeTestsShard4 =
         Assert.Equal(Some [ "left.ScoreInt"; "right.ScoreInt" ], tryFindPayloadTextList "candidate-texts" ambiguousConstraintDiagnostic)
         Assert.Equal(Some "Ord", tryFindPayloadText "trait-name" supertraitDiagnostic)
         Assert.Equal(Some "Eq Int", tryFindPayloadText "required-constraint-text" supertraitDiagnostic)
+        Assert.Equal(Some [ "x"; "file" ], tryFindPayloadTextList "escaped-names" syntaxCarrierEscapeDiagnostic)
+        Assert.Equal(Some "f", tryFindPayloadText "prefix" prefixedStringPrefixDiagnostic)
+        Assert.Equal("Projected field type does not match the declared result type.", projectedFieldDiagnostic.Message)
+        Assert.Equal(
+            "A data constructor term cannot satisfy a Type-valued definition body; use an explicit kind-qualified type object when the type facet is intended.",
+            constructorTypeBodyDiagnostic.Message
+        )
+        Assert.Equal(Some "KAPPA_TEST", tryFindPayloadText "error-code" failElabWithDiagnostic)
+        Assert.Equal(Some "boom", tryFindPayloadText "elaboration-message" failElabWithDiagnostic)
 
     [<Fact>]
     let ``parser syntax diagnostics render from typed evidence`` () =
@@ -8730,7 +8780,12 @@ module SmokeTestsShard7 =
 
         Assert.True(workspace.HasErrors, "Expected malformed prefixed-string macro usage to be rejected in frontend validation.")
         Assert.Contains(workspace.Diagnostics, fun diagnostic -> diagnostic.Code = DiagnosticCode.NameUnresolved && diagnostic.Message.Contains("'i0'", StringComparison.Ordinal))
-        Assert.Contains(workspace.Diagnostics, fun diagnostic -> diagnostic.Code = DiagnosticCode.TypeEqualityMismatch && diagnostic.Message.Contains("InterpolatedMacro", StringComparison.Ordinal))
+        Assert.Contains(
+            workspace.Diagnostics,
+            fun diagnostic ->
+                diagnostic.Code = DiagnosticCode.TypeEqualityMismatch
+                && tryFindPayloadText "reason" diagnostic = Some "prefixed-string-prefix-must-resolve-to-interpolated-macro"
+        )
 
 
     [<Fact>]

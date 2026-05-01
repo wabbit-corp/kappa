@@ -878,6 +878,11 @@ type SurfaceElaborationDiagnosticEvidence =
     | ImplicitTraitConstraintUnresolved of constraintText: string
     | TraitConstraintAmbiguous of constraintText: string * candidateTexts: string list
     | TraitSupertraitEvidenceUnsatisfied of traitName: string * requiredConstraintText: string
+    | SyntaxCarrierEscapesCapturedBindings of escapedNames: string list
+    | PrefixedStringPrefixMustResolveToInterpolatedMacro of prefix: string
+    | ProjectedFieldTypeDoesNotMatchDeclaredResultType
+    | ConstructorTermCannotSatisfyTypeValuedDefinitionBody
+    | ElaborationFailureFromFailElabWith of errorCode: string * elaborationMessage: string
     | StaticConstructorRequiresPreservedStaticObjectIdentity of memberName: string
     | PatternHeadResolvedToOrdinaryTerm of headName: string
     | ActivePatternLinearlyConsumesScrutineeInRefutableContext of patternName: string * context: string
@@ -2600,6 +2605,52 @@ module DiagnosticFact =
                         [ field "reason" (DiagnosticPayloadText "trait-supertrait-evidence-unsatisfied")
                           field "trait-name" (DiagnosticPayloadText traitName)
                           field "required-constraint-text" (DiagnosticPayloadText requiredConstraintText) ])
+            | SyntaxCarrierEscapesCapturedBindings escapedNames ->
+                let escapedText = String.concat ", " escapedNames
+
+                descriptor
+                    DiagnosticCode.TypeEqualityMismatch
+                    None
+                    $"Syntax value captures binder(s) '{escapedText}' that do not remain in scope at the binding site; captured locals and borrows cannot escape through Syntax."
+                    (payload
+                        "surface-elaboration-diagnostic"
+                        [ field "reason" (DiagnosticPayloadText "syntax-carrier-escapes-captured-bindings")
+                          field "escaped-names" (DiagnosticPayloadTextList escapedNames) ])
+            | PrefixedStringPrefixMustResolveToInterpolatedMacro prefix ->
+                descriptor
+                    DiagnosticCode.TypeEqualityMismatch
+                    None
+                    $"Prefixed string prefix '{prefix}' must resolve to a term of type 'Elab (InterpolatedMacro t)' for some 't', or to an elaboration-time trait evidence value."
+                    (payload
+                        "surface-elaboration-diagnostic"
+                        [ field "reason" (DiagnosticPayloadText "prefixed-string-prefix-must-resolve-to-interpolated-macro")
+                          field "prefix" (DiagnosticPayloadText prefix) ])
+            | ProjectedFieldTypeDoesNotMatchDeclaredResultType ->
+                descriptor
+                    DiagnosticCode.TypeEqualityMismatch
+                    None
+                    "Projected field type does not match the declared result type."
+                    (payload
+                        "surface-elaboration-diagnostic"
+                        [ field "reason" (DiagnosticPayloadText "projected-field-type-does-not-match-declared-result-type") ])
+            | ConstructorTermCannotSatisfyTypeValuedDefinitionBody ->
+                descriptor
+                    DiagnosticCode.TypeEqualityMismatch
+                    None
+                    "A data constructor term cannot satisfy a Type-valued definition body; use an explicit kind-qualified type object when the type facet is intended."
+                    (payload
+                        "surface-elaboration-diagnostic"
+                        [ field "reason" (DiagnosticPayloadText "constructor-term-cannot-satisfy-type-valued-definition-body") ])
+            | ElaborationFailureFromFailElabWith(errorCode, elaborationMessage) ->
+                descriptor
+                    DiagnosticCode.ElaborationFailed
+                    None
+                    $"{errorCode}: {elaborationMessage}"
+                    (payload
+                        "surface-elaboration-diagnostic"
+                        [ field "reason" (DiagnosticPayloadText "elaboration-failure-from-fail-elab-with")
+                          field "error-code" (DiagnosticPayloadText errorCode)
+                          field "elaboration-message" (DiagnosticPayloadText elaborationMessage) ])
             | StaticConstructorRequiresPreservedStaticObjectIdentity memberName ->
                 descriptor
                     DiagnosticCode.StaticObjectUnresolved
