@@ -3763,6 +3763,7 @@ module SmokeTestsShard4 =
         bag.AddError(DiagnosticFact.coreExpressionParsing ExpectedProjectionResultTypeColon)
         bag.AddError(DiagnosticFact.coreExpressionParsing UnterminatedProjectionBinder)
         bag.AddError(DiagnosticFact.coreExpressionParsing UnsupportedProjectionBinderSyntax)
+        bag.AddError(DiagnosticFact.coreExpressionParsing ExpectedProjectionSetAccessorParameter)
 
         let diagnostics = bag.Items
         let usingDiagnostic =
@@ -3964,6 +3965,10 @@ module SmokeTestsShard4 =
         let unsupportedProjectionBinderDiagnostic =
             diagnostics
             |> List.find (fun item -> item.Message = "Unsupported projection binder syntax.")
+
+        let projectionSetAccessorParameterDiagnostic =
+            diagnostics
+            |> List.find (fun item -> item.Message = "Expected a projection set accessor parameter of the form '(name : Type)'.")
 
         Assert.Equal("core-expression-parsing", usingDiagnostic.Payload.Kind)
         Assert.Contains(
@@ -4264,6 +4269,12 @@ module SmokeTestsShard4 =
             fun field ->
                 field.Name = "reason"
                 && field.Value = DiagnosticPayloadText "unsupported-projection-binder-syntax"
+        )
+        Assert.Contains(
+            projectionSetAccessorParameterDiagnostic.Payload.Fields,
+            fun field ->
+                field.Name = "reason"
+                && field.Value = DiagnosticPayloadText "expected-projection-set-accessor-parameter"
         )
 
     [<Fact>]

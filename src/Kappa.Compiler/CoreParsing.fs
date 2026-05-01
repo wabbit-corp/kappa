@@ -6875,7 +6875,10 @@ module CoreParsing =
                     | None ->
                         None
                 | _ ->
-                    diagnostics.AddError(DiagnosticFact.simple SimpleDiagnosticKind.ExpectedSyntaxToken "Expected a projection set accessor parameter of the form '(name : Type)'.", source.GetLocation(startSpan))
+                    diagnostics.AddError(
+                        DiagnosticFact.coreExpressionParsing ExpectedProjectionSetAccessorParameter,
+                        source.GetLocation(startSpan)
+                    )
                     None
             | token :: _ ->
                 diagnostics.AddError(

@@ -905,6 +905,7 @@ type CoreExpressionParsingEvidence =
     | ExpectedProjectionResultTypeColon
     | UnterminatedProjectionBinder
     | UnsupportedProjectionBinderSyntax
+    | ExpectedProjectionSetAccessorParameter
 
 and CoreHeaderContext =
     | TopLevelFunctionHeader
@@ -2718,6 +2719,14 @@ module DiagnosticFact =
                     None
                     "Unsupported projection binder syntax."
                     (payload "core-expression-parsing" [ field "reason" (DiagnosticPayloadText "unsupported-projection-binder-syntax") ])
+            | ExpectedProjectionSetAccessorParameter ->
+                descriptor
+                    DiagnosticCode.ExpectedSyntaxToken
+                    None
+                    "Expected a projection set accessor parameter of the form '(name : Type)'."
+                    (payload
+                        "core-expression-parsing"
+                        [ field "reason" (DiagnosticPayloadText "expected-projection-set-accessor-parameter") ])
         | UnicodeScalarLiteralDiagnostic evidence ->
             match evidence with
             | UnicodeScalarInvalidLiteralForm ->
