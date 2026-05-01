@@ -891,6 +891,9 @@ type CoreExpressionParsingEvidence =
     | DuplicateHandlerReturnClause
     | MissingHandlerReturnClause
     | HandlerReturnClauseArityMismatch of argumentCount: int
+    | RecordPatchExtensionMustBeTopLevelLabel
+    | ExpectedRecordPatchPath
+    | ExpectedRecordPatchItem
 
 and CoreHeaderContext =
     | TopLevelFunctionHeader
@@ -2612,6 +2615,26 @@ module DiagnosticFact =
                         "core-expression-parsing"
                         [ field "reason" (DiagnosticPayloadText "handler-return-clause-arity-mismatch")
                           field "argument-count" (DiagnosticPayloadText(string argumentCount)) ])
+            | RecordPatchExtensionMustBeTopLevelLabel ->
+                descriptor
+                    DiagnosticCode.RecordPatchInvalidItem
+                    None
+                    "Row-extension fields must be top-level labels of the form 'name := expr'."
+                    (payload
+                        "core-expression-parsing"
+                        [ field "reason" (DiagnosticPayloadText "record-patch-extension-must-be-top-level-label") ])
+            | ExpectedRecordPatchPath ->
+                descriptor
+                    DiagnosticCode.RecordPatchInvalidItem
+                    None
+                    "Expected a record patch path before '=' or ':='."
+                    (payload "core-expression-parsing" [ field "reason" (DiagnosticPayloadText "expected-record-patch-path") ])
+            | ExpectedRecordPatchItem ->
+                descriptor
+                    DiagnosticCode.RecordPatchInvalidItem
+                    None
+                    "Expected a record patch item of the form 'path = expr' or 'name := expr'."
+                    (payload "core-expression-parsing" [ field "reason" (DiagnosticPayloadText "expected-record-patch-item") ])
         | UnicodeScalarLiteralDiagnostic evidence ->
             match evidence with
             | UnicodeScalarInvalidLiteralForm ->

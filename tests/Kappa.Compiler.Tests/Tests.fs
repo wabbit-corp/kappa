@@ -3749,6 +3749,9 @@ module SmokeTestsShard4 =
         bag.AddError(DiagnosticFact.coreExpressionParsing DuplicateHandlerReturnClause)
         bag.AddError(DiagnosticFact.coreExpressionParsing MissingHandlerReturnClause)
         bag.AddError(DiagnosticFact.coreExpressionParsing (HandlerReturnClauseArityMismatch 2))
+        bag.AddError(DiagnosticFact.coreExpressionParsing RecordPatchExtensionMustBeTopLevelLabel)
+        bag.AddError(DiagnosticFact.coreExpressionParsing ExpectedRecordPatchPath)
+        bag.AddError(DiagnosticFact.coreExpressionParsing ExpectedRecordPatchItem)
 
         let diagnostics = bag.Items
         let usingDiagnostic =
@@ -3894,6 +3897,18 @@ module SmokeTestsShard4 =
         let handlerReturnArityDiagnostic =
             diagnostics
             |> List.find (fun item -> item.Message = "A handler return clause must bind exactly one payload argument, but binds 2.")
+
+        let recordPatchTopLevelLabelDiagnostic =
+            diagnostics
+            |> List.find (fun item -> item.Message = "Row-extension fields must be top-level labels of the form 'name := expr'.")
+
+        let recordPatchPathDiagnostic =
+            diagnostics
+            |> List.find (fun item -> item.Message = "Expected a record patch path before '=' or ':='.")
+
+        let recordPatchItemDiagnostic =
+            diagnostics
+            |> List.find (fun item -> item.Message = "Expected a record patch item of the form 'path = expr' or 'name := expr'.")
 
         Assert.Equal("core-expression-parsing", usingDiagnostic.Payload.Kind)
         Assert.Contains(
@@ -4110,6 +4125,24 @@ module SmokeTestsShard4 =
             fun field ->
                 field.Name = "argument-count"
                 && field.Value = DiagnosticPayloadText "2"
+        )
+        Assert.Contains(
+            recordPatchTopLevelLabelDiagnostic.Payload.Fields,
+            fun field ->
+                field.Name = "reason"
+                && field.Value = DiagnosticPayloadText "record-patch-extension-must-be-top-level-label"
+        )
+        Assert.Contains(
+            recordPatchPathDiagnostic.Payload.Fields,
+            fun field ->
+                field.Name = "reason"
+                && field.Value = DiagnosticPayloadText "expected-record-patch-path"
+        )
+        Assert.Contains(
+            recordPatchItemDiagnostic.Payload.Fields,
+            fun field ->
+                field.Name = "reason"
+                && field.Value = DiagnosticPayloadText "expected-record-patch-item"
         )
 
     [<Fact>]
@@ -4516,6 +4549,43 @@ module SmokeTestsShard4 =
 
         Assert.Equal("core-expression-parsing", recordLabelDiagnostic.Payload.Kind)
         Assert.Equal("core-expression-parsing", recordFieldDiagnostic.Payload.Kind)
+
+    [<Fact>]
+    let ``parser reports structured record patch diagnostics`` () =
+        let sourceText =
+            [
+                "module main"
+                "let badTop = rec.{ x.y := value }"
+                "let badMissingPath = rec.{ = value }"
+                "let badPunned = rec.{ x }"
+            ]
+            |> String.concat "\n"
+
+        let _, lexed, parsed =
+            lexAndParse
+                "main.kp"
+                sourceText
+
+        Assert.Empty(lexed.Diagnostics)
+
+        let topLevelLabelDiagnostic =
+            parsed.Diagnostics
+            |> List.find (fun diagnostic ->
+                tryFindPayloadText "reason" diagnostic = Some "record-patch-extension-must-be-top-level-label")
+
+        let pathDiagnostic =
+            parsed.Diagnostics
+            |> List.find (fun diagnostic ->
+                tryFindPayloadText "reason" diagnostic = Some "expected-record-patch-path")
+
+        let itemDiagnostic =
+            parsed.Diagnostics
+            |> List.find (fun diagnostic ->
+                tryFindPayloadText "reason" diagnostic = Some "expected-record-patch-item")
+
+        Assert.Equal("core-expression-parsing", topLevelLabelDiagnostic.Payload.Kind)
+        Assert.Equal("core-expression-parsing", pathDiagnostic.Payload.Kind)
+        Assert.Equal("core-expression-parsing", itemDiagnostic.Payload.Kind)
 
     [<Fact>]
     let ``parser reports structured projection body diagnostics`` () =

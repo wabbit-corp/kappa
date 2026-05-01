@@ -6277,7 +6277,10 @@ type private ExpressionParser
                       Path = path
                       Value = this.ParseStandaloneExpression(valueTokens) }
                 | Some _ ->
-                    diagnostics.AddError(DiagnosticFact.simple SimpleDiagnosticKind.RecordPatchInvalidItem "Row-extension fields must be top-level labels of the form 'name := expr'.", source.GetLocation(tokenArray[operatorStart].Span))
+                    diagnostics.AddError(
+                        DiagnosticFact.coreExpressionParsing RecordPatchExtensionMustBeTopLevelLabel,
+                        source.GetLocation(tokenArray[operatorStart].Span)
+                    )
                     { Name = "<missing>"
                       IsImplicit = false
                       IsExtension = isExtension
@@ -6289,7 +6292,10 @@ type private ExpressionParser
                         | token :: _ -> token.Span
                         | [] -> tokenArray[operatorStart].Span
 
-                    diagnostics.AddError(DiagnosticFact.simple SimpleDiagnosticKind.RecordPatchInvalidItem "Expected a record patch path before '=' or ':='.", source.GetLocation(errorSpan))
+                    diagnostics.AddError(
+                        DiagnosticFact.coreExpressionParsing ExpectedRecordPatchPath,
+                        source.GetLocation(errorSpan)
+                    )
                     { Name = "<missing>"
                       IsImplicit = false
                       IsExtension = isExtension
@@ -6301,7 +6307,10 @@ type private ExpressionParser
                     | token :: _ -> token.Span
                     | [] -> this.Current.Span
 
-                diagnostics.AddError(DiagnosticFact.simple SimpleDiagnosticKind.RecordPatchInvalidItem "Expected a record patch item of the form 'path = expr' or 'name := expr'.", source.GetLocation(errorSpan))
+                diagnostics.AddError(
+                    DiagnosticFact.coreExpressionParsing ExpectedRecordPatchItem,
+                    source.GetLocation(errorSpan)
+                )
                 { Name = "<missing>"
                   IsImplicit = false
                   IsExtension = false
