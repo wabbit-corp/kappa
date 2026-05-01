@@ -891,6 +891,17 @@ type CheckpointVerificationEvidence =
     | DuplicateBackendDataLayoutIdentity of checkpoint: string * moduleName: string * typeName: string
     | DuplicateBackendEnvironmentLayoutIdentity of checkpoint: string * moduleName: string * layoutName: string
     | UnsupportedBackendIntrinsicTerm of checkpoint: string * moduleName: string * intrinsicName: string * backendProfile: string
+    | ListedBackendEntryPointMustExistAsFunction of checkpoint: string * moduleName: string * entryPointName: string
+    | ListedBackendEntryPointMustBeMarked of checkpoint: string * bindingLabel: string
+    | BackendFunctionCallingConventionArityMismatch of checkpoint: string * bindingLabel: string
+    | BackendFunctionParameterRepresentationsMismatch of checkpoint: string * bindingLabel: string
+    | BackendFunctionEnvironmentLayoutMissing of checkpoint: string * bindingLabel: string * layoutName: string * moduleName: string
+    | BackendEntryPointMustBeExported of checkpoint: string * bindingLabel: string
+    | BackendMarkedEntryPointMustBeListed of checkpoint: string * bindingLabel: string
+    | IntrinsicBackendFunctionMustOmitBody of checkpoint: string * bindingLabel: string
+    | IntrinsicBackendFunctionMustBeListedInModuleIntrinsicTerms of checkpoint: string * bindingLabel: string
+    | UnsupportedBackendIntrinsicFunction of checkpoint: string * moduleName: string * bindingName: string * backendProfile: string
+    | BackendFunctionMustHaveBody of checkpoint: string * bindingLabel: string
 
 type SurfaceRecordContext =
     | RecordTypeTelescope
@@ -2788,6 +2799,121 @@ module DiagnosticFact =
                           field "module-name" (DiagnosticPayloadText moduleName)
                           field "intrinsic-name" (DiagnosticPayloadText intrinsicName)
                           field "backend-profile" (DiagnosticPayloadText backendProfile) ])
+            | ListedBackendEntryPointMustExistAsFunction(checkpoint, moduleName, entryPointName) ->
+                descriptor
+                    DiagnosticCode.CheckpointVerification
+                    None
+                    $"Checkpoint '{checkpoint}' requires listed entry point '{moduleName}.{entryPointName}' to be present as a function."
+                    (payload
+                        "checkpoint-verification-diagnostic"
+                        [ field "reason" (DiagnosticPayloadText "listed-backend-entry-point-must-exist-as-function")
+                          field "checkpoint" (DiagnosticPayloadText checkpoint)
+                          field "module-name" (DiagnosticPayloadText moduleName)
+                          field "entry-point-name" (DiagnosticPayloadText entryPointName) ])
+            | ListedBackendEntryPointMustBeMarked(checkpoint, bindingLabel) ->
+                descriptor
+                    DiagnosticCode.CheckpointVerification
+                    None
+                    $"Checkpoint '{checkpoint}' requires listed entry point '{bindingLabel}' to be marked as an entry point."
+                    (payload
+                        "checkpoint-verification-diagnostic"
+                        [ field "reason" (DiagnosticPayloadText "listed-backend-entry-point-must-be-marked")
+                          field "checkpoint" (DiagnosticPayloadText checkpoint)
+                          field "binding-label" (DiagnosticPayloadText bindingLabel) ])
+            | BackendFunctionCallingConventionArityMismatch(checkpoint, bindingLabel) ->
+                descriptor
+                    DiagnosticCode.CheckpointVerification
+                    None
+                    $"Checkpoint '{checkpoint}' requires function '{bindingLabel}' to have a calling convention arity matching its parameter count."
+                    (payload
+                        "checkpoint-verification-diagnostic"
+                        [ field "reason" (DiagnosticPayloadText "backend-function-calling-convention-arity-mismatch")
+                          field "checkpoint" (DiagnosticPayloadText checkpoint)
+                          field "binding-label" (DiagnosticPayloadText bindingLabel) ])
+            | BackendFunctionParameterRepresentationsMismatch(checkpoint, bindingLabel) ->
+                descriptor
+                    DiagnosticCode.CheckpointVerification
+                    None
+                    $"Checkpoint '{checkpoint}' requires function '{bindingLabel}' to have calling convention parameter representations that match its parameters."
+                    (payload
+                        "checkpoint-verification-diagnostic"
+                        [ field "reason" (DiagnosticPayloadText "backend-function-parameter-representations-mismatch")
+                          field "checkpoint" (DiagnosticPayloadText checkpoint)
+                          field "binding-label" (DiagnosticPayloadText bindingLabel) ])
+            | BackendFunctionEnvironmentLayoutMissing(checkpoint, bindingLabel, layoutName, moduleName) ->
+                descriptor
+                    DiagnosticCode.CheckpointVerification
+                    None
+                    $"Checkpoint '{checkpoint}' requires function '{bindingLabel}' to reference an environment layout present in module '{moduleName}'."
+                    (payload
+                        "checkpoint-verification-diagnostic"
+                        [ field "reason" (DiagnosticPayloadText "backend-function-environment-layout-missing")
+                          field "checkpoint" (DiagnosticPayloadText checkpoint)
+                          field "binding-label" (DiagnosticPayloadText bindingLabel)
+                          field "layout-name" (DiagnosticPayloadText layoutName)
+                          field "module-name" (DiagnosticPayloadText moduleName) ])
+            | BackendEntryPointMustBeExported(checkpoint, bindingLabel) ->
+                descriptor
+                    DiagnosticCode.CheckpointVerification
+                    None
+                    $"Checkpoint '{checkpoint}' requires entry point '{bindingLabel}' to be exported."
+                    (payload
+                        "checkpoint-verification-diagnostic"
+                        [ field "reason" (DiagnosticPayloadText "backend-entry-point-must-be-exported")
+                          field "checkpoint" (DiagnosticPayloadText checkpoint)
+                          field "binding-label" (DiagnosticPayloadText bindingLabel) ])
+            | BackendMarkedEntryPointMustBeListed(checkpoint, bindingLabel) ->
+                descriptor
+                    DiagnosticCode.CheckpointVerification
+                    None
+                    $"Checkpoint '{checkpoint}' requires function '{bindingLabel}' marked as an entry point to be listed in module entry points."
+                    (payload
+                        "checkpoint-verification-diagnostic"
+                        [ field "reason" (DiagnosticPayloadText "backend-marked-entry-point-must-be-listed")
+                          field "checkpoint" (DiagnosticPayloadText checkpoint)
+                          field "binding-label" (DiagnosticPayloadText bindingLabel) ])
+            | IntrinsicBackendFunctionMustOmitBody(checkpoint, bindingLabel) ->
+                descriptor
+                    DiagnosticCode.CheckpointVerification
+                    None
+                    $"Checkpoint '{checkpoint}' requires intrinsic function '{bindingLabel}' to omit a body."
+                    (payload
+                        "checkpoint-verification-diagnostic"
+                        [ field "reason" (DiagnosticPayloadText "intrinsic-backend-function-must-omit-body")
+                          field "checkpoint" (DiagnosticPayloadText checkpoint)
+                          field "binding-label" (DiagnosticPayloadText bindingLabel) ])
+            | IntrinsicBackendFunctionMustBeListedInModuleIntrinsicTerms(checkpoint, bindingLabel) ->
+                descriptor
+                    DiagnosticCode.CheckpointVerification
+                    None
+                    $"Checkpoint '{checkpoint}' requires intrinsic function '{bindingLabel}' to be listed in module intrinsic terms."
+                    (payload
+                        "checkpoint-verification-diagnostic"
+                        [ field "reason" (DiagnosticPayloadText "intrinsic-backend-function-must-be-listed-in-module-intrinsic-terms")
+                          field "checkpoint" (DiagnosticPayloadText checkpoint)
+                          field "binding-label" (DiagnosticPayloadText bindingLabel) ])
+            | UnsupportedBackendIntrinsicFunction(checkpoint, moduleName, bindingName, backendProfile) ->
+                descriptor
+                    DiagnosticCode.CheckpointVerification
+                    None
+                    $"Checkpoint '{checkpoint}' requires intrinsic term '{bindingName}' in module '{moduleName}' to be provided by backend profile '{backendProfile}'."
+                    (payload
+                        "checkpoint-verification-diagnostic"
+                        [ field "reason" (DiagnosticPayloadText "unsupported-backend-intrinsic-function")
+                          field "checkpoint" (DiagnosticPayloadText checkpoint)
+                          field "module-name" (DiagnosticPayloadText moduleName)
+                          field "binding-name" (DiagnosticPayloadText bindingName)
+                          field "backend-profile" (DiagnosticPayloadText backendProfile) ])
+            | BackendFunctionMustHaveBody(checkpoint, bindingLabel) ->
+                descriptor
+                    DiagnosticCode.CheckpointVerification
+                    None
+                    $"Checkpoint '{checkpoint}' requires function '{bindingLabel}' to have a body."
+                    (payload
+                        "checkpoint-verification-diagnostic"
+                        [ field "reason" (DiagnosticPayloadText "backend-function-must-have-body")
+                          field "checkpoint" (DiagnosticPayloadText checkpoint)
+                          field "binding-label" (DiagnosticPayloadText bindingLabel) ])
         | SurfaceRecordDiagnostic evidence ->
             match evidence with
             | RecordFieldDeclaredMoreThanOnce fieldName ->

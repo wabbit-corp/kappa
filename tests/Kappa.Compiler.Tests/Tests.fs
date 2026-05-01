@@ -4679,6 +4679,72 @@ module SmokeTestsShard4 =
             )
         )
 
+        bag.AddError(
+            DiagnosticFact.checkpointVerification (
+                ListedBackendEntryPointMustExistAsFunction("KBackendIR", "main", "main")
+            )
+        )
+
+        bag.AddError(
+            DiagnosticFact.checkpointVerification (
+                ListedBackendEntryPointMustBeMarked("KBackendIR", "main.main")
+            )
+        )
+
+        bag.AddError(
+            DiagnosticFact.checkpointVerification (
+                BackendFunctionCallingConventionArityMismatch("KBackendIR", "main.main")
+            )
+        )
+
+        bag.AddError(
+            DiagnosticFact.checkpointVerification (
+                BackendFunctionParameterRepresentationsMismatch("KBackendIR", "main.main")
+            )
+        )
+
+        bag.AddError(
+            DiagnosticFact.checkpointVerification (
+                BackendFunctionEnvironmentLayoutMissing("KBackendIR", "main.main", "main$arity1", "main")
+            )
+        )
+
+        bag.AddError(
+            DiagnosticFact.checkpointVerification (
+                BackendEntryPointMustBeExported("KBackendIR", "main.main")
+            )
+        )
+
+        bag.AddError(
+            DiagnosticFact.checkpointVerification (
+                BackendMarkedEntryPointMustBeListed("KBackendIR", "main.main")
+            )
+        )
+
+        bag.AddError(
+            DiagnosticFact.checkpointVerification (
+                IntrinsicBackendFunctionMustOmitBody("KBackendIR", "main.printInt")
+            )
+        )
+
+        bag.AddError(
+            DiagnosticFact.checkpointVerification (
+                IntrinsicBackendFunctionMustBeListedInModuleIntrinsicTerms("KBackendIR", "main.printInt")
+            )
+        )
+
+        bag.AddError(
+            DiagnosticFact.checkpointVerification (
+                UnsupportedBackendIntrinsicFunction("KBackendIR", "main", "printInt", "zig")
+            )
+        )
+
+        bag.AddError(
+            DiagnosticFact.checkpointVerification (
+                BackendFunctionMustHaveBody("KBackendIR", "main.answer")
+            )
+        )
+
         let diagnostics = bag.Items
 
         let missingBackendModuleDiagnostic =
@@ -4717,6 +4783,72 @@ module SmokeTestsShard4 =
                 item.Code = DiagnosticCode.CheckpointVerification
                 && tryFindPayloadText "reason" item = Some "unsupported-backend-intrinsic-term")
 
+        let listedEntryPointMissingDiagnostic =
+            diagnostics
+            |> List.find (fun item ->
+                item.Code = DiagnosticCode.CheckpointVerification
+                && tryFindPayloadText "reason" item = Some "listed-backend-entry-point-must-exist-as-function")
+
+        let listedEntryPointUnmarkedDiagnostic =
+            diagnostics
+            |> List.find (fun item ->
+                item.Code = DiagnosticCode.CheckpointVerification
+                && tryFindPayloadText "reason" item = Some "listed-backend-entry-point-must-be-marked")
+
+        let arityMismatchDiagnostic =
+            diagnostics
+            |> List.find (fun item ->
+                item.Code = DiagnosticCode.CheckpointVerification
+                && tryFindPayloadText "reason" item = Some "backend-function-calling-convention-arity-mismatch")
+
+        let parameterRepresentationMismatchDiagnostic =
+            diagnostics
+            |> List.find (fun item ->
+                item.Code = DiagnosticCode.CheckpointVerification
+                && tryFindPayloadText "reason" item = Some "backend-function-parameter-representations-mismatch")
+
+        let environmentLayoutMissingDiagnostic =
+            diagnostics
+            |> List.find (fun item ->
+                item.Code = DiagnosticCode.CheckpointVerification
+                && tryFindPayloadText "reason" item = Some "backend-function-environment-layout-missing")
+
+        let entryPointExportDiagnostic =
+            diagnostics
+            |> List.find (fun item ->
+                item.Code = DiagnosticCode.CheckpointVerification
+                && tryFindPayloadText "reason" item = Some "backend-entry-point-must-be-exported")
+
+        let entryPointListedDiagnostic =
+            diagnostics
+            |> List.find (fun item ->
+                item.Code = DiagnosticCode.CheckpointVerification
+                && tryFindPayloadText "reason" item = Some "backend-marked-entry-point-must-be-listed")
+
+        let intrinsicMustOmitBodyDiagnostic =
+            diagnostics
+            |> List.find (fun item ->
+                item.Code = DiagnosticCode.CheckpointVerification
+                && tryFindPayloadText "reason" item = Some "intrinsic-backend-function-must-omit-body")
+
+        let intrinsicMustBeListedDiagnostic =
+            diagnostics
+            |> List.find (fun item ->
+                item.Code = DiagnosticCode.CheckpointVerification
+                && tryFindPayloadText "reason" item = Some "intrinsic-backend-function-must-be-listed-in-module-intrinsic-terms")
+
+        let unsupportedBackendIntrinsicFunctionDiagnostic =
+            diagnostics
+            |> List.find (fun item ->
+                item.Code = DiagnosticCode.CheckpointVerification
+                && tryFindPayloadText "reason" item = Some "unsupported-backend-intrinsic-function")
+
+        let missingBodyDiagnostic =
+            diagnostics
+            |> List.find (fun item ->
+                item.Code = DiagnosticCode.CheckpointVerification
+                && tryFindPayloadText "reason" item = Some "backend-function-must-have-body")
+
         Assert.Equal("checkpoint-verification-diagnostic", missingBackendModuleDiagnostic.Payload.Kind)
         Assert.Equal(Some "KBackendIR", tryFindPayloadText "checkpoint" missingBackendModuleDiagnostic)
         Assert.Equal(Some "main", tryFindPayloadText "runtime-module-name" missingBackendModuleDiagnostic)
@@ -4741,6 +4873,44 @@ module SmokeTestsShard4 =
         Assert.Equal(Some "main", tryFindPayloadText "module-name" unsupportedBackendIntrinsicDiagnostic)
         Assert.Equal(Some "printInt", tryFindPayloadText "intrinsic-name" unsupportedBackendIntrinsicDiagnostic)
         Assert.Equal(Some "zig", tryFindPayloadText "backend-profile" unsupportedBackendIntrinsicDiagnostic)
+
+        Assert.Equal("checkpoint-verification-diagnostic", listedEntryPointMissingDiagnostic.Payload.Kind)
+        Assert.Equal(Some "main", tryFindPayloadText "module-name" listedEntryPointMissingDiagnostic)
+        Assert.Equal(Some "main", tryFindPayloadText "entry-point-name" listedEntryPointMissingDiagnostic)
+
+        Assert.Equal("checkpoint-verification-diagnostic", listedEntryPointUnmarkedDiagnostic.Payload.Kind)
+        Assert.Equal(Some "main.main", tryFindPayloadText "binding-label" listedEntryPointUnmarkedDiagnostic)
+
+        Assert.Equal("checkpoint-verification-diagnostic", arityMismatchDiagnostic.Payload.Kind)
+        Assert.Equal(Some "main.main", tryFindPayloadText "binding-label" arityMismatchDiagnostic)
+
+        Assert.Equal("checkpoint-verification-diagnostic", parameterRepresentationMismatchDiagnostic.Payload.Kind)
+        Assert.Equal(Some "main.main", tryFindPayloadText "binding-label" parameterRepresentationMismatchDiagnostic)
+
+        Assert.Equal("checkpoint-verification-diagnostic", environmentLayoutMissingDiagnostic.Payload.Kind)
+        Assert.Equal(Some "main.main", tryFindPayloadText "binding-label" environmentLayoutMissingDiagnostic)
+        Assert.Equal(Some "main$arity1", tryFindPayloadText "layout-name" environmentLayoutMissingDiagnostic)
+        Assert.Equal(Some "main", tryFindPayloadText "module-name" environmentLayoutMissingDiagnostic)
+
+        Assert.Equal("checkpoint-verification-diagnostic", entryPointExportDiagnostic.Payload.Kind)
+        Assert.Equal(Some "main.main", tryFindPayloadText "binding-label" entryPointExportDiagnostic)
+
+        Assert.Equal("checkpoint-verification-diagnostic", entryPointListedDiagnostic.Payload.Kind)
+        Assert.Equal(Some "main.main", tryFindPayloadText "binding-label" entryPointListedDiagnostic)
+
+        Assert.Equal("checkpoint-verification-diagnostic", intrinsicMustOmitBodyDiagnostic.Payload.Kind)
+        Assert.Equal(Some "main.printInt", tryFindPayloadText "binding-label" intrinsicMustOmitBodyDiagnostic)
+
+        Assert.Equal("checkpoint-verification-diagnostic", intrinsicMustBeListedDiagnostic.Payload.Kind)
+        Assert.Equal(Some "main.printInt", tryFindPayloadText "binding-label" intrinsicMustBeListedDiagnostic)
+
+        Assert.Equal("checkpoint-verification-diagnostic", unsupportedBackendIntrinsicFunctionDiagnostic.Payload.Kind)
+        Assert.Equal(Some "main", tryFindPayloadText "module-name" unsupportedBackendIntrinsicFunctionDiagnostic)
+        Assert.Equal(Some "printInt", tryFindPayloadText "binding-name" unsupportedBackendIntrinsicFunctionDiagnostic)
+        Assert.Equal(Some "zig", tryFindPayloadText "backend-profile" unsupportedBackendIntrinsicFunctionDiagnostic)
+
+        Assert.Equal("checkpoint-verification-diagnostic", missingBodyDiagnostic.Payload.Kind)
+        Assert.Equal(Some "main.answer", tryFindPayloadText "binding-label" missingBodyDiagnostic)
 
     [<Fact>]
     let ``surface record diagnostics render from typed evidence`` () =

@@ -1080,31 +1080,32 @@ module CheckpointVerification =
                             (DuplicateBackendEnvironmentLayoutIdentity("KBackendIR", moduleDump.Name, layoutName))
 
                 let supportedIntrinsics = availableIntrinsicTerms workspace.Backend workspace.AllowUnsafeConsume moduleDump.Name
+                let unsupportedIntrinsicTerms = moduleDump.IntrinsicTerms |> List.filter (fun intrinsicName -> not (supportedIntrinsics.Contains intrinsicName))
+                let unsupportedIntrinsicTermSet = unsupportedIntrinsicTerms |> Set.ofList
 
-                for intrinsicName in moduleDump.IntrinsicTerms do
-                    if not (supportedIntrinsics.Contains intrinsicName) then
-                        yield
-                            makeStructuredModuleDiagnostic
-                                workspace.Documents
-                                (renderedModuleIdentity moduleDump.Name)
-                                moduleDump.SourceFile
-                                (UnsupportedBackendIntrinsicTerm("KBackendIR", moduleDump.Name, intrinsicName, backendProfile))
+                for intrinsicName in unsupportedIntrinsicTerms do
+                    yield
+                        makeStructuredModuleDiagnostic
+                            workspace.Documents
+                            (renderedModuleIdentity moduleDump.Name)
+                            moduleDump.SourceFile
+                            (UnsupportedBackendIntrinsicTerm("KBackendIR", moduleDump.Name, intrinsicName, backendProfile))
 
                 for entryPointName in moduleDump.EntryPoints do
                     match moduleDump.Functions |> List.tryFind (fun binding -> String.Equals(binding.Name, entryPointName, StringComparison.Ordinal)) with
                     | None ->
                         yield
-                            makeModuleDiagnostic
+                            makeStructuredModuleDiagnostic
                                 workspace.Documents
                                 (renderedModuleIdentity moduleDump.Name)
                                 moduleDump.SourceFile
-                                $"Checkpoint 'KBackendIR' requires listed entry point '{moduleDump.Name}.{entryPointName}' to be present as a function."
+                                (ListedBackendEntryPointMustExistAsFunction("KBackendIR", moduleDump.Name, entryPointName))
                     | Some binding when not binding.EntryPoint ->
                         yield
-                            makeOriginDiagnostic
+                            makeStructuredOriginDiagnostic
                                 workspace.Documents
                                 binding.Provenance
-                                $"Checkpoint 'KBackendIR' requires listed entry point '{moduleDump.Name}.{entryPointName}' to be marked as an entry point."
+                                (ListedBackendEntryPointMustBeMarked("KBackendIR", $"{moduleDump.Name}.{entryPointName}"))
                     | Some _ ->
                         ()
 
@@ -1113,73 +1114,76 @@ module CheckpointVerification =
 
                     if binding.CallingConvention.RuntimeArity <> List.length binding.Parameters then
                         yield
-                            makeOriginDiagnostic
+                            makeStructuredOriginDiagnostic
                                 workspace.Documents
                                 binding.Provenance
-                                $"Checkpoint 'KBackendIR' requires function '{bindingLabel}' to have a calling convention arity matching its parameter count."
+                                (BackendFunctionCallingConventionArityMismatch("KBackendIR", bindingLabel))
 
                     if binding.CallingConvention.ParameterRepresentations <> (binding.Parameters |> List.map (fun parameter -> parameter.Representation)) then
                         yield
-                            makeOriginDiagnostic
+                            makeStructuredOriginDiagnostic
                                 workspace.Documents
                                 binding.Provenance
-                                $"Checkpoint 'KBackendIR' requires function '{bindingLabel}' to have calling convention parameter representations that match its parameters."
+                                (BackendFunctionParameterRepresentationsMismatch("KBackendIR", bindingLabel))
 
                     match binding.EnvironmentLayout with
                     | Some layoutName when not (environmentLayoutNames moduleDump |> Set.contains layoutName) ->
                         yield
-                            makeOriginDiagnostic
+                            makeStructuredOriginDiagnostic
                                 workspace.Documents
                                 binding.Provenance
-                                $"Checkpoint 'KBackendIR' requires function '{bindingLabel}' to reference an environment layout present in module '{moduleDump.Name}'."
+                                (BackendFunctionEnvironmentLayoutMissing("KBackendIR", bindingLabel, layoutName, moduleDump.Name))
                     | _ ->
                         ()
 
                     if binding.EntryPoint then
                         if not binding.Exported then
                             yield
-                                makeOriginDiagnostic
+                                makeStructuredOriginDiagnostic
                                     workspace.Documents
                                     binding.Provenance
-                                    $"Checkpoint 'KBackendIR' requires entry point '{bindingLabel}' to be exported."
+                                    (BackendEntryPointMustBeExported("KBackendIR", bindingLabel))
 
                         if not (List.contains binding.Name moduleDump.EntryPoints) then
                             yield
-                                makeOriginDiagnostic
+                                makeStructuredOriginDiagnostic
                                     workspace.Documents
                                     binding.Provenance
-                                    $"Checkpoint 'KBackendIR' requires function '{bindingLabel}' marked as an entry point to be listed in module entry points."
+                                    (BackendMarkedEntryPointMustBeListed("KBackendIR", bindingLabel))
 
                     if binding.Intrinsic then
                         if binding.Body.IsSome then
                             yield
-                                makeOriginDiagnostic
+                                makeStructuredOriginDiagnostic
                                     workspace.Documents
                                     binding.Provenance
-                                    $"Checkpoint 'KBackendIR' requires intrinsic function '{bindingLabel}' to omit a body."
+                                    (IntrinsicBackendFunctionMustOmitBody("KBackendIR", bindingLabel))
 
                         if not (List.contains binding.Name moduleDump.IntrinsicTerms) then
                             yield
-                                makeOriginDiagnostic
+                                makeStructuredOriginDiagnostic
                                     workspace.Documents
                                     binding.Provenance
-                                    $"Checkpoint 'KBackendIR' requires intrinsic function '{bindingLabel}' to be listed in module intrinsic terms."
+                                    (IntrinsicBackendFunctionMustBeListedInModuleIntrinsicTerms("KBackendIR", bindingLabel))
 
-                        if not (supportedIntrinsics.Contains binding.Name) then
+                        if
+                            not (supportedIntrinsics.Contains binding.Name)
+                            && not (Set.contains binding.Name unsupportedIntrinsicTermSet)
+                        then
                             yield
-                                makeOriginDiagnostic
+                                makeStructuredOriginDiagnostic
                                     workspace.Documents
                                     binding.Provenance
-                                    $"Checkpoint 'KBackendIR' requires intrinsic term '{binding.Name}' in module '{moduleDump.Name}' to be provided by backend profile '{BackendProfile.toPortableName workspace.Backend}'."
+                                    (UnsupportedBackendIntrinsicFunction("KBackendIR", moduleDump.Name, binding.Name, backendProfile))
                     else
                         match binding.Body with
                         | None ->
                             if not (isGeneratedHostBinding binding.Provenance) then
                                 yield
-                                    makeOriginDiagnostic
+                                    makeStructuredOriginDiagnostic
                                         workspace.Documents
                                         binding.Provenance
-                                        $"Checkpoint 'KBackendIR' requires function '{bindingLabel}' to have a body."
+                                        (BackendFunctionMustHaveBody("KBackendIR", bindingLabel))
                         | Some body ->
                             yield! verifyBackendExpression moduleDump bindingLabel binding.Provenance body
         ]
