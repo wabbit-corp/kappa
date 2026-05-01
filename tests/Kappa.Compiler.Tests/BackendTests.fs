@@ -898,6 +898,171 @@ module BackendTestsShard4 =
             )
 
     [<Fact>]
+    let ``dotnet backend reports structured unresolved trait instance failures`` () =
+        let workspace =
+            compileInMemoryWorkspaceWithBackend
+                "memory-dotnet-trait-instance-resolution-root"
+                "dotnet"
+                [
+                    "main.kp",
+                    [
+                        "module main"
+                        "trait Render (a : Type) ="
+                        "    render : a -> String"
+                        "instance Render Int ="
+                        "    let render x = primitiveIntToString x"
+                        "dict : Render Int"
+                        "let dict = summon"
+                        "let result = 0"
+                    ]
+                    |> String.concat "\n"
+                ]
+
+        Assert.False(workspace.HasErrors, sprintf "Expected no frontend diagnostics, got %A" workspace.Diagnostics)
+
+        let mainModule =
+            workspace.ClrAssemblyIR
+            |> List.find (fun moduleDump -> moduleDump.Name = "main")
+
+        let instanceInfo =
+            mainModule.TraitInstances |> List.exactlyOne
+
+        let driftedClrAssemblyIR =
+            workspace.ClrAssemblyIR
+            |> List.map (fun moduleDump ->
+                if moduleDump.Name = "main" then
+                    { moduleDump with
+                        TraitInstances = []
+                        Bindings =
+                            moduleDump.Bindings
+                            |> List.map (fun binding ->
+                                if binding.Name = "result" then
+                                    { binding with
+                                        Body =
+                                            Some(KRuntimeDictionaryValue(moduleDump.Name, instanceInfo.TraitName, instanceInfo.InstanceKey, [])) }
+                                else
+                                    binding) }
+                else
+                    moduleDump)
+
+        let outputDirectory = createScratchDirectory "dotnet-trait-instance-resolution"
+
+        match Backend.emitDotNetArtifact { workspace with ClrAssemblyIR = driftedClrAssemblyIR } "main.result" outputDirectory DotNetDeployment.Managed with
+        | Result.Ok artifact ->
+            failwithf "Expected dotnet artifact emission to reject unresolved trait instances, but emitted '%s'." artifact.GeneratedFilePath
+        | Result.Error message ->
+            Assert.Equal(
+                $"The CLR-backed dotnet profile could not lower 'main.result': The CLR dotnet backend could not resolve trait instance 'main.{instanceInfo.TraitName}.{instanceInfo.InstanceKey}'.",
+                message
+            )
+
+    [<Fact>]
+    let ``dotnet backend reports structured missing trait route failures`` () =
+        let workspace =
+            compileInMemoryWorkspaceWithBackend
+                "memory-dotnet-trait-route-resolution-root"
+                "dotnet"
+                [
+                    "main.kp",
+                    [
+                        "module main"
+                        "trait Render (a : Type) ="
+                        "    render : a -> String"
+                        "instance Render Int ="
+                        "    let render x = primitiveIntToString x"
+                        "let result = render 1"
+                    ]
+                    |> String.concat "\n"
+                ]
+
+        Assert.False(workspace.HasErrors, sprintf "Expected no frontend diagnostics, got %A" workspace.Diagnostics)
+
+        let driftedClrAssemblyIR =
+            workspace.ClrAssemblyIR
+            |> List.map (fun moduleDump ->
+                if moduleDump.Name = "main" then
+                    { moduleDump with
+                        TraitInstances =
+                            moduleDump.TraitInstances
+                            |> List.map (fun instanceInfo ->
+                                { instanceInfo with MemberBindings = [] })
+                        Bindings =
+                            moduleDump.Bindings
+                            |> List.map (fun binding ->
+                                if binding.Name = "result" then
+                                    { binding with
+                                        Body =
+                                            Some(
+                                                KRuntimeTraitCall(
+                                                    "Render",
+                                                    "render",
+                                                    KRuntimeLiteral LiteralValue.Unit,
+                                                    [ KRuntimeLiteral(LiteralValue.Integer 1L) ]
+                                                )
+                                            ) }
+                                else
+                                    binding) }
+                else
+                    moduleDump)
+
+        let outputDirectory = createScratchDirectory "dotnet-trait-route-resolution"
+
+        match Backend.emitDotNetArtifact { workspace with ClrAssemblyIR = driftedClrAssemblyIR } "main.result" outputDirectory DotNetDeployment.Managed with
+        | Result.Ok artifact ->
+            failwithf "Expected dotnet artifact emission to reject missing trait routes, but emitted '%s'." artifact.GeneratedFilePath
+        | Result.Error message ->
+            Assert.Equal(
+                "The CLR-backed dotnet profile could not lower 'main.result': The CLR dotnet backend could not find any routes for trait call 'Render.render'.",
+                message
+            )
+
+    [<Fact>]
+    let ``dotnet backend reports structured missing durable host metadata failures`` () =
+        let workspace =
+            compileInMemoryWorkspaceWithBackend
+                "memory-dotnet-host-metadata-resolution-root"
+                "dotnet"
+                [
+                    "main.kp",
+                    [
+                        "module main"
+                        "import host.dotnet.Kappa.Compiler.TestHost.Sample.(term Create)"
+                        "let result = Create \"ok\""
+                    ]
+                    |> String.concat "\n"
+                ]
+
+        Assert.False(workspace.HasErrors, sprintf "Expected host.dotnet wrappers to compile, got %A" workspace.Diagnostics)
+
+        let driftedClrAssemblyIR =
+            workspace.ClrAssemblyIR
+            |> List.map (fun moduleDump ->
+                if moduleDump.Name = "host.dotnet.Kappa.Compiler.TestHost.Sample" then
+                    { moduleDump with
+                        Bindings =
+                            moduleDump.Bindings
+                            |> List.map (fun binding ->
+                                if binding.Name = "Create" then
+                                    { binding with
+                                        ExternalBinding = Some(DotNetHostMethod("Missing.Type, Missing.Assembly", "Create", [], []))
+                                        Body = None }
+                                else
+                                    binding) }
+                else
+                    moduleDump)
+
+        let outputDirectory = createScratchDirectory "dotnet-host-metadata-resolution"
+
+        match Backend.emitDotNetArtifact { workspace with ClrAssemblyIR = driftedClrAssemblyIR } "main.result" outputDirectory DotNetDeployment.Managed with
+        | Result.Ok artifact ->
+            failwithf "Expected dotnet artifact emission to reject missing durable host metadata, but emitted '%s'." artifact.GeneratedFilePath
+        | Result.Error message ->
+            Assert.Equal(
+                "The CLR-backed dotnet profile could not lower 'main.result': The CLR dotnet backend could not resolve durable host binding metadata for 'host.dotnet.Kappa.Compiler.TestHost.Sample.Create'.",
+                message
+            )
+
+    [<Fact>]
     let ``clr assembly ir carries durable host dotnet binding metadata`` () =
         let workspace =
             compileInMemoryWorkspaceWithBackend

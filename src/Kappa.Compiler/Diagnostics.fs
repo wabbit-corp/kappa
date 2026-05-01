@@ -871,6 +871,10 @@ type ClrBackendEmitterErrorEvidence =
     | ClrMissingBindingBody of moduleName: string * bindingName: string
     | ClrNameResolutionFailed of nameText: string * localsInScopeText: string
     | ClrCalleeResolutionFailed of calleeName: string
+    | ClrTraitMemberResolutionFailed of traitName: string * memberName: string * moduleName: string * instanceKey: string
+    | ClrTraitInstanceResolutionFailed of moduleName: string * traitName: string * instanceKey: string
+    | ClrTraitCallRoutesMissing of traitName: string * memberName: string
+    | ClrHostBindingMetadataResolutionFailed of moduleName: string * bindingName: string
     | UnaryOperatorUnsupported of operatorName: string
     | UnaryOperatorOperandTypeUnsupported of operatorName: string * operandTypeText: string
     | BinaryOperatorUnsupported of operatorName: string * leftTypeText: string * rightTypeText: string
@@ -1790,6 +1794,14 @@ module DiagnosticFact =
                 $"The CLR dotnet backend could not resolve name '{nameText}'. Locals in scope: [{localsInScopeText}]."
             | ClrCalleeResolutionFailed calleeName ->
                 $"The CLR dotnet backend could not resolve callee '{calleeName}'."
+            | ClrTraitMemberResolutionFailed(traitName, memberName, moduleName, instanceKey) ->
+                $"The CLR dotnet backend could not resolve trait member '{traitName}.{memberName}' for instance '{moduleName}.{instanceKey}'."
+            | ClrTraitInstanceResolutionFailed(moduleName, traitName, instanceKey) ->
+                $"The CLR dotnet backend could not resolve trait instance '{moduleName}.{traitName}.{instanceKey}'."
+            | ClrTraitCallRoutesMissing(traitName, memberName) ->
+                $"The CLR dotnet backend could not find any routes for trait call '{traitName}.{memberName}'."
+            | ClrHostBindingMetadataResolutionFailed(moduleName, bindingName) ->
+                $"The CLR dotnet backend could not resolve durable host binding metadata for '{moduleName}.{bindingName}'."
             | UnaryOperatorUnsupported operatorName ->
                 $"The CLR dotnet backend does not yet support unary operator '{operatorName}'."
             | UnaryOperatorOperandTypeUnsupported(operatorName, operandTypeText) ->

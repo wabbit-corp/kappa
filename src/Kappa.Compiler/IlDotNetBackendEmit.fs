@@ -485,20 +485,26 @@ module internal IlDotNetBackendEmit =
                                     return bindingInfo.ReturnType
                                 | None ->
                                     return!
-                                        Result.Error
-                                            $"IL backend could not resolve trait member '{traitName}.{memberName}' for instance '{moduleName}.{instanceKey}'."
+                                        Result.Error(
+                                            DiagnosticFact.ClrBackendEmitterError.message
+                                                (ClrTraitMemberResolutionFailed(traitName, memberName, moduleName, instanceKey))
+                                        )
                             | None ->
                                 return!
-                                    Result.Error
-                                        $"IL backend could not resolve trait instance '{moduleName}.{traitName}.{instanceKey}'."
+                                    Result.Error(
+                                        DiagnosticFact.ClrBackendEmitterError.message
+                                            (ClrTraitInstanceResolutionFailed(moduleName, traitName, instanceKey))
+                                    )
                         | None, _ ->
                             let routes = traitMemberRoutes state.Environment traitName memberName
 
                             match routes with
                             | [] ->
                                 return!
-                                    Result.Error
-                                        $"IL backend could not find any routes for trait call '{traitName}.{memberName}'."
+                                    Result.Error(
+                                        DiagnosticFact.ClrBackendEmitterError.message
+                                            (ClrTraitCallRoutesMissing(traitName, memberName))
+                                    )
                             | (firstInstanceInfo, firstBindingName) :: remainingRoutes ->
                                 match state.Environment.Modules[firstInstanceInfo.ModuleName].Bindings |> Map.tryFind firstBindingName with
                                 | None ->
@@ -782,7 +788,10 @@ module internal IlDotNetBackendEmit =
                     | Some instanceInfo ->
                         ensureExpected (dictionaryIlType traitName instanceInfo.HeadTypes)
                     | None ->
-                        Result.Error $"IL backend could not resolve trait instance '{moduleName}.{traitName}.{instanceKey}'."
+                        Result.Error(
+                            DiagnosticFact.ClrBackendEmitterError.message
+                                (ClrTraitInstanceResolutionFailed(moduleName, traitName, instanceKey))
+                        )
                 | KRuntimeTraitCall(traitName, memberName, dictionary, arguments) ->
                     inferTraitCall traitName memberName dictionary arguments
                 | KRuntimeApply _ ->
@@ -1249,7 +1258,11 @@ module internal IlDotNetBackendEmit =
                 let routes = traitMemberRoutes state.Environment traitName memberName
 
                 if List.isEmpty routes then
-                    return! Result.Error $"IL backend could not find any routes for trait call '{traitName}.{memberName}'."
+                    return!
+                        Result.Error(
+                            DiagnosticFact.ClrBackendEmitterError.message
+                                (ClrTraitCallRoutesMissing(traitName, memberName))
+                        )
 
                 let dictionaryLocal = il.DeclareLocal(typeof<Tuple<string, string, string>>)
                 let resultLocal = il.DeclareLocal(resolveClrType state typeParameters resultType)
@@ -2056,8 +2069,10 @@ module internal IlDotNetBackendEmit =
                         il.Emit(OpCodes.Ret)
                     | None ->
                         return!
-                            Result.Error
-                                $"IL backend could not resolve durable host binding metadata for '{moduleInfo.Name}.{bindingInfo.Binding.Name}'."
+                            Result.Error(
+                                DiagnosticFact.ClrBackendEmitterError.message
+                                    (ClrHostBindingMetadataResolutionFailed(moduleInfo.Name, bindingInfo.Binding.Name))
+                            )
                 | None ->
                     return!
                         Result.Error(

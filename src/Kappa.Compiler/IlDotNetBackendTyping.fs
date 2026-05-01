@@ -624,12 +624,16 @@ module internal IlDotNetBackendTyping =
                                         return bindingInfo.ReturnType
                                     | None ->
                                         return!
-                                            Result.Error
-                                                $"IL backend could not resolve trait member '{traitName}.{memberName}' for instance '{moduleName}.{instanceKey}'."
+                                            Result.Error(
+                                                DiagnosticFact.ClrBackendEmitterError.message
+                                                    (ClrTraitMemberResolutionFailed(traitName, memberName, moduleName, instanceKey))
+                                            )
                                 | None ->
                                     return!
-                                        Result.Error
-                                            $"IL backend could not resolve trait instance '{moduleName}.{traitName}.{instanceKey}'."
+                                        Result.Error(
+                                            DiagnosticFact.ClrBackendEmitterError.message
+                                                (ClrTraitInstanceResolutionFailed(moduleName, traitName, instanceKey))
+                                        )
                             | None, _ ->
                                 let routes =
                                     traitInstances
@@ -645,8 +649,10 @@ module internal IlDotNetBackendTyping =
                                 match routes with
                                 | [] ->
                                     return!
-                                        Result.Error
-                                            $"IL backend could not find any routes for trait call '{traitName}.{memberName}'."
+                                        Result.Error(
+                                            DiagnosticFact.ClrBackendEmitterError.message
+                                                (ClrTraitCallRoutesMissing(traitName, memberName))
+                                        )
                                 | (firstModuleName, firstBindingName) :: remainingRoutes ->
                                     let! firstBinding = inferBindingInfo firstModuleName firstBindingName active
 
@@ -929,7 +935,10 @@ module internal IlDotNetBackendTyping =
                         | Some instanceInfo ->
                             ensureExpected (dictionaryIlType traitName instanceInfo.HeadTypes)
                         | None ->
-                            Result.Error $"IL backend could not resolve trait instance '{moduleName}.{traitName}.{instanceKey}'."
+                            Result.Error(
+                                DiagnosticFact.ClrBackendEmitterError.message
+                                    (ClrTraitInstanceResolutionFailed(moduleName, traitName, instanceKey))
+                            )
                     | KRuntimeTraitCall(traitName, memberName, dictionary, arguments) ->
                         inferTraitCall traitName memberName dictionary arguments
                     | KRuntimeApply _ ->
