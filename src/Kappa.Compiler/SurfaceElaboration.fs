@@ -16354,11 +16354,7 @@ module SurfaceElaboration =
 
                             let refutableDiagnostics =
                                 if not isRefutable && not (patternIsDefinitelyIrrefutable binding.Pattern) then
-                                    [
-                                        makeDiagnostic
-                                            SimpleDiagnosticKind.TypeEqualityMismatch
-                                            "Refutable generator patterns must use 'for?'; plain 'for' requires an irrefutable pattern."
-                                    ]
+                                    [ makeSurfaceElaborationDiagnostic RefutableGeneratorRequiresForQuestion ]
                                 else
                                     []
 
@@ -16471,9 +16467,8 @@ module SurfaceElaboration =
                             let leakDiagnostics =
                                 leakedBindingNames
                                 |> List.map (fun bindingName ->
-                                    makeDiagnostic
-                                        SimpleDiagnosticKind.NameUnresolved
-                                        $"Left-join binder '{bindingName}' is not in scope after the clause; only '{intoName}' remains available.")
+                                    makeSurfaceElaborationDiagnostic
+                                        (LeftJoinBinderNotInScopeAfterClause(bindingName, intoName)))
 
                             let nextLexical =
                                 leakedBindingNames

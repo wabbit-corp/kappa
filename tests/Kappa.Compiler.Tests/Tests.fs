@@ -3169,6 +3169,103 @@ module SmokeTestsShard3 =
         Assert.Equal(Some "name", tryFindPayloadText "parameter-name" diagnostic)
         Assert.Equal(Some "title", tryFindPayloadText "referenced-name" diagnostic)
 
+    [<Fact>]
+    let ``source compilation reports refutable generator payloads`` () =
+        let workspace =
+            compileInMemoryWorkspace
+                "memory-refutable-generator-root"
+                [
+                    "main.kp",
+                    [
+                        "module main"
+                        "values : List (Option Int)"
+                        "let values = [Some 1, None, Some 3]"
+                        "bad : List Int"
+                        "let bad ="
+                        "    ["
+                        "        for Some x in values"
+                        "        yield x"
+                        "    ]"
+                    ]
+                    |> String.concat "\n"
+                ]
+
+        Assert.True(workspace.HasErrors, "Expected a plain 'for' with a refutable pattern to be rejected.")
+
+        let diagnostic =
+            workspace.Diagnostics
+            |> List.find (fun item ->
+                item.Code = DiagnosticCode.TypeEqualityMismatch
+                && tryFindPayloadText "reason" item = Some "refutable-generator-requires-for-question")
+
+        Assert.Equal("surface-elaboration-diagnostic", diagnostic.Payload.Kind)
+
+    [<Fact>]
+    let ``source compilation reports left join binder leakage payloads`` () =
+        let workspace =
+            compileInMemoryWorkspace
+                "memory-left-join-scope-root"
+                [
+                    "main.kp",
+                    [
+                        "module main"
+                        "import model.data.*"
+                        "import dsl.sql.*"
+                        "bad : SqlQuery (id : Int)"
+                        "let bad ="
+                        "    SqlQuery ["
+                        "        for u in users"
+                        "        left join o in orders on o.userId == u.id into customerOrders"
+                        "        yield (id = o.id)"
+                        "    ]"
+                    ]
+                    |> String.concat "\n"
+                    "dsl/sql.kp",
+                    [
+                        "module dsl.sql"
+                        "data SqlQuery (row : Type) : Type ="
+                        "    SqlQuery (text : String)"
+                        "instance FromComprehensionRaw (SqlQuery row) ="
+                        "    let Item = row"
+                        "    let fromComprehensionRaw raw ="
+                        "        pure '{ SqlQuery \"compiled-from-raw-comprehension\" }"
+                    ]
+                    |> String.concat "\n"
+                    "model/data.kp",
+                    [
+                        "module model.data"
+                        "type User ="
+                        "    (id : Int, name : String)"
+                        "type Order ="
+                        "    (id : Int, userId : Int)"
+                        "users : Query User"
+                        "let users ="
+                        "    Query ["
+                        "        for u in [(id = 1, name = \"Ada\")]"
+                        "        yield u"
+                        "    ]"
+                        "orders : Query Order"
+                        "let orders ="
+                        "    Query ["
+                        "        for o in [(id = 10, userId = 1)]"
+                        "        yield o"
+                        "    ]"
+                    ]
+                    |> String.concat "\n"
+                ]
+
+        Assert.True(workspace.HasErrors, "Expected left-join inner binders to be unavailable after the clause.")
+
+        let diagnostic =
+            workspace.Diagnostics
+            |> List.find (fun item ->
+                item.Code = DiagnosticCode.NameUnresolved
+                && tryFindPayloadText "reason" item = Some "left-join-binder-not-in-scope-after-clause")
+
+        Assert.Equal("surface-elaboration-diagnostic", diagnostic.Payload.Kind)
+        Assert.Equal(Some "o", tryFindPayloadText "binding-name" diagnostic)
+        Assert.Equal(Some "customerOrders", tryFindPayloadText "into-name" diagnostic)
+
 
     [<Fact>]
     let ``lexer reports malformed prefixed numeric literals directly`` () =
@@ -4207,6 +4304,8 @@ module SmokeTestsShard4 =
         bag.AddError(DiagnosticFact.surfaceElaboration (ConstructorDefaultTypeMismatch("active", "Int", "Bool")))
         bag.AddError(DiagnosticFact.surfaceElaboration (ConstructorDefaultCouldNotBeChecked "active"))
         bag.AddError(DiagnosticFact.surfaceElaboration (StaticObjectUnresolvedByKind("type", "Missing")))
+        bag.AddError(DiagnosticFact.surfaceElaboration RefutableGeneratorRequiresForQuestion)
+        bag.AddError(DiagnosticFact.surfaceElaboration (LeftJoinBinderNotInScopeAfterClause("o", "customerOrders")))
         bag.AddError(DiagnosticFact.surfaceElaboration (TraitConstraintUnresolved "Eq Int"))
         bag.AddError(DiagnosticFact.surfaceElaboration (ImplicitTraitConstraintUnresolved "Show Int"))
         bag.AddError(DiagnosticFact.surfaceElaboration (TraitConstraintAmbiguous("Score Int", [ "left.ScoreInt"; "right.ScoreInt" ])))
@@ -4564,6 +4663,18 @@ module SmokeTestsShard4 =
                 item.Code = DiagnosticCode.TypeEqualityMismatch
                 && tryFindPayloadText "reason" item = Some "constructor-default-could-not-be-checked")
 
+        let refutableGeneratorDiagnostic =
+            diagnostics
+            |> List.find (fun item ->
+                item.Code = DiagnosticCode.TypeEqualityMismatch
+                && tryFindPayloadText "reason" item = Some "refutable-generator-requires-for-question")
+
+        let leftJoinScopeDiagnostic =
+            diagnostics
+            |> List.find (fun item ->
+                item.Code = DiagnosticCode.NameUnresolved
+                && tryFindPayloadText "reason" item = Some "left-join-binder-not-in-scope-after-clause")
+
         let unresolvedConstraintDiagnostic =
             diagnostics
             |> List.find (fun item ->
@@ -4751,6 +4862,12 @@ module SmokeTestsShard4 =
         Assert.Equal(Some "static-constructor-requires-preserved-static-object-identity", tryFindPayloadText "reason" staticObjectDiagnostic)
         Assert.Equal(Some "type", tryFindPayloadText "kind-selector" staticObjectByKindDiagnostic)
         Assert.Equal(Some "Missing", tryFindPayloadText "name-text" staticObjectByKindDiagnostic)
+        Assert.Equal(
+            "Refutable generator patterns must use 'for?'; plain 'for' requires an irrefutable pattern.",
+            refutableGeneratorDiagnostic.Message
+        )
+        Assert.Equal(Some "o", tryFindPayloadText "binding-name" leftJoinScopeDiagnostic)
+        Assert.Equal(Some "customerOrders", tryFindPayloadText "into-name" leftJoinScopeDiagnostic)
         Assert.Equal("Trait constraint 'Eq Int' could not be resolved.", unresolvedConstraintDiagnostic.Message)
         Assert.Equal("Implicit trait constraint 'Show Int' could not be resolved.", unresolvedImplicitConstraintDiagnostic.Message)
         Assert.Equal(Some "Score Int", tryFindPayloadText "constraint-text" ambiguousConstraintDiagnostic)

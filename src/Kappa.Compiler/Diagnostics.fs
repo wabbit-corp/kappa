@@ -915,6 +915,8 @@ type SurfaceElaborationDiagnosticEvidence =
     | ConstructorDefaultReferencesUnavailableBinder of parameterName: string * referencedName: string
     | ConstructorDefaultTypeMismatch of parameterName: string * actualTypeText: string * expectedTypeText: string
     | ConstructorDefaultCouldNotBeChecked of parameterName: string
+    | RefutableGeneratorRequiresForQuestion
+    | LeftJoinBinderNotInScopeAfterClause of bindingName: string * intoName: string
     | TraitConstraintUnresolved of constraintText: string
     | ImplicitTraitConstraintUnresolved of constraintText: string
     | TraitConstraintAmbiguous of constraintText: string * candidateTexts: string list
@@ -2967,6 +2969,24 @@ module DiagnosticFact =
                         "surface-elaboration-diagnostic"
                         [ field "reason" (DiagnosticPayloadText "constructor-default-could-not-be-checked")
                           field "parameter-name" (DiagnosticPayloadText parameterName) ])
+            | RefutableGeneratorRequiresForQuestion ->
+                descriptor
+                    DiagnosticCode.TypeEqualityMismatch
+                    None
+                    "Refutable generator patterns must use 'for?'; plain 'for' requires an irrefutable pattern."
+                    (payload
+                        "surface-elaboration-diagnostic"
+                        [ field "reason" (DiagnosticPayloadText "refutable-generator-requires-for-question") ])
+            | LeftJoinBinderNotInScopeAfterClause(bindingName, intoName) ->
+                descriptor
+                    DiagnosticCode.NameUnresolved
+                    None
+                    $"Left-join binder '{bindingName}' is not in scope after the clause; only '{intoName}' remains available."
+                    (payload
+                        "surface-elaboration-diagnostic"
+                        [ field "reason" (DiagnosticPayloadText "left-join-binder-not-in-scope-after-clause")
+                          field "binding-name" (DiagnosticPayloadText bindingName)
+                          field "into-name" (DiagnosticPayloadText intoName) ])
             | TraitConstraintUnresolved constraintText ->
                 descriptor
                     DiagnosticCode.TypeEqualityMismatch
