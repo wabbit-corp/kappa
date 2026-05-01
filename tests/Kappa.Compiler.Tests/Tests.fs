@@ -4487,6 +4487,71 @@ module SmokeTestsShard4 =
                 && field.Value = DiagnosticPayloadText "invalid-byte-escape"
         )
 
+    [<Fact>]
+    let ``lexer diagnostics render from typed evidence`` () =
+        let bag = DiagnosticBag()
+        bag.AddError(DiagnosticFact.lexer (LexerDiagnosticEvidence.UnterminatedStringLiteral false))
+        bag.AddError(DiagnosticFact.lexer (LexerDiagnosticEvidence.UnterminatedStringLiteral true))
+        bag.AddError(DiagnosticFact.lexer LexerDiagnosticEvidence.UnterminatedCharacterLiteral)
+        bag.AddError(DiagnosticFact.lexer LexerDiagnosticEvidence.UnterminatedBacktickIdentifier)
+        bag.AddError(DiagnosticFact.lexer LexerDiagnosticEvidence.UnterminatedStringInterpolation)
+        bag.AddError(DiagnosticFact.lexer LexerDiagnosticEvidence.UnterminatedBlockComment)
+
+        let diagnostics = bag.Items
+
+        let stringDiagnostic =
+            diagnostics
+            |> List.find (fun item ->
+                item.Code = DiagnosticCode.UnterminatedStringLiteral
+                && tryFindPayloadText "prefixed" item = Some "false")
+
+        let prefixedStringDiagnostic =
+            diagnostics
+            |> List.find (fun item ->
+                item.Code = DiagnosticCode.UnterminatedStringLiteral
+                && tryFindPayloadText "prefixed" item = Some "true")
+
+        let characterDiagnostic =
+            diagnostics
+            |> List.find (fun item -> item.Code = DiagnosticCode.UnterminatedCharacterLiteral)
+
+        let backtickDiagnostic =
+            diagnostics
+            |> List.find (fun item -> item.Code = DiagnosticCode.UnterminatedBacktickIdentifier)
+
+        let interpolationDiagnostic =
+            diagnostics
+            |> List.find (fun item -> item.Code = DiagnosticCode.UnterminatedStringInterpolation)
+
+        let blockCommentDiagnostic =
+            diagnostics
+            |> List.find (fun item -> item.Code = DiagnosticCode.UnterminatedBlockComment)
+
+        Assert.Equal("Unterminated string literal.", stringDiagnostic.Message)
+        Assert.Equal("unterminated-string-literal", stringDiagnostic.Payload.Kind)
+        Assert.Equal(Some "unterminated-string-literal", tryFindPayloadText "reason" stringDiagnostic)
+        Assert.Equal(Some "false", tryFindPayloadText "prefixed" stringDiagnostic)
+
+        Assert.Equal("Unterminated prefixed string literal.", prefixedStringDiagnostic.Message)
+        Assert.Equal("unterminated-string-literal", prefixedStringDiagnostic.Payload.Kind)
+        Assert.Equal(Some "true", tryFindPayloadText "prefixed" prefixedStringDiagnostic)
+
+        Assert.Equal("Unterminated character literal.", characterDiagnostic.Message)
+        Assert.Equal("unterminated-character-literal", characterDiagnostic.Payload.Kind)
+        Assert.Equal(Some "unterminated-character-literal", tryFindPayloadText "reason" characterDiagnostic)
+
+        Assert.Equal("Unterminated backtick identifier.", backtickDiagnostic.Message)
+        Assert.Equal("unterminated-backtick-identifier", backtickDiagnostic.Payload.Kind)
+        Assert.Equal(Some "unterminated-backtick-identifier", tryFindPayloadText "reason" backtickDiagnostic)
+
+        Assert.Equal("Unterminated string interpolation.", interpolationDiagnostic.Message)
+        Assert.Equal("unterminated-string-interpolation", interpolationDiagnostic.Payload.Kind)
+        Assert.Equal(Some "unterminated-string-interpolation", tryFindPayloadText "reason" interpolationDiagnostic)
+
+        Assert.Equal("Unterminated block comment.", blockCommentDiagnostic.Message)
+        Assert.Equal("unterminated-block-comment", blockCommentDiagnostic.Payload.Kind)
+        Assert.Equal(Some "unterminated-block-comment", tryFindPayloadText "reason" blockCommentDiagnostic)
+
 
     [<Fact>]
     let ``byte literal decoder preserves raw byte escape provenance`` () =
@@ -4519,6 +4584,57 @@ module SmokeTestsShard4 =
             failwithf "Expected non-ASCII two-byte UTF-8 escape to be rejected, but decoded to %A" value
         | Result.Error ByteMustDecodeToExactlyOneByte -> ()
         | Result.Error other -> failwithf "Expected exact one-byte failure, got %A" other
+
+    [<Fact>]
+    let ``lexer reports structured termination diagnostics`` () =
+        let expectDiagnostic code reason payloadAssertions sourceText =
+            let source = createSource "__lexer_termination__.kp" sourceText
+            let lexed = Lexer.tokenize source
+
+            let diagnostic =
+                lexed.Diagnostics
+                |> List.find (fun item -> item.Code = code)
+
+            Assert.Equal(reason, tryFindPayloadText "reason" diagnostic |> Option.defaultValue "")
+            payloadAssertions diagnostic
+
+        expectDiagnostic
+            DiagnosticCode.UnterminatedStringLiteral
+            "unterminated-string-literal"
+            (fun diagnostic ->
+                Assert.Equal("unterminated-string-literal", diagnostic.Payload.Kind)
+                Assert.Equal(Some "false", tryFindPayloadText "prefixed" diagnostic))
+            "\"abc"
+
+        expectDiagnostic
+            DiagnosticCode.UnterminatedStringLiteral
+            "unterminated-string-literal"
+            (fun diagnostic -> Assert.Equal(Some "true", tryFindPayloadText "prefixed" diagnostic))
+            "f\"abc"
+
+        expectDiagnostic
+            DiagnosticCode.UnterminatedCharacterLiteral
+            "unterminated-character-literal"
+            (fun diagnostic -> Assert.Equal("unterminated-character-literal", diagnostic.Payload.Kind))
+            "'a"
+
+        expectDiagnostic
+            DiagnosticCode.UnterminatedBacktickIdentifier
+            "unterminated-backtick-identifier"
+            (fun diagnostic -> Assert.Equal("unterminated-backtick-identifier", diagnostic.Payload.Kind))
+            "`abc"
+
+        expectDiagnostic
+            DiagnosticCode.UnterminatedStringInterpolation
+            "unterminated-string-interpolation"
+            (fun diagnostic -> Assert.Equal("unterminated-string-interpolation", diagnostic.Payload.Kind))
+            "f\"${x"
+
+        expectDiagnostic
+            DiagnosticCode.UnterminatedBlockComment
+            "unterminated-block-comment"
+            (fun diagnostic -> Assert.Equal("unterminated-block-comment", diagnostic.Payload.Kind))
+            "{- unclosed"
 
     [<Fact>]
     let ``parser reports structured unicode literal diagnostics`` () =

@@ -262,12 +262,12 @@ module Lexer =
 
             emit kind text startOffset
 
-        let emitQuotedLiteral kind startOffset quoteCharacter unterminatedMessage unterminatedKind =
+        let emitQuotedLiteral kind startOffset quoteCharacter unterminatedDiagnostic =
             let endIndex, closed = readQuotedLiteral lineText startOffset quoteCharacter
 
             if not closed then
                 diagnostics.AddError(
-                    DiagnosticFact.simple unterminatedKind unterminatedMessage,
+                    unterminatedDiagnostic,
                     source.GetLocation(TextSpan.FromBounds(lineStart + startOffset, lineStart + endIndex))
                 )
 
@@ -287,7 +287,7 @@ module Lexer =
                       IsMultiline = false }
 
             if not scanned.Closed then
-                diagnostics.AddError(DiagnosticFact.simple SimpleDiagnosticKind.UnterminatedStringLiteral "Unterminated string literal.",
+                diagnostics.AddError(DiagnosticFact.lexer (LexerDiagnosticEvidence.UnterminatedStringLiteral false),
                     source.GetLocation(TextSpan.FromBounds(absoluteStartIndex, scanned.EndIndex))
                 )
 
@@ -446,7 +446,7 @@ module Lexer =
                                 let endIndex, closed = readQuotedLiteral text currentAbsoluteIndex '\''
 
                                 if not closed then
-                                    diagnostics.AddError(DiagnosticFact.simple SimpleDiagnosticKind.UnterminatedCharacterLiteral "Unterminated character literal.",
+                                    diagnostics.AddError(DiagnosticFact.lexer LexerDiagnosticEvidence.UnterminatedCharacterLiteral,
                                         source.GetLocation(TextSpan.FromBounds(currentAbsoluteIndex, endIndex))
                                     )
 
@@ -456,7 +456,7 @@ module Lexer =
                             let endIndex, closed = readBacktickIdentifier text currentAbsoluteIndex
 
                             if not closed then
-                                diagnostics.AddError(DiagnosticFact.simple SimpleDiagnosticKind.UnterminatedBacktickIdentifier "Unterminated backtick identifier.",
+                                diagnostics.AddError(DiagnosticFact.lexer LexerDiagnosticEvidence.UnterminatedBacktickIdentifier,
                                     source.GetLocation(TextSpan.FromBounds(currentAbsoluteIndex, endIndex))
                                 )
 
@@ -515,7 +515,7 @@ module Lexer =
                             currentAbsoluteIndex <- currentAbsoluteIndex + 1
 
                 if blockCommentDepth > 0 || not terminated then
-                    diagnostics.AddError(DiagnosticFact.simple SimpleDiagnosticKind.UnterminatedStringInterpolation "Unterminated string interpolation.",
+                    diagnostics.AddError(DiagnosticFact.lexer LexerDiagnosticEvidence.UnterminatedStringInterpolation,
                         source.GetLocation(TextSpan.FromBounds(startAbsoluteIndex, currentAbsoluteIndex))
                     )
 
@@ -566,7 +566,7 @@ module Lexer =
                         let endIndex, closedIdentifier = readBacktickIdentifier text (currentAbsoluteIndex + 1)
 
                         if not closedIdentifier then
-                            diagnostics.AddError(DiagnosticFact.simple SimpleDiagnosticKind.UnterminatedBacktickIdentifier "Unterminated backtick identifier.",
+                            diagnostics.AddError(DiagnosticFact.lexer LexerDiagnosticEvidence.UnterminatedBacktickIdentifier,
                                 source.GetLocation(TextSpan.FromBounds(currentAbsoluteIndex + 1, endIndex))
                             )
 
@@ -608,7 +608,7 @@ module Lexer =
                         currentAbsoluteIndex <- currentAbsoluteIndex + 1
 
                 if not closed then
-                    diagnostics.AddError(DiagnosticFact.simple SimpleDiagnosticKind.UnterminatedStringLiteral "Unterminated prefixed string literal.",
+                    diagnostics.AddError(DiagnosticFact.lexer (LexerDiagnosticEvidence.UnterminatedStringLiteral true),
                         source.GetLocation(TextSpan.FromBounds(absolutePrefixStart, currentAbsoluteIndex))
                     )
 
@@ -701,7 +701,7 @@ module Lexer =
                         currentIndex <- currentIndex + 1
 
                 if not closed then
-                    diagnostics.AddError(DiagnosticFact.simple SimpleDiagnosticKind.UnterminatedStringLiteral "Unterminated prefixed string literal.",
+                    diagnostics.AddError(DiagnosticFact.lexer (LexerDiagnosticEvidence.UnterminatedStringLiteral true),
                         source.GetLocation(TextSpan.FromBounds(lineStart + prefixStart, lineStart + currentIndex))
                     )
 
@@ -713,7 +713,7 @@ module Lexer =
             let endIndex, closed = readBacktickIdentifier lineText startOffset
 
             if not closed then
-                diagnostics.AddError(DiagnosticFact.simple SimpleDiagnosticKind.UnterminatedBacktickIdentifier "Unterminated backtick identifier.",
+                diagnostics.AddError(DiagnosticFact.lexer LexerDiagnosticEvidence.UnterminatedBacktickIdentifier,
                     source.GetLocation(TextSpan.FromBounds(lineStart + startOffset, lineStart + endIndex))
                 )
 
@@ -738,7 +738,7 @@ module Lexer =
             let endIndex, closed = readBacktickIdentifier lineText startOffset
 
             if not closed then
-                diagnostics.AddError(DiagnosticFact.simple SimpleDiagnosticKind.UnterminatedBacktickIdentifier "Unterminated backtick identifier.",
+                diagnostics.AddError(DiagnosticFact.lexer LexerDiagnosticEvidence.UnterminatedBacktickIdentifier,
                     source.GetLocation(TextSpan.FromBounds(lineStart + startOffset, lineStart + endIndex))
                 )
 
@@ -926,8 +926,7 @@ module Lexer =
                                     CharacterLiteral
                                     currentIndex
                                     '\''
-                                    "Unterminated character literal."
-                                    SimpleDiagnosticKind.UnterminatedCharacterLiteral
+                                    (DiagnosticFact.lexer LexerDiagnosticEvidence.UnterminatedCharacterLiteral)
                     | '`' ->
                         currentIndex <- scanBacktickOrPrefixedString currentIndex
                     | _ when Char.IsDigit(current) ->
@@ -945,7 +944,7 @@ module Lexer =
                         currentIndex <- currentIndex + 1
 
             if blockCommentDepth > 0 || not terminated then
-                diagnostics.AddError(DiagnosticFact.simple SimpleDiagnosticKind.UnterminatedStringInterpolation "Unterminated string interpolation.",
+                diagnostics.AddError(DiagnosticFact.lexer LexerDiagnosticEvidence.UnterminatedStringInterpolation,
                     source.GetLocation(TextSpan.FromBounds(lineStart + startOffset, lineStart + currentIndex))
                 )
 
@@ -1068,8 +1067,7 @@ module Lexer =
                                 CharacterLiteral
                                 index
                                 '\''
-                                "Unterminated character literal."
-                                SimpleDiagnosticKind.UnterminatedCharacterLiteral
+                                (DiagnosticFact.lexer LexerDiagnosticEvidence.UnterminatedCharacterLiteral)
                 | '`' ->
                     index <- scanBacktickOrPrefixedString index
                 | _ when Char.IsDigit(current) ->
@@ -1125,7 +1123,7 @@ module Lexer =
             consumedUntilAbsoluteIndex <- max consumedUntilAbsoluteIndex newConsumedUntilAbsoluteIndex
 
         if blockCommentDepth > 0 then
-            diagnostics.AddError(DiagnosticFact.simple SimpleDiagnosticKind.UnterminatedBlockComment "Unterminated block comment.",
+            diagnostics.AddError(DiagnosticFact.lexer LexerDiagnosticEvidence.UnterminatedBlockComment,
                 source.GetLocation(TextSpan.FromBounds(source.Length, source.Length))
             )
 

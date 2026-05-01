@@ -1023,6 +1023,13 @@ type UnicodeGraphemeLiteralEvidence = GraphemeLiteralDecodeError
 
 type UnicodeByteLiteralEvidence = ByteLiteralDecodeError
 
+type LexerDiagnosticEvidence =
+    | UnterminatedStringLiteral of isPrefixed: bool
+    | UnterminatedCharacterLiteral
+    | UnterminatedBacktickIdentifier
+    | UnterminatedStringInterpolation
+    | UnterminatedBlockComment
+
 type QttCardinalityEffect =
     | Discard
     | Duplicate
@@ -1117,6 +1124,7 @@ type DiagnosticFact =
     | UnicodeScalarLiteralDiagnostic of UnicodeScalarLiteralEvidence
     | UnicodeGraphemeLiteralDiagnostic of UnicodeGraphemeLiteralEvidence
     | UnicodeByteLiteralDiagnostic of UnicodeByteLiteralEvidence
+    | LexerDiagnostic of LexerDiagnosticEvidence
     | QttLinearDropDiagnostic of QttLinearDropEvidence
     | QttLinearOveruseDiagnostic of QttLinearOveruseEvidence
     | QttBorrowConsumeDiagnostic of QttBorrowConsumeEvidence
@@ -1413,6 +1421,9 @@ module DiagnosticFact =
 
     let unicodeInvalidByteLiteral evidence =
         UnicodeByteLiteralDiagnostic evidence
+
+    let lexer evidence =
+        LexerDiagnostic evidence
 
     let qttLinearDrop evidence = QttLinearDropDiagnostic evidence
     let qttLinearOveruse evidence = QttLinearOveruseDiagnostic evidence
@@ -2934,6 +2945,55 @@ module DiagnosticFact =
                     (payload
                         "unicode-invalid-byte-literal"
                         ([ field "reason" (DiagnosticPayloadText "must-decode-to-exactly-one-byte") ] @ bytePayloadFields))
+        | LexerDiagnostic evidence ->
+            match evidence with
+            | UnterminatedStringLiteral isPrefixed ->
+                let message =
+                    if isPrefixed then
+                        "Unterminated prefixed string literal."
+                    else
+                        "Unterminated string literal."
+
+                descriptor
+                    DiagnosticCode.UnterminatedStringLiteral
+                    None
+                    message
+                    (payload
+                        "unterminated-string-literal"
+                        [ field "reason" (DiagnosticPayloadText "unterminated-string-literal")
+                          field "prefixed" (DiagnosticPayloadText(if isPrefixed then "true" else "false")) ])
+            | UnterminatedCharacterLiteral ->
+                descriptor
+                    DiagnosticCode.UnterminatedCharacterLiteral
+                    None
+                    "Unterminated character literal."
+                    (payload
+                        "unterminated-character-literal"
+                        [ field "reason" (DiagnosticPayloadText "unterminated-character-literal") ])
+            | UnterminatedBacktickIdentifier ->
+                descriptor
+                    DiagnosticCode.UnterminatedBacktickIdentifier
+                    None
+                    "Unterminated backtick identifier."
+                    (payload
+                        "unterminated-backtick-identifier"
+                        [ field "reason" (DiagnosticPayloadText "unterminated-backtick-identifier") ])
+            | UnterminatedStringInterpolation ->
+                descriptor
+                    DiagnosticCode.UnterminatedStringInterpolation
+                    None
+                    "Unterminated string interpolation."
+                    (payload
+                        "unterminated-string-interpolation"
+                        [ field "reason" (DiagnosticPayloadText "unterminated-string-interpolation") ])
+            | UnterminatedBlockComment ->
+                descriptor
+                    DiagnosticCode.UnterminatedBlockComment
+                    None
+                    "Unterminated block comment."
+                    (payload
+                        "unterminated-block-comment"
+                        [ field "reason" (DiagnosticPayloadText "unterminated-block-comment") ])
         | QttLinearDropDiagnostic evidence ->
             match evidence with
             | ShadowedBindingMustConsumePreviousValue shadowedBindingName ->
