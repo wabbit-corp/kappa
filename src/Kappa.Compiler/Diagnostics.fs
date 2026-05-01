@@ -860,6 +860,15 @@ type SurfaceElaborationDiagnosticEvidence =
     | ProjectionDescriptorRootsPackFieldsMustMatchBindersExactly
     | MultiRootProjectionDescriptorRequiresRecordLiteralRootsPack
     | FullyAppliedProjectionProducesProjectedFocusNotDescriptorValue
+    | MemberCallRequiresExactlyOneReceiverBinder of memberName: string
+    | MemberCallMissingPrecedingExplicitArguments of memberName: string
+    | MemberCallMissingExplicitArguments of memberName: string
+    | ApplicationArgumentsDoNotMatchCalleeParameters
+    | NamedApplicationArgumentsDoNotMatchCalleeParameterMetadata
+    | ImplicitApplicationArgumentUnresolvedOrMismatched
+    | NamedApplicationRequiresPreservedParameterMetadata
+    | ImplicitApplicationArgumentAmbiguous
+    | QuantityZeroImplicitCannotSatisfyRuntimeParameter
     | StaticConstructorRequiresPreservedStaticObjectIdentity of memberName: string
     | PatternHeadResolvedToOrdinaryTerm of headName: string
     | ActivePatternLinearlyConsumesScrutineeInRefutableContext of patternName: string * context: string
@@ -2453,6 +2462,81 @@ module DiagnosticFact =
                     (payload
                         "surface-elaboration-diagnostic"
                         [ field "reason" (DiagnosticPayloadText "fully-applied-projection-produces-projected-focus-not-descriptor-value") ])
+            | MemberCallRequiresExactlyOneReceiverBinder memberName ->
+                descriptor
+                    DiagnosticCode.TypeEqualityMismatch
+                    None
+                    $"Member-call sugar for '{memberName}' requires exactly one receiver binder."
+                    (payload
+                        "surface-elaboration-diagnostic"
+                        [ field "reason" (DiagnosticPayloadText "member-call-requires-exactly-one-receiver-binder")
+                          field "member-name" (DiagnosticPayloadText memberName) ])
+            | MemberCallMissingPrecedingExplicitArguments memberName ->
+                descriptor
+                    DiagnosticCode.TypeEqualityMismatch
+                    None
+                    $"Member-call sugar for '{memberName}' is missing preceding explicit argument(s)."
+                    (payload
+                        "surface-elaboration-diagnostic"
+                        [ field "reason" (DiagnosticPayloadText "member-call-missing-preceding-explicit-arguments")
+                          field "member-name" (DiagnosticPayloadText memberName) ])
+            | MemberCallMissingExplicitArguments memberName ->
+                descriptor
+                    DiagnosticCode.TypeEqualityMismatch
+                    None
+                    $"Member-call sugar for '{memberName}' is missing explicit argument(s)."
+                    (payload
+                        "surface-elaboration-diagnostic"
+                        [ field "reason" (DiagnosticPayloadText "member-call-missing-explicit-arguments")
+                          field "member-name" (DiagnosticPayloadText memberName) ])
+            | ApplicationArgumentsDoNotMatchCalleeParameters ->
+                descriptor
+                    DiagnosticCode.TypeEqualityMismatch
+                    None
+                    "Application argument types do not match the callee parameters."
+                    (payload
+                        "surface-elaboration-diagnostic"
+                        [ field "reason" (DiagnosticPayloadText "application-arguments-do-not-match-callee-parameters") ])
+            | NamedApplicationArgumentsDoNotMatchCalleeParameterMetadata ->
+                descriptor
+                    DiagnosticCode.TypeEqualityMismatch
+                    None
+                    "Named application arguments do not match the callee parameter metadata."
+                    (payload
+                        "surface-elaboration-diagnostic"
+                        [ field "reason" (DiagnosticPayloadText "named-application-arguments-do-not-match-callee-parameter-metadata") ])
+            | ImplicitApplicationArgumentUnresolvedOrMismatched ->
+                descriptor
+                    DiagnosticCode.TypeEqualityMismatch
+                    None
+                    "Implicit application argument could not be resolved or does not match the implicit parameter."
+                    (payload
+                        "surface-elaboration-diagnostic"
+                        [ field "reason" (DiagnosticPayloadText "implicit-application-argument-unresolved-or-mismatched") ])
+            | NamedApplicationRequiresPreservedParameterMetadata ->
+                descriptor
+                    DiagnosticCode.TypeEqualityMismatch
+                    None
+                    "Named application requires a callee with preserved parameter metadata."
+                    (payload
+                        "surface-elaboration-diagnostic"
+                        [ field "reason" (DiagnosticPayloadText "named-application-requires-preserved-parameter-metadata") ])
+            | ImplicitApplicationArgumentAmbiguous ->
+                descriptor
+                    DiagnosticCode.TypeEqualityMismatch
+                    None
+                    "Implicit application argument is ambiguous in the nearest lexical implicit scope."
+                    (payload
+                        "surface-elaboration-diagnostic"
+                        [ field "reason" (DiagnosticPayloadText "implicit-application-argument-ambiguous") ])
+            | QuantityZeroImplicitCannotSatisfyRuntimeParameter ->
+                descriptor
+                    DiagnosticCode.TypeEqualityMismatch
+                    None
+                    "A quantity-0 local implicit value cannot satisfy a runtime implicit parameter."
+                    (payload
+                        "surface-elaboration-diagnostic"
+                        [ field "reason" (DiagnosticPayloadText "quantity-zero-implicit-cannot-satisfy-runtime-parameter") ])
             | StaticConstructorRequiresPreservedStaticObjectIdentity memberName ->
                 descriptor
                     DiagnosticCode.StaticObjectUnresolved

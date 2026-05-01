@@ -3830,6 +3830,15 @@ module SmokeTestsShard4 =
         bag.AddError(DiagnosticFact.surfaceElaboration ProjectionDescriptorRootsPackFieldsMustMatchBindersExactly)
         bag.AddError(DiagnosticFact.surfaceElaboration MultiRootProjectionDescriptorRequiresRecordLiteralRootsPack)
         bag.AddError(DiagnosticFact.surfaceElaboration FullyAppliedProjectionProducesProjectedFocusNotDescriptorValue)
+        bag.AddError(DiagnosticFact.surfaceElaboration (MemberCallRequiresExactlyOneReceiverBinder "push"))
+        bag.AddError(DiagnosticFact.surfaceElaboration (MemberCallMissingPrecedingExplicitArguments "push"))
+        bag.AddError(DiagnosticFact.surfaceElaboration (MemberCallMissingExplicitArguments "push"))
+        bag.AddError(DiagnosticFact.surfaceElaboration ApplicationArgumentsDoNotMatchCalleeParameters)
+        bag.AddError(DiagnosticFact.surfaceElaboration NamedApplicationArgumentsDoNotMatchCalleeParameterMetadata)
+        bag.AddError(DiagnosticFact.surfaceElaboration ImplicitApplicationArgumentUnresolvedOrMismatched)
+        bag.AddError(DiagnosticFact.surfaceElaboration NamedApplicationRequiresPreservedParameterMetadata)
+        bag.AddError(DiagnosticFact.surfaceElaboration ImplicitApplicationArgumentAmbiguous)
+        bag.AddError(DiagnosticFact.surfaceElaboration QuantityZeroImplicitCannotSatisfyRuntimeParameter)
 
         let diagnostics = bag.Items
         let staticObjectDiagnostic = diagnostics |> List.find (fun item -> item.Code = DiagnosticCode.StaticObjectUnresolved)
@@ -3922,6 +3931,60 @@ module SmokeTestsShard4 =
         let rootsLiteralRequiredDiagnostic = diagnostics |> List.find (fun item -> item.Code = DiagnosticCode.ProjectionDescriptorRootsLiteralRequired)
         let descriptorValueExpectedDiagnostic = diagnostics |> List.find (fun item -> item.Code = DiagnosticCode.ProjectionDescriptorValueExpected)
 
+        let memberCallReceiverDiagnostic =
+            diagnostics
+            |> List.find (fun item ->
+                item.Code = DiagnosticCode.TypeEqualityMismatch
+                && tryFindPayloadText "reason" item = Some "member-call-requires-exactly-one-receiver-binder")
+
+        let memberCallPrecedingDiagnostic =
+            diagnostics
+            |> List.find (fun item ->
+                item.Code = DiagnosticCode.TypeEqualityMismatch
+                && tryFindPayloadText "reason" item = Some "member-call-missing-preceding-explicit-arguments")
+
+        let memberCallExplicitDiagnostic =
+            diagnostics
+            |> List.find (fun item ->
+                item.Code = DiagnosticCode.TypeEqualityMismatch
+                && tryFindPayloadText "reason" item = Some "member-call-missing-explicit-arguments")
+
+        let applicationArgumentsDiagnostic =
+            diagnostics
+            |> List.find (fun item ->
+                item.Code = DiagnosticCode.TypeEqualityMismatch
+                && tryFindPayloadText "reason" item = Some "application-arguments-do-not-match-callee-parameters")
+
+        let implicitApplicationDiagnostic =
+            diagnostics
+            |> List.find (fun item ->
+                item.Code = DiagnosticCode.TypeEqualityMismatch
+                && tryFindPayloadText "reason" item = Some "implicit-application-argument-unresolved-or-mismatched")
+
+        let namedApplicationArgumentsDiagnostic =
+            diagnostics
+            |> List.find (fun item ->
+                item.Code = DiagnosticCode.TypeEqualityMismatch
+                && tryFindPayloadText "reason" item = Some "named-application-arguments-do-not-match-callee-parameter-metadata")
+
+        let namedApplicationDiagnostic =
+            diagnostics
+            |> List.find (fun item ->
+                item.Code = DiagnosticCode.TypeEqualityMismatch
+                && tryFindPayloadText "reason" item = Some "named-application-requires-preserved-parameter-metadata")
+
+        let ambiguousImplicitDiagnostic =
+            diagnostics
+            |> List.find (fun item ->
+                item.Code = DiagnosticCode.TypeEqualityMismatch
+                && tryFindPayloadText "reason" item = Some "implicit-application-argument-ambiguous")
+
+        let quantityZeroImplicitDiagnostic =
+            diagnostics
+            |> List.find (fun item ->
+                item.Code = DiagnosticCode.TypeEqualityMismatch
+                && tryFindPayloadText "reason" item = Some "quantity-zero-implicit-cannot-satisfy-runtime-parameter")
+
         Assert.Equal("surface-elaboration-diagnostic", staticObjectDiagnostic.Payload.Kind)
         Assert.Equal(Some "Some", tryFindPayloadText "member-name" staticObjectDiagnostic)
         Assert.Equal(Some "Bad", tryFindPayloadText "head-name" patternHeadDiagnostic)
@@ -3958,6 +4021,33 @@ module SmokeTestsShard4 =
         Assert.Equal(Some "projection-descriptor-roots-pack-fields-must-match-binders-exactly", tryFindPayloadText "reason" rootsPackMismatchDiagnostic)
         Assert.Equal(Some "multi-root-projection-descriptor-requires-record-literal-roots-pack", tryFindPayloadText "reason" rootsLiteralRequiredDiagnostic)
         Assert.Equal(Some "fully-applied-projection-produces-projected-focus-not-descriptor-value", tryFindPayloadText "reason" descriptorValueExpectedDiagnostic)
+        Assert.Equal(Some "push", tryFindPayloadText "member-name" memberCallReceiverDiagnostic)
+        Assert.Equal(Some "push", tryFindPayloadText "member-name" memberCallPrecedingDiagnostic)
+        Assert.Equal(Some "push", tryFindPayloadText "member-name" memberCallExplicitDiagnostic)
+        Assert.Equal(
+            "Application argument types do not match the callee parameters.",
+            applicationArgumentsDiagnostic.Message
+        )
+        Assert.Equal(
+            "Implicit application argument could not be resolved or does not match the implicit parameter.",
+            implicitApplicationDiagnostic.Message
+        )
+        Assert.Equal(
+            "Named application arguments do not match the callee parameter metadata.",
+            namedApplicationArgumentsDiagnostic.Message
+        )
+        Assert.Equal(
+            "Named application requires a callee with preserved parameter metadata.",
+            namedApplicationDiagnostic.Message
+        )
+        Assert.Equal(
+            "Implicit application argument is ambiguous in the nearest lexical implicit scope.",
+            ambiguousImplicitDiagnostic.Message
+        )
+        Assert.Equal(
+            "A quantity-0 local implicit value cannot satisfy a runtime implicit parameter.",
+            quantityZeroImplicitDiagnostic.Message
+        )
 
     [<Fact>]
     let ``parser syntax diagnostics render from typed evidence`` () =

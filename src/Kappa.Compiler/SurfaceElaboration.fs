@@ -11377,6 +11377,14 @@ module SurfaceElaboration =
         let makeDiagnostic kind message =
             Diagnostics.errorFact "KFrontIR" (Some(KFrontIRPhase.phaseName CORE_LOWERING)) None [] (DiagnosticFact.simple kind message)
 
+        let makeSurfaceElaborationDiagnostic evidence =
+            Diagnostics.errorFact
+                "KFrontIR"
+                (Some(KFrontIRPhase.phaseName CORE_LOWERING))
+                None
+                []
+                (DiagnosticFact.surfaceElaboration evidence)
+
         let makeNameUnresolvedDiagnostic name =
             Diagnostics.errorFact
                 "KFrontIR"
@@ -14874,9 +14882,8 @@ module SurfaceElaboration =
                                                         )
                                                 | None ->
                                                     Some(
-                                                        [ makeDiagnostic
-                                                            SimpleDiagnosticKind.TypeEqualityMismatch
-                                                            "Implicit application argument could not be resolved or does not match the implicit parameter." ]
+                                                        [ makeSurfaceElaborationDiagnostic
+                                                            ImplicitApplicationArgumentUnresolvedOrMismatched ]
                                                     )
                                             else
                                                 None)
@@ -14922,9 +14929,8 @@ module SurfaceElaboration =
                                                 )
                                         | None ->
                                             Some(
-                                                [ makeDiagnostic
-                                                    SimpleDiagnosticKind.TypeEqualityMismatch
-                                                    "Implicit application argument could not be resolved or does not match the implicit parameter." ]
+                                                [ makeSurfaceElaborationDiagnostic
+                                                    ImplicitApplicationArgumentUnresolvedOrMismatched ]
                                             ))
                                 |> Option.defaultValue []
                             else
@@ -14948,9 +14954,8 @@ module SurfaceElaboration =
                                         )
                                     | None ->
                                         Some(
-                                            [ makeDiagnostic
-                                                SimpleDiagnosticKind.TypeEqualityMismatch
-                                                "Implicit application argument could not be resolved or does not match the implicit parameter." ]
+                                            [ makeSurfaceElaborationDiagnostic
+                                                ImplicitApplicationArgumentUnresolvedOrMismatched ]
                                         ))
                             |> Option.defaultValue [])
                     |> Option.defaultValue []
@@ -15415,9 +15420,8 @@ module SurfaceElaboration =
                                                             )
                                                     | None ->
                                                         Some(
-                                                            [ makeDiagnostic
-                                                                SimpleDiagnosticKind.TypeEqualityMismatch
-                                                                "Implicit application argument could not be resolved or does not match the implicit parameter." ]
+                                                            [ makeSurfaceElaborationDiagnostic
+                                                                ImplicitApplicationArgumentUnresolvedOrMismatched ]
                                                         )
                                                 else
                                                     None)
@@ -18287,11 +18291,14 @@ module SurfaceElaboration =
                                     |> fun count -> max 0 (count - 1)
 
                                 if List.length receiverParameters <> 1 then
-                                    [ makeDiagnostic SimpleDiagnosticKind.TypeEqualityMismatch $"Member-call sugar for '{memberName}' requires exactly one receiver binder." ]
+                                    [ makeSurfaceElaborationDiagnostic
+                                        (MemberCallRequiresExactlyOneReceiverBinder memberName) ]
                                 elif List.length arguments < precedingExplicitCount then
-                                    [ makeDiagnostic SimpleDiagnosticKind.TypeEqualityMismatch $"Member-call sugar for '{memberName}' is missing preceding explicit argument(s)." ]
+                                    [ makeSurfaceElaborationDiagnostic
+                                        (MemberCallMissingPrecedingExplicitArguments memberName) ]
                                 elif List.length arguments < requiredExplicitArgumentCount then
-                                    [ makeDiagnostic SimpleDiagnosticKind.TypeEqualityMismatch $"Member-call sugar for '{memberName}' is missing explicit argument(s)." ]
+                                    [ makeSurfaceElaborationDiagnostic
+                                        (MemberCallMissingExplicitArguments memberName) ]
                                 else
                                     []
                             | _ ->
@@ -19083,10 +19090,12 @@ module SurfaceElaboration =
                                     | [], [] ->
                                         []
                                     | [], _ :: _ ->
-                                        [ makeDiagnostic SimpleDiagnosticKind.TypeEqualityMismatch "Application argument types do not match the callee parameters." ]
+                                        [ makeSurfaceElaborationDiagnostic
+                                            ApplicationArgumentsDoNotMatchCalleeParameters ]
                                     | (layout, parameterType) :: restParameters, ExplicitImplicitArgument explicitArgument :: restArguments ->
                                         if not layout.IsImplicit then
-                                            [ makeDiagnostic SimpleDiagnosticKind.TypeEqualityMismatch "Implicit application argument could not be resolved or does not match the implicit parameter." ]
+                                            [ makeSurfaceElaborationDiagnostic
+                                                ImplicitApplicationArgumentUnresolvedOrMismatched ]
                                         else
                                             if isCompileTimeArgumentType environment.VisibleTypeAliases parameterType then
                                                 walk restParameters restArguments
@@ -19132,7 +19141,8 @@ module SurfaceElaboration =
                                         elif List.isEmpty pending then
                                             []
                                         else
-                                            [ makeDiagnostic SimpleDiagnosticKind.TypeEqualityMismatch "Implicit application argument could not be resolved or does not match the implicit parameter." ]
+                                            [ makeSurfaceElaborationDiagnostic
+                                                ImplicitApplicationArgumentUnresolvedOrMismatched ]
                                     | _ :: restParameters, _ :: restArguments ->
                                         walk restParameters restArguments
                                     | _ :: _, [] ->
@@ -19339,25 +19349,25 @@ module SurfaceElaboration =
                                                      || hasAmbiguousLocalImplicitParameter bindingInfo
                                                      || not (List.isEmpty traitConstraintDiagnostics)
                                                      || hasTooManyArguments bindingInfo ->
-                                                let message =
+                                                let mismatchDiagnostics =
                                                     if hasNamedBlock then
-                                                        "Named application arguments do not match the callee parameter metadata."
+                                                        [ makeSurfaceElaborationDiagnostic
+                                                            NamedApplicationArgumentsDoNotMatchCalleeParameterMetadata ]
                                                     elif not (List.isEmpty traitConstraintDiagnostics) then
-                                                        ""
+                                                        []
                                                     elif hasAmbiguousLocalImplicitParameter bindingInfo then
-                                                        ""
+                                                        []
                                                     elif hasExplicitImplicitArgument
                                                          || hasUnsatisfiedRuntimeImplicit bindingInfo then
-                                                        "Implicit application argument could not be resolved or does not match the implicit parameter."
+                                                        [ makeSurfaceElaborationDiagnostic
+                                                            ImplicitApplicationArgumentUnresolvedOrMismatched ]
                                                     else
-                                                        "Application argument types do not match the callee parameters."
+                                                        [ makeSurfaceElaborationDiagnostic
+                                                            ApplicationArgumentsDoNotMatchCalleeParameters ]
 
                                                 expectedArgumentDiagnostics
                                                 @ traitConstraintDiagnostics
-                                                @ (if String.IsNullOrEmpty message then
-                                                       []
-                                                   else
-                                                       [ makeDiagnostic SimpleDiagnosticKind.TypeEqualityMismatch message ])
+                                                @ mismatchDiagnostics
                                             | None when localCanSatisfyImplicitParameter bindingInfo && not hasExplicitImplicitArgument ->
                                                 expectedArgumentDiagnostics
                                             | None
@@ -19401,11 +19411,13 @@ module SurfaceElaboration =
                                             (localBindingType.Value)
                                             arguments
                                     | None when hasNamedBlock ->
-                                        [ makeDiagnostic SimpleDiagnosticKind.TypeEqualityMismatch "Named application requires a callee with preserved parameter metadata." ]
+                                        [ makeSurfaceElaborationDiagnostic
+                                            NamedApplicationRequiresPreservedParameterMetadata ]
                                     | _ ->
                                         []
                                 | _ when hasNamedBlock ->
-                                    [ makeDiagnostic SimpleDiagnosticKind.TypeEqualityMismatch "Named application requires a callee with preserved parameter metadata." ]
+                                    [ makeSurfaceElaborationDiagnostic
+                                        NamedApplicationRequiresPreservedParameterMetadata ]
                                 | _ ->
                                     []
 
@@ -20469,9 +20481,11 @@ module SurfaceElaboration =
                                     | None ->
                                         []
                                     | Some candidates when List.length candidates > 1 ->
-                                        [ makeDiagnostic SimpleDiagnosticKind.TypeEqualityMismatch "Implicit application argument is ambiguous in the nearest lexical implicit scope." ]
+                                        [ makeSurfaceElaborationDiagnostic
+                                            ImplicitApplicationArgumentAmbiguous ]
                                     | Some [ _, QuantityZero ] ->
-                                        [ makeDiagnostic SimpleDiagnosticKind.TypeEqualityMismatch "A quantity-0 local implicit value cannot satisfy a runtime implicit parameter." ]
+                                        [ makeSurfaceElaborationDiagnostic
+                                            QuantityZeroImplicitCannotSatisfyRuntimeParameter ]
                                     | Some [ _, QuantityBorrow _ ] when inEscapingLambda ->
                                         [ makeDiagnostic SimpleDiagnosticKind.QttBorrowEscape "A lambda cannot capture a borrowed implicit value that may escape its borrow scope." ]
                                     | Some _ ->
