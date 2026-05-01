@@ -283,6 +283,22 @@ module SurfaceElaboration =
     let private tryFindVisibleStaticObject (environment: BindingLoweringEnvironment) nameSegments =
         environment.VisibleStaticObjects |> Map.tryFind nameSegments
 
+    let private tryResolveVisibleModuleIdentity (environment: BindingLoweringEnvironment) nameSegments =
+        environment.VisibleModules
+        |> Map.tryFind (SyntaxFacts.moduleNameToText nameSegments)
+
+    let private tryResolveQualifiedModuleIdentity
+        (environment: BindingLoweringEnvironment)
+        moduleSegments
+        =
+        tryResolveVisibleModuleIdentity environment moduleSegments
+        |> Option.orElseWith (fun () ->
+            let moduleIdentity = moduleIdentityOfSegments moduleSegments
+
+            environment.SurfaceIndex
+            |> Map.tryFind moduleIdentity
+            |> Option.map (fun _ -> moduleIdentity))
+
     let private bindingIdentity moduleIdentity name =
         topLevelDeclarationIdentity moduleIdentity name TermDeclaration
 
@@ -1151,7 +1167,8 @@ module SurfaceElaboration =
                 | [] ->
                     true
                 | _ ->
-                    typeFacetInfo.ModuleIdentity = moduleIdentityOfSegments (List.rev reversedModuleSegments))
+                    tryResolveQualifiedModuleIdentity environment (List.rev reversedModuleSegments)
+                    |> Option.exists ((=) typeFacetInfo.ModuleIdentity))
 
     let private tryResolveVisibleTraitInfo
         (environment: BindingLoweringEnvironment)
@@ -1165,10 +1182,7 @@ module SurfaceElaboration =
             | [] ->
                 environment.VisibleTraits |> Map.tryFind traitName
             | _ ->
-                let moduleName = SyntaxFacts.moduleNameToText (List.rev reversedModuleSegments)
-
-                environment.VisibleModules
-                |> Map.tryFind moduleName
+                tryResolveQualifiedModuleIdentity environment (List.rev reversedModuleSegments)
                 |> Option.bind (fun moduleIdentity ->
                     environment.SurfaceIndex
                     |> Map.tryFind moduleIdentity
@@ -1188,9 +1202,7 @@ module SurfaceElaboration =
         | KindQualifiedName(EffectLabelKind, _) ->
             None
         | KindQualifiedName(ModuleKind, nameSegments) ->
-            let moduleName = SyntaxFacts.moduleNameToText nameSegments
-
-            if environment.VisibleModules.ContainsKey moduleName then
+            if tryResolveVisibleModuleIdentity environment nameSegments |> Option.isSome then
                 Some(staticObjectInfo (semanticObjectIdentity (moduleDeclarationIdentity (moduleIdentityOfSegments nameSegments)) ModuleObject) nameSegments None None None)
             else
                 None
@@ -6974,6 +6986,20 @@ module SurfaceElaboration =
         else
             None
 
+    let private tryResolveTraitInfoByConstraintName
+        (environment: BindingLoweringEnvironment)
+        (traitName: string)
+        =
+        environment.VisibleTraits
+        |> Map.tryFind traitName
+        |> Option.orElseWith (fun () ->
+            if String.IsNullOrWhiteSpace(traitName) || not (traitName.Contains(".")) then
+                None
+            else
+                traitName.Split('.')
+                |> Array.toList
+                |> tryResolveVisibleTraitInfo environment)
+
     let private reachableTraitConstraints
         (environment: BindingLoweringEnvironment)
         (constraintInfo: TraitConstraint)
@@ -6991,8 +7017,7 @@ module SurfaceElaboration =
                 let acc = current :: acc
 
                 let nextConstraints =
-                    environment.VisibleTraits
-                    |> Map.tryFind current.TraitName
+                    tryResolveTraitInfoByConstraintName environment current.TraitName
                     |> Option.bind (fun traitInfo -> tryInstantiateTraitSupertraits traitInfo current.Arguments)
                     |> Option.defaultValue []
 
@@ -7012,8 +7037,7 @@ module SurfaceElaboration =
 
             reachableTraitConstraints environment rootConstraint
             |> List.tryPick (fun candidateConstraint ->
-                environment.VisibleTraits
-                |> Map.tryFind candidateConstraint.TraitName
+                tryResolveTraitInfoByConstraintName environment candidateConstraint.TraitName
                 |> Option.bind (fun candidateTraitInfo ->
                     if candidateTraitInfo.Members.ContainsKey(memberName) then
                         Some(candidateTraitInfo, memberName, candidateConstraint.Arguments)
@@ -7025,7 +7049,7 @@ module SurfaceElaboration =
             tryFindOwnerTrait traitName arguments memberName
         | TypeName(qualifiedName, arguments) ->
             tryResolveVisibleTraitInfo environment qualifiedName
-            |> Option.bind (fun traitInfo -> tryFindOwnerTrait traitInfo.Name arguments memberName)
+            |> Option.bind (fun _ -> tryFindOwnerTrait (SyntaxFacts.moduleNameToText qualifiedName) arguments memberName)
         | _ ->
             None
 
@@ -12174,27 +12198,9 @@ module SurfaceElaboration =
             || (tryResolveScopedStaticObject environment (Name [ name ]) |> Option.isSome)
 
         let qualifiedNamePreservesResolution nameSegments =
-            let qualifiedName = SyntaxFacts.moduleNameToText nameSegments
-
             let isVisibleQualifiedModule =
-                environment.VisibleModules
-                |> Map.keys
-                |> Seq.exists (fun visibleModule ->
-                    String.Equals(visibleModule, qualifiedName, StringComparison.Ordinal)
-                    || visibleModule.StartsWith(qualifiedName + ".", StringComparison.Ordinal))
-
-            let resolveQualifiedModuleAliasIdentity moduleName =
-                environment.SurfaceIndex
-                |> Map.tryFind environment.CurrentModuleIdentity
-                |> Option.bind (fun currentModule ->
-                    currentModule.Imports
-                    |> List.tryPick (fun spec ->
-                        match spec.Source, spec.Selection, spec.Alias with
-                        | Dotted moduleSegments, QualifiedOnly, Some alias
-                            when String.Equals(alias, moduleName, StringComparison.Ordinal) ->
-                            Some(moduleIdentityOfSegments moduleSegments)
-                        | _ ->
-                            None))
+                tryResolveVisibleModuleIdentity environment nameSegments
+                |> Option.isSome
 
             let resolvesAsQualifiedDeclaration =
                 match List.rev nameSegments with
@@ -12202,9 +12208,7 @@ module SurfaceElaboration =
                 | declaredName :: reversedModuleSegments ->
                     let declaringModuleSegments = List.rev reversedModuleSegments
                     let declaringModuleIdentity =
-                        declaringModuleSegments
-                        |> SyntaxFacts.moduleNameToText
-                        |> resolveQualifiedModuleAliasIdentity
+                        tryResolveVisibleModuleIdentity environment declaringModuleSegments
                         |> Option.defaultValue (moduleIdentityOfSegments declaringModuleSegments)
 
                     environment.SurfaceIndex

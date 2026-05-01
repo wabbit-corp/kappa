@@ -66,6 +66,7 @@ Current M4 status note: started, not complete. The compiler now has a real effec
 - [ ] Finish slimming `Stdlib.fs` after the new `StandardLibraryCatalog` introduction. Prelude/bundled/synthetic module definitions now live in one typed catalog, but some convenience lookups still route through `Stdlib` rather than consuming the catalog directly.
 - [ ] Replace verifier/runtime stringly type carriers that force semantic checks over rendered text, especially `KRuntimeIR` type-text fields and the substring fallback in `CheckpointVerification.runtimeTypeLeaksErasureMetadata`.
 - [ ] Replace stringly trait/dictionary conventions that still depend on synthesized textual names or prefixes, including `TraitRuntime.dictionaryTypeName ...`, `__kappa_dict_*` prefix checks, and literal trait-name comparisons such as `InterpolatedMacro`, `LacksRec`, `IsProp`, and `IsTrait`.
+- [ ] Replace `TypeSignatures.TraitConstraint.TraitName : string` with a parsed trait reference that preserves qualification and can carry semantic identity through elaboration, instance search, dictionary synthesis, and backend lowering. The recent qualified-trait-alias regression showed that collapsing `score.Score` to bare `"Score"` still breaks later phases even when import resolution itself is correct.
 - [ ] Replace text-based trait, constructor, and type matching in compile-time evaluation and backend typing with symbolic references.
   Current hot spots:
   [ElaborationEvaluation.fs](/D:/ws/kappa/src/Kappa.Compiler/ElaborationEvaluation.fs),
