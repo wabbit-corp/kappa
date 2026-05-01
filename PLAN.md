@@ -113,8 +113,8 @@ Current M4 status note: started, not complete. The compiler now has a real effec
   `CoreParsing.fs` no longer emits raw `DiagnosticFact.simple`, `DiagnosticFact.detail`, or `DiagnosticFact.codeDetail` diagnostics.
   Named-application block field diagnostics and `seal` diagnostics now also route through `CoreExpressionParsingEvidence`; record literal field diagnostics and the remaining generic kind-selector / selector recovery cases are still stringly.
   Projection-body diagnostics now route through `CoreExpressionParsingEvidence` for malformed body heads, missing indented match case blocks, missing `case` clauses, missing projection-case arrows, and missing `then` / `else` in projection `if` bodies.
-- [ ] Convert the remaining `Lexer.fs` diagnostics to typed evidence ADTs with centralized formatting.
-  Tabs, unexpected indentation, unrecognized characters, and unterminated literal/interpolation/comment diagnostics now use `LexerDiagnosticEvidence`. The remaining raw lexer sites are the malformed-numeric-literal paths, which still depend on `SyntaxFacts.InvalidNumericToken` carrying prose.
+- [x] Convert `Lexer.fs` diagnostics to typed evidence ADTs with centralized formatting.
+  Tabs, unexpected indentation, unrecognized characters, malformed numeric literals, and unterminated literal/interpolation/comment diagnostics now use `LexerDiagnosticEvidence`; `Lexer.fs` no longer emits raw `DiagnosticFact.simple`, `DiagnosticFact.detail`, or `DiagnosticFact.codeDetail` diagnostics.
 - [ ] Convert elaboration/typechecking diagnostics to typed evidence ADTs with centralized formatting.
 - [ ] Convert backend/lowering diagnostics to typed evidence ADTs with centralized formatting.
 - [ ] Convert checkpoint verification and target-checkpoint diagnostics to typed evidence ADTs with centralized formatting.

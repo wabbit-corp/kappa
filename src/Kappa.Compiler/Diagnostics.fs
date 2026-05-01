@@ -1030,6 +1030,7 @@ type LexerDiagnosticEvidence =
     | TabCharacterNotPermitted of inIndentation: bool
     | UnexpectedIndentation of indent: int
     | UnrecognizedCharacter of character: string
+    | MalformedNumericLiteral of NumericTokenScanError
     | UnterminatedStringLiteral of isPrefixed: bool
     | UnterminatedCharacterLiteral
     | UnterminatedBacktickIdentifier
@@ -1591,6 +1592,12 @@ module DiagnosticFact =
     let private numericLiteralParseErrorTag error =
         match error with
         | InvalidNumericLiteral _ -> "invalid-numeric-literal"
+
+    let private prefixedIntegerBaseText integerBase =
+        match integerBase with
+        | BinaryBase -> "binary"
+        | OctalBase -> "octal"
+        | HexadecimalBase -> "hexadecimal"
 
     let private numericLiteralParseErrorText error =
         match error with
@@ -3009,6 +3016,19 @@ module DiagnosticFact =
                         "unrecognized-character"
                         [ field "reason" (DiagnosticPayloadText "unrecognized-character")
                           field "character" (DiagnosticPayloadText character) ])
+            | MalformedNumericLiteral error ->
+                match error with
+                | MalformedPrefixedIntegerLiteral integerBase ->
+                    let integerBaseText = prefixedIntegerBaseText integerBase
+
+                    descriptor
+                        DiagnosticCode.MalformedNumericLiteral
+                        None
+                        $"Malformed {integerBaseText} integer literal."
+                        (payload
+                            "malformed-numeric-literal"
+                            [ field "reason" (DiagnosticPayloadText "malformed-prefixed-integer-literal")
+                              field "integer-base" (DiagnosticPayloadText integerBaseText) ])
             | UnterminatedStringLiteral isPrefixed ->
                 let message =
                     if isPrefixed then

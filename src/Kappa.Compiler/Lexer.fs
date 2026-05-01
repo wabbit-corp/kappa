@@ -470,8 +470,8 @@ module Lexer =
                             | Some(SyntaxFacts.ValidNumericToken(kind, endIndex)) ->
                                 emitAbsolute kind (text.Substring(currentAbsoluteIndex, endIndex - currentAbsoluteIndex)) currentAbsoluteIndex
                                 currentAbsoluteIndex <- endIndex
-                            | Some(SyntaxFacts.InvalidNumericToken(message, endIndex)) ->
-                                diagnostics.AddError(DiagnosticFact.simple SimpleDiagnosticKind.MalformedNumericLiteral message,
+                            | Some(SyntaxFacts.InvalidNumericToken(error, endIndex)) ->
+                                diagnostics.AddError(DiagnosticFact.lexer (LexerDiagnosticEvidence.MalformedNumericLiteral error),
                                     source.GetLocation(TextSpan.FromBounds(currentAbsoluteIndex, endIndex))
                                 )
 
@@ -786,8 +786,8 @@ module Lexer =
             | Some(SyntaxFacts.ValidNumericToken(kind, endIndex)) ->
                 emit kind (lineText.Substring(startOffset, endIndex - startOffset)) startOffset
                 endIndex
-            | Some(SyntaxFacts.InvalidNumericToken(message, endIndex)) ->
-                diagnostics.AddError(DiagnosticFact.simple SimpleDiagnosticKind.MalformedNumericLiteral message,
+            | Some(SyntaxFacts.InvalidNumericToken(error, endIndex)) ->
+                diagnostics.AddError(DiagnosticFact.lexer (LexerDiagnosticEvidence.MalformedNumericLiteral error),
                     source.GetLocation(TextSpan.FromBounds(lineStart + startOffset, lineStart + endIndex))
                 )
 

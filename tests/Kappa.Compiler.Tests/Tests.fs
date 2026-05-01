@@ -2914,6 +2914,16 @@ module SmokeTestsShard3 =
             |> List.filter (fun diagnostic -> diagnostic.Code = DiagnosticCode.MalformedNumericLiteral)
 
         Assert.Equal(3, lexicalDiagnostics.Length)
+        Assert.Equal<string option list>(
+            [ Some "hexadecimal"; Some "binary"; Some "octal" ],
+            lexicalDiagnostics |> List.map (tryFindPayloadText "integer-base")
+        )
+        Assert.True(
+            lexicalDiagnostics
+            |> List.forall (fun diagnostic ->
+                diagnostic.Payload.Kind = "malformed-numeric-literal"
+                && tryFindPayloadText "reason" diagnostic = Some "malformed-prefixed-integer-literal")
+        )
 
 
     [<Fact>]
@@ -4539,6 +4549,7 @@ module SmokeTestsShard4 =
         bag.AddError(DiagnosticFact.lexer (LexerDiagnosticEvidence.TabCharacterNotPermitted false))
         bag.AddError(DiagnosticFact.lexer (LexerDiagnosticEvidence.UnexpectedIndentation 3))
         bag.AddError(DiagnosticFact.lexer (LexerDiagnosticEvidence.UnrecognizedCharacter "§"))
+        bag.AddError(DiagnosticFact.lexer (LexerDiagnosticEvidence.MalformedNumericLiteral(MalformedPrefixedIntegerLiteral HexadecimalBase)))
         bag.AddError(DiagnosticFact.lexer (LexerDiagnosticEvidence.UnterminatedStringLiteral false))
         bag.AddError(DiagnosticFact.lexer (LexerDiagnosticEvidence.UnterminatedStringLiteral true))
         bag.AddError(DiagnosticFact.lexer LexerDiagnosticEvidence.UnterminatedCharacterLiteral)
@@ -4567,6 +4578,10 @@ module SmokeTestsShard4 =
         let unrecognizedCharacterDiagnostic =
             diagnostics
             |> List.find (fun item -> item.Code = DiagnosticCode.UnrecognizedCharacter)
+
+        let malformedNumericDiagnostic =
+            diagnostics
+            |> List.find (fun item -> item.Code = DiagnosticCode.MalformedNumericLiteral)
 
         let stringDiagnostic =
             diagnostics
@@ -4614,6 +4629,11 @@ module SmokeTestsShard4 =
         Assert.Equal("unrecognized-character", unrecognizedCharacterDiagnostic.Payload.Kind)
         Assert.Equal(Some "unrecognized-character", tryFindPayloadText "reason" unrecognizedCharacterDiagnostic)
         Assert.Equal(Some "§", tryFindPayloadText "character" unrecognizedCharacterDiagnostic)
+
+        Assert.Equal("Malformed hexadecimal integer literal.", malformedNumericDiagnostic.Message)
+        Assert.Equal("malformed-numeric-literal", malformedNumericDiagnostic.Payload.Kind)
+        Assert.Equal(Some "malformed-prefixed-integer-literal", tryFindPayloadText "reason" malformedNumericDiagnostic)
+        Assert.Equal(Some "hexadecimal", tryFindPayloadText "integer-base" malformedNumericDiagnostic)
 
         Assert.Equal("Unterminated string literal.", stringDiagnostic.Message)
         Assert.Equal("unterminated-string-literal", stringDiagnostic.Payload.Kind)

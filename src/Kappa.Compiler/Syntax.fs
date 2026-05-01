@@ -779,7 +779,7 @@ module SyntaxFacts =
 
     type NumericTokenScan =
         | ValidNumericToken of kind: TokenKind * endIndex: int
-        | InvalidNumericToken of message: string * endIndex: int
+        | InvalidNumericToken of error: NumericTokenScanError * endIndex: int
 
     type PrefixedStringStartInfo =
         { PrefixText: string
@@ -962,9 +962,9 @@ module SyntaxFacts =
     let private scanNumericLiteralAt (text: string) startIndex =
         let length = text.Length
 
-        let invalidPrefixedIntegerLiteral baseName invalidStartIndex =
+        let invalidPrefixedIntegerLiteral integerBase invalidStartIndex =
             let endIndex = readMalformedNumericTail text invalidStartIndex
-            InvalidLiteralScan(InvalidNumericToken($"Malformed {baseName} integer literal.", max endIndex invalidStartIndex))
+            InvalidLiteralScan(InvalidNumericToken(MalformedPrefixedIntegerLiteral integerBase, max endIndex invalidStartIndex))
 
         let buildInteger integerBase digits endIndex =
             let suffix, finalEndIndex = readIdentifierSuffix text endIndex
@@ -990,27 +990,27 @@ module SyntaxFacts =
             | Some(digits, endIndex) ->
                 Some(buildInteger 16 digits endIndex)
             | None ->
-                Some(invalidPrefixedIntegerLiteral "hexadecimal" (startIndex + 2))
+                Some(invalidPrefixedIntegerLiteral PrefixedIntegerBase.HexadecimalBase (startIndex + 2))
         elif startIndex + 1 < length
              && text[startIndex] = '0'
              && (text[startIndex + 1] = 'o' || text[startIndex + 1] = 'O') then
             match tryReadDigits text (startIndex + 2) (fun character -> character >= '0' && character <= '7') with
             | Some(_, endIndex) when endIndex < length && Char.IsDigit text[endIndex] ->
-                Some(invalidPrefixedIntegerLiteral "octal" endIndex)
+                Some(invalidPrefixedIntegerLiteral PrefixedIntegerBase.OctalBase endIndex)
             | Some(digits, endIndex) ->
                 Some(buildInteger 8 digits endIndex)
             | None ->
-                Some(invalidPrefixedIntegerLiteral "octal" (startIndex + 2))
+                Some(invalidPrefixedIntegerLiteral PrefixedIntegerBase.OctalBase (startIndex + 2))
         elif startIndex + 1 < length
              && text[startIndex] = '0'
              && (text[startIndex + 1] = 'b' || text[startIndex + 1] = 'B') then
             match tryReadDigits text (startIndex + 2) (fun character -> character = '0' || character = '1') with
             | Some(_, endIndex) when endIndex < length && Char.IsDigit text[endIndex] ->
-                Some(invalidPrefixedIntegerLiteral "binary" endIndex)
+                Some(invalidPrefixedIntegerLiteral PrefixedIntegerBase.BinaryBase endIndex)
             | Some(digits, endIndex) ->
                 Some(buildInteger 2 digits endIndex)
             | None ->
-                Some(invalidPrefixedIntegerLiteral "binary" (startIndex + 2))
+                Some(invalidPrefixedIntegerLiteral PrefixedIntegerBase.BinaryBase (startIndex + 2))
         else
             match tryReadDigits text startIndex Char.IsDigit with
             | None ->

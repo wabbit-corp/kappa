@@ -1,5 +1,13 @@
 namespace Kappa.Compiler
 
+type PrefixedIntegerBase =
+    | BinaryBase
+    | OctalBase
+    | HexadecimalBase
+
+type NumericTokenScanError =
+    | MalformedPrefixedIntegerLiteral of integerBase: PrefixedIntegerBase
+
 type NumericLiteralParseError =
     | InvalidNumericLiteral of tokenText: string
 
