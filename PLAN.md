@@ -77,7 +77,6 @@ Current M4 status note: started, not complete. The compiler now has a real effec
   [SurfaceElaboration.fs](/D:/ws/kappa/src/Kappa.Compiler/SurfaceElaboration.fs) (manual `QueryCore`/`QueryMode`/`Res` scoped `TypeName` construction).
 - [ ] Remove remaining effect- and static-object lookup tables keyed by rendered dotted text instead of structured identities.
   Current hot spots:
-  [ResourceChecking.fs](/D:/ws/kappa/src/Kappa.Compiler/ResourceChecking.fs) (the scoped-effect registry still indexes declarations by visible names/qualified spellings),
   [SurfaceElaboration.fs](/D:/ws/kappa/src/Kappa.Compiler/SurfaceElaboration.fs) (remaining dotted-name lookups around trait evidence/import qualification).
 - [ ] Remove fabricated semantic identities such as the `ModuleIdentity.ofSegments [ "__unknown__" ]` fallback that still exists in `SurfaceElaboration.validateFrontendModule`.
 - [ ] Preserve canonical module identity casing through all artifact names and backend metadata per section 17.3.4.2.

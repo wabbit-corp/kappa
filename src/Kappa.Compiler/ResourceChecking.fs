@@ -29,7 +29,7 @@ module ResourceChecking =
         { Parameters: string list
           Body: TypeSignatures.TypeExpr }
 
-    let private scopedEffects = AsyncLocal<Map<string, EffectSemanticDeclaration> option>()
+    let private scopedEffects = AsyncLocal<Map<string list, EffectSemanticDeclaration> option>()
     let private backendProfile = AsyncLocal<BackendProfile option>()
 
     let private currentScopedEffects () =
@@ -40,9 +40,9 @@ module ResourceChecking =
 
     let private effectBindingKeys (declaration: EffectSemanticDeclaration) =
         [
-            declaration.VisibleName
-            SyntaxFacts.moduleNameToText (EffectSemantics.labelNameSegments declaration)
-            SyntaxFacts.moduleNameToText (EffectSemantics.interfaceNameSegments declaration)
+            declaration.VisibleName.Split('.', StringSplitOptions.RemoveEmptyEntries) |> Array.toList
+            EffectSemantics.labelNameSegments declaration
+            EffectSemantics.interfaceNameSegments declaration
         ]
         |> List.distinct
 
@@ -50,8 +50,11 @@ module ResourceChecking =
         effectBindingKeys declaration
         |> List.fold (fun state key -> Map.add key declaration state) current
 
+    let private tryFindScopedEffectDeclarationSegments segments =
+        currentScopedEffects () |> Map.tryFind segments
+
     let private tryFindScopedEffectDeclaration name =
-        currentScopedEffects () |> Map.tryFind name
+        tryFindScopedEffectDeclarationSegments [ name ]
 
     let private withScopedEffectDeclaration (declaration: EffectSemanticDeclaration) work =
         let saved = currentScopedEffects ()
@@ -897,9 +900,9 @@ module ResourceChecking =
     let private tryResolveScopedEffectOperationNamePath nameSegments =
         match List.rev nameSegments with
         | operationName :: reversedPrefix when not (List.isEmpty reversedPrefix) ->
-            let effectName = List.rev reversedPrefix |> SyntaxFacts.moduleNameToText
+            let effectNameSegments = List.rev reversedPrefix
 
-            tryFindScopedEffectDeclaration effectName
+            tryFindScopedEffectDeclarationSegments effectNameSegments
             |> Option.bind (fun declaration ->
                 EffectSemantics.tryFindOperation operationName declaration
                 |> Option.map (fun operation -> declaration, operation))
@@ -1192,8 +1195,7 @@ module ResourceChecking =
             | KindQualifiedName(EffectLabelKind, [ effectName ]) ->
                 tryFindScopedEffectDeclaration effectName
             | Name nameSegments when not (List.isEmpty nameSegments) ->
-                let qualifiedName = SyntaxFacts.moduleNameToText nameSegments
-                tryFindScopedEffectDeclaration qualifiedName
+                tryFindScopedEffectDeclarationSegments nameSegments
             | _ ->
                 None
 
@@ -5785,12 +5787,9 @@ module ResourceChecking =
                 when tryFindScopedEffectDeclaration effectName |> Option.isSome ->
                 addDirect (tryFindScopedEffectDeclaration effectName |> Option.get) aliases
             | Name nameSegments when not (List.isEmpty nameSegments) ->
-                let qualifiedName = SyntaxFacts.moduleNameToText nameSegments
-
-                if tryFindScopedEffectDeclaration qualifiedName |> Option.isSome then
-                    addDirect (tryFindScopedEffectDeclaration qualifiedName |> Option.get) aliases
-                else
-                    aliases
+                match tryFindScopedEffectDeclarationSegments nameSegments with
+                | Some declaration -> addDirect declaration aliases
+                | None -> aliases
             | RecordLiteral fields ->
                 fields
                 |> List.fold (fun current field ->
@@ -5980,8 +5979,7 @@ module ResourceChecking =
             | KindQualifiedName(EffectLabelKind, [ effectName ]) ->
                 tryFindScopedEffectDeclaration effectName
             | Name nameSegments when not (List.isEmpty nameSegments) ->
-                let qualifiedName = SyntaxFacts.moduleNameToText nameSegments
-                tryFindScopedEffectDeclaration qualifiedName
+                tryFindScopedEffectDeclarationSegments nameSegments
             | _ ->
                 None
 
@@ -7412,8 +7410,7 @@ module ResourceChecking =
             | KindQualifiedName(EffectLabelKind, [ effectName ]) ->
                 tryFindScopedEffectDeclaration effectName
             | Name nameSegments when not (List.isEmpty nameSegments) ->
-                let qualifiedName = SyntaxFacts.moduleNameToText nameSegments
-                tryFindScopedEffectDeclaration qualifiedName
+                tryFindScopedEffectDeclarationSegments nameSegments
             | _ ->
                 None
 
