@@ -915,6 +915,16 @@ type SurfaceElaborationDiagnosticEvidence =
     | ConstructorDefaultReferencesUnavailableBinder of parameterName: string * referencedName: string
     | ConstructorDefaultTypeMismatch of parameterName: string * actualTypeText: string * expectedTypeText: string
     | ConstructorDefaultCouldNotBeChecked of parameterName: string
+    | BorrowedEffectResumptionQuantityUnsupported of effectOperationName: string * quantityText: string
+    | ParameterNumericContextTypeMismatch of parameterName: string * requiredTypeText: string * declaredTypeText: string
+    | ConstructorFieldProjectionRequiresUniqueRefinement of projectionText: string
+    | ListConsDefinitionBodyRequiresListResultType of declaredResultTypeText: string
+    | StaticObjectOrTypeValueCannotSatisfyDefinitionBody
+    | MacroExpandedSyntaxOverusesLinearBinder of binderName: string
+    | DeclaredTypeInferredTypeMismatch of context: string * declaredTypeText: string * inferredTypeText: string
+    | OrPatternBinderTypesDisagree of binderName: string * firstTypeText: string * alternativeTypeText: string
+    | InstanceMemberReturnTypeMismatch of traitName: string * memberName: string * expectedReturnTypeText: string * declaredReturnTypeText: string
+    | MultishotEffectUnsupportedBackendForExportedDeclaration of backendProfile: string * effectVisibleName: string * operationName: string * bindingName: string
     | RefutableGeneratorRequiresForQuestion
     | LeftJoinBinderNotInScopeAfterClause of bindingName: string * intoName: string
     | TraitConstraintUnresolved of constraintText: string
@@ -2969,6 +2979,108 @@ module DiagnosticFact =
                         "surface-elaboration-diagnostic"
                         [ field "reason" (DiagnosticPayloadText "constructor-default-could-not-be-checked")
                           field "parameter-name" (DiagnosticPayloadText parameterName) ])
+            | BorrowedEffectResumptionQuantityUnsupported(effectOperationName, quantityText) ->
+                descriptor
+                    DiagnosticCode.EffectResumptionQuantityBorrowed
+                    None
+                    $"Effect operation '{effectOperationName}' declares borrowed resumption quantity '{quantityText}'. Resumption quantities quantify the handler-bound resumption value itself, and borrowed resumptions are not part of the language."
+                    (payload
+                        "surface-elaboration-diagnostic"
+                        [ field "reason" (DiagnosticPayloadText "borrowed-effect-resumption-quantity-unsupported")
+                          field "effect-operation-name" (DiagnosticPayloadText effectOperationName)
+                          field "quantity-text" (DiagnosticPayloadText quantityText) ])
+            | ParameterNumericContextTypeMismatch(parameterName, requiredTypeText, declaredTypeText) ->
+                descriptor
+                    DiagnosticCode.TypeEqualityMismatch
+                    None
+                    $"Parameter '{parameterName}' is used in a numeric context that requires '{requiredTypeText}', but its declared type is '{declaredTypeText}'."
+                    (payload
+                        "surface-elaboration-diagnostic"
+                        [ field "reason" (DiagnosticPayloadText "parameter-numeric-context-type-mismatch")
+                          field "parameter-name" (DiagnosticPayloadText parameterName)
+                          field "required-type-text" (DiagnosticPayloadText requiredTypeText)
+                          field "declared-type-text" (DiagnosticPayloadText declaredTypeText) ])
+            | ConstructorFieldProjectionRequiresUniqueRefinement projectionText ->
+                descriptor
+                    DiagnosticCode.TypeEqualityMismatch
+                    None
+                    $"Constructor-field projection '{projectionText}' requires a unique constructor refinement in this branch."
+                    (payload
+                        "surface-elaboration-diagnostic"
+                        [ field "reason" (DiagnosticPayloadText "constructor-field-projection-requires-unique-refinement")
+                          field "projection-text" (DiagnosticPayloadText projectionText) ])
+            | ListConsDefinitionBodyRequiresListResultType declaredResultTypeText ->
+                descriptor
+                    DiagnosticCode.TypeEqualityMismatch
+                    None
+                    $"Definition body uses list-cons syntax and therefore must have a List result type, but the declared result type is '{declaredResultTypeText}'."
+                    (payload
+                        "surface-elaboration-diagnostic"
+                        [ field "reason" (DiagnosticPayloadText "list-cons-definition-body-requires-list-result-type")
+                          field "declared-result-type-text" (DiagnosticPayloadText declaredResultTypeText) ])
+            | StaticObjectOrTypeValueCannotSatisfyDefinitionBody ->
+                descriptor
+                    DiagnosticCode.TypeEqualityMismatch
+                    None
+                    "A type or static object value cannot satisfy this definition body."
+                    (payload
+                        "surface-elaboration-diagnostic"
+                        [ field "reason" (DiagnosticPayloadText "static-object-or-type-value-cannot-satisfy-definition-body") ])
+            | MacroExpandedSyntaxOverusesLinearBinder binderName ->
+                descriptor
+                    DiagnosticCode.QttLinearOveruse
+                    None
+                    $"Macro-expanded syntax uses linear binder '{binderName}' more than once."
+                    (payload
+                        "surface-elaboration-diagnostic"
+                        [ field "reason" (DiagnosticPayloadText "macro-expanded-syntax-overuses-linear-binder")
+                          field "binder-name" (DiagnosticPayloadText binderName) ])
+            | DeclaredTypeInferredTypeMismatch(context, declaredTypeText, inferredTypeText) ->
+                descriptor
+                    DiagnosticCode.TypeEqualityMismatch
+                    None
+                    $"{context}: declared '{declaredTypeText}' but inferred '{inferredTypeText}'."
+                    (payload
+                        "surface-elaboration-diagnostic"
+                        [ field "reason" (DiagnosticPayloadText "declared-type-inferred-type-mismatch")
+                          field "context" (DiagnosticPayloadText context)
+                          field "declared-type-text" (DiagnosticPayloadText declaredTypeText)
+                          field "inferred-type-text" (DiagnosticPayloadText inferredTypeText) ])
+            | OrPatternBinderTypesDisagree(binderName, firstTypeText, alternativeTypeText) ->
+                descriptor
+                    DiagnosticCode.OrPatternBinderTypeMismatch
+                    None
+                    $"Binder '{binderName}' has type '{firstTypeText}' in one or-pattern alternative but '{alternativeTypeText}' in another."
+                    (payload
+                        "surface-elaboration-diagnostic"
+                        [ field "reason" (DiagnosticPayloadText "or-pattern-binder-types-disagree")
+                          field "binder-name" (DiagnosticPayloadText binderName)
+                          field "first-type-text" (DiagnosticPayloadText firstTypeText)
+                          field "alternative-type-text" (DiagnosticPayloadText alternativeTypeText) ])
+            | InstanceMemberReturnTypeMismatch(traitName, memberName, expectedReturnTypeText, declaredReturnTypeText) ->
+                descriptor
+                    DiagnosticCode.TypeEqualityMismatch
+                    None
+                    $"Instance member '{memberName}' for trait '{traitName}' must return '{expectedReturnTypeText}', but declares '{declaredReturnTypeText}'."
+                    (payload
+                        "surface-elaboration-diagnostic"
+                        [ field "reason" (DiagnosticPayloadText "instance-member-return-type-mismatch")
+                          field "trait-name" (DiagnosticPayloadText traitName)
+                          field "member-name" (DiagnosticPayloadText memberName)
+                          field "expected-return-type-text" (DiagnosticPayloadText expectedReturnTypeText)
+                          field "declared-return-type-text" (DiagnosticPayloadText declaredReturnTypeText) ])
+            | MultishotEffectUnsupportedBackendForExportedDeclaration(backendProfile, effectVisibleName, operationName, bindingName) ->
+                descriptor
+                    DiagnosticCode.MultishotEffectUnsupportedBackend
+                    None
+                    $"Backend profile '{backendProfile}' does not provide capability 'rt-multishot-effects' required by multi-shot operation '{effectVisibleName}.{operationName}' from exported declaration '{bindingName}'."
+                    (payload
+                        "surface-elaboration-diagnostic"
+                        [ field "reason" (DiagnosticPayloadText "multishot-effect-unsupported-backend-for-exported-declaration")
+                          field "backend-profile" (DiagnosticPayloadText backendProfile)
+                          field "effect-visible-name" (DiagnosticPayloadText effectVisibleName)
+                          field "operation-name" (DiagnosticPayloadText operationName)
+                          field "binding-name" (DiagnosticPayloadText bindingName) ])
             | RefutableGeneratorRequiresForQuestion ->
                 descriptor
                     DiagnosticCode.TypeEqualityMismatch

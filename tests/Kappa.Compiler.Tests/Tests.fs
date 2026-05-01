@@ -3266,6 +3266,139 @@ module SmokeTestsShard3 =
         Assert.Equal(Some "o", tryFindPayloadText "binding-name" diagnostic)
         Assert.Equal(Some "customerOrders", tryFindPayloadText "into-name" diagnostic)
 
+    [<Fact>]
+    let ``source compilation reports borrowed effect resumption payloads`` () =
+        let workspace =
+            compileInMemoryWorkspace
+                "memory-borrowed-effect-resumption-root"
+                [
+                    "main.kp",
+                    [
+                        "module main"
+                        ""
+                        "effect Ask ="
+                        "    & ask : Unit -> Bool"
+                        ""
+                        "result : Int"
+                        "let result = 0"
+                    ]
+                    |> String.concat "\n"
+                ]
+
+        Assert.True(workspace.HasErrors, "Expected borrowed effect resumption quantities to be rejected.")
+
+        let diagnostic =
+            workspace.Diagnostics
+            |> List.find (fun item ->
+                item.Code = DiagnosticCode.EffectResumptionQuantityBorrowed
+                && tryFindPayloadText "reason" item = Some "borrowed-effect-resumption-quantity-unsupported")
+
+        Assert.Equal("surface-elaboration-diagnostic", diagnostic.Payload.Kind)
+        Assert.Equal(Some "Ask.ask", tryFindPayloadText "effect-operation-name" diagnostic)
+        Assert.Equal(Some "&", tryFindPayloadText "quantity-text" diagnostic)
+
+    [<Fact>]
+    let ``source compilation reports list cons result mismatch payloads`` () =
+        let workspace =
+            compileInMemoryWorkspace
+                "memory-list-cons-result-mismatch-root"
+                [
+                    "main.kp",
+                    [
+                        "module main"
+                        "i0 : IO Int -> Int"
+                        "let i0 i0 ="
+                        "    i0 :: Int"
+                        "result : Int"
+                        "let result = 0"
+                    ]
+                    |> String.concat "\n"
+                ]
+
+        Assert.True(workspace.HasErrors, "Expected list-cons bodies with non-List result types to be rejected.")
+
+        let diagnostic =
+            workspace.Diagnostics
+            |> List.find (fun item ->
+                item.Code = DiagnosticCode.TypeEqualityMismatch
+                && tryFindPayloadText "reason" item = Some "list-cons-definition-body-requires-list-result-type")
+
+        Assert.Equal("surface-elaboration-diagnostic", diagnostic.Payload.Kind)
+        Assert.Equal(Some "Int", tryFindPayloadText "declared-result-type-text" diagnostic)
+
+    [<Fact>]
+    let ``source compilation reports or pattern binder type mismatch payloads`` () =
+        let workspace =
+            compileInMemoryWorkspace
+                "memory-or-pattern-binder-type-mismatch-root"
+                [
+                    "main.kp",
+                    [
+                        "module main"
+                        "data Choice : Type ="
+                        "    IntChoice Int"
+                        "    StringChoice String"
+                        "pick : Choice -> Int"
+                        "let pick choice ="
+                        "    match choice"
+                        "    case IntChoice value | StringChoice value ->"
+                        "        0"
+                        "    case _ ->"
+                        "        1"
+                    ]
+                    |> String.concat "\n"
+                ]
+
+        Assert.True(workspace.HasErrors, "Expected incompatible or-pattern binder types to be rejected.")
+
+        let diagnostic =
+            workspace.Diagnostics
+            |> List.find (fun item ->
+                item.Code = DiagnosticCode.OrPatternBinderTypeMismatch
+                && tryFindPayloadText "reason" item = Some "or-pattern-binder-types-disagree")
+
+        Assert.Equal("surface-elaboration-diagnostic", diagnostic.Payload.Kind)
+        Assert.Equal(Some "value", tryFindPayloadText "binder-name" diagnostic)
+        Assert.Equal(Some "Int", tryFindPayloadText "first-type-text" diagnostic)
+        Assert.Equal(Some "String", tryFindPayloadText "alternative-type-text" diagnostic)
+
+    [<Fact>]
+    let ``source compilation reports exported multishot backend payloads`` () =
+        let workspace =
+            compileInMemoryWorkspaceWithBackend
+                "memory-exported-multishot-backend-root"
+                "wasm"
+                [
+                    "main.kp",
+                    [
+                        "module main"
+                        ""
+                        "effect Choice ="
+                        "    ω choose : Unit -> Bool"
+                        ""
+                        "handled : Eff <[Choice : Choice]> Int"
+                        "let handled ="
+                        "    do"
+                        "        let _ <- Choice.choose ()"
+                        "        pure 0"
+                    ]
+                    |> String.concat "\n"
+                ]
+
+        Assert.True(workspace.HasErrors, "Expected exported multishot operations to be rejected on the dotnet backend profile.")
+
+        let diagnostic =
+            workspace.Diagnostics
+            |> List.find (fun item ->
+                item.Code = DiagnosticCode.MultishotEffectUnsupportedBackend
+                && tryFindPayloadText "reason" item = Some "multishot-effect-unsupported-backend-for-exported-declaration")
+
+        Assert.Equal("surface-elaboration-diagnostic", diagnostic.Payload.Kind)
+        Assert.Equal(Some "wasm", tryFindPayloadText "backend-profile" diagnostic)
+        Assert.Equal(Some "Choice", tryFindPayloadText "effect-visible-name" diagnostic)
+        Assert.Equal(Some "choose", tryFindPayloadText "operation-name" diagnostic)
+        Assert.Equal(Some "handled", tryFindPayloadText "binding-name" diagnostic)
+
 
     [<Fact>]
     let ``lexer reports malformed prefixed numeric literals directly`` () =
@@ -4883,6 +5016,110 @@ module SmokeTestsShard4 =
         )
         Assert.Equal(Some "KAPPA_TEST", tryFindPayloadText "error-code" failElabWithDiagnostic)
         Assert.Equal(Some "boom", tryFindPayloadText "elaboration-message" failElabWithDiagnostic)
+
+    [<Fact>]
+    let ``surface elaboration core lowering diagnostics render from typed evidence`` () =
+        let bag = DiagnosticBag()
+        bag.AddError(DiagnosticFact.surfaceElaboration (BorrowedEffectResumptionQuantityUnsupported("Ask.ask", "&")))
+        bag.AddError(DiagnosticFact.surfaceElaboration (ParameterNumericContextTypeMismatch("count", "Int", "String")))
+        bag.AddError(DiagnosticFact.surfaceElaboration (ConstructorFieldProjectionRequiresUniqueRefinement "choice.value"))
+        bag.AddError(DiagnosticFact.surfaceElaboration (ListConsDefinitionBodyRequiresListResultType "Int"))
+        bag.AddError(DiagnosticFact.surfaceElaboration StaticObjectOrTypeValueCannotSatisfyDefinitionBody)
+        bag.AddError(DiagnosticFact.surfaceElaboration (MacroExpandedSyntaxOverusesLinearBinder "resource"))
+        bag.AddError(DiagnosticFact.surfaceElaboration (DeclaredTypeInferredTypeMismatch("Binding 'result' type mismatch", "Int", "String")))
+        bag.AddError(DiagnosticFact.surfaceElaboration (OrPatternBinderTypesDisagree("value", "Int", "String")))
+        bag.AddError(DiagnosticFact.surfaceElaboration (InstanceMemberReturnTypeMismatch("Score", "score", "Int", "String")))
+
+        bag.AddError(
+            DiagnosticFact.surfaceElaboration
+                (MultishotEffectUnsupportedBackendForExportedDeclaration("dotnet", "Choice", "choose", "handled"))
+        )
+
+        let diagnostics = bag.Items
+
+        let borrowedResumptionDiagnostic =
+            diagnostics
+            |> List.find (fun item ->
+                item.Code = DiagnosticCode.EffectResumptionQuantityBorrowed
+                && tryFindPayloadText "reason" item = Some "borrowed-effect-resumption-quantity-unsupported")
+
+        let numericContextDiagnostic =
+            diagnostics
+            |> List.find (fun item ->
+                item.Code = DiagnosticCode.TypeEqualityMismatch
+                && tryFindPayloadText "reason" item = Some "parameter-numeric-context-type-mismatch")
+
+        let projectionRefinementDiagnostic =
+            diagnostics
+            |> List.find (fun item ->
+                item.Code = DiagnosticCode.TypeEqualityMismatch
+                && tryFindPayloadText "reason" item = Some "constructor-field-projection-requires-unique-refinement")
+
+        let listConsDiagnostic =
+            diagnostics
+            |> List.find (fun item ->
+                item.Code = DiagnosticCode.TypeEqualityMismatch
+                && tryFindPayloadText "reason" item = Some "list-cons-definition-body-requires-list-result-type")
+
+        let staticObjectDiagnostic =
+            diagnostics
+            |> List.find (fun item ->
+                item.Code = DiagnosticCode.TypeEqualityMismatch
+                && tryFindPayloadText "reason" item = Some "static-object-or-type-value-cannot-satisfy-definition-body")
+
+        let macroLinearDiagnostic =
+            diagnostics
+            |> List.find (fun item ->
+                item.Code = DiagnosticCode.QttLinearOveruse
+                && tryFindPayloadText "reason" item = Some "macro-expanded-syntax-overuses-linear-binder")
+
+        let declaredInferredDiagnostic =
+            diagnostics
+            |> List.find (fun item ->
+                item.Code = DiagnosticCode.TypeEqualityMismatch
+                && tryFindPayloadText "reason" item = Some "declared-type-inferred-type-mismatch")
+
+        let orPatternDiagnostic =
+            diagnostics
+            |> List.find (fun item ->
+                item.Code = DiagnosticCode.OrPatternBinderTypeMismatch
+                && tryFindPayloadText "reason" item = Some "or-pattern-binder-types-disagree")
+
+        let instanceReturnDiagnostic =
+            diagnostics
+            |> List.find (fun item ->
+                item.Code = DiagnosticCode.TypeEqualityMismatch
+                && tryFindPayloadText "reason" item = Some "instance-member-return-type-mismatch")
+
+        let multishotExportDiagnostic =
+            diagnostics
+            |> List.find (fun item ->
+                item.Code = DiagnosticCode.MultishotEffectUnsupportedBackend
+                && tryFindPayloadText "reason" item = Some "multishot-effect-unsupported-backend-for-exported-declaration")
+
+        Assert.Equal(Some "Ask.ask", tryFindPayloadText "effect-operation-name" borrowedResumptionDiagnostic)
+        Assert.Equal(Some "&", tryFindPayloadText "quantity-text" borrowedResumptionDiagnostic)
+        Assert.Equal(Some "count", tryFindPayloadText "parameter-name" numericContextDiagnostic)
+        Assert.Equal(Some "Int", tryFindPayloadText "required-type-text" numericContextDiagnostic)
+        Assert.Equal(Some "String", tryFindPayloadText "declared-type-text" numericContextDiagnostic)
+        Assert.Equal(Some "choice.value", tryFindPayloadText "projection-text" projectionRefinementDiagnostic)
+        Assert.Equal(Some "Int", tryFindPayloadText "declared-result-type-text" listConsDiagnostic)
+        Assert.Equal("A type or static object value cannot satisfy this definition body.", staticObjectDiagnostic.Message)
+        Assert.Equal(Some "resource", tryFindPayloadText "binder-name" macroLinearDiagnostic)
+        Assert.Equal(Some "Binding 'result' type mismatch", tryFindPayloadText "context" declaredInferredDiagnostic)
+        Assert.Equal(Some "Int", tryFindPayloadText "declared-type-text" declaredInferredDiagnostic)
+        Assert.Equal(Some "String", tryFindPayloadText "inferred-type-text" declaredInferredDiagnostic)
+        Assert.Equal(Some "value", tryFindPayloadText "binder-name" orPatternDiagnostic)
+        Assert.Equal(Some "Int", tryFindPayloadText "first-type-text" orPatternDiagnostic)
+        Assert.Equal(Some "String", tryFindPayloadText "alternative-type-text" orPatternDiagnostic)
+        Assert.Equal(Some "Score", tryFindPayloadText "trait-name" instanceReturnDiagnostic)
+        Assert.Equal(Some "score", tryFindPayloadText "member-name" instanceReturnDiagnostic)
+        Assert.Equal(Some "Int", tryFindPayloadText "expected-return-type-text" instanceReturnDiagnostic)
+        Assert.Equal(Some "String", tryFindPayloadText "declared-return-type-text" instanceReturnDiagnostic)
+        Assert.Equal(Some "dotnet", tryFindPayloadText "backend-profile" multishotExportDiagnostic)
+        Assert.Equal(Some "Choice", tryFindPayloadText "effect-visible-name" multishotExportDiagnostic)
+        Assert.Equal(Some "choose", tryFindPayloadText "operation-name" multishotExportDiagnostic)
+        Assert.Equal(Some "handled", tryFindPayloadText "binding-name" multishotExportDiagnostic)
 
     [<Fact>]
     let ``parser syntax diagnostics render from typed evidence`` () =

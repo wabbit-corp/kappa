@@ -3041,15 +3041,17 @@ module SurfaceElaboration =
         | QuantityAtMostOne ->
             false
 
-    let private borrowedEffectResumptionQuantityDiagnostics makeDiagnostic (declaration: EffectDeclaration) =
+    let private borrowedEffectResumptionQuantityDiagnostics makeSurfaceElaborationDiagnostic (declaration: EffectDeclaration) =
         declaration.Operations
         |> List.choose (fun operation ->
             match operation.ResumptionQuantity with
             | Some(QuantityBorrow _ as quantity) ->
                 Some(
-                    makeDiagnostic
-                        SimpleDiagnosticKind.EffectResumptionQuantityBorrowed
-                        $"Effect operation '{declaration.Name}.{operation.Name}' declares borrowed resumption quantity '{Quantity.toSurfaceText quantity}'. Resumption quantities quantify the handler-bound resumption value itself, and borrowed resumptions are not part of the language."
+                    makeSurfaceElaborationDiagnostic
+                        (BorrowedEffectResumptionQuantityUnsupported(
+                            $"{declaration.Name}.{operation.Name}",
+                            Quantity.toSurfaceText quantity
+                        ))
                 )
             | _ ->
                 None)
@@ -10904,6 +10906,14 @@ module SurfaceElaboration =
         let makeDiagnostic kind message =
             Diagnostics.errorFact "KFrontIR" (Some(KFrontIRPhase.phaseName CORE_LOWERING)) None [] (DiagnosticFact.simple kind message)
 
+        let makeSurfaceElaborationDiagnostic evidence =
+            Diagnostics.errorFact
+                "KFrontIR"
+                (Some(KFrontIRPhase.phaseName CORE_LOWERING))
+                None
+                []
+                (DiagnosticFact.surfaceElaboration evidence)
+
         let sourceText =
             lazy (
                 if System.IO.File.Exists(filePath) then
@@ -11451,9 +11461,12 @@ module SurfaceElaboration =
                     | TypeVariable _
                         when not (TypeSignatures.definitionallyEqual normalizedDeclaredType normalizedInferredType) ->
                         Some(
-                            makeDiagnostic
-                                SimpleDiagnosticKind.TypeEqualityMismatch
-                                $"Parameter '{parameterName}' is used in a numeric context that requires '{TypeSignatures.toText inferredType}', but its declared type is '{TypeSignatures.toText declaredType}'."
+                            makeSurfaceElaborationDiagnostic
+                                (ParameterNumericContextTypeMismatch(
+                                    parameterName,
+                                    TypeSignatures.toText inferredType,
+                                    TypeSignatures.toText declaredType
+                                ))
                         )
                     | _ ->
                         None))
@@ -13510,9 +13523,8 @@ module SurfaceElaboration =
                         []
                 | Some _ ->
                     [
-                        makeDiagnostic
-                            SimpleDiagnosticKind.TypeEqualityMismatch
-                            $"Constructor-field projection '{root}.{fieldName}' requires a unique constructor refinement in this branch."
+                        makeSurfaceElaborationDiagnostic
+                            (ConstructorFieldProjectionRequiresUniqueRefinement $"{root}.{fieldName}")
                     ]
                 | None ->
                     []
@@ -14740,9 +14752,8 @@ module SurfaceElaboration =
                             []
                     | normalizedExpectedType ->
                         [
-                            makeDiagnostic
-                                SimpleDiagnosticKind.TypeEqualityMismatch
-                                $"Definition body uses list-cons syntax and therefore must have a List result type, but the declared result type is '{TypeSignatures.toText normalizedExpectedType}'."
+                            makeSurfaceElaborationDiagnostic
+                                (ListConsDefinitionBodyRequiresListResultType(TypeSignatures.toText normalizedExpectedType))
                         ]
                 | _ ->
                     []
@@ -14772,9 +14783,7 @@ module SurfaceElaboration =
                         | Some _ ->
                             []
                         | None ->
-                            [ makeDiagnostic
-                                SimpleDiagnosticKind.TypeEqualityMismatch
-                                "A type or static object value cannot satisfy this definition body." ]
+                            [ makeSurfaceElaborationDiagnostic StaticObjectOrTypeValueCannotSatisfyDefinitionBody ]
                     | None ->
                         []
                 | _ ->
@@ -17102,9 +17111,8 @@ module SurfaceElaboration =
                         | Some QuantityAtMostOne ->
                             if countNameUses parameter.Name Set.empty expandedBody > 1 then
                                 [
-                                    makeDiagnostic
-                                        SimpleDiagnosticKind.QttLinearOveruse
-                                        $"Macro-expanded syntax uses linear binder '{parameter.Name}' more than once."
+                                    makeSurfaceElaborationDiagnostic
+                                        (MacroExpandedSyntaxOverusesLinearBinder parameter.Name)
                                 ]
                             else
                                 []
@@ -17792,9 +17800,12 @@ module SurfaceElaboration =
                     | None when TypeSignatures.definitionallyEqual normalizedDeclaredType normalizedInferredType ->
                         []
                     | None ->
-                        [ makeDiagnostic
-                              SimpleDiagnosticKind.TypeEqualityMismatch
-                              $"{mismatchPrefix}: declared '{TypeSignatures.toText normalizedDeclaredType}' but inferred '{TypeSignatures.toText normalizedInferredType}'." ]
+                        [ makeSurfaceElaborationDiagnostic
+                              (DeclaredTypeInferredTypeMismatch(
+                                  mismatchPrefix,
+                                  TypeSignatures.toText normalizedDeclaredType,
+                                  TypeSignatures.toText normalizedInferredType
+                              )) ]
 
                 let bindingTypeDiagnostics =
                     match declaredType, value, inferredValueType with
@@ -18047,7 +18058,7 @@ module SurfaceElaboration =
                     constructorFacts
                     (rewriteLocalTypeAliasesInSurfaceExpression environment.CurrentModuleIdentity environment.VisibleTypeAliases expression)
             | LocalScopedEffect(declaration, body) ->
-                borrowedEffectResumptionQuantityDiagnostics makeDiagnostic declaration
+                borrowedEffectResumptionQuantityDiagnostics makeSurfaceElaborationDiagnostic declaration
                 @ withScopedEffectDeclaration environment.CurrentModuleIdentity declaration (fun () ->
                     validateExpressionWithFlow
                         locals
@@ -21476,9 +21487,12 @@ module SurfaceElaboration =
                                                     None
                                                 else
                                                     Some(
-                                                        makeDiagnostic
-                                                            SimpleDiagnosticKind.OrPatternBinderTypeMismatch
-                                                            $"Binder '{name}' has type '{TypeSignatures.toText firstType}' in one or-pattern alternative but '{TypeSignatures.toText alternativeType}' in another."
+                                                        makeSurfaceElaborationDiagnostic
+                                                            (OrPatternBinderTypesDisagree(
+                                                                name,
+                                                                TypeSignatures.toText firstType,
+                                                                TypeSignatures.toText alternativeType
+                                                            ))
                                                     ))
                                             |> Seq.toList)
                             | _ ->
@@ -22328,9 +22342,13 @@ module SurfaceElaboration =
                                                         []
                                                     else
                                                         [
-                                                            makeDiagnostic
-                                                                SimpleDiagnosticKind.TypeEqualityMismatch
-                                                                $"Instance member '{memberName}' for trait '{traitName}' must return '{TypeSignatures.toText expectedReturnType}', but declares '{TypeSignatures.toText declaredReturnType}'."
+                                                            makeSurfaceElaborationDiagnostic
+                                                                (InstanceMemberReturnTypeMismatch(
+                                                                    traitName,
+                                                                    memberName,
+                                                                    TypeSignatures.toText expectedReturnType,
+                                                                    TypeSignatures.toText declaredReturnType
+                                                                ))
                                                         ])))
                         | _ ->
                             [])
@@ -22394,7 +22412,7 @@ module SurfaceElaboration =
                     frontendModule.Declarations
                     |> List.collect (function
                         | EffectDeclarationNode declaration ->
-                            borrowedEffectResumptionQuantityDiagnostics makeDiagnostic declaration
+                            borrowedEffectResumptionQuantityDiagnostics makeSurfaceElaborationDiagnostic declaration
                         | _ ->
                             [])
 
@@ -22416,9 +22434,6 @@ module SurfaceElaboration =
                     else
                         let normalizedBackendProfile = BackendProfile.toPortableName backendProfile
                         let privateByDefault = isPrivateByDefault frontendModule
-
-                        let multishotInvocationMessage context effectName operationName =
-                            $"Backend profile '{normalizedBackendProfile}' does not provide capability 'rt-multishot-effects' required by multi-shot operation '{effectName}.{operationName}' {context}."
 
                         let rec rewriteEffectLabelAliasUse aliasName effectName current =
                             let rewrite = rewriteEffectLabelAliasUse aliasName effectName
@@ -22687,12 +22702,13 @@ module SurfaceElaboration =
                                         uniqueMultishotInvocations definition.Body.Value
                                         |> List.tryHead
                                         |> Option.map (fun (effectName, operationName) ->
-                                            makeDiagnostic
-                                                SimpleDiagnosticKind.MultishotEffectUnsupportedBackend
-                                                (multishotInvocationMessage
-                                                    $"from exported declaration '{bindingName}'"
-                                                    effectName
-                                                    operationName))
+                                            makeSurfaceElaborationDiagnostic
+                                                (MultishotEffectUnsupportedBackendForExportedDeclaration(
+                                                    normalizedBackendProfile,
+                                                    effectName,
+                                                    operationName,
+                                                    bindingName
+                                                )))
                                     else
                                         None
                                 | _ ->
