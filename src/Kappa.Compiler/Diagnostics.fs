@@ -853,6 +853,12 @@ type CoreExpressionParsingEvidence =
     | UnsupportedComprehensionClause
     | QueryPagingRequiresOrderedPipeline of operationKind: string
     | ComprehensionMustEndWithYieldClause
+    | ExpectedHandlerClauseArrow
+    | ExpectedHandlerResumptionBinder
+    | ExpectedHandlerClauseHead
+    | ExpectedHandlerClauseStartingWithCase
+    | ExpectedHandlerClause
+    | ExpectedHandlerWith
 
 type ParserNameExpectationRole =
     | BindingName
@@ -2408,6 +2414,24 @@ module DiagnosticFact =
             | ComprehensionMustEndWithYieldClause ->
                 descriptor DiagnosticCode.ExpectedSyntaxToken None "A comprehension must end with a yield clause."
                     (payload "core-expression-parsing" [ field "reason" (DiagnosticPayloadText "comprehension-must-end-with-yield-clause") ])
+            | ExpectedHandlerClauseArrow ->
+                descriptor DiagnosticCode.ExpectedSyntaxToken None "Expected '->' in the handler clause."
+                    (payload "core-expression-parsing" [ field "reason" (DiagnosticPayloadText "expected-handler-clause-arrow") ])
+            | ExpectedHandlerResumptionBinder ->
+                descriptor DiagnosticCode.ExpectedSyntaxToken None "Expected a resumption binder in the handler clause."
+                    (payload "core-expression-parsing" [ field "reason" (DiagnosticPayloadText "expected-handler-resumption-binder") ])
+            | ExpectedHandlerClauseHead ->
+                descriptor DiagnosticCode.ExpectedSyntaxToken None "Expected a handler clause head after 'case'."
+                    (payload "core-expression-parsing" [ field "reason" (DiagnosticPayloadText "expected-handler-clause-head") ])
+            | ExpectedHandlerClauseStartingWithCase ->
+                descriptor DiagnosticCode.ExpectedSyntaxToken None "Expected a handler clause starting with 'case'."
+                    (payload "core-expression-parsing" [ field "reason" (DiagnosticPayloadText "expected-handler-clause-starting-with-case") ])
+            | ExpectedHandlerClause ->
+                descriptor DiagnosticCode.ExpectedSyntaxToken None "Expected a handler clause."
+                    (payload "core-expression-parsing" [ field "reason" (DiagnosticPayloadText "expected-handler-clause") ])
+            | ExpectedHandlerWith ->
+                descriptor DiagnosticCode.ExpectedSyntaxToken None "Expected 'with' in the handler expression."
+                    (payload "core-expression-parsing" [ field "reason" (DiagnosticPayloadText "expected-handler-with") ])
         | UnicodeScalarLiteralDiagnostic evidence ->
             match evidence with
             | UnicodeScalarInvalidLiteralForm ->

@@ -3721,6 +3721,8 @@ module SmokeTestsShard4 =
         bag.AddError(DiagnosticFact.coreExpressionParsing ExpectedComprehensionGeneratorIn)
         bag.AddError(DiagnosticFact.coreExpressionParsing (QueryPagingRequiresOrderedPipeline "skip"))
         bag.AddError(DiagnosticFact.coreExpressionParsing ComprehensionMustEndWithYieldClause)
+        bag.AddError(DiagnosticFact.coreExpressionParsing ExpectedHandlerClauseArrow)
+        bag.AddError(DiagnosticFact.coreExpressionParsing ExpectedHandlerWith)
 
         let diagnostics = bag.Items
         let usingDiagnostic =
@@ -3754,6 +3756,14 @@ module SmokeTestsShard4 =
         let yieldDiagnostic =
             diagnostics
             |> List.find (fun item -> item.Message = "A comprehension must end with a yield clause.")
+
+        let handlerArrowDiagnostic =
+            diagnostics
+            |> List.find (fun item -> item.Message = "Expected '->' in the handler clause.")
+
+        let handlerWithDiagnostic =
+            diagnostics
+            |> List.find (fun item -> item.Message = "Expected 'with' in the handler expression.")
 
         Assert.Equal("core-expression-parsing", usingDiagnostic.Payload.Kind)
         Assert.Contains(
@@ -3802,6 +3812,18 @@ module SmokeTestsShard4 =
             fun field ->
                 field.Name = "reason"
                 && field.Value = DiagnosticPayloadText "comprehension-must-end-with-yield-clause"
+        )
+        Assert.Contains(
+            handlerArrowDiagnostic.Payload.Fields,
+            fun field ->
+                field.Name = "reason"
+                && field.Value = DiagnosticPayloadText "expected-handler-clause-arrow"
+        )
+        Assert.Contains(
+            handlerWithDiagnostic.Payload.Fields,
+            fun field ->
+                field.Name = "reason"
+                && field.Value = DiagnosticPayloadText "expected-handler-with"
         )
 
     [<Fact>]
@@ -3961,6 +3983,47 @@ module SmokeTestsShard4 =
         Assert.Equal("core-expression-parsing", pagingDiagnostic.Payload.Kind)
         Assert.Equal(Some "query-paging-requires-ordered-pipeline", tryFindPayloadText "reason" pagingDiagnostic)
         Assert.Equal(Some "skip", tryFindPayloadText "operation-kind" pagingDiagnostic)
+
+    [<Fact>]
+    let ``parser reports structured handler diagnostics`` () =
+        let sourceText =
+            [
+                "module main"
+                "let missingWith = handle Ask comp"
+                "let missingCase ="
+                "    handle Ask comp with"
+                "        return x -> pure x"
+                "let missingArrow ="
+                "    handle Ask comp with"
+                "        case return x pure x"
+            ]
+            |> String.concat "\n"
+
+        let _, lexed, parsed =
+            lexAndParse
+                "main.kp"
+                sourceText
+
+        Assert.Empty(lexed.Diagnostics)
+
+        let withDiagnostic =
+            parsed.Diagnostics
+            |> List.find (fun diagnostic -> diagnostic.Message = "Expected 'with' in the handler expression.")
+
+        let caseDiagnostic =
+            parsed.Diagnostics
+            |> List.find (fun diagnostic -> diagnostic.Message = "Expected a handler clause starting with 'case'.")
+
+        let arrowDiagnostic =
+            parsed.Diagnostics
+            |> List.find (fun diagnostic -> diagnostic.Message = "Expected '->' in the handler clause.")
+
+        Assert.Equal("core-expression-parsing", withDiagnostic.Payload.Kind)
+        Assert.Equal(Some "expected-handler-with", tryFindPayloadText "reason" withDiagnostic)
+        Assert.Equal("core-expression-parsing", caseDiagnostic.Payload.Kind)
+        Assert.Equal(Some "expected-handler-clause-starting-with-case", tryFindPayloadText "reason" caseDiagnostic)
+        Assert.Equal("core-expression-parsing", arrowDiagnostic.Payload.Kind)
+        Assert.Equal(Some "expected-handler-clause-arrow", tryFindPayloadText "reason" arrowDiagnostic)
 
 
     [<Fact>]

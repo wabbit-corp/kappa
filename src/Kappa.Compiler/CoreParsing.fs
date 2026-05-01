@@ -5298,7 +5298,10 @@ type private ExpressionParser
                 index <- index + 1
 
             if splitIndex < 0 then
-                diagnostics.AddError(DiagnosticFact.simple SimpleDiagnosticKind.ExpectedSyntaxToken "Expected '->' in the handler clause.", source.GetLocation(caseToken.Span))
+                diagnostics.AddError(
+                    DiagnosticFact.coreExpressionParsing ExpectedHandlerClauseArrow,
+                    source.GetLocation(caseToken.Span)
+                )
                 { OperationName = "<missing>"
                   ArgumentTokens = []
                   ResumptionName = None
@@ -5323,7 +5326,8 @@ type private ExpressionParser
                         else
                             match List.rev argumentGroups with
                             | [ ] ->
-                                diagnostics.AddError(DiagnosticFact.simple SimpleDiagnosticKind.ExpectedSyntaxToken "Expected a resumption binder in the handler clause.",
+                                diagnostics.AddError(
+                                    DiagnosticFact.coreExpressionParsing ExpectedHandlerResumptionBinder,
                                     source.GetLocation(operationToken.Span)
                                 )
 
@@ -5334,7 +5338,8 @@ type private ExpressionParser
                                     | [ nameToken ] when this.IsNameToken(nameToken) ->
                                         Some(SyntaxFacts.trimIdentifierQuotes nameToken.Text)
                                     | _ ->
-                                        diagnostics.AddError(DiagnosticFact.simple SimpleDiagnosticKind.ExpectedSyntaxToken "Expected a resumption binder in the handler clause.",
+                                        diagnostics.AddError(
+                                            DiagnosticFact.coreExpressionParsing ExpectedHandlerResumptionBinder,
                                             source.GetLocation(operationToken.Span)
                                         )
 
@@ -5347,19 +5352,28 @@ type private ExpressionParser
                       ResumptionName = resumptionName
                       Body = this.ParseStandaloneExpression(bodyTokens) }
                 | _ ->
-                    diagnostics.AddError(DiagnosticFact.simple SimpleDiagnosticKind.ExpectedSyntaxToken "Expected a handler clause head after 'case'.", source.GetLocation(caseToken.Span))
+                    diagnostics.AddError(
+                        DiagnosticFact.coreExpressionParsing ExpectedHandlerClauseHead,
+                        source.GetLocation(caseToken.Span)
+                    )
                     { OperationName = "<missing>"
                       ArgumentTokens = []
                       ResumptionName = None
                       Body = Literal LiteralValue.Unit }
         | token :: _ ->
-            diagnostics.AddError(DiagnosticFact.simple SimpleDiagnosticKind.ExpectedSyntaxToken "Expected a handler clause starting with 'case'.", source.GetLocation(token.Span))
+            diagnostics.AddError(
+                DiagnosticFact.coreExpressionParsing ExpectedHandlerClauseStartingWithCase,
+                source.GetLocation(token.Span)
+            )
             { OperationName = "<missing>"
               ArgumentTokens = []
               ResumptionName = None
               Body = Literal LiteralValue.Unit }
         | [] ->
-            diagnostics.AddError(DiagnosticFact.simple SimpleDiagnosticKind.ExpectedSyntaxToken "Expected a handler clause.", source.GetLocation(this.Current.Span))
+            diagnostics.AddError(
+                DiagnosticFact.coreExpressionParsing ExpectedHandlerClause,
+                source.GetLocation(this.Current.Span)
+            )
             { OperationName = "<missing>"
               ArgumentTokens = []
               ResumptionName = None
@@ -5378,7 +5392,10 @@ type private ExpressionParser
         let bodyTokens = this.CollectUntilTopLevelWith()
 
         if not (this.IsContextualIdentifier("with")) then
-            diagnostics.AddError(DiagnosticFact.simple SimpleDiagnosticKind.ExpectedSyntaxToken "Expected 'with' in the handler expression.", source.GetLocation(this.Current.Span))
+            diagnostics.AddError(
+                DiagnosticFact.coreExpressionParsing ExpectedHandlerWith,
+                source.GetLocation(this.Current.Span)
+            )
 
         this.Advance() |> ignore
         let handledBody = this.ParseStandaloneExpression(bodyTokens)
