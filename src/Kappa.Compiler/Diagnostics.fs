@@ -869,6 +869,22 @@ type ClrBackendEmitterErrorEvidence =
     | IntrinsicArgumentTypesUnsupported of intrinsicName: string * argumentTypeTexts: string list
     | RecursiveTypeInferenceUnsupported of moduleName: string * bindingName: string
 
+type EffectfulClrBackendEmitterErrorEvidence =
+    | EffectfulGenericConstructorUnsupported of moduleName: string * constructorName: string
+    | EffectfulEnumConstructorResolutionFailed of moduleName: string * constructorName: string
+    | EffectfulConstructorValuedNameUnsupported of targetModuleName: string * constructorName: string
+    | EffectfulNameResolutionFailed of nameText: string
+    | EffectfulPrefixedStringsUnsupported
+    | EffectfulIntrinsicArityMismatch of intrinsicName: string * expectedArity: int * actualArity: int
+    | EffectfulOrPatternAlternativesBindDifferentNames
+    | EffectfulBoolPatternArityMismatch of patternName: string * actualArity: int
+    | EffectfulConstructorPatternResolutionFailed of patternName: string
+    | EffectfulConstructorPatternArityMismatch of patternName: string * expectedArity: int * actualArity: int
+    | EffectfulConstructorArityMismatch of constructorName: string * expectedArity: int * actualArity: int
+    | EffectfulMissingBindingBody of moduleName: string * bindingName: string
+    | EffectfulBindingPreparationFailed of moduleName: string * bindingName: string
+    | EffectfulIlEmissionFailed of detail: string
+
 type BackendDiagnosticEvidence =
     | EffectRuntimeUnsupportedBackend of backendProfile: string * declarationName: string * effectUse: BackendRuntimeEffectUseEvidence
     | KBackendLoweringFailed of moduleName: string * error: BackendLoweringErrorEvidence
@@ -1753,6 +1769,38 @@ module DiagnosticFact =
                 $"The CLR dotnet backend does not support intrinsic '{intrinsicName}' for argument types [{argumentText}]."
             | RecursiveTypeInferenceUnsupported(moduleName, bindingName) ->
                 $"The CLR dotnet backend does not yet support recursive type inference for '{moduleName}.{bindingName}'."
+
+    module internal EffectfulClrBackendEmitterError =
+        let message evidence =
+            match evidence with
+            | EffectfulGenericConstructorUnsupported(moduleName, constructorName) ->
+                $"The effectful CLR dotnet backend does not yet support generic constructor '{moduleName}.{constructorName}'."
+            | EffectfulEnumConstructorResolutionFailed(moduleName, constructorName) ->
+                $"The effectful CLR dotnet backend could not resolve enum constructor '{moduleName}.{constructorName}'."
+            | EffectfulConstructorValuedNameUnsupported(targetModuleName, constructorName) ->
+                $"The effectful CLR dotnet backend does not yet support constructor-valued name '{targetModuleName}.{constructorName}'."
+            | EffectfulNameResolutionFailed nameText ->
+                $"The effectful CLR dotnet backend could not resolve name '{nameText}'."
+            | EffectfulPrefixedStringsUnsupported ->
+                "The effectful CLR dotnet backend does not yet support prefixed strings."
+            | EffectfulIntrinsicArityMismatch(intrinsicName, expectedArity, actualArity) ->
+                $"The effectful CLR dotnet backend expected intrinsic '{intrinsicName}' to receive {expectedArity} argument(s), but received {actualArity}."
+            | EffectfulOrPatternAlternativesBindDifferentNames ->
+                "The effectful CLR dotnet backend requires each or-pattern alternative to bind the same names."
+            | EffectfulBoolPatternArityMismatch(patternName, actualArity) ->
+                $"The effectful CLR dotnet backend expected Bool pattern '{patternName}' to receive 0 argument(s), but received {actualArity}."
+            | EffectfulConstructorPatternResolutionFailed patternName ->
+                $"The effectful CLR dotnet backend could not resolve constructor pattern '{patternName}'."
+            | EffectfulConstructorPatternArityMismatch(patternName, expectedArity, actualArity) ->
+                $"The effectful CLR dotnet backend expected pattern '{patternName}' to receive {expectedArity} argument(s), but received {actualArity}."
+            | EffectfulConstructorArityMismatch(constructorName, expectedArity, actualArity) ->
+                $"The effectful CLR dotnet backend expected constructor '{constructorName}' to receive {expectedArity} argument(s), but received {actualArity}."
+            | EffectfulMissingBindingBody(moduleName, bindingName) ->
+                $"The effectful CLR dotnet backend requires a body for '{moduleName}.{bindingName}'."
+            | EffectfulBindingPreparationFailed(moduleName, bindingName) ->
+                $"The effectful CLR dotnet backend could not prepare binding '{moduleName}.{bindingName}'."
+            | EffectfulIlEmissionFailed detail ->
+                $"The effectful CLR dotnet backend failed to emit IL: {detail}"
 
     let private expectedActualMismatchKindText mismatchKind =
         match mismatchKind with

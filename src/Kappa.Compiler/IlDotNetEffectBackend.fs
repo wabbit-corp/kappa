@@ -217,8 +217,10 @@ module internal IlDotNetEffectBackend =
 
     let private resolveNonGenericConstructor (state: EffectEmissionState) (constructorInfo: ConstructorInfo) =
         if not (List.isEmpty constructorInfo.TypeParameters) then
-            Result.Error
-                $"The effectful dotnet backend does not yet support generic constructor '{constructorInfo.ModuleName}.{constructorInfo.Name}'."
+            Result.Error(
+                DiagnosticFact.EffectfulClrBackendEmitterError.message
+                    (EffectfulGenericConstructorUnsupported(constructorInfo.ModuleName, constructorInfo.Name))
+            )
         else
             match tryResolveEnumConstructorOrdinal (createClrResolutionState state) constructorInfo with
             | Some caseOrdinal ->
@@ -238,8 +240,10 @@ module internal IlDotNetEffectBackend =
                     let fieldInfos = constructorEmission.FieldBuilders |> Array.map (fun fieldBuilder -> fieldBuilder :> FieldInfo)
                     Result.Ok(NonGenericClassConstructor(constructorEmission.ConstructorBuilder :> System.Reflection.ConstructorInfo, fieldInfos))
                 | EnumEmission _ ->
-                    Result.Error
-                        $"The effectful dotnet backend could not resolve enum constructor '{constructorInfo.ModuleName}.{constructorInfo.Name}'."
+                    Result.Error(
+                        DiagnosticFact.EffectfulClrBackendEmitterError.message
+                            (EffectfulEnumConstructorResolutionFailed(constructorInfo.ModuleName, constructorInfo.Name))
+                    )
 
     let private resolveBindingGetter (state: EffectEmissionState) currentModule segments =
         tryResolveBinding state.Modules currentModule segments
@@ -620,8 +624,14 @@ module internal IlDotNetEffectBackend =
                             il.Emit(OpCodes.Call, runtimeShowBuiltinMethod)
                         | _ ->
                             return!
-                                Result.Error
-                                    $"The effectful dotnet backend expected intrinsic '{KnownPreludeSemantics.BuiltinPreludeShowHelperName}' to receive 1 argument, but received {List.length arguments}."
+                                Result.Error(
+                                    DiagnosticFact.EffectfulClrBackendEmitterError.message
+                                        (EffectfulIntrinsicArityMismatch(
+                                            KnownPreludeSemantics.BuiltinPreludeShowHelperName,
+                                            1,
+                                            List.length arguments
+                                        ))
+                                )
                     }
 
                 let emitBuiltinCompareApply (arguments: KRuntimeExpression list) =
@@ -656,8 +666,14 @@ module internal IlDotNetEffectBackend =
                             il.MarkLabel(doneLabel)
                         | _ ->
                             return!
-                                Result.Error
-                                    $"The effectful dotnet backend expected intrinsic '{KnownPreludeSemantics.BuiltinPreludeCompareHelperName}' to receive 2 arguments, but received {List.length arguments}."
+                                Result.Error(
+                                    DiagnosticFact.EffectfulClrBackendEmitterError.message
+                                        (EffectfulIntrinsicArityMismatch(
+                                            KnownPreludeSemantics.BuiltinPreludeCompareHelperName,
+                                            2,
+                                            List.length arguments
+                                        ))
+                                )
                     }
 
                 let emitTraitCall traitName memberName dictionary arguments =
@@ -847,8 +863,10 @@ module internal IlDotNetEffectBackend =
 
                             if alternatives |> List.exists (fun alternative -> collectBindings alternative <> expectedBindings) then
                                 return!
-                                    Result.Error
-                                        "The effectful dotnet backend requires each or-pattern alternative to bind the same names."
+                                    Result.Error(
+                                        DiagnosticFact.EffectfulClrBackendEmitterError.message
+                                            EffectfulOrPatternAlternativesBindDifferentNames
+                                    )
 
                             let sharedBindings =
                                 expectedBindings
@@ -906,8 +924,10 @@ module internal IlDotNetEffectBackend =
                                 if not (List.isEmpty argumentPatterns) then
                                     let patternName = String.concat "." nameSegments
                                     return!
-                                        Result.Error
-                                            $"The effectful dotnet backend expected Bool pattern '{patternName}' to receive 0 argument(s), but received {List.length argumentPatterns}."
+                                        Result.Error(
+                                            DiagnosticFact.EffectfulClrBackendEmitterError.message
+                                                (EffectfulBoolPatternArityMismatch(patternName, List.length argumentPatterns))
+                                        )
 
                                 il.Emit(OpCodes.Ldloc, valueLocal)
                                 il.Emit(OpCodes.Call, runtimeExpectBoolMethod)
@@ -923,7 +943,10 @@ module internal IlDotNetEffectBackend =
                             match tryResolveConstructor state.Modules currentModule nameSegments with
                             | None ->
                                 let patternName = String.concat "." nameSegments
-                                Result.Error $"The effectful dotnet backend could not resolve constructor pattern '{patternName}'."
+                                Result.Error(
+                                    DiagnosticFact.EffectfulClrBackendEmitterError.message
+                                        (EffectfulConstructorPatternResolutionFailed patternName)
+                                )
                             | Some(_, constructorInfo) ->
                                 result {
                                     if List.isEmpty constructorInfo.TypeParameters then
@@ -933,8 +956,14 @@ module internal IlDotNetEffectBackend =
                                         | NonGenericEnumCase(caseOrdinal, enumType) ->
                                             if not (List.isEmpty argumentPatterns) then
                                                 return!
-                                                    Result.Error
-                                                        $"The effectful dotnet backend expected pattern '{constructorInfo.Name}' to receive 0 argument(s), but received {List.length argumentPatterns}."
+                                                    Result.Error(
+                                                        DiagnosticFact.EffectfulClrBackendEmitterError.message
+                                                            (EffectfulConstructorPatternArityMismatch(
+                                                                constructorInfo.Name,
+                                                                0,
+                                                                List.length argumentPatterns
+                                                            ))
+                                                    )
 
                                             il.Emit(OpCodes.Ldloc, valueLocal)
                                             il.Emit(OpCodes.Unbox_Any, enumType)
@@ -945,8 +974,14 @@ module internal IlDotNetEffectBackend =
                                         | NonGenericClassConstructor(constructor, fieldInfos) ->
                                             if List.length argumentPatterns <> fieldInfos.Length then
                                                 return!
-                                                    Result.Error
-                                                        $"The effectful dotnet backend expected pattern '{constructorInfo.Name}' to receive {fieldInfos.Length} argument(s), but received {List.length argumentPatterns}."
+                                                    Result.Error(
+                                                        DiagnosticFact.EffectfulClrBackendEmitterError.message
+                                                            (EffectfulConstructorPatternArityMismatch(
+                                                                constructorInfo.Name,
+                                                                fieldInfos.Length,
+                                                                List.length argumentPatterns
+                                                            ))
+                                                    )
 
                                             let constructorType = constructor.DeclaringType
                                             let castLocal = il.DeclareLocal(constructorType)
@@ -978,8 +1013,14 @@ module internal IlDotNetEffectBackend =
 
                                         if List.length argumentPatterns <> List.length constructorInfo.FieldTypes then
                                             return!
-                                                Result.Error
-                                                    $"The effectful dotnet backend expected pattern '{constructorInfo.Name}' to receive {List.length constructorInfo.FieldTypes} argument(s), but received {List.length argumentPatterns}."
+                                                Result.Error(
+                                                    DiagnosticFact.EffectfulClrBackendEmitterError.message
+                                                        (EffectfulConstructorPatternArityMismatch(
+                                                            constructorInfo.Name,
+                                                            List.length constructorInfo.FieldTypes,
+                                                            List.length argumentPatterns
+                                                        ))
+                                                )
 
                                         il.Emit(OpCodes.Ldloc, valueLocal)
                                         il.Emit(OpCodes.Isinst, typeof<KappaErasedDataValue>)
@@ -1259,11 +1300,16 @@ module internal IlDotNetEffectBackend =
                                                     []
                                     }
                                 | Some(targetModule, constructorInfo) ->
-                                    Result.Error
-                                        $"The effectful dotnet backend does not yet support constructor-valued name '{targetModule}.{constructorInfo.Name}'."
+                                    Result.Error(
+                                        DiagnosticFact.EffectfulClrBackendEmitterError.message
+                                            (EffectfulConstructorValuedNameUnsupported(targetModule, constructorInfo.Name))
+                                    )
                                 | None ->
                                     let text = String.concat "." segments
-                                    Result.Error $"The effectful dotnet backend could not resolve name '{text}'."
+                                    Result.Error(
+                                        DiagnosticFact.EffectfulClrBackendEmitterError.message
+                                            (EffectfulNameResolutionFailed text)
+                                    )
                 | KRuntimeEffectLabel(labelName, interfaceId, labelId, operations) ->
                     let operationsLocal = il.DeclareLocal(typeof<KappaEffectOperationMetadata[]>)
 
@@ -1603,16 +1649,28 @@ module internal IlDotNetEffectBackend =
                                     | NonGenericEnumCase(caseOrdinal, enumType) ->
                                         if not (List.isEmpty arguments) then
                                             return!
-                                                Result.Error
-                                                    $"The effectful dotnet backend expected constructor '{constructorInfo.Name}' to receive 0 argument(s), but received {List.length arguments}."
+                                                Result.Error(
+                                                    DiagnosticFact.EffectfulClrBackendEmitterError.message
+                                                        (EffectfulConstructorArityMismatch(
+                                                            constructorInfo.Name,
+                                                            0,
+                                                            List.length arguments
+                                                        ))
+                                                )
 
                                         il.Emit(OpCodes.Ldc_I4, caseOrdinal)
                                         il.Emit(OpCodes.Box, enumType)
                                     | NonGenericClassConstructor(constructor, fieldInfos) ->
                                         if List.length arguments <> fieldInfos.Length then
                                             return!
-                                                Result.Error
-                                                    $"The effectful dotnet backend expected constructor '{constructorInfo.Name}' to receive {fieldInfos.Length} argument(s), but received {List.length arguments}."
+                                                Result.Error(
+                                                    DiagnosticFact.EffectfulClrBackendEmitterError.message
+                                                        (EffectfulConstructorArityMismatch(
+                                                            constructorInfo.Name,
+                                                            fieldInfos.Length,
+                                                            List.length arguments
+                                                        ))
+                                                )
 
                                         let fieldTypes = constructorInfo.FieldTypes
 
@@ -1638,8 +1696,14 @@ module internal IlDotNetEffectBackend =
                                 else
                                     if List.length arguments <> List.length constructorInfo.FieldTypes then
                                         return!
-                                            Result.Error
-                                                $"The effectful dotnet backend expected constructor '{constructorInfo.Name}' to receive {List.length constructorInfo.FieldTypes} argument(s), but received {List.length arguments}."
+                                            Result.Error(
+                                                DiagnosticFact.EffectfulClrBackendEmitterError.message
+                                                    (EffectfulConstructorArityMismatch(
+                                                        constructorInfo.Name,
+                                                        List.length constructorInfo.FieldTypes,
+                                                        List.length arguments
+                                                    ))
+                                            )
 
                                     do!
                                         emitErasedDataValue
@@ -1710,7 +1774,9 @@ module internal IlDotNetEffectBackend =
                         il.Emit(OpCodes.Call, runtimeBinaryMethod)
                     }
                 | KRuntimePrefixedString _ ->
-                    Result.Error "The effectful dotnet backend does not yet support prefixed strings."
+                    Result.Error(
+                        DiagnosticFact.EffectfulClrBackendEmitterError.message EffectfulPrefixedStringsUnsupported
+                    )
 
             let emitBindingBodies () =
                 let result = ResultBuilder()
@@ -1744,12 +1810,16 @@ module internal IlDotNetEffectBackend =
                             getterIl.Emit(OpCodes.Newobj, closureCtor)
                         | None, _, _, _ ->
                             return!
-                                Result.Error
-                                    $"The effectful dotnet backend requires a body for '{moduleName}.{binding.Name}'."
+                                Result.Error(
+                                    DiagnosticFact.EffectfulClrBackendEmitterError.message
+                                        (EffectfulMissingBindingBody(moduleName, binding.Name))
+                                )
                         | _ ->
                             return!
-                                Result.Error
-                                    $"The effectful dotnet backend could not prepare binding '{moduleName}.{binding.Name}'."
+                                Result.Error(
+                                    DiagnosticFact.EffectfulClrBackendEmitterError.message
+                                        (EffectfulBindingPreparationFailed(moduleName, binding.Name))
+                                )
 
                         getterIl.Emit(OpCodes.Stsfld, emission.CacheField)
                         loadSmallInt getterIl 2
@@ -1829,7 +1899,9 @@ module internal IlDotNetEffectBackend =
                           AssemblyName = Path.GetFileNameWithoutExtension(assemblyPath)
                           AssemblyFilePath = assemblyPath }
                 with ex ->
-                    Result.Error $"The effectful dotnet backend failed to emit IL: {ex.Message}"
+                    Result.Error(
+                        DiagnosticFact.EffectfulClrBackendEmitterError.message (EffectfulIlEmissionFailed ex.Message)
+                    )
 
     let emitAssemblyArtifact (workspace: WorkspaceCompilation) (outputDirectory: string) =
         if workspace.HasErrors then

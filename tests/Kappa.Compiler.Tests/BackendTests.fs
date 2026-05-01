@@ -595,6 +595,85 @@ module BackendTestsShard4 =
             )
 
     [<Fact>]
+    let ``effectful dotnet backend reports structured missing body failures`` () =
+        let workspace =
+            compileInMemoryWorkspaceWithBackend
+                "memory-dotnet-effectful-missing-body-root"
+                "dotnet"
+                [
+                    "main.kp",
+                    [
+                        "@PrivateByDefault module main"
+                        ""
+                        "bad : Int"
+                        "let bad ="
+                        "    block"
+                        "        scoped effect Ask ="
+                        "            ask : Unit -> Int"
+                        ""
+                        "        let comp : Eff <[Ask : Ask]> Int ="
+                        "            do"
+                        "                let value <- Ask.ask ()"
+                        "                pure value"
+                        ""
+                        "        let handled : Eff <[ ]> Int ="
+                        "            deep handle Ask comp with"
+                        "                case return x -> pure x"
+                        "                case ask () k -> k 1"
+                        ""
+                        "        runPure handled"
+                        ""
+                        "result : Int"
+                        "let result ="
+                        "    block"
+                        "        scoped effect Ask ="
+                        "            ask : Unit -> Int"
+                        ""
+                        "        let comp : Eff <[Ask : Ask]> Int ="
+                        "            do"
+                        "                let value <- Ask.ask ()"
+                        "                pure value"
+                        ""
+                        "        let handled : Eff <[ ]> Int ="
+                        "            deep handle Ask comp with"
+                        "                case return x -> pure x"
+                        "                case ask () k -> k 0"
+                        ""
+                        "        runPure handled"
+                    ]
+                    |> String.concat "\n"
+                ]
+
+        Assert.False(workspace.HasErrors, sprintf "Expected no frontend diagnostics, got %A" workspace.Diagnostics)
+        Assert.DoesNotContain(workspace.Diagnostics, fun diagnostic -> diagnostic.Code = DiagnosticCode.EffectRuntimeUnsupportedBackend)
+
+        let driftedClrAssemblyIR =
+            workspace.ClrAssemblyIR
+            |> List.map (fun moduleDump ->
+                if moduleDump.Name = "main" then
+                    { moduleDump with
+                        Bindings =
+                            moduleDump.Bindings
+                            |> List.map (fun binding ->
+                                if binding.Name = "bad" then
+                                    { binding with Body = None }
+                                else
+                                    binding) }
+                else
+                    moduleDump)
+
+        let outputDirectory = createScratchDirectory "dotnet-effectful-missing-body"
+
+        match Backend.emitDotNetArtifact { workspace with ClrAssemblyIR = driftedClrAssemblyIR } "main.result" outputDirectory DotNetDeployment.Managed with
+        | Result.Ok artifact ->
+            failwithf "Expected effectful dotnet artifact emission to reject missing effectful bodies, but emitted '%s'." artifact.GeneratedFilePath
+        | Result.Error message ->
+            Assert.Equal(
+                "The CLR-backed dotnet profile could not lower 'main.result': The effectful CLR dotnet backend requires a body for 'main.bad'.",
+                message
+            )
+
+    [<Fact>]
     let ``clr assembly ir carries durable host dotnet binding metadata`` () =
         let workspace =
             compileInMemoryWorkspaceWithBackend
