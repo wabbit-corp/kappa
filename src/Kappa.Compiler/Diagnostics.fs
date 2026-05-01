@@ -867,6 +867,14 @@ type TargetCheckpointDiagnosticEvidence =
     | TargetCheckpointEmitterFailure of checkpoint: string * backendProfile: string * detail: string
     | UnknownTargetCheckpoint of checkpoint: string
 
+type CheckpointVerificationEvidence =
+    | DuplicateFileIdentity of checkpoint: string * filePath: string
+    | NonEmptyLineTableRequired of checkpoint: string * filePath: string
+    | EndOfFileTokenRequired of checkpoint: string * filePath: string
+    | ResolvedPhaseSetMismatch of checkpoint: string * filePath: string * expectedPhases: string list * actualPhases: string list
+    | OwnershipFactsExposedBeforeBodyResolve of checkpoint: string * filePath: string
+    | DuplicateModuleIdentity of checkpoint: string * moduleName: string
+
 type SurfaceRecordContext =
     | RecordTypeTelescope
     | RecordLiteralFields
@@ -1322,6 +1330,7 @@ type DiagnosticFact =
     | TypecheckingDiagnostic of TypecheckingDiagnosticEvidence
     | BackendDiagnostic of BackendDiagnosticEvidence
     | TargetCheckpointDiagnostic of TargetCheckpointDiagnosticEvidence
+    | CheckpointVerificationDiagnostic of CheckpointVerificationEvidence
     | SurfaceRecordDiagnostic of SurfaceRecordDiagnosticEvidence
     | SurfaceElaborationDiagnostic of SurfaceElaborationDiagnosticEvidence
     | ParserSyntaxDiagnostic of ParserSyntaxEvidence
@@ -1644,6 +1653,9 @@ module DiagnosticFact =
 
     let targetCheckpoint evidence =
         TargetCheckpointDiagnostic evidence
+
+    let checkpointVerification evidence =
+        CheckpointVerificationDiagnostic evidence
 
     let surfaceRecord evidence =
         SurfaceRecordDiagnostic evidence
@@ -2504,6 +2516,73 @@ module DiagnosticFact =
                         "target-checkpoint-diagnostic"
                         [ field "reason" (DiagnosticPayloadText "unknown-target-checkpoint")
                           field "checkpoint" (DiagnosticPayloadText checkpoint) ])
+        | CheckpointVerificationDiagnostic evidence ->
+            match evidence with
+            | DuplicateFileIdentity(checkpoint, filePath) ->
+                descriptor
+                    DiagnosticCode.CheckpointVerification
+                    None
+                    $"Checkpoint '{checkpoint}' requires unique file identities, but '{filePath}' appeared more than once."
+                    (payload
+                        "checkpoint-verification-diagnostic"
+                        [ field "reason" (DiagnosticPayloadText "duplicate-file-identity")
+                          field "checkpoint" (DiagnosticPayloadText checkpoint)
+                          field "file-path" (DiagnosticPayloadText filePath) ])
+            | NonEmptyLineTableRequired(checkpoint, filePath) ->
+                descriptor
+                    DiagnosticCode.CheckpointVerification
+                    None
+                    $"Checkpoint '{checkpoint}' requires non-empty line tables for '{filePath}'."
+                    (payload
+                        "checkpoint-verification-diagnostic"
+                        [ field "reason" (DiagnosticPayloadText "non-empty-line-table-required")
+                          field "checkpoint" (DiagnosticPayloadText checkpoint)
+                          field "file-path" (DiagnosticPayloadText filePath) ])
+            | EndOfFileTokenRequired(checkpoint, filePath) ->
+                descriptor
+                    DiagnosticCode.CheckpointVerification
+                    None
+                    $"Checkpoint '{checkpoint}' requires an EOF token for '{filePath}'."
+                    (payload
+                        "checkpoint-verification-diagnostic"
+                        [ field "reason" (DiagnosticPayloadText "end-of-file-token-required")
+                          field "checkpoint" (DiagnosticPayloadText checkpoint)
+                          field "file-path" (DiagnosticPayloadText filePath) ])
+            | ResolvedPhaseSetMismatch(checkpoint, filePath, expectedPhases, actualPhases) ->
+                let expectedText = String.concat ", " expectedPhases
+                let actualText = String.concat ", " actualPhases
+
+                descriptor
+                    DiagnosticCode.CheckpointVerification
+                    None
+                    $"Checkpoint '{checkpoint}' requires '{filePath}' to expose resolved phases [{expectedText}], but found [{actualText}]."
+                    (payload
+                        "checkpoint-verification-diagnostic"
+                        [ field "reason" (DiagnosticPayloadText "resolved-phase-set-mismatch")
+                          field "checkpoint" (DiagnosticPayloadText checkpoint)
+                          field "file-path" (DiagnosticPayloadText filePath)
+                          field "expected-phases" (DiagnosticPayloadTextList expectedPhases)
+                          field "actual-phases" (DiagnosticPayloadTextList actualPhases) ])
+            | OwnershipFactsExposedBeforeBodyResolve(checkpoint, filePath) ->
+                descriptor
+                    DiagnosticCode.CheckpointVerification
+                    None
+                    $"Checkpoint '{checkpoint}' must not expose BODY_RESOLVE ownership facts for '{filePath}' before BODY_RESOLVE."
+                    (payload
+                        "checkpoint-verification-diagnostic"
+                        [ field "reason" (DiagnosticPayloadText "ownership-facts-exposed-before-body-resolve")
+                          field "checkpoint" (DiagnosticPayloadText checkpoint)
+                          field "file-path" (DiagnosticPayloadText filePath) ])
+            | DuplicateModuleIdentity(checkpoint, moduleName) ->
+                descriptor
+                    DiagnosticCode.CheckpointVerification
+                    None
+                    $"Checkpoint '{checkpoint}' requires unique module identities, but '{moduleName}' appeared more than once."
+                    (payload
+                        "checkpoint-verification-diagnostic"
+                        [ field "reason" (DiagnosticPayloadText "duplicate-module-identity")
+                          field "checkpoint" (DiagnosticPayloadText checkpoint)
+                          field "module-name" (DiagnosticPayloadText moduleName) ])
         | SurfaceRecordDiagnostic evidence ->
             match evidence with
             | RecordFieldDeclaredMoreThanOnce fieldName ->

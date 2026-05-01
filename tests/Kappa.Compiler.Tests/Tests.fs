@@ -4438,6 +4438,93 @@ module SmokeTestsShard4 =
         Assert.Equal(Some "jvm.class", tryFindPayloadText "checkpoint" unknownTargetDiagnostic)
 
     [<Fact>]
+    let ``checkpoint verification diagnostics render from typed evidence`` () =
+        let bag = DiagnosticBag()
+        bag.AddError(DiagnosticFact.checkpointVerification (DuplicateFileIdentity("surface-source", "src/main.kp")))
+        bag.AddError(DiagnosticFact.checkpointVerification (NonEmptyLineTableRequired("surface-source", "src/empty.kp")))
+        bag.AddError(DiagnosticFact.checkpointVerification (EndOfFileTokenRequired("FIXITIES", "src/frontend.kp")))
+
+        bag.AddError(
+            DiagnosticFact.checkpointVerification (
+                ResolvedPhaseSetMismatch("BODY_RESOLVE", "src/phases.kp", [ "PARSE"; "FIXITIES"; "BODY_RESOLVE" ], [ "PARSE"; "FIXITIES" ])
+            )
+        )
+
+        bag.AddError(
+            DiagnosticFact.checkpointVerification (
+                OwnershipFactsExposedBeforeBodyResolve("IMPLICIT_SIGNATURES", "src/ownership.kp")
+            )
+        )
+
+        bag.AddError(DiagnosticFact.checkpointVerification (DuplicateModuleIdentity("KCore", "std.prelude")))
+
+        let diagnostics = bag.Items
+
+        let duplicateFileDiagnostic =
+            diagnostics
+            |> List.find (fun item ->
+                item.Code = DiagnosticCode.CheckpointVerification
+                && tryFindPayloadText "reason" item = Some "duplicate-file-identity")
+
+        let lineTableDiagnostic =
+            diagnostics
+            |> List.find (fun item ->
+                item.Code = DiagnosticCode.CheckpointVerification
+                && tryFindPayloadText "reason" item = Some "non-empty-line-table-required")
+
+        let eofDiagnostic =
+            diagnostics
+            |> List.find (fun item ->
+                item.Code = DiagnosticCode.CheckpointVerification
+                && tryFindPayloadText "reason" item = Some "end-of-file-token-required")
+
+        let phasesDiagnostic =
+            diagnostics
+            |> List.find (fun item ->
+                item.Code = DiagnosticCode.CheckpointVerification
+                && tryFindPayloadText "reason" item = Some "resolved-phase-set-mismatch")
+
+        let ownershipDiagnostic =
+            diagnostics
+            |> List.find (fun item ->
+                item.Code = DiagnosticCode.CheckpointVerification
+                && tryFindPayloadText "reason" item = Some "ownership-facts-exposed-before-body-resolve")
+
+        let duplicateModuleDiagnostic =
+            diagnostics
+            |> List.find (fun item ->
+                item.Code = DiagnosticCode.CheckpointVerification
+                && tryFindPayloadText "reason" item = Some "duplicate-module-identity")
+
+        Assert.Equal("checkpoint-verification-diagnostic", duplicateFileDiagnostic.Payload.Kind)
+        Assert.Equal(Some "surface-source", tryFindPayloadText "checkpoint" duplicateFileDiagnostic)
+        Assert.Equal(Some "src/main.kp", tryFindPayloadText "file-path" duplicateFileDiagnostic)
+
+        Assert.Equal("checkpoint-verification-diagnostic", lineTableDiagnostic.Payload.Kind)
+        Assert.Equal(Some "src/empty.kp", tryFindPayloadText "file-path" lineTableDiagnostic)
+
+        Assert.Equal("checkpoint-verification-diagnostic", eofDiagnostic.Payload.Kind)
+        Assert.Equal(Some "FIXITIES", tryFindPayloadText "checkpoint" eofDiagnostic)
+        Assert.Equal(Some "src/frontend.kp", tryFindPayloadText "file-path" eofDiagnostic)
+
+        Assert.Equal("checkpoint-verification-diagnostic", phasesDiagnostic.Payload.Kind)
+        Assert.Equal(Some "BODY_RESOLVE", tryFindPayloadText "checkpoint" phasesDiagnostic)
+        Assert.Equal(Some "src/phases.kp", tryFindPayloadText "file-path" phasesDiagnostic)
+        Assert.Equal(
+            Some [ "PARSE"; "FIXITIES"; "BODY_RESOLVE" ],
+            tryFindPayloadTextList "expected-phases" phasesDiagnostic
+        )
+        Assert.Equal(Some [ "PARSE"; "FIXITIES" ], tryFindPayloadTextList "actual-phases" phasesDiagnostic)
+
+        Assert.Equal("checkpoint-verification-diagnostic", ownershipDiagnostic.Payload.Kind)
+        Assert.Equal(Some "IMPLICIT_SIGNATURES", tryFindPayloadText "checkpoint" ownershipDiagnostic)
+        Assert.Equal(Some "src/ownership.kp", tryFindPayloadText "file-path" ownershipDiagnostic)
+
+        Assert.Equal("checkpoint-verification-diagnostic", duplicateModuleDiagnostic.Payload.Kind)
+        Assert.Equal(Some "KCore", tryFindPayloadText "checkpoint" duplicateModuleDiagnostic)
+        Assert.Equal(Some "std.prelude", tryFindPayloadText "module-name" duplicateModuleDiagnostic)
+
+    [<Fact>]
     let ``surface record diagnostics render from typed evidence`` () =
         let bag = DiagnosticBag()
         bag.AddError(DiagnosticFact.surfaceRecord (RecordFieldDeclaredMoreThanOnce "name"))

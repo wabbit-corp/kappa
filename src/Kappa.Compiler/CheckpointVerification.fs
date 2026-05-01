@@ -7,6 +7,9 @@ module CheckpointVerification =
     let private makeDiagnostic message =
         Diagnostics.errorFact "checkpoint-verification" None None [] (DiagnosticFact.simple SimpleDiagnosticKind.CheckpointVerification message)
 
+    let private makeStructuredDiagnostic evidence =
+        Diagnostics.errorFact "checkpoint-verification" None None [] (DiagnosticFact.checkpointVerification evidence)
+
     let private tokenName (token: Token) =
         match token.Kind with
         | Identifier
@@ -58,6 +61,13 @@ module CheckpointVerification =
             Location = location
             RelatedLocations = moduleOriginRelatedLocations documents moduleIdentity filePath }
 
+    let private makeStructuredModuleDiagnostic (documents: ParsedDocument list) moduleIdentity filePath evidence =
+        let location = fileOriginLocation documents filePath
+
+        { makeStructuredDiagnostic evidence with
+            Location = location
+            RelatedLocations = moduleOriginRelatedLocations documents moduleIdentity filePath }
+
     let private makeOriginDiagnostic (documents: ParsedDocument list) (origin: KCoreOrigin) message =
         let location =
             provenancePrimaryLocation documents origin
@@ -75,6 +85,15 @@ module CheckpointVerification =
                 RelatedLocations = tail |> List.map (relatedLocation role) }
         | [] ->
             makeDiagnostic message
+
+    let private makeStructuredDuplicateLocationDiagnostic evidence role locations =
+        match locations with
+        | head :: tail ->
+            { makeStructuredDiagnostic evidence with
+                Location = Some head
+                RelatedLocations = tail |> List.map (relatedLocation role) }
+        | [] ->
+            makeStructuredDiagnostic evidence
 
     let private tryParseTypeText text =
         let source = SourceText.From("__checkpoint_type__.kp", text)
@@ -115,19 +134,19 @@ module CheckpointVerification =
                     |> List.map (fun document -> document.Source.GetLocation(TextSpan.FromBounds(0, 0)))
 
                 yield
-                    makeDuplicateLocationDiagnostic
-                        $"Checkpoint 'surface-source' requires unique file identities, but '{filePath}' appeared more than once."
+                    makeStructuredDuplicateLocationDiagnostic
+                        (DuplicateFileIdentity("surface-source", filePath))
                         "also appears here"
                         locations
 
             for document in workspace.Documents do
                 if document.Source.LineCount <= 0 then
                     yield
-                        makeModuleDiagnostic
+                        makeStructuredModuleDiagnostic
                             workspace.Documents
                             (document.ModuleName |> ModuleIdentity.ofOptionalSegments)
                             document.Source.FilePath
-                            $"Checkpoint 'surface-source' requires non-empty line tables for '{document.Source.FilePath}'."
+                            (NonEmptyLineTableRequired("surface-source", document.Source.FilePath))
         ]
 
     let private frontendWorkspaceForPhase (workspace: WorkspaceCompilation) phase =
@@ -152,8 +171,8 @@ module CheckpointVerification =
                     |> List.choose (fun document -> fileOriginLocation workspace.Documents document.FilePath)
 
                 yield
-                    makeDuplicateLocationDiagnostic
-                        $"Checkpoint '{checkpoint}' requires unique file identities, but '{filePath}' appeared more than once."
+                    makeStructuredDuplicateLocationDiagnostic
+                        (DuplicateFileIdentity(checkpoint, filePath))
                         "also appears here"
                         locations
 
@@ -162,11 +181,11 @@ module CheckpointVerification =
                 | Some token when token.Kind = EndOfFile -> ()
                 | _ ->
                     yield
-                        makeModuleDiagnostic
+                        makeStructuredModuleDiagnostic
                             workspace.Documents
                             (document.ModuleIdentity |> ModuleIdentity.ofOptionalSegments)
                             document.FilePath
-                            $"Checkpoint '{checkpoint}' requires an EOF token for '{document.FilePath}'."
+                            (EndOfFileTokenRequired(checkpoint, document.FilePath))
 
                 let expectedPhase =
                     if KFrontIRPhase.ordinal phase < KFrontIRPhase.ordinal BODY_RESOLVE then
@@ -180,35 +199,30 @@ module CheckpointVerification =
                     KFrontIRPhase.phasesThrough expectedPhase |> Set.ofList
 
                 if document.ResolvedPhases <> expectedResolvedPhases then
-                    let actual =
-                        document.ResolvedPhases
-                        |> Set.toList
-                        |> List.map KFrontIRPhase.phaseName
-                        |> String.concat ", "
-
-                    let expected =
-                        expectedResolvedPhases
-                        |> Set.toList
-                        |> List.map KFrontIRPhase.phaseName
-                        |> String.concat ", "
-
                     yield
-                        makeModuleDiagnostic
+                        makeStructuredModuleDiagnostic
                             workspace.Documents
                             (document.ModuleIdentity |> ModuleIdentity.ofOptionalSegments)
                             document.FilePath
-                            $"Checkpoint '{checkpoint}' requires '{document.FilePath}' to expose resolved phases [{expected}], but found [{actual}]."
+                            (
+                                ResolvedPhaseSetMismatch(
+                                    checkpoint,
+                                    document.FilePath,
+                                    expectedResolvedPhases |> Set.toList |> List.map KFrontIRPhase.phaseName,
+                                    document.ResolvedPhases |> Set.toList |> List.map KFrontIRPhase.phaseName
+                                )
+                            )
 
                 if
                     KFrontIRPhase.ordinal phase < KFrontIRPhase.ordinal BODY_RESOLVE
                     && document.Ownership.IsSome
                 then
                     yield
-                        makeModuleDiagnostic
+                        makeStructuredModuleDiagnostic
                             workspace.Documents
                             (document.ModuleIdentity |> ModuleIdentity.ofOptionalSegments)
                             document.FilePath
-                            $"Checkpoint '{checkpoint}' must not expose BODY_RESOLVE ownership facts for '{document.FilePath}' before BODY_RESOLVE."
+                            (OwnershipFactsExposedBeforeBodyResolve(checkpoint, document.FilePath))
         ]
 
     let private verifyKCoreCheckpoint (workspace: WorkspaceCompilation) =
@@ -227,8 +241,8 @@ module CheckpointVerification =
                     |> List.choose (fun moduleDump -> fileOriginLocation workspace.Documents moduleDump.SourceFile)
 
                 yield
-                    makeDuplicateLocationDiagnostic
-                        $"Checkpoint 'KCore' requires unique module identities, but '{moduleName}' appeared more than once."
+                    makeStructuredDuplicateLocationDiagnostic
+                        (DuplicateModuleIdentity("KCore", moduleName))
                         "also appears here"
                         locations
         ]
