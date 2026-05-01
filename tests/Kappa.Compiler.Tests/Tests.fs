@@ -3073,6 +3073,34 @@ module SmokeTestsShard3 =
         Assert.Equal("surface-elaboration-diagnostic", diagnostic.Payload.Kind)
         Assert.Equal(Some "Int", tryFindPayloadText "actual-type-text" diagnostic)
 
+    [<Fact>]
+    let ``source compilation reports do bind carrier payloads`` () =
+        let workspace =
+            compileInMemoryWorkspace
+                "memory-do-bind-carrier-root"
+                [
+                    "main.kp",
+                    [
+                        "module main"
+                        "main : IO Int"
+                        "let main = do"
+                        "    value <- 1"
+                        "    pure value"
+                    ]
+                    |> String.concat "\n"
+                ]
+
+        Assert.True(workspace.HasErrors, "Expected do bindings over non-carrier values to be rejected.")
+
+        let diagnostic =
+            workspace.Diagnostics
+            |> List.find (fun item ->
+                item.Code = DiagnosticCode.TypeEqualityMismatch
+                && tryFindPayloadText "reason" item = Some "do-bind-requires-bindable-carrier")
+
+        Assert.Equal("surface-elaboration-diagnostic", diagnostic.Payload.Kind)
+        Assert.Equal(Some "Int", tryFindPayloadText "source-type-text" diagnostic)
+
 
     [<Fact>]
     let ``lexer reports malformed prefixed numeric literals directly`` () =
@@ -4097,6 +4125,7 @@ module SmokeTestsShard4 =
         bag.AddError(DiagnosticFact.surfaceElaboration (QuoteSpliceRequiresSyntax "Int"))
         bag.AddError(DiagnosticFact.surfaceElaboration QuoteSpliceRequiresSyntaxNotElabSyntax)
         bag.AddError(DiagnosticFact.surfaceElaboration (TopLevelSpliceRequiresSyntaxOrElabSyntax "Int"))
+        bag.AddError(DiagnosticFact.surfaceElaboration (DoBindRequiresBindableCarrier "Int"))
         bag.AddError(DiagnosticFact.surfaceElaboration (TraitConstraintUnresolved "Eq Int"))
         bag.AddError(DiagnosticFact.surfaceElaboration (ImplicitTraitConstraintUnresolved "Show Int"))
         bag.AddError(DiagnosticFact.surfaceElaboration (TraitConstraintAmbiguous("Score Int", [ "left.ScoreInt"; "right.ScoreInt" ])))
@@ -4366,6 +4395,12 @@ module SmokeTestsShard4 =
                 item.Code = DiagnosticCode.TypeEqualityMismatch
                 && tryFindPayloadText "reason" item = Some "top-level-splice-requires-syntax-or-elab-syntax")
 
+        let doBindCarrierDiagnostic =
+            diagnostics
+            |> List.find (fun item ->
+                item.Code = DiagnosticCode.TypeEqualityMismatch
+                && tryFindPayloadText "reason" item = Some "do-bind-requires-bindable-carrier")
+
         let unresolvedConstraintDiagnostic =
             diagnostics
             |> List.find (fun item ->
@@ -4526,6 +4561,7 @@ module SmokeTestsShard4 =
             quoteSpliceElabSyntaxDiagnostic.Message
         )
         Assert.Equal(Some "Int", tryFindPayloadText "actual-type-text" topLevelSpliceDiagnostic)
+        Assert.Equal(Some "Int", tryFindPayloadText "source-type-text" doBindCarrierDiagnostic)
         Assert.Equal("Trait constraint 'Eq Int' could not be resolved.", unresolvedConstraintDiagnostic.Message)
         Assert.Equal("Implicit trait constraint 'Show Int' could not be resolved.", unresolvedImplicitConstraintDiagnostic.Message)
         Assert.Equal(Some "Score Int", tryFindPayloadText "constraint-text" ambiguousConstraintDiagnostic)

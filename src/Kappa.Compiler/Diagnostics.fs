@@ -902,6 +902,7 @@ type SurfaceElaborationDiagnosticEvidence =
     | QuoteSpliceRequiresSyntax of actualTypeText: string
     | QuoteSpliceRequiresSyntaxNotElabSyntax
     | TopLevelSpliceRequiresSyntaxOrElabSyntax of actualTypeText: string
+    | DoBindRequiresBindableCarrier of sourceTypeText: string
     | TraitConstraintUnresolved of constraintText: string
     | ImplicitTraitConstraintUnresolved of constraintText: string
     | TraitConstraintAmbiguous of constraintText: string * candidateTexts: string list
@@ -2825,6 +2826,15 @@ module DiagnosticFact =
                         "surface-elaboration-diagnostic"
                         [ field "reason" (DiagnosticPayloadText "top-level-splice-requires-syntax-or-elab-syntax")
                           field "actual-type-text" (DiagnosticPayloadText actualTypeText) ])
+            | DoBindRequiresBindableCarrier sourceTypeText ->
+                descriptor
+                    DiagnosticCode.TypeEqualityMismatch
+                    None
+                    $"A '<-' do binding requires a bindable carrier value, but found '{sourceTypeText}'."
+                    (payload
+                        "surface-elaboration-diagnostic"
+                        [ field "reason" (DiagnosticPayloadText "do-bind-requires-bindable-carrier")
+                          field "source-type-text" (DiagnosticPayloadText sourceTypeText) ])
             | TraitConstraintUnresolved constraintText ->
                 descriptor
                     DiagnosticCode.TypeEqualityMismatch

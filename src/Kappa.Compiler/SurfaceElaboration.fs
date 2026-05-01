@@ -16038,11 +16038,8 @@ module SurfaceElaboration =
                         let bindDiagnostics =
                             match fallbackSourceType with
                             | Some sourceType when tryUnwrapBindablePayloadType environment.VisibleTypeAliases sourceType |> Option.isNone ->
-                                [
-                                    makeDiagnostic
-                                        SimpleDiagnosticKind.TypeEqualityMismatch
-                                        $"A '<-' do binding requires a bindable carrier value, but found '{TypeSignatures.toText sourceType}'."
-                                ]
+                                [ makeSurfaceElaborationDiagnostic
+                                    (DoBindRequiresBindableCarrier(TypeSignatures.toText sourceType)) ]
                             | _ ->
                                 []
 
@@ -19693,11 +19690,8 @@ module SurfaceElaboration =
                     let bindSourceDiagnostics =
                         match inferValidationExpressionType aliasAwareEnvironment freshCounter locals expression with
                         | Some sourceType when tryUnwrapBindablePayloadType environment.VisibleTypeAliases sourceType |> Option.isNone ->
-                            [
-                                makeDiagnostic
-                                    SimpleDiagnosticKind.TypeEqualityMismatch
-                                    $"A '<-' do binding requires a bindable carrier value, but found '{TypeSignatures.toText sourceType}'."
-                            ]
+                            [ makeSurfaceElaborationDiagnostic
+                                (DoBindRequiresBindableCarrier(TypeSignatures.toText sourceType)) ]
                         | _ ->
                             []
 
