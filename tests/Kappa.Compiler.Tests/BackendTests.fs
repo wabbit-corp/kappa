@@ -943,6 +943,159 @@ module BackendTestsShard4 =
             )
 
     [<Fact>]
+    let ``dotnet backend reports structured declared type resolution failures`` () =
+        let workspace =
+            compileInMemoryWorkspaceWithBackend
+                "memory-dotnet-declared-type-resolution-root"
+                "dotnet"
+                [
+                    "main.kp",
+                    [
+                        "module main"
+                        "helper : Int -> Int"
+                        "let helper x = x"
+                        "let result = helper 1"
+                    ]
+                    |> String.concat "\n"
+                ]
+
+        Assert.False(workspace.HasErrors, sprintf "Expected no frontend diagnostics, got %A" workspace.Diagnostics)
+
+        let driftedClrAssemblyIR =
+            workspace.ClrAssemblyIR
+            |> List.map (fun moduleDump ->
+                if moduleDump.Name = "main" then
+                    { moduleDump with
+                        Bindings =
+                            moduleDump.Bindings
+                            |> List.map (fun binding ->
+                                if binding.Name = "helper" then
+                                    { binding with ReturnTypeText = Some "Missing" }
+                                else
+                                    binding) }
+                else
+                    moduleDump)
+
+        let outputDirectory = createScratchDirectory "dotnet-declared-type-resolution"
+
+        match Backend.emitDotNetArtifact { workspace with ClrAssemblyIR = driftedClrAssemblyIR } "main.result" outputDirectory DotNetDeployment.Managed with
+        | Result.Ok artifact ->
+            failwithf "Expected dotnet artifact emission to reject unresolved declared types, but emitted '%s'." artifact.GeneratedFilePath
+        | Result.Error message ->
+            Assert.Equal(
+                "The CLR-backed dotnet profile could not lower 'main.result': The CLR dotnet backend could not resolve type 'Missing'.",
+                message
+            )
+
+    [<Fact>]
+    let ``dotnet backend reports structured binding arity failures`` () =
+        let workspace =
+            compileInMemoryWorkspaceWithBackend
+                "memory-dotnet-binding-arity-root"
+                "dotnet"
+                [
+                    "main.kp",
+                    [
+                        "module main"
+                        "helper : Int -> Int"
+                        "let helper x = x"
+                        "let result = helper 1"
+                    ]
+                    |> String.concat "\n"
+                ]
+
+        Assert.False(workspace.HasErrors, sprintf "Expected no frontend diagnostics, got %A" workspace.Diagnostics)
+
+        let malformedBody =
+            KRuntimeApply(
+                KRuntimeName [ "helper" ],
+                [
+                    KRuntimeLiteral(LiteralValue.Integer 1L)
+                    KRuntimeLiteral(LiteralValue.Integer 2L)
+                ]
+            )
+
+        let driftedClrAssemblyIR =
+            workspace.ClrAssemblyIR
+            |> List.map (fun moduleDump ->
+                if moduleDump.Name = "main" then
+                    { moduleDump with
+                        Bindings =
+                            moduleDump.Bindings
+                            |> List.map (fun binding ->
+                                if binding.Name = "result" then
+                                    { binding with Body = Some malformedBody }
+                                else
+                                    binding) }
+                else
+                    moduleDump)
+
+        let outputDirectory = createScratchDirectory "dotnet-binding-arity"
+
+        match Backend.emitDotNetArtifact { workspace with ClrAssemblyIR = driftedClrAssemblyIR } "main.result" outputDirectory DotNetDeployment.Managed with
+        | Result.Ok artifact ->
+            failwithf "Expected dotnet artifact emission to reject binding arity mismatches, but emitted '%s'." artifact.GeneratedFilePath
+        | Result.Error message ->
+            Assert.Equal(
+                "The CLR-backed dotnet profile could not lower 'main.result': The CLR dotnet backend expected 'helper' to receive 1 argument(s), but received 2.",
+                message
+            )
+
+    [<Fact>]
+    let ``dotnet backend reports structured constructor arity failures`` () =
+        let workspace =
+            compileInMemoryWorkspaceWithBackend
+                "memory-dotnet-constructor-arity-root"
+                "dotnet"
+                [
+                    "main.kp",
+                    [
+                        "module main"
+                        "data Box : Type ="
+                        "    Box Int"
+                        "let result = Box 1"
+                    ]
+                    |> String.concat "\n"
+                ]
+
+        Assert.False(workspace.HasErrors, sprintf "Expected no frontend diagnostics, got %A" workspace.Diagnostics)
+
+        let malformedBody =
+            KRuntimeApply(
+                KRuntimeName [ "Box" ],
+                [
+                    KRuntimeLiteral(LiteralValue.Integer 1L)
+                    KRuntimeLiteral(LiteralValue.Integer 2L)
+                ]
+            )
+
+        let driftedClrAssemblyIR =
+            workspace.ClrAssemblyIR
+            |> List.map (fun moduleDump ->
+                if moduleDump.Name = "main" then
+                    { moduleDump with
+                        Bindings =
+                            moduleDump.Bindings
+                            |> List.map (fun binding ->
+                                if binding.Name = "result" then
+                                    { binding with Body = Some malformedBody }
+                                else
+                                    binding) }
+                else
+                    moduleDump)
+
+        let outputDirectory = createScratchDirectory "dotnet-constructor-arity"
+
+        match Backend.emitDotNetArtifact { workspace with ClrAssemblyIR = driftedClrAssemblyIR } "main.result" outputDirectory DotNetDeployment.Managed with
+        | Result.Ok artifact ->
+            failwithf "Expected dotnet artifact emission to reject constructor arity mismatches, but emitted '%s'." artifact.GeneratedFilePath
+        | Result.Error message ->
+            Assert.Equal(
+                "The CLR-backed dotnet profile could not lower 'main.result': The CLR dotnet backend expected constructor 'Box' to receive 1 argument(s), but received 2.",
+                message
+            )
+
+    [<Fact>]
     let ``dotnet backend reports structured constructor pattern resolution failures`` () =
         let workspace =
             compileInMemoryWorkspaceWithBackend

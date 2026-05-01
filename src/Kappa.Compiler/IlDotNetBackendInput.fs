@@ -386,7 +386,10 @@ module internal IlDotNetBackendInput =
                     | Some primitiveType -> Result.Ok primitiveType
                     | None -> Result.Ok(IlNamed(identity, []))
                 | None ->
-                    Result.Error $"IL backend could not resolve type '{name}'."
+                    Result.Error(
+                        DiagnosticFact.ClrBackendEmitterError.message
+                            (ClrTypeResolutionFailed name)
+                    )
         | _ ->
             match tryResolveQualifiedTypeName rawModules segments with
             | Some identity ->
@@ -395,7 +398,10 @@ module internal IlDotNetBackendInput =
                 | None -> Result.Ok(IlNamed(identity, []))
             | None ->
                 let typeName = String.concat "." segments
-                Result.Error $"IL backend could not resolve type '{typeName}'."
+                Result.Error(
+                    DiagnosticFact.ClrBackendEmitterError.message
+                        (ClrTypeResolutionFailed typeName)
+                )
 
     let internal parseType (rawModules: Map<string, RawModuleInfo>) currentModule typeParameters (tokens: Token list) =
         let significant = significantTokens tokens
@@ -993,8 +999,14 @@ module internal IlDotNetBackendInput =
         let argumentTemplates = constructorInfo.FieldTypes
 
         if List.length argumentTemplates <> List.length expressionArguments then
-            Result.Error
-                $"IL backend expected constructor '{DeclarationIdentity.name constructorInfo.Identity}' to receive {List.length argumentTemplates} argument(s), but received {List.length expressionArguments}."
+            Result.Error(
+                DiagnosticFact.ClrBackendEmitterError.message
+                    (ClrConstructorArityMismatch(
+                        DeclarationIdentity.name constructorInfo.Identity,
+                        List.length argumentTemplates,
+                        List.length expressionArguments
+                    ))
+            )
         else
             List.zip expressionArguments argumentTemplates
             |> List.fold
@@ -1045,8 +1057,14 @@ module internal IlDotNetBackendInput =
                 Result.Ok Map.empty
 
         if List.length bindingInfo.ParameterTypes <> List.length expressionArguments then
-            Result.Error
-                $"IL backend expected '{bindingInfo.Binding.Name}' to receive {List.length bindingInfo.ParameterTypes} argument(s), but received {List.length expressionArguments}."
+            Result.Error(
+                DiagnosticFact.ClrBackendEmitterError.message
+                    (ClrBindingArityMismatch(
+                        bindingInfo.Binding.Name,
+                        List.length bindingInfo.ParameterTypes,
+                        List.length expressionArguments
+                    ))
+            )
         else
             List.zip expressionArguments bindingInfo.ParameterTypes
             |> List.fold

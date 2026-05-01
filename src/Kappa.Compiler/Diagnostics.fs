@@ -871,6 +871,8 @@ type ClrBackendEmitterErrorEvidence =
     | ClrBindingDeclaredParameterCountMismatch of moduleName: string * bindingName: string * expectedArity: int * actualArity: int
     | ClrBodylessParameterizedBindingRequiresExplicitReturnType of moduleName: string * bindingName: string
     | ClrBindingReturnTypeMismatch of moduleName: string * bindingName: string * expectedTypeText: string * actualTypeText: string
+    | ClrTypeResolutionFailed of typeText: string
+    | ClrBindingArityMismatch of bindingName: string * expectedArity: int * actualArity: int
     | ClrPatternLiteralTypeMismatch of literalTypeText: string * expectedTypeText: string
     | ClrExpressionTypeMismatch of expectedTypeText: string * actualTypeText: string
     | ClrOrPatternAlternativesBindDifferentNames
@@ -1818,6 +1820,10 @@ module DiagnosticFact =
                 $"The CLR dotnet backend requires an explicit return type for bodyless binding '{moduleName}.{bindingName}'."
             | ClrBindingReturnTypeMismatch(moduleName, bindingName, expectedTypeText, actualTypeText) ->
                 $"The CLR dotnet backend expected '{moduleName}.{bindingName}' to return {expectedTypeText}, but the body returns {actualTypeText}."
+            | ClrTypeResolutionFailed typeText ->
+                $"The CLR dotnet backend could not resolve type '{typeText}'."
+            | ClrBindingArityMismatch(bindingName, expectedArity, actualArity) ->
+                $"The CLR dotnet backend expected '{bindingName}' to receive {expectedArity} argument(s), but received {actualArity}."
             | ClrPatternLiteralTypeMismatch(literalTypeText, expectedTypeText) ->
                 $"The CLR dotnet backend cannot match literal of type {literalTypeText} against {expectedTypeText}."
             | ClrExpressionTypeMismatch(expectedTypeText, actualTypeText) ->
