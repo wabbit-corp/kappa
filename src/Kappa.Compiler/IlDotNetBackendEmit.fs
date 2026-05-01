@@ -445,8 +445,10 @@ module internal IlDotNetBackendEmit =
                                 match tryDefaultFileType state.Environment.Modules currentModule with
                                 | Some fileType -> ensureExpected fileType
                                 | None ->
-                                    Result.Error
-                                        "IL backend intrinsic 'openFile' requires a File data type in the current module when no expected type is available."
+                                    Result.Error(
+                                        DiagnosticFact.ClrBackendEmitterError.message
+                                            ClrOpenFileRequiresCurrentModuleFileType
+                                    )
                             | _ ->
                                 match intrinsicParameterTypes name argumentTypes with
                                     | Some(_, resultType) ->
@@ -1023,19 +1025,25 @@ module internal IlDotNetBackendEmit =
                     match state.Environment.DataTypes |> Map.tryFind (moduleName, typeName) with
                     | None ->
                         return!
-                            Result.Error
-                                $"IL backend intrinsic 'openFile' expected a concrete File-like ADT result, but got {formatIlType resultType}."
+                            Result.Error(
+                                DiagnosticFact.ClrBackendEmitterError.message
+                                    (ClrOpenFileResultTypeNotFileLike(formatIlType resultType))
+                            )
                     | Some dataType ->
                         match dataType.Constructors |> Map.tryFind "Handle" with
                         | None ->
                             return!
-                                Result.Error
-                                    $"IL backend intrinsic 'openFile' expected '{formatIlType resultType}' to expose a 'Handle' constructor."
+                                Result.Error(
+                                    DiagnosticFact.ClrBackendEmitterError.message
+                                        (ClrOpenFileHandleConstructorMissing(formatIlType resultType))
+                                )
                         | Some constructorInfo ->
                             if List.length constructorInfo.FieldTypes <> 1 then
                                 return!
-                                    Result.Error
-                                        $"IL backend intrinsic 'openFile' expected constructor '{moduleName}.{constructorInfo.Name}' to take one Int field."
+                                    Result.Error(
+                                        DiagnosticFact.ClrBackendEmitterError.message
+                                            (ClrOpenFileHandleConstructorArityMismatch(moduleName, constructorInfo.Name))
+                                    )
                             else
                                 let substitution =
                                     if List.length constructorInfo.TypeParameters = List.length typeArguments then
@@ -1047,16 +1055,20 @@ module internal IlDotNetBackendEmit =
 
                                 if fieldType <> IlPrimitive IlInt64 then
                                     return!
-                                        Result.Error
-                                            $"IL backend intrinsic 'openFile' expected constructor '{moduleName}.{constructorInfo.Name}' to take Int, but got {formatIlType fieldType}."
+                                        Result.Error(
+                                            DiagnosticFact.ClrBackendEmitterError.message
+                                                (ClrOpenFileHandleFieldTypeMismatch(moduleName, constructorInfo.Name, formatIlType fieldType))
+                                        )
 
                                 let _, constructor, _ = resolveConstructorTypeAndMembers state typeParameters substitution constructorInfo
                                 il.Emit(OpCodes.Ldc_I8, 1L)
                                 il.Emit(OpCodes.Newobj, constructor)
                 | _ ->
                     return!
-                        Result.Error
-                            $"IL backend intrinsic 'openFile' expected a concrete File-like ADT result, but got {formatIlType resultType}."
+                        Result.Error(
+                            DiagnosticFact.ClrBackendEmitterError.message
+                                (ClrOpenFileResultTypeNotFileLike(formatIlType resultType))
+                        )
             }
 
         let emitIntrinsicCall name arguments =

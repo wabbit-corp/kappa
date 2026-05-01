@@ -875,6 +875,11 @@ type ClrBackendEmitterErrorEvidence =
     | ClrTraitInstanceResolutionFailed of moduleName: string * traitName: string * instanceKey: string
     | ClrTraitCallRoutesMissing of traitName: string * memberName: string
     | ClrHostBindingMetadataResolutionFailed of moduleName: string * bindingName: string
+    | ClrOpenFileRequiresCurrentModuleFileType
+    | ClrOpenFileResultTypeNotFileLike of resultTypeText: string
+    | ClrOpenFileHandleConstructorMissing of resultTypeText: string
+    | ClrOpenFileHandleConstructorArityMismatch of moduleName: string * constructorName: string
+    | ClrOpenFileHandleFieldTypeMismatch of moduleName: string * constructorName: string * actualFieldTypeText: string
     | UnaryOperatorUnsupported of operatorName: string
     | UnaryOperatorOperandTypeUnsupported of operatorName: string * operandTypeText: string
     | BinaryOperatorUnsupported of operatorName: string * leftTypeText: string * rightTypeText: string
@@ -1802,6 +1807,16 @@ module DiagnosticFact =
                 $"The CLR dotnet backend could not find any routes for trait call '{traitName}.{memberName}'."
             | ClrHostBindingMetadataResolutionFailed(moduleName, bindingName) ->
                 $"The CLR dotnet backend could not resolve durable host binding metadata for '{moduleName}.{bindingName}'."
+            | ClrOpenFileRequiresCurrentModuleFileType ->
+                "The CLR dotnet backend intrinsic 'openFile' requires a File data type in the current module when no expected type is available."
+            | ClrOpenFileResultTypeNotFileLike resultTypeText ->
+                $"The CLR dotnet backend intrinsic 'openFile' expected a concrete File-like ADT result, but got {resultTypeText}."
+            | ClrOpenFileHandleConstructorMissing resultTypeText ->
+                $"The CLR dotnet backend intrinsic 'openFile' expected '{resultTypeText}' to expose a 'Handle' constructor."
+            | ClrOpenFileHandleConstructorArityMismatch(moduleName, constructorName) ->
+                $"The CLR dotnet backend intrinsic 'openFile' expected constructor '{moduleName}.{constructorName}' to take one Int field."
+            | ClrOpenFileHandleFieldTypeMismatch(moduleName, constructorName, actualFieldTypeText) ->
+                $"The CLR dotnet backend intrinsic 'openFile' expected constructor '{moduleName}.{constructorName}' to take Int, but got {actualFieldTypeText}."
             | UnaryOperatorUnsupported operatorName ->
                 $"The CLR dotnet backend does not yet support unary operator '{operatorName}'."
             | UnaryOperatorOperandTypeUnsupported(operatorName, operandTypeText) ->

@@ -1063,6 +1063,107 @@ module BackendTestsShard4 =
             )
 
     [<Fact>]
+    let ``dotnet backend reports structured openFile missing default file type failures`` () =
+        let workspace =
+            compileInMemoryWorkspaceWithBackend
+                "memory-dotnet-openfile-default-file-root"
+                "dotnet"
+                [
+                    "main.kp",
+                    [
+                        "module main"
+                        "let result = 0"
+                    ]
+                    |> String.concat "\n"
+                ]
+
+        Assert.False(workspace.HasErrors, sprintf "Expected no frontend diagnostics, got %A" workspace.Diagnostics)
+
+        let driftedClrAssemblyIR =
+            workspace.ClrAssemblyIR
+            |> List.map (fun moduleDump ->
+                if moduleDump.Name = "main" then
+                    { moduleDump with
+                        Bindings =
+                            moduleDump.Bindings
+                            |> List.map (fun binding ->
+                                if binding.Name = "result" then
+                                    { binding with
+                                        Body =
+                                            Some(
+                                                KRuntimeApply(
+                                                    KRuntimeName [ "openFile" ],
+                                                    [ KRuntimeLiteral(LiteralValue.String "data.txt") ]
+                                                )
+                                            ) }
+                                else
+                                    binding) }
+                else
+                    moduleDump)
+
+        let outputDirectory = createScratchDirectory "dotnet-openfile-default-file"
+
+        match Backend.emitDotNetArtifact { workspace with ClrAssemblyIR = driftedClrAssemblyIR } "main.result" outputDirectory DotNetDeployment.Managed with
+        | Result.Ok artifact ->
+            failwithf "Expected dotnet artifact emission to reject openFile without a File result type, but emitted '%s'." artifact.GeneratedFilePath
+        | Result.Error message ->
+            Assert.Equal(
+                "The CLR-backed dotnet profile could not lower 'main.result': The CLR dotnet backend intrinsic 'openFile' requires a File data type in the current module when no expected type is available.",
+                message
+            )
+
+    [<Fact>]
+    let ``dotnet backend reports structured openFile result type failures`` () =
+        let workspace =
+            compileInMemoryWorkspaceWithBackend
+                "memory-dotnet-openfile-result-type-root"
+                "dotnet"
+                [
+                    "main.kp",
+                    [
+                        "module main"
+                        "result : Int"
+                        "let result = 0"
+                    ]
+                    |> String.concat "\n"
+                ]
+
+        Assert.False(workspace.HasErrors, sprintf "Expected no frontend diagnostics, got %A" workspace.Diagnostics)
+
+        let driftedClrAssemblyIR =
+            workspace.ClrAssemblyIR
+            |> List.map (fun moduleDump ->
+                if moduleDump.Name = "main" then
+                    { moduleDump with
+                        Bindings =
+                            moduleDump.Bindings
+                            |> List.map (fun binding ->
+                                if binding.Name = "result" then
+                                    { binding with
+                                        Body =
+                                            Some(
+                                                KRuntimeApply(
+                                                    KRuntimeName [ "openFile" ],
+                                                    [ KRuntimeLiteral(LiteralValue.String "data.txt") ]
+                                                )
+                                            ) }
+                                else
+                                    binding) }
+                else
+                    moduleDump)
+
+        let outputDirectory = createScratchDirectory "dotnet-openfile-result-type"
+
+        match Backend.emitDotNetArtifact { workspace with ClrAssemblyIR = driftedClrAssemblyIR } "main.result" outputDirectory DotNetDeployment.Managed with
+        | Result.Ok artifact ->
+            failwithf "Expected dotnet artifact emission to reject openFile with a non-File result type, but emitted '%s'." artifact.GeneratedFilePath
+        | Result.Error message ->
+            Assert.Equal(
+                "The CLR-backed dotnet profile could not lower 'main.result': The CLR dotnet backend intrinsic 'openFile' expected a concrete File-like ADT result, but got Int.",
+                message
+            )
+
+    [<Fact>]
     let ``clr assembly ir carries durable host dotnet binding metadata`` () =
         let workspace =
             compileInMemoryWorkspaceWithBackend

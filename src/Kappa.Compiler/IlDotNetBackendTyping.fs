@@ -575,8 +575,10 @@ module internal IlDotNetBackendTyping =
                                     match tryDefaultFileType rawModules currentModule with
                                     | Some fileType -> ensureExpected fileType
                                     | None ->
-                                        Result.Error
-                                            "IL backend intrinsic 'openFile' requires a File data type in the current module when no expected type is available."
+                                        Result.Error(
+                                            DiagnosticFact.ClrBackendEmitterError.message
+                                                ClrOpenFileRequiresCurrentModuleFileType
+                                        )
                                 | _ ->
                                     match intrinsicParameterTypes name argumentTypes with
                                     | Some(_, resultType) ->
