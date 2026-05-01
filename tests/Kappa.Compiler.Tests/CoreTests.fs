@@ -564,6 +564,45 @@ module CoreTestsShard0 =
 
 
     [<Fact>]
+    let ``compiler rejects a binding group that exposes both a term and a module in term position`` () =
+        let valuesSource =
+            [
+                "module values"
+                "let target = 1"
+            ]
+            |> String.concat "\n"
+
+        let containerSource =
+            [
+                "module container"
+                "let payload = 2"
+            ]
+            |> String.concat "\n"
+
+        let mainSource =
+            [
+                "module main"
+                "import values.(target as item)"
+                "import container as item"
+                "let result = item"
+            ]
+            |> String.concat "\n"
+
+        let workspace =
+            compileInMemoryWorkspace
+                "memory-binding-group-term-module-root"
+                [
+                    "values.kp", valuesSource
+                    "container.kp", containerSource
+                    "main.kp", mainSource
+                ]
+
+        Assert.True(workspace.HasErrors, "Expected the mixed term/module binding group to be ambiguous in term position.")
+        Assert.Contains(workspace.Diagnostics, fun diagnostic -> diagnostic.Code = DiagnosticCode.NameAmbiguous)
+        Assert.Contains(workspace.Diagnostics, fun diagnostic -> diagnostic.Message.Contains("item", StringComparison.Ordinal))
+
+
+    [<Fact>]
     let ``compilation rejects refl when function type equality changes binder quantity`` () =
         let mainSource =
             [

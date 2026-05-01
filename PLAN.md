@@ -46,6 +46,7 @@ Current M4 status note: started, not complete. The compiler now has a real effec
 
 - [ ] Introduce declaration-level and semantic-object identities beyond `ModuleIdentity`, so resolved declarations, constructors, traits, effect labels, projections, and reified static objects stop falling back to plain `string`.
 - [ ] Replace visible-name environments that collapse declaration kinds into plain `Map<string, ...>` lookup with an explicit binding-group model matching section 2.8.
+  Ordinary term lookup and ambiguity now route through `VisibleOrdinaryGroups`, but type/trait/static-object environments and many dotted/member-resolution paths still read the old split maps directly.
 - [ ] Rework same-spelling data-family handling so it is represented as one binding group with typed facets instead of separate text-keyed maps plus special cases.
 - [ ] Finish the provenance/ownership conversion so `KCoreOrigin`, `KCoreModule`, runtime lowering, dumps, and verification carry structured semantic identity end-to-end rather than rendered text.
 - [ ] Replace text-based post-resolution lookup in lowering and backend preparation with resolved symbolic references.

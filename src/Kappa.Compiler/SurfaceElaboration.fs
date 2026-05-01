@@ -110,6 +110,12 @@ module SurfaceElaboration =
           ModuleIdentity: ModuleIdentity option
           AmbiguousCandidates: OrdinaryVisibleTermCandidate list }
 
+    type private VisibleOrdinaryTermResolution =
+        | VisibleOrdinaryBinding of BindingSchemeInfo
+        | VisibleOrdinaryConstructor of BindingSchemeInfo
+        | VisibleOrdinaryModule of ModuleIdentity
+        | VisibleOrdinaryAmbiguous of OrdinaryVisibleTermCandidate list
+
     let private renderOrdinaryVisibleTermCandidate candidate =
         match candidate with
         | OrdinaryVisibleBindingCandidate(_, info) when info.IsPattern ->
@@ -130,6 +136,35 @@ module SurfaceElaboration =
             |> String.concat ", "
 
         $"Name '{name}' is ambiguous between {candidateText}. Use an explicit import item, module alias, or qualification."
+
+    let private directVisibleOrdinaryTermCandidates (group: VisibleOrdinaryTermGroup) =
+        [
+            match group.Binding with
+            | Some info -> OrdinaryVisibleBindingCandidate(WildcardImportedItem, info)
+            | None -> ()
+
+            match group.Constructor with
+            | Some info -> OrdinaryVisibleConstructorCandidate(WildcardImportedItem, info)
+            | None -> ()
+
+            match group.ModuleIdentity with
+            | Some moduleIdentity -> OrdinaryVisibleModuleCandidate(WildcardImportedItem, moduleIdentity)
+            | None -> ()
+        ]
+
+    let private visibleOrdinaryTermCandidates (group: VisibleOrdinaryTermGroup) =
+        if List.isEmpty group.AmbiguousCandidates then
+            directVisibleOrdinaryTermCandidates group
+        else
+            group.AmbiguousCandidates
+
+    let private resolveVisibleOrdinaryTermGroup (group: VisibleOrdinaryTermGroup) =
+        match visibleOrdinaryTermCandidates group with
+        | [ OrdinaryVisibleBindingCandidate(_, info) ] -> Some(VisibleOrdinaryBinding info)
+        | [ OrdinaryVisibleConstructorCandidate(_, info) ] -> Some(VisibleOrdinaryConstructor info)
+        | [ OrdinaryVisibleModuleCandidate(_, moduleIdentity) ] -> Some(VisibleOrdinaryModule moduleIdentity)
+        | [] -> None
+        | candidates -> Some(VisibleOrdinaryAmbiguous candidates)
 
     type private ProjectionDescriptorAliasInfo =
         { Projection: ProjectionInfo
@@ -180,7 +215,6 @@ module SurfaceElaboration =
           VisibleBindings: Map<string, BindingSchemeInfo>
           VisibleConstructors: Map<string, BindingSchemeInfo>
           VisibleOrdinaryGroups: Map<string, VisibleOrdinaryTermGroup>
-          AmbiguousVisibleOrdinaryTerms: Map<string, OrdinaryVisibleTermCandidate list>
           VisibleProjections: Map<string, ProjectionInfo>
           VisibleTraits: Map<string, TraitInfo>
           VisibleInstances: InstanceInfo list
@@ -11094,7 +11128,12 @@ module SurfaceElaboration =
                 (DiagnosticFact.nameUnresolved name)
 
         let tryVisibleOrdinaryTermAmbiguityCandidates localName =
-            environment.AmbiguousVisibleOrdinaryTerms |> Map.tryFind localName
+            environment.VisibleOrdinaryGroups
+            |> Map.tryFind localName
+            |> Option.bind (fun group ->
+                match resolveVisibleOrdinaryTermGroup group with
+                | Some(VisibleOrdinaryAmbiguous candidates) -> Some candidates
+                | _ -> None)
 
         let tryVisiblePatternHeadAmbiguityCandidates localName =
             tryVisibleOrdinaryTermAmbiguityCandidates localName
@@ -20484,7 +20523,6 @@ module SurfaceElaboration =
                       VisibleBindings = visibleBindings
                       VisibleConstructors = visibleConstructors
                       VisibleOrdinaryGroups = visibleOrdinaryGroups
-                      AmbiguousVisibleOrdinaryTerms = ambiguousVisibleOrdinaryTerms
                       VisibleProjections = mergeVisibleProjections surfaceIndex moduleIdentity
                       VisibleTraits = mergeVisibleTraits surfaceIndex moduleIdentity
                       VisibleInstances = visibleInstances surfaceIndex moduleIdentity
@@ -21461,11 +21499,11 @@ module SurfaceElaboration =
                         |> Set.ofList
 
                     let ordinaryNameAmbiguityDiagnostics name =
-                        environment.AmbiguousVisibleOrdinaryTerms
+                        environment.VisibleOrdinaryGroups
                         |> Map.tryFind name
-                        |> Option.bind (fun candidates ->
+                        |> Option.bind (fun group ->
                             let admissible =
-                                candidates
+                                visibleOrdinaryTermCandidates group
                                 |> List.filter (function
                                     | OrdinaryVisibleBindingCandidate _
                                     | OrdinaryVisibleExportedBindingCandidate _
@@ -25457,29 +25495,19 @@ module SurfaceElaboration =
                 |> Option.map lowerStaticObject
                 |> Option.defaultValue (KCoreLiteral LiteralValue.Unit)
             | Name [ bindingName ]
-                when not (Map.containsKey bindingName localTypes)
-                     && environment.VisibleBindings.ContainsKey(bindingName) ->
-                if ordinarySurfaceNameShadowsVisiblePreludeBinding environment localTypes bindingName then
-                    KCoreName [ bindingName ]
-                else
-                    let bindingInfo = environment.VisibleBindings[bindingName]
-                    let initialPreparedCall =
-                        tryPrepareVisibleBindingCall
-                            environment
-                            freshCounter
-                            bindingInfo
-                            (Some localTypes)
-                            (inferValidationExpressionTypeWithContext
-                                environment
-                                freshCounter
-                                localTypes
-                                localTypes)
-                            (tryResolveUniqueLocalImplicitByType environment localTypes)
-                            []
-                    let expectedPreparedCall =
-                        expectedType
-                        |> Option.bind (fun expectedResultType ->
-                            tryPrepareExpectedVisibleBindingValue
+                when not (Map.containsKey bindingName localTypes) ->
+                let ordinaryResolution =
+                    environment.VisibleOrdinaryGroups
+                    |> Map.tryFind bindingName
+                    |> Option.bind resolveVisibleOrdinaryTermGroup
+
+                match ordinaryResolution with
+                | Some(VisibleOrdinaryBinding bindingInfo) ->
+                    if ordinarySurfaceNameShadowsVisiblePreludeBinding environment localTypes bindingName then
+                        KCoreName [ bindingName ]
+                    else
+                        let initialPreparedCall =
+                            tryPrepareVisibleBindingCall
                                 environment
                                 freshCounter
                                 bindingInfo
@@ -25489,25 +25517,49 @@ module SurfaceElaboration =
                                     freshCounter
                                     localTypes
                                     localTypes)
+                                (tryResolveUniqueLocalImplicitByType environment localTypes)
+                                []
+                        let expectedPreparedCall =
+                            expectedType
+                            |> Option.bind (fun expectedResultType ->
+                                tryPrepareExpectedVisibleBindingValue
+                                    environment
+                                    freshCounter
+                                    bindingInfo
+                                    (Some localTypes)
+                                    (inferValidationExpressionTypeWithContext
+                                        environment
+                                        freshCounter
+                                        localTypes
+                                        localTypes)
                                     (tryResolveUniqueLocalImplicitByType environment localTypes)
                                     expectedResultType)
 
-                    match expectedPreparedCall |> Option.orElse initialPreparedCall with
-                    | Some preparedCall when not (List.isEmpty preparedCall.Arguments) ->
-                        KCoreAppSpine(KCoreName [ bindingName ], lowerPreparedBindingCallArguments bindingInfo preparedCall)
-                    | _ ->
-                        KCoreName [ bindingName ]
-            | Name [ bindingName ]
-                when not (Map.containsKey bindingName localTypes) ->
-                match tryFindScopedEffectDeclaration bindingName with
-                | Some declaration ->
-                    scopedKCoreEffectLabel declaration
+                        match expectedPreparedCall |> Option.orElse initialPreparedCall with
+                        | Some preparedCall when not (List.isEmpty preparedCall.Arguments) ->
+                            KCoreAppSpine(KCoreName [ bindingName ], lowerPreparedBindingCallArguments bindingInfo preparedCall)
+                        | _ ->
+                            KCoreName [ bindingName ]
+                | Some(VisibleOrdinaryModule moduleIdentity) ->
+                    lowerStaticObject
+                        (staticObjectInfo
+                            (semanticObjectIdentity (moduleDeclarationIdentity moduleIdentity) ModuleObject)
+                            [ bindingName ]
+                            None
+                            None
+                            None)
+                | Some(VisibleOrdinaryConstructor _)
+                | Some(VisibleOrdinaryAmbiguous _)
                 | None ->
-                    match tryResolveScopedStaticObject environment expression with
-                    | Some staticObject ->
-                        lowerStaticObject staticObject
+                    match tryFindScopedEffectDeclaration bindingName with
+                    | Some declaration ->
+                        scopedKCoreEffectLabel declaration
                     | None ->
-                        KCoreName [ bindingName ]
+                        match tryResolveScopedStaticObject environment expression with
+                        | Some staticObject ->
+                            lowerStaticObject staticObject
+                        | None ->
+                            KCoreName [ bindingName ]
             | Name [ bindingName ] ->
                 KCoreName [ bindingName ]
             | Name (receiverName :: path) when not (List.isEmpty path) ->
@@ -27262,7 +27314,6 @@ module SurfaceElaboration =
               VisibleBindings = visibleBindings
               VisibleConstructors = visibleConstructors
               VisibleOrdinaryGroups = visibleOrdinaryGroups
-              AmbiguousVisibleOrdinaryTerms = ambiguousVisibleOrdinaryTerms
               VisibleProjections = visibleProjections
               VisibleTraits = visibleTraits
               VisibleInstances = visibleInstances surfaceIndex moduleIdentity
@@ -27482,7 +27533,6 @@ module SurfaceElaboration =
                           VisibleBindings = visibleBindings
                           VisibleConstructors = visibleConstructors
                           VisibleOrdinaryGroups = visibleOrdinaryGroups
-                          AmbiguousVisibleOrdinaryTerms = ambiguousVisibleOrdinaryTerms
                           VisibleProjections = mergeVisibleProjections surfaceIndex moduleIdentity
                           VisibleTraits = mergeVisibleTraits surfaceIndex moduleIdentity
                           VisibleInstances = visibleInstances surfaceIndex moduleIdentity
