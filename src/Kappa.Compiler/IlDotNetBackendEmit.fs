@@ -421,7 +421,10 @@ module internal IlDotNetBackendEmit =
 
                 let inferIntrinsicCall name arguments =
                     if not (knownIntrinsicNames.Contains name) then
-                        Result.Error $"IL backend could not resolve callee '{name}'."
+                        Result.Error(
+                            DiagnosticFact.ClrBackendEmitterError.message
+                                (ClrCalleeResolutionFailed name)
+                        )
                     else
                         arguments
                         |> List.fold
@@ -574,8 +577,10 @@ module internal IlDotNetBackendEmit =
                             let localsText =
                                 localTypes |> Map.toList |> List.map fst |> String.concat ", "
 
-                            Result.Error
-                                $"IL backend could not resolve name '{nameText}'. Locals in scope: [{localsText}]."
+                            Result.Error(
+                                DiagnosticFact.ClrBackendEmitterError.message
+                                    (ClrNameResolutionFailed(nameText, localsText))
+                            )
                 | KRuntimeUnary("-", operand) ->
                     infer operand None
                     |> Result.bind (function
@@ -1072,7 +1077,11 @@ module internal IlDotNetBackendEmit =
                 match intrinsicTypes with
                 | None ->
                     if not (knownIntrinsicNames.Contains name) then
-                        return! Result.Error $"IL backend could not resolve callee '{name}'."
+                        return!
+                            Result.Error(
+                                DiagnosticFact.ClrBackendEmitterError.message
+                                    (ClrCalleeResolutionFailed name)
+                            )
                     else
                         return!
                             Result.Error(
@@ -1643,7 +1652,10 @@ module internal IlDotNetBackendEmit =
                     let localsText =
                         localValues |> Map.toList |> List.map fst |> String.concat ", "
 
-                    Result.Error $"IL backend could not resolve name '{nameText}'. Locals in scope: [{localsText}]."
+                    Result.Error(
+                        DiagnosticFact.ClrBackendEmitterError.message
+                            (ClrNameResolutionFailed(nameText, localsText))
+                    )
         | KRuntimeUnary("-", operand) ->
             result {
                 let! operandType = inferExpressionType currentModule localTypes None operand

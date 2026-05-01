@@ -543,12 +543,17 @@ module internal IlDotNetBackendTyping =
                                     let localsText =
                                         localTypes |> Map.toList |> List.map fst |> String.concat ", "
 
-                                    Result.Error
-                                        $"IL backend could not resolve name '{nameText}'. Locals in scope: [{localsText}]."
+                                    Result.Error(
+                                        DiagnosticFact.ClrBackendEmitterError.message
+                                            (ClrNameResolutionFailed(nameText, localsText))
+                                    )
 
                     let inferIntrinsicCall name arguments =
                         if not (knownIntrinsicNames.Contains name) then
-                            Result.Error $"IL backend could not resolve callee '{name}'."
+                            Result.Error(
+                                DiagnosticFact.ClrBackendEmitterError.message
+                                    (ClrCalleeResolutionFailed name)
+                            )
                         else
                             arguments
                             |> List.fold

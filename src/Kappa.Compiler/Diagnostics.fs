@@ -869,6 +869,8 @@ type ClrBackendEmitterErrorEvidence =
     | ClrConstructorPatternArityMismatch of patternName: string * expectedArity: int * actualArity: int
     | ClrConstructorArityMismatch of constructorName: string * expectedArity: int * actualArity: int
     | ClrMissingBindingBody of moduleName: string * bindingName: string
+    | ClrNameResolutionFailed of nameText: string * localsInScopeText: string
+    | ClrCalleeResolutionFailed of calleeName: string
     | UnaryOperatorUnsupported of operatorName: string
     | UnaryOperatorOperandTypeUnsupported of operatorName: string * operandTypeText: string
     | BinaryOperatorUnsupported of operatorName: string * leftTypeText: string * rightTypeText: string
@@ -1784,6 +1786,10 @@ module DiagnosticFact =
                 $"The CLR dotnet backend expected constructor '{constructorName}' to receive {expectedArity} argument(s), but received {actualArity}."
             | ClrMissingBindingBody(moduleName, bindingName) ->
                 $"The CLR dotnet backend requires a body for '{moduleName}.{bindingName}'."
+            | ClrNameResolutionFailed(nameText, localsInScopeText) ->
+                $"The CLR dotnet backend could not resolve name '{nameText}'. Locals in scope: [{localsInScopeText}]."
+            | ClrCalleeResolutionFailed calleeName ->
+                $"The CLR dotnet backend could not resolve callee '{calleeName}'."
             | UnaryOperatorUnsupported operatorName ->
                 $"The CLR dotnet backend does not yet support unary operator '{operatorName}'."
             | UnaryOperatorOperandTypeUnsupported(operatorName, operandTypeText) ->
