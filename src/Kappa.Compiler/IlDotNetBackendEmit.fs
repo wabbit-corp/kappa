@@ -2358,11 +2358,17 @@ module internal IlDotNetBackendEmit =
 
     let emitAssemblyArtifact (workspace: WorkspaceCompilation) (outputDirectory: string) =
         if workspace.HasErrors then
-            Result.Error $"Cannot emit a CLR assembly for a workspace with diagnostics:{Environment.NewLine}{aggregateDiagnostics workspace.Diagnostics}"
+            Result.Error(
+                DiagnosticFact.ClrArtifactEmitterError.message
+                    (ClrArtifactWorkspaceHasDiagnostics(PlainClrAssembly, aggregateDiagnostics workspace.Diagnostics))
+            )
         else
             let verificationDiagnostics = CheckpointVerification.verifyCheckpoint workspace "KBackendIR"
 
             if not (List.isEmpty verificationDiagnostics) then
-                Result.Error $"Cannot emit malformed KBackendIR:{Environment.NewLine}{aggregateDiagnostics verificationDiagnostics}"
+                Result.Error(
+                    DiagnosticFact.ClrArtifactEmitterError.message
+                        (ClrArtifactMalformedBackendIr(aggregateDiagnostics verificationDiagnostics))
+                )
             else
                 emitClrAssemblyArtifact workspace.ClrAssemblyIR outputDirectory

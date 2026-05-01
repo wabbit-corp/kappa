@@ -563,6 +563,45 @@ module BackendTestsShard3 =
 module BackendTestsShard4 =
 
     [<Fact>]
+    let ``dotnet backend reports structured workspace diagnostic failures`` () =
+        let workspace =
+            compileInMemoryWorkspaceWithBackend
+                "memory-dotnet-workspace-diagnostics-root"
+                "dotnet"
+                [
+                    "main.kp",
+                    [
+                        "module main"
+                        "let result = 1"
+                    ]
+                    |> String.concat "\n"
+                    "bad.kp",
+                    [
+                        "module bad"
+                        "let broken = missing"
+                    ]
+                    |> String.concat "\n"
+                ]
+
+        Assert.True(workspace.HasErrors, "Expected the workspace to retain frontend diagnostics.")
+
+        let outputDirectory = createScratchDirectory "dotnet-workspace-diagnostics"
+
+        match Backend.emitDotNetArtifact workspace "main.result" outputDirectory DotNetDeployment.Managed with
+        | Result.Ok artifact ->
+            failwithf "Expected dotnet artifact emission to reject a diagnostic workspace, but emitted '%s'." artifact.GeneratedFilePath
+        | Result.Error message ->
+            let detail =
+                workspace.Diagnostics
+                |> List.map (fun diagnostic -> diagnostic.Message)
+                |> String.concat Environment.NewLine
+
+            Assert.Equal(
+                $"The CLR-backed dotnet profile could not lower 'main.result': Cannot emit a CLR assembly for a workspace with diagnostics:{Environment.NewLine}{detail}",
+                message
+            )
+
+    [<Fact>]
     let ``dotnet backend reports structured closure support failures`` () =
         let workspace =
             compileInMemoryWorkspaceWithBackend

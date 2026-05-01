@@ -885,6 +885,14 @@ type EffectfulClrBackendEmitterErrorEvidence =
     | EffectfulBindingPreparationFailed of moduleName: string * bindingName: string
     | EffectfulIlEmissionFailed of detail: string
 
+type ClrArtifactKind =
+    | PlainClrAssembly
+    | EffectfulClrAssembly
+
+type ClrArtifactEmitterErrorEvidence =
+    | ClrArtifactWorkspaceHasDiagnostics of artifactKind: ClrArtifactKind * detail: string
+    | ClrArtifactMalformedBackendIr of detail: string
+
 type BackendDiagnosticEvidence =
     | EffectRuntimeUnsupportedBackend of backendProfile: string * declarationName: string * effectUse: BackendRuntimeEffectUseEvidence
     | KBackendLoweringFailed of moduleName: string * error: BackendLoweringErrorEvidence
@@ -1801,6 +1809,19 @@ module DiagnosticFact =
                 $"The effectful CLR dotnet backend could not prepare binding '{moduleName}.{bindingName}'."
             | EffectfulIlEmissionFailed detail ->
                 $"The effectful CLR dotnet backend failed to emit IL: {detail}"
+
+    module internal ClrArtifactEmitterError =
+        let private artifactKindText artifactKind =
+            match artifactKind with
+            | PlainClrAssembly -> "a CLR assembly"
+            | EffectfulClrAssembly -> "an effectful CLR assembly"
+
+        let message evidence =
+            match evidence with
+            | ClrArtifactWorkspaceHasDiagnostics(artifactKind, detail) ->
+                $"Cannot emit {artifactKindText artifactKind} for a workspace with diagnostics:{System.Environment.NewLine}{detail}"
+            | ClrArtifactMalformedBackendIr detail ->
+                $"Cannot emit malformed KBackendIR:{System.Environment.NewLine}{detail}"
 
     let private expectedActualMismatchKindText mismatchKind =
         match mismatchKind with
