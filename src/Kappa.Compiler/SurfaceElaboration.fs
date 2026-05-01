@@ -11385,6 +11385,22 @@ module SurfaceElaboration =
                 []
                 (DiagnosticFact.surfaceElaboration evidence)
 
+        let makeTraitConstraintUnresolvedDiagnostic constraintInfo =
+            makeSurfaceElaborationDiagnostic
+                (TraitConstraintUnresolved(renderTraitConstraint environment constraintInfo))
+
+        let makeImplicitTraitConstraintUnresolvedDiagnostic constraintInfo =
+            makeSurfaceElaborationDiagnostic
+                (ImplicitTraitConstraintUnresolved(renderTraitConstraint environment constraintInfo))
+
+        let makeTraitConstraintAmbiguousDiagnostic ambiguousGoal candidates =
+            let candidateText =
+                candidates
+                |> List.map renderInstanceCandidate
+
+            makeSurfaceElaborationDiagnostic
+                (TraitConstraintAmbiguous(renderTraitConstraint environment ambiguousGoal, candidateText))
+
         let makeNameUnresolvedDiagnostic name =
             Diagnostics.errorFact
                 "KFrontIR"
@@ -14864,22 +14880,9 @@ module SurfaceElaboration =
                                                     | ConstraintResolved _ ->
                                                         None
                                                     | ConstraintUnresolved ->
-                                                        Some(
-                                                            [ makeDiagnostic
-                                                                SimpleDiagnosticKind.TypeEqualityMismatch
-                                                                $"Trait constraint '{renderTraitConstraint environment constraintInfo}' could not be resolved." ]
-                                                        )
+                                                        Some([ makeTraitConstraintUnresolvedDiagnostic constraintInfo ])
                                                     | ConstraintAmbiguous(ambiguousGoal, candidates) ->
-                                                        let candidateText =
-                                                            candidates
-                                                            |> List.map renderInstanceCandidate
-                                                            |> String.concat ", "
-
-                                                        Some(
-                                                            [ makeDiagnostic
-                                                                SimpleDiagnosticKind.TraitInstanceAmbiguous
-                                                                $"Multiple instance candidates survive for constraint '{renderTraitConstraint environment ambiguousGoal}': {candidateText}." ]
-                                                        )
+                                                        Some([ makeTraitConstraintAmbiguousDiagnostic ambiguousGoal candidates ])
                                                 | None ->
                                                     Some(
                                                         [ makeSurfaceElaborationDiagnostic
@@ -14911,22 +14914,9 @@ module SurfaceElaboration =
                                             | ConstraintResolved _ ->
                                                 None
                                             | ConstraintUnresolved ->
-                                                Some(
-                                                    [ makeDiagnostic
-                                                        SimpleDiagnosticKind.TypeEqualityMismatch
-                                                        $"Trait constraint '{renderTraitConstraint environment constraintInfo}' could not be resolved." ]
-                                                )
+                                                Some([ makeTraitConstraintUnresolvedDiagnostic constraintInfo ])
                                             | ConstraintAmbiguous(ambiguousGoal, candidates) ->
-                                                let candidateText =
-                                                    candidates
-                                                    |> List.map renderInstanceCandidate
-                                                    |> String.concat ", "
-
-                                                Some(
-                                                    [ makeDiagnostic
-                                                        SimpleDiagnosticKind.TraitInstanceAmbiguous
-                                                        $"Multiple instance candidates survive for constraint '{renderTraitConstraint environment ambiguousGoal}': {candidateText}." ]
-                                                )
+                                                Some([ makeTraitConstraintAmbiguousDiagnostic ambiguousGoal candidates ])
                                         | None ->
                                             Some(
                                                 [ makeSurfaceElaborationDiagnostic
@@ -14947,11 +14937,7 @@ module SurfaceElaboration =
                                 else
                                     match tryTraitConstraintFromType environment parameterType with
                                     | Some constraintInfo ->
-                                        Some(
-                                            [ makeDiagnostic
-                                                SimpleDiagnosticKind.TypeEqualityMismatch
-                                                $"Trait constraint '{renderTraitConstraint environment constraintInfo}' could not be resolved." ]
-                                        )
+                                        Some([ makeTraitConstraintUnresolvedDiagnostic constraintInfo ])
                                     | None ->
                                         Some(
                                             [ makeSurfaceElaborationDiagnostic
@@ -15402,22 +15388,9 @@ module SurfaceElaboration =
                                                         | ConstraintResolved _ ->
                                                             None
                                                         | ConstraintUnresolved ->
-                                                            Some(
-                                                                [ makeDiagnostic
-                                                                    SimpleDiagnosticKind.TypeEqualityMismatch
-                                                                    $"Trait constraint '{renderTraitConstraint environment constraintInfo}' could not be resolved." ]
-                                                            )
+                                                            Some([ makeTraitConstraintUnresolvedDiagnostic constraintInfo ])
                                                         | ConstraintAmbiguous(ambiguousGoal, candidates) ->
-                                                            let candidateText =
-                                                                candidates
-                                                                |> List.map renderInstanceCandidate
-                                                                |> String.concat ", "
-
-                                                            Some(
-                                                                [ makeDiagnostic
-                                                                    SimpleDiagnosticKind.TraitInstanceAmbiguous
-                                                                    $"Multiple instance candidates survive for constraint '{renderTraitConstraint environment ambiguousGoal}': {candidateText}." ]
-                                                            )
+                                                            Some([ makeTraitConstraintAmbiguousDiagnostic ambiguousGoal candidates ])
                                                     | None ->
                                                         Some(
                                                             [ makeSurfaceElaborationDiagnostic
@@ -18818,21 +18791,12 @@ module SurfaceElaboration =
                                                                     | ConstraintResolved _ ->
                                                                         None
                                                                     | ConstraintUnresolved ->
-                                                                        Some(
-                                                                            makeDiagnostic
-                                                                                SimpleDiagnosticKind.TypeEqualityMismatch
-                                                                                $"Implicit trait constraint '{renderTraitConstraint environment constraintInfo}' could not be resolved."
-                                                                        )
+                                                                        Some(makeImplicitTraitConstraintUnresolvedDiagnostic constraintInfo)
                                                                     | ConstraintAmbiguous(ambiguousGoal, candidates) ->
-                                                                        let candidateText =
-                                                                            candidates
-                                                                            |> List.map renderInstanceCandidate
-                                                                            |> String.concat ", "
-
                                                                         Some(
-                                                                            makeDiagnostic
-                                                                                SimpleDiagnosticKind.TraitInstanceAmbiguous
-                                                                                $"Multiple instance candidates survive for constraint '{renderTraitConstraint environment ambiguousGoal}': {candidateText}."
+                                                                            makeTraitConstraintAmbiguousDiagnostic
+                                                                                ambiguousGoal
+                                                                                candidates
                                                                         )
                                                                 | None ->
                                                                     None))
@@ -18865,22 +18829,9 @@ module SurfaceElaboration =
                                     | ConstraintResolved _ ->
                                         None
                                     | ConstraintUnresolved ->
-                                        Some(
-                                            makeDiagnostic
-                                                SimpleDiagnosticKind.TypeEqualityMismatch
-                                                $"Implicit trait constraint '{renderTraitConstraint environment constraintInfo}' could not be resolved."
-                                        )
+                                        Some(makeImplicitTraitConstraintUnresolvedDiagnostic constraintInfo)
                                     | ConstraintAmbiguous(ambiguousGoal, candidates) ->
-                                        let candidateText =
-                                            candidates
-                                            |> List.map renderInstanceCandidate
-                                            |> String.concat ", "
-
-                                        Some(
-                                            makeDiagnostic
-                                                SimpleDiagnosticKind.TraitInstanceAmbiguous
-                                                $"Multiple instance candidates survive for constraint '{renderTraitConstraint environment ambiguousGoal}': {candidateText}."
-                                        )
+                                        Some(makeTraitConstraintAmbiguousDiagnostic ambiguousGoal candidates)
 
                                 match normalizedLayouts with
                                 | Some layouts when not (List.isEmpty layouts) ->
@@ -19022,22 +18973,9 @@ module SurfaceElaboration =
                                                         | ConstraintResolved _ ->
                                                             None
                                                         | ConstraintUnresolved ->
-                                                            Some(
-                                                                makeDiagnostic
-                                                                    SimpleDiagnosticKind.TypeEqualityMismatch
-                                                                    $"Implicit trait constraint '{renderTraitConstraint environment constraintInfo}' could not be resolved."
-                                                            )
+                                                            Some(makeImplicitTraitConstraintUnresolvedDiagnostic constraintInfo)
                                                         | ConstraintAmbiguous(ambiguousGoal, candidates) ->
-                                                            let candidateText =
-                                                                candidates
-                                                                |> List.map renderInstanceCandidate
-                                                                |> String.concat ", "
-
-                                                            Some(
-                                                                makeDiagnostic
-                                                                    SimpleDiagnosticKind.TraitInstanceAmbiguous
-                                                                    $"Multiple instance candidates survive for constraint '{renderTraitConstraint environment ambiguousGoal}': {candidateText}."
-                                                            )
+                                                            Some(makeTraitConstraintAmbiguousDiagnostic ambiguousGoal candidates)
                                                     | None ->
                                                         None
                                                 else
@@ -19175,22 +19113,9 @@ module SurfaceElaboration =
                                     | ConstraintResolved _ ->
                                         []
                                     | ConstraintUnresolved ->
-                                        [
-                                            makeDiagnostic
-                                                SimpleDiagnosticKind.TypeEqualityMismatch
-                                                $"Trait constraint '{renderTraitConstraint environment constraintInfo}' could not be resolved."
-                                        ]
+                                        [ makeTraitConstraintUnresolvedDiagnostic constraintInfo ]
                                     | ConstraintAmbiguous(ambiguousGoal, candidates) ->
-                                        let candidateText =
-                                            candidates
-                                            |> List.map renderInstanceCandidate
-                                            |> String.concat ", "
-
-                                        [
-                                            makeDiagnostic
-                                                SimpleDiagnosticKind.TraitInstanceAmbiguous
-                                                $"Multiple instance candidates survive for constraint '{renderTraitConstraint environment ambiguousGoal}': {candidateText}."
-                                        ])
+                                        [ makeTraitConstraintAmbiguousDiagnostic ambiguousGoal candidates ])
 
                         let applicationDiagnostics =
                             if isConstructorSpine then
@@ -19556,22 +19481,9 @@ module SurfaceElaboration =
                                     | ConstraintResolved _ ->
                                         []
                                     | ConstraintUnresolved ->
-                                        [
-                                            makeDiagnostic
-                                                SimpleDiagnosticKind.TypeEqualityMismatch
-                                                $"Trait constraint '{renderTraitConstraint environment constraintInfo}' could not be resolved."
-                                        ]
+                                        [ makeTraitConstraintUnresolvedDiagnostic constraintInfo ]
                                     | ConstraintAmbiguous(ambiguousGoal, candidates) ->
-                                        let candidateText =
-                                            candidates
-                                            |> List.map renderInstanceCandidate
-                                            |> String.concat ", "
-
-                                        [
-                                            makeDiagnostic
-                                                SimpleDiagnosticKind.TraitInstanceAmbiguous
-                                                $"Multiple instance candidates survive for constraint '{renderTraitConstraint environment ambiguousGoal}': {candidateText}."
-                                        ]
+                                        [ makeTraitConstraintAmbiguousDiagnostic ambiguousGoal candidates ]
                         | None ->
                             match
                                 inferValidationExpressionType environment freshCounter locals left,
@@ -19604,22 +19516,9 @@ module SurfaceElaboration =
                                     | ConstraintResolved _ ->
                                         []
                                     | ConstraintUnresolved ->
-                                        [
-                                            makeDiagnostic
-                                                SimpleDiagnosticKind.TypeEqualityMismatch
-                                                $"Trait constraint '{renderTraitConstraint environment constraintInfo}' could not be resolved."
-                                        ]
+                                        [ makeTraitConstraintUnresolvedDiagnostic constraintInfo ]
                                     | ConstraintAmbiguous(ambiguousGoal, candidates) ->
-                                        let candidateText =
-                                            candidates
-                                            |> List.map renderInstanceCandidate
-                                            |> String.concat ", "
-
-                                        [
-                                            makeDiagnostic
-                                                SimpleDiagnosticKind.TraitInstanceAmbiguous
-                                                $"Multiple instance candidates survive for constraint '{renderTraitConstraint environment ambiguousGoal}': {candidateText}."
-                                        ]
+                                        [ makeTraitConstraintAmbiguousDiagnostic ambiguousGoal candidates ]
                         | None ->
                             match
                                 inferValidationExpressionType environment freshCounter locals left,
@@ -22505,9 +22404,16 @@ module SurfaceElaboration =
                                             None
                                         else
                                             Some(
-                                                makeDiagnostic
-                                                    SimpleDiagnosticKind.TraitSupertraitUnsatisfied
-                                                    $"Instance for trait '{traitName}' requires declared supertrait '{renderTraitConstraint environment requiredConstraint}', but that evidence is not satisfied by the instance premises or visible instances."
+                                                Diagnostics.errorFact
+                                                    "KFrontIR"
+                                                    (Some(KFrontIRPhase.phaseName CORE_LOWERING))
+                                                    None
+                                                    []
+                                                    (DiagnosticFact.surfaceElaboration
+                                                        (TraitSupertraitEvidenceUnsatisfied(
+                                                            traitName,
+                                                            renderTraitConstraint environment requiredConstraint
+                                                        )))
                                             ))))
                         | _ ->
                             [])

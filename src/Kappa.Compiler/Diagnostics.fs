@@ -869,6 +869,10 @@ type SurfaceElaborationDiagnosticEvidence =
     | NamedApplicationRequiresPreservedParameterMetadata
     | ImplicitApplicationArgumentAmbiguous
     | QuantityZeroImplicitCannotSatisfyRuntimeParameter
+    | TraitConstraintUnresolved of constraintText: string
+    | ImplicitTraitConstraintUnresolved of constraintText: string
+    | TraitConstraintAmbiguous of constraintText: string * candidateTexts: string list
+    | TraitSupertraitEvidenceUnsatisfied of traitName: string * requiredConstraintText: string
     | StaticConstructorRequiresPreservedStaticObjectIdentity of memberName: string
     | PatternHeadResolvedToOrdinaryTerm of headName: string
     | ActivePatternLinearlyConsumesScrutineeInRefutableContext of patternName: string * context: string
@@ -2537,6 +2541,45 @@ module DiagnosticFact =
                     (payload
                         "surface-elaboration-diagnostic"
                         [ field "reason" (DiagnosticPayloadText "quantity-zero-implicit-cannot-satisfy-runtime-parameter") ])
+            | TraitConstraintUnresolved constraintText ->
+                descriptor
+                    DiagnosticCode.TypeEqualityMismatch
+                    None
+                    $"Trait constraint '{constraintText}' could not be resolved."
+                    (payload
+                        "surface-elaboration-diagnostic"
+                        [ field "reason" (DiagnosticPayloadText "trait-constraint-unresolved")
+                          field "constraint-text" (DiagnosticPayloadText constraintText) ])
+            | ImplicitTraitConstraintUnresolved constraintText ->
+                descriptor
+                    DiagnosticCode.TypeEqualityMismatch
+                    None
+                    $"Implicit trait constraint '{constraintText}' could not be resolved."
+                    (payload
+                        "surface-elaboration-diagnostic"
+                        [ field "reason" (DiagnosticPayloadText "implicit-trait-constraint-unresolved")
+                          field "constraint-text" (DiagnosticPayloadText constraintText) ])
+            | TraitConstraintAmbiguous(constraintText, candidateTexts) ->
+                let candidateSummary = String.concat ", " candidateTexts
+                descriptor
+                    DiagnosticCode.TraitInstanceAmbiguous
+                    None
+                    $"Multiple instance candidates survive for constraint '{constraintText}': {candidateSummary}."
+                    (payload
+                        "surface-elaboration-diagnostic"
+                        [ field "reason" (DiagnosticPayloadText "trait-constraint-ambiguous")
+                          field "constraint-text" (DiagnosticPayloadText constraintText)
+                          field "candidate-texts" (DiagnosticPayloadTextList candidateTexts) ])
+            | TraitSupertraitEvidenceUnsatisfied(traitName, requiredConstraintText) ->
+                descriptor
+                    DiagnosticCode.TraitSupertraitUnsatisfied
+                    None
+                    $"Instance for trait '{traitName}' requires declared supertrait '{requiredConstraintText}', but that evidence is not satisfied by the instance premises or visible instances."
+                    (payload
+                        "surface-elaboration-diagnostic"
+                        [ field "reason" (DiagnosticPayloadText "trait-supertrait-evidence-unsatisfied")
+                          field "trait-name" (DiagnosticPayloadText traitName)
+                          field "required-constraint-text" (DiagnosticPayloadText requiredConstraintText) ])
             | StaticConstructorRequiresPreservedStaticObjectIdentity memberName ->
                 descriptor
                     DiagnosticCode.StaticObjectUnresolved

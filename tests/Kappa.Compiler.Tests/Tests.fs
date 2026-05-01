@@ -1239,6 +1239,11 @@ module SmokeTestsShard1 =
             |> List.tryFind (fun diagnostic -> diagnostic.Code = DiagnosticCode.TraitInstanceAmbiguous)
 
         Assert.True(ambiguityDiagnostic.IsSome, sprintf "Expected an instance ambiguity diagnostic, got %A" workspace.Diagnostics)
+        Assert.Equal(Some "surface-elaboration-diagnostic", ambiguityDiagnostic |> Option.map (fun diagnostic -> diagnostic.Payload.Kind))
+        Assert.Equal(
+            Some "trait-constraint-ambiguous",
+            ambiguityDiagnostic |> Option.bind (tryFindPayloadText "reason")
+        )
 
 
     [<Fact>]
@@ -3839,6 +3844,10 @@ module SmokeTestsShard4 =
         bag.AddError(DiagnosticFact.surfaceElaboration NamedApplicationRequiresPreservedParameterMetadata)
         bag.AddError(DiagnosticFact.surfaceElaboration ImplicitApplicationArgumentAmbiguous)
         bag.AddError(DiagnosticFact.surfaceElaboration QuantityZeroImplicitCannotSatisfyRuntimeParameter)
+        bag.AddError(DiagnosticFact.surfaceElaboration (TraitConstraintUnresolved "Eq Int"))
+        bag.AddError(DiagnosticFact.surfaceElaboration (ImplicitTraitConstraintUnresolved "Show Int"))
+        bag.AddError(DiagnosticFact.surfaceElaboration (TraitConstraintAmbiguous("Score Int", [ "left.ScoreInt"; "right.ScoreInt" ])))
+        bag.AddError(DiagnosticFact.surfaceElaboration (TraitSupertraitEvidenceUnsatisfied("Ord", "Eq Int")))
 
         let diagnostics = bag.Items
         let staticObjectDiagnostic = diagnostics |> List.find (fun item -> item.Code = DiagnosticCode.StaticObjectUnresolved)
@@ -3985,6 +3994,30 @@ module SmokeTestsShard4 =
                 item.Code = DiagnosticCode.TypeEqualityMismatch
                 && tryFindPayloadText "reason" item = Some "quantity-zero-implicit-cannot-satisfy-runtime-parameter")
 
+        let unresolvedConstraintDiagnostic =
+            diagnostics
+            |> List.find (fun item ->
+                item.Code = DiagnosticCode.TypeEqualityMismatch
+                && tryFindPayloadText "reason" item = Some "trait-constraint-unresolved")
+
+        let ambiguousConstraintDiagnostic =
+            diagnostics
+            |> List.find (fun item ->
+                item.Code = DiagnosticCode.TraitInstanceAmbiguous
+                && tryFindPayloadText "reason" item = Some "trait-constraint-ambiguous")
+
+        let unresolvedImplicitConstraintDiagnostic =
+            diagnostics
+            |> List.find (fun item ->
+                item.Code = DiagnosticCode.TypeEqualityMismatch
+                && tryFindPayloadText "reason" item = Some "implicit-trait-constraint-unresolved")
+
+        let supertraitDiagnostic =
+            diagnostics
+            |> List.find (fun item ->
+                item.Code = DiagnosticCode.TraitSupertraitUnsatisfied
+                && tryFindPayloadText "reason" item = Some "trait-supertrait-evidence-unsatisfied")
+
         Assert.Equal("surface-elaboration-diagnostic", staticObjectDiagnostic.Payload.Kind)
         Assert.Equal(Some "Some", tryFindPayloadText "member-name" staticObjectDiagnostic)
         Assert.Equal(Some "Bad", tryFindPayloadText "head-name" patternHeadDiagnostic)
@@ -4048,6 +4081,12 @@ module SmokeTestsShard4 =
             "A quantity-0 local implicit value cannot satisfy a runtime implicit parameter.",
             quantityZeroImplicitDiagnostic.Message
         )
+        Assert.Equal("Trait constraint 'Eq Int' could not be resolved.", unresolvedConstraintDiagnostic.Message)
+        Assert.Equal("Implicit trait constraint 'Show Int' could not be resolved.", unresolvedImplicitConstraintDiagnostic.Message)
+        Assert.Equal(Some "Score Int", tryFindPayloadText "constraint-text" ambiguousConstraintDiagnostic)
+        Assert.Equal(Some [ "left.ScoreInt"; "right.ScoreInt" ], tryFindPayloadTextList "candidate-texts" ambiguousConstraintDiagnostic)
+        Assert.Equal(Some "Ord", tryFindPayloadText "trait-name" supertraitDiagnostic)
+        Assert.Equal(Some "Eq Int", tryFindPayloadText "required-constraint-text" supertraitDiagnostic)
 
     [<Fact>]
     let ``parser syntax diagnostics render from typed evidence`` () =
