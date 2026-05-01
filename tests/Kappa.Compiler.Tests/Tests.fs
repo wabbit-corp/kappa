@@ -3615,6 +3615,60 @@ module SmokeTestsShard4 =
         )
 
     [<Fact>]
+    let ``typechecking diagnostics render from typed evidence`` () =
+        let bag = DiagnosticBag()
+        bag.AddError(DiagnosticFact.typechecking (ProjectionCapabilityRequiredAtSite "proj-access"))
+        bag.AddError(DiagnosticFact.typechecking ProjectionRootRequiresStablePlace)
+        bag.AddError(DiagnosticFact.typechecking (RecordUpdateDependentFieldRequiresRepair("record", "total")))
+        bag.AddError(DiagnosticFact.typechecking (MultishotEffectUnsupportedBackendAtInvocation("dotnet", "Demo", "choose")))
+        bag.AddError(DiagnosticFact.typechecking (ApplicationArgumentTypeMismatchAtSite("String", "Int")))
+        bag.AddError(DiagnosticFact.typechecking (ContinuationCaptureForbidden("Demo", "choose", "a linear binding")))
+        bag.AddError(DiagnosticFact.typechecking DeferredActionContainsAbruptOuterEscape)
+        bag.AddError(DiagnosticFact.typechecking DefinitionBodyResultTypeMismatch)
+
+        let diagnostics = bag.Items
+        let projectionCapabilityDiagnostic = diagnostics |> List.find (fun item -> item.Code = DiagnosticCode.ProjectionCapabilityRequired)
+        let projectionRootDiagnostic = diagnostics |> List.find (fun item -> item.Code = DiagnosticCode.ProjectionRootInvalid)
+
+        let repairDiagnostic =
+            diagnostics
+            |> List.find (fun item ->
+                item.Code = DiagnosticCode.TypeEqualityMismatch
+                && tryFindPayloadText "reason" item = Some "record-update-dependent-field-requires-repair")
+
+        let backendDiagnostic = diagnostics |> List.find (fun item -> item.Code = DiagnosticCode.MultishotEffectUnsupportedBackend)
+
+        let argumentMismatchDiagnostic =
+            diagnostics
+            |> List.find (fun item ->
+                item.Code = DiagnosticCode.TypeEqualityMismatch
+                && tryFindPayloadText "reason" item = Some "application-argument-type-mismatch-at-site")
+
+        let continuationCaptureDiagnostic = diagnostics |> List.find (fun item -> item.Code = DiagnosticCode.QttContinuationCapture)
+        let invalidEscapeDiagnostic = diagnostics |> List.find (fun item -> item.Code = DiagnosticCode.ControlFlowInvalidEscape)
+
+        let definitionMismatchDiagnostic =
+            diagnostics
+            |> List.find (fun item ->
+                item.Code = DiagnosticCode.TypeEqualityMismatch
+                && tryFindPayloadText "reason" item = Some "definition-body-result-type-mismatch")
+
+        Assert.Equal("typechecking-diagnostic", projectionCapabilityDiagnostic.Payload.Kind)
+        Assert.Equal(Some "proj-access", tryFindPayloadText "capability" projectionCapabilityDiagnostic)
+        Assert.Equal("typechecking-diagnostic", projectionRootDiagnostic.Payload.Kind)
+        Assert.Equal(Some "projection-root-requires-stable-place", tryFindPayloadText "reason" projectionRootDiagnostic)
+        Assert.Equal(Some "record", tryFindPayloadText "receiver-root" repairDiagnostic)
+        Assert.Equal(Some "total", tryFindPayloadText "field-name" repairDiagnostic)
+        Assert.Equal(Some "dotnet", tryFindPayloadText "backend-profile" backendDiagnostic)
+        Assert.Equal(Some "Demo", tryFindPayloadText "effect-visible-name" backendDiagnostic)
+        Assert.Equal(Some "choose", tryFindPayloadText "operation-name" backendDiagnostic)
+        Assert.Equal(Some "String", tryFindPayloadText "actual-type-text" argumentMismatchDiagnostic)
+        Assert.Equal(Some "Int", tryFindPayloadText "demanded-type-text" argumentMismatchDiagnostic)
+        Assert.Equal(Some "a linear binding", tryFindPayloadText "captured-summary" continuationCaptureDiagnostic)
+        Assert.Equal(Some "deferred-action-contains-abrupt-outer-escape", tryFindPayloadText "reason" invalidEscapeDiagnostic)
+        Assert.Equal(Some "definition-body-result-type-mismatch", tryFindPayloadText "reason" definitionMismatchDiagnostic)
+
+    [<Fact>]
     let ``parser syntax diagnostics render from typed evidence`` () =
         let bag = DiagnosticBag()
         bag.AddError(DiagnosticFact.parserSyntax (ExpectedListComma ImportItemList))

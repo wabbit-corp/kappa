@@ -790,6 +790,16 @@ type UrlImportPackageModeEvidence =
 type TypeEqualityMismatchEvidence =
     | ReflRequiresDefinitionallyEqualSides
 
+type TypecheckingDiagnosticEvidence =
+    | ProjectionCapabilityRequiredAtSite of capability: string
+    | ProjectionRootRequiresStablePlace
+    | RecordUpdateDependentFieldRequiresRepair of receiverRoot: string * fieldName: string
+    | MultishotEffectUnsupportedBackendAtInvocation of backendProfile: string * effectVisibleName: string * operationName: string
+    | ApplicationArgumentTypeMismatchAtSite of actualTypeText: string * demandedTypeText: string
+    | ContinuationCaptureForbidden of effectVisibleName: string * operationName: string * capturedSummary: string
+    | DeferredActionContainsAbruptOuterEscape
+    | DefinitionBodyResultTypeMismatch
+
 type CorePatternParsingEvidence =
     | UnsupportedParameterBinderSyntax
     | ExpectedParameterBinder
@@ -1125,6 +1135,7 @@ type DiagnosticFact =
     | SignatureUnsatisfiedDiagnostic of SignatureUnsatisfiedEvidence
     | UrlImportPackageModeDiagnostic of UrlImportPackageModeEvidence
     | TypeEqualityMismatchDiagnostic of TypeEqualityMismatchEvidence
+    | TypecheckingDiagnostic of TypecheckingDiagnosticEvidence
     | ParserSyntaxDiagnostic of ParserSyntaxEvidence
     | CorePatternParsingDiagnostic of CorePatternParsingEvidence
     | CoreExpressionParsingDiagnostic of CoreExpressionParsingEvidence
@@ -1410,6 +1421,9 @@ module DiagnosticFact =
 
     let reflRequiresDefinitionallyEqualSides =
         TypeEqualityMismatchDiagnostic ReflRequiresDefinitionallyEqualSides
+
+    let typechecking evidence =
+        TypecheckingDiagnostic evidence
 
     let parserSyntax evidence =
         ParserSyntaxDiagnostic evidence
@@ -1899,8 +1913,85 @@ module DiagnosticFact =
                     None
                     "The proof term 'refl' requires both sides of the equality type to be definitionally equal. Function binder quantities are part of type identity."
                     (payload
-                    "type-equality-mismatch"
+                        "type-equality-mismatch"
                         [ field "reason" (DiagnosticPayloadText "refl-requires-definitionally-equal-sides") ])
+        | TypecheckingDiagnostic evidence ->
+            match evidence with
+            | ProjectionCapabilityRequiredAtSite capability ->
+                descriptor
+                    DiagnosticCode.ProjectionCapabilityRequired
+                    None
+                    $"Projection/accessor use requires the '{capability}' capability at this site."
+                    (payload
+                        "typechecking-diagnostic"
+                        [ field "reason" (DiagnosticPayloadText "projection-capability-required-at-site")
+                          field "capability" (DiagnosticPayloadText capability) ])
+            | ProjectionRootRequiresStablePlace ->
+                descriptor
+                    DiagnosticCode.ProjectionRootInvalid
+                    None
+                    "Projection place arguments must be stable places or computed selector places with stable roots."
+                    (payload
+                        "typechecking-diagnostic"
+                        [ field "reason" (DiagnosticPayloadText "projection-root-requires-stable-place") ])
+            | RecordUpdateDependentFieldRequiresRepair(receiverRoot, fieldName) ->
+                descriptor
+                    DiagnosticCode.TypeEqualityMismatch
+                    None
+                    $"Record update on '{receiverRoot}' changes dependent field inputs but does not repair field '{fieldName}'."
+                    (payload
+                        "typechecking-diagnostic"
+                        [ field "reason" (DiagnosticPayloadText "record-update-dependent-field-requires-repair")
+                          field "receiver-root" (DiagnosticPayloadText receiverRoot)
+                          field "field-name" (DiagnosticPayloadText fieldName) ])
+            | MultishotEffectUnsupportedBackendAtInvocation(backendProfile, effectVisibleName, operationName) ->
+                descriptor
+                    DiagnosticCode.MultishotEffectUnsupportedBackend
+                    None
+                    $"Backend profile '{backendProfile}' does not provide capability 'rt-multishot-effects' required by multi-shot operation '{effectVisibleName}.{operationName}' at this invocation site."
+                    (payload
+                        "typechecking-diagnostic"
+                        [ field "reason" (DiagnosticPayloadText "multishot-effect-unsupported-backend-at-invocation")
+                          field "backend-profile" (DiagnosticPayloadText backendProfile)
+                          field "effect-visible-name" (DiagnosticPayloadText effectVisibleName)
+                          field "operation-name" (DiagnosticPayloadText operationName) ])
+            | ApplicationArgumentTypeMismatchAtSite(actualTypeText, demandedTypeText) ->
+                descriptor
+                    DiagnosticCode.TypeEqualityMismatch
+                    None
+                    $"Argument type '{actualTypeText}' does not match demanded parameter type '{demandedTypeText}'."
+                    (payload
+                        "typechecking-diagnostic"
+                        [ field "reason" (DiagnosticPayloadText "application-argument-type-mismatch-at-site")
+                          field "actual-type-text" (DiagnosticPayloadText actualTypeText)
+                          field "demanded-type-text" (DiagnosticPayloadText demandedTypeText) ])
+            | ContinuationCaptureForbidden(effectVisibleName, operationName, capturedSummary) ->
+                descriptor
+                    DiagnosticCode.QttContinuationCapture
+                    None
+                    $"Multi-shot operation '{effectVisibleName}.{operationName}' cannot capture {capturedSummary} in its continuation."
+                    (payload
+                        "typechecking-diagnostic"
+                        [ field "reason" (DiagnosticPayloadText "continuation-capture-forbidden")
+                          field "effect-visible-name" (DiagnosticPayloadText effectVisibleName)
+                          field "operation-name" (DiagnosticPayloadText operationName)
+                          field "captured-summary" (DiagnosticPayloadText capturedSummary) ])
+            | DeferredActionContainsAbruptOuterEscape ->
+                descriptor
+                    DiagnosticCode.ControlFlowInvalidEscape
+                    None
+                    "A deferred action must not contain return, break, or continue targeting an outer scope."
+                    (payload
+                        "typechecking-diagnostic"
+                        [ field "reason" (DiagnosticPayloadText "deferred-action-contains-abrupt-outer-escape") ])
+            | DefinitionBodyResultTypeMismatch ->
+                descriptor
+                    DiagnosticCode.TypeEqualityMismatch
+                    None
+                    "The definition body does not match the declared result type."
+                    (payload
+                        "typechecking-diagnostic"
+                        [ field "reason" (DiagnosticPayloadText "definition-body-result-type-mismatch") ])
         | ParserSyntaxDiagnostic evidence ->
             match evidence with
             | ExpectedKeyword keyword ->

@@ -115,7 +115,8 @@ Current M4 status note: started, not complete. The compiler now has a real effec
   Projection-body diagnostics now route through `CoreExpressionParsingEvidence` for malformed body heads, missing indented match case blocks, missing `case` clauses, missing projection-case arrows, and missing `then` / `else` in projection `if` bodies.
 - [x] Convert `Lexer.fs` diagnostics to typed evidence ADTs with centralized formatting.
   Tabs, unexpected indentation, unrecognized characters, malformed numeric literals, and unterminated literal/interpolation/comment diagnostics now use `LexerDiagnosticEvidence`; `Lexer.fs` no longer emits raw `DiagnosticFact.simple`, `DiagnosticFact.detail`, or `DiagnosticFact.codeDetail` diagnostics.
-- [ ] Convert elaboration/typechecking diagnostics to typed evidence ADTs with centralized formatting.
+- [ ] Convert the remaining elaboration/typechecking diagnostics to typed evidence ADTs with centralized formatting.
+  `ResourceChecking.fs` no longer emits raw `DiagnosticFact.simple`, `DiagnosticFact.detail`, or `DiagnosticFact.codeDetail` diagnostics; the main remaining checker debt is in `SurfaceElaboration.fs`, especially the large `SimpleDiagnosticKind` message sites and the `CORE_LOWERING` simple-diagnostic wrappers.
 - [ ] Convert backend/lowering diagnostics to typed evidence ADTs with centralized formatting.
 - [ ] Convert checkpoint verification and target-checkpoint diagnostics to typed evidence ADTs with centralized formatting.
 - [ ] Preserve machine-readable payload structure as the primary contract, and keep tests asserting codes/families/payload fields rather than exact prose except where the spec mandates wording-sensitive content.

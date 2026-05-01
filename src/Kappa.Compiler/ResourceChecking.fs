@@ -2609,8 +2609,8 @@ module ResourceChecking =
 
     let private addProjectionCapabilityDiagnostic (document: ParsedDocument) capability expression state =
         addDiagnostic
-            (DiagnosticFact.codeDetail DiagnosticCode.ProjectionCapabilityRequired)
-            $"Projection/accessor use requires the '{capability}' capability at this site."
+            DiagnosticFact.typechecking
+            (ProjectionCapabilityRequiredAtSite capability)
             (argumentLocation document expression)
             []
             document
@@ -2618,8 +2618,8 @@ module ResourceChecking =
 
     let private addProjectionPlaceDiagnostic (document: ParsedDocument) expression state =
         addDiagnostic
-            (DiagnosticFact.codeDetail DiagnosticCode.ProjectionRootInvalid)
-            "Projection place arguments must be stable places or computed selector places with stable roots."
+            DiagnosticFact.typechecking
+            ProjectionRootRequiresStablePlace
             (argumentLocation document expression)
             []
             document
@@ -6485,8 +6485,8 @@ module ResourceChecking =
                                 match missingRepairField with
                                 | Some fieldName ->
                                     addDiagnostic
-                                        (DiagnosticFact.codeDetail DiagnosticCode.TypeEqualityMismatch)
-                                        $"Record update on '{receiverPlace.Root}' changes dependent field inputs but does not repair field '{fieldName}'."
+                                        DiagnosticFact.typechecking
+                                        (RecordUpdateDependentFieldRequiresRepair(receiverPlace.Root, fieldName))
                                         (argumentLocation document receiver)
                                         []
                                         document
@@ -6723,8 +6723,12 @@ module ResourceChecking =
                 match tryFindMultiShotScopedOperation expression with
                 | Some(effectName, operation) when not (backendSupportsMultishotEffects (currentBackendProfile ())) ->
                     addDiagnostic
-                        (DiagnosticFact.codeDetail DiagnosticCode.MultishotEffectUnsupportedBackend)
-                        $"Backend profile '{BackendProfile.toPortableName (currentBackendProfile ())}' does not provide capability 'rt-multishot-effects' required by multi-shot operation '{effectName}.{operation.Name}' at this invocation site."
+                        DiagnosticFact.typechecking
+                        (MultishotEffectUnsupportedBackendAtInvocation(
+                            BackendProfile.toPortableName (currentBackendProfile ()),
+                            effectName,
+                            operation.Name
+                        ))
                         (argumentLocation document expression)
                         []
                         document
@@ -7225,8 +7229,11 @@ module ResourceChecking =
                             when shouldCheckApplicationTypeCompatibility argument demandedType actualType
                                  && not (applicationBoundaryTypesCompatible demandedType actualType) ->
                             addDiagnostic
-                                (DiagnosticFact.codeDetail DiagnosticCode.TypeEqualityMismatch)
-                                $"Argument type '{TypeSignatures.toText actualType}' does not match demanded parameter type '{TypeSignatures.toText demandedType}'."
+                                DiagnosticFact.typechecking
+                                (ApplicationArgumentTypeMismatchAtSite(
+                                    TypeSignatures.toText actualType,
+                                    TypeSignatures.toText demandedType
+                                ))
                                 (argumentLocation document argument)
                                 []
                                 document
@@ -7774,8 +7781,12 @@ module ResourceChecking =
                             pendingMultishotOperations
                             |> List.fold (fun state pendingOperation ->
                                 addDiagnostic
-                                    (DiagnosticFact.codeDetail DiagnosticCode.QttContinuationCapture)
-                                    $"Multi-shot operation '{pendingOperation.EffectVisibleName}.{pendingOperation.OperationName}' cannot capture {capturedSummary} in its continuation."
+                                    DiagnosticFact.typechecking
+                                    (ContinuationCaptureForbidden(
+                                        pendingOperation.EffectVisibleName,
+                                        pendingOperation.OperationName,
+                                        capturedSummary
+                                    ))
                                     (argumentLocation document pendingOperation.InvocationExpression)
                                     []
                                     document
@@ -8004,8 +8015,8 @@ module ResourceChecking =
                 let current =
                     if containsEscapingAbruptControl expression then
                         addDiagnostic
-                            (DiagnosticFact.codeDetail DiagnosticCode.ControlFlowInvalidEscape)
-                            "A deferred action must not contain return, break, or continue targeting an outer scope."
+                            DiagnosticFact.typechecking
+                            DeferredActionContainsAbruptOuterEscape
                             (argumentLocation document expression)
                             []
                             document
@@ -8301,8 +8312,8 @@ module ResourceChecking =
 
                 if captureTypeMismatch then
                     addDiagnostic
-                        (DiagnosticFact.codeDetail DiagnosticCode.TypeEqualityMismatch)
-                        "The definition body does not match the declared result type."
+                        DiagnosticFact.typechecking
+                        DefinitionBodyResultTypeMismatch
                         (argumentLocation document body)
                         []
                         document
