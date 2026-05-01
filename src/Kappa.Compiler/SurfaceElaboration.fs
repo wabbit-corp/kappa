@@ -121,6 +121,21 @@ module SurfaceElaboration =
           TypeFacet: TypeFacetInfo option
           Trait: TraitInfo option }
 
+    type private VisibleEnvironmentComponents =
+        { ImportedUnschemedOrdinaryTermNames: Set<string>
+          VisibleTypeAliases: Map<string, TypeAliasInfo>
+          VisibleTypeFacets: Map<string, TypeFacetInfo>
+          VisibleQualifiedTypeFacets: Map<string list, TypeFacetInfo>
+          VisibleModulePaths: Map<string list, ModuleIdentity>
+          VisibleModules: Map<string, ModuleIdentity>
+          VisibleRecordTypes: Map<string, RecordSurfaceInfo>
+          VisibleConstructors: Map<string, BindingSchemeInfo>
+          AmbiguousVisibleOrdinaryTerms: Map<string, OrdinaryVisibleTermCandidate list>
+          VisibleProjections: Map<string, ProjectionInfo>
+          VisibleTraits: Map<string, TraitInfo>
+          VisibleQualifiedTraits: Map<string list, TraitInfo>
+          VisibleInstances: InstanceInfo list }
+
     let private renderOrdinaryVisibleTermCandidate candidate =
         match candidate with
         | OrdinaryVisibleBindingCandidate(_, info) when info.IsPattern ->
@@ -4622,6 +4637,50 @@ module SurfaceElaboration =
                 state)
                 Map.empty
 
+    let private buildBaseBindingLoweringEnvironment
+        (surfaceIndex: Map<ModuleIdentity, ModuleSurfaceInfo>)
+        (moduleIdentity: ModuleIdentity)
+        (currentModuleTopLevelDefinitions: Set<string>)
+        (visibleBindings: Map<string, BindingSchemeInfo>)
+        (components: VisibleEnvironmentComponents)
+        =
+        let visibleOrdinaryGroups =
+            buildVisibleOrdinaryGroups
+                visibleBindings
+                components.VisibleConstructors
+                components.VisibleModules
+                components.AmbiguousVisibleOrdinaryTerms
+
+        let visibleStaticGroups =
+            buildVisibleStaticGroups components.VisibleTypeFacets Map.empty components.VisibleTraits
+
+        { CurrentModuleIdentity = moduleIdentity
+          CurrentModuleTopLevelDefinitions = currentModuleTopLevelDefinitions
+          ImportedUnschemedOrdinaryTermNames = components.ImportedUnschemedOrdinaryTermNames
+          SurfaceIndex = surfaceIndex
+          VisibleTypeAliases = components.VisibleTypeAliases
+          VisibleTypeFacets = components.VisibleTypeFacets
+          VisibleQualifiedTypeFacets = components.VisibleQualifiedTypeFacets
+          VisibleStaticGroups = visibleStaticGroups
+          VisibleStaticObjects = Map.empty
+          VisibleModulePaths = components.VisibleModulePaths
+          VisibleModules = components.VisibleModules
+          VisibleRecordTypes = components.VisibleRecordTypes
+          VisibleBindings = visibleBindings
+          VisibleConstructors = components.VisibleConstructors
+          VisibleOrdinaryGroups = visibleOrdinaryGroups
+          VisibleProjections = components.VisibleProjections
+          VisibleTraits = components.VisibleTraits
+          VisibleQualifiedTraits = components.VisibleQualifiedTraits
+          VisibleInstances = components.VisibleInstances
+          ElaborationAvailableBindings =
+            visibleBindings
+            |> Map.keys
+            |> Set.ofSeq
+            |> Set.intersect (IntrinsicCatalog.elaborationAvailableIntrinsicTermNames ())
+          ConstraintDictionaries = Map.empty
+          ConstrainedMembers = Map.empty }
+
     let private withVisibleStaticObjects
         (environment: BindingLoweringEnvironment)
         (staticObjects: Map<string list, StaticObjectInfo>)
@@ -4771,6 +4830,26 @@ module SurfaceElaboration =
             ModuleIdentity.text instanceInfo.ModuleIdentity,
             traitReferenceCanonicalName instanceInfo.Trait,
             instanceInfo.InstanceKey)
+
+    let private computeVisibleEnvironmentComponents
+        (surfaceIndex: Map<ModuleIdentity, ModuleSurfaceInfo>)
+        moduleIdentity
+        =
+        { ImportedUnschemedOrdinaryTermNames =
+            collectImportedOrdinaryTermCandidates surfaceIndex moduleIdentity
+            |> importedUnschemedOrdinaryTermNamesFromCandidates
+          VisibleTypeAliases = mergeVisibleTypeAliases surfaceIndex moduleIdentity
+          VisibleTypeFacets = mergeVisibleTypeFacets surfaceIndex moduleIdentity
+          VisibleQualifiedTypeFacets = mergeVisibleQualifiedTypeFacets surfaceIndex moduleIdentity
+          VisibleModulePaths = mergeVisibleModulePaths surfaceIndex moduleIdentity
+          VisibleModules = mergeVisibleModules surfaceIndex moduleIdentity
+          VisibleRecordTypes = mergeVisibleRecordTypes surfaceIndex moduleIdentity
+          VisibleConstructors = mergeVisibleConstructors surfaceIndex moduleIdentity
+          AmbiguousVisibleOrdinaryTerms = mergeAmbiguousVisibleOrdinaryTerms surfaceIndex moduleIdentity
+          VisibleProjections = mergeVisibleProjections surfaceIndex moduleIdentity
+          VisibleTraits = mergeVisibleTraits surfaceIndex moduleIdentity
+          VisibleQualifiedTraits = mergeVisibleQualifiedTraits surfaceIndex moduleIdentity
+          VisibleInstances = visibleInstances surfaceIndex moduleIdentity }
 
     let private buildStaticObjectAliasesForModule
         (environment: BindingLoweringEnvironment)
@@ -20662,52 +20741,20 @@ module SurfaceElaboration =
                 let _, sourceBindingInfosByName =
                     buildSourceBindingInfosByName moduleIdentity frontendModule.Declarations
 
+                let visibleComponents =
+                    computeVisibleEnvironmentComponents surfaceIndex moduleIdentity
+
                 let visibleBindings =
                     sourceBindingInfosByName
                     |> Map.fold (fun state name bindingInfo -> Map.add name bindingInfo state) (mergeVisibleBindings surfaceIndex moduleIdentity)
-                let visibleModules = mergeVisibleModules surfaceIndex moduleIdentity
-                let visibleModulePaths = mergeVisibleModulePaths surfaceIndex moduleIdentity
-                let visibleConstructors = mergeVisibleConstructors surfaceIndex moduleIdentity
-                let ambiguousVisibleOrdinaryTerms = mergeAmbiguousVisibleOrdinaryTerms surfaceIndex moduleIdentity
-                let visibleOrdinaryGroups =
-                    buildVisibleOrdinaryGroups visibleBindings visibleConstructors visibleModules ambiguousVisibleOrdinaryTerms
-                let visibleTypeFacets = mergeVisibleTypeFacets surfaceIndex moduleIdentity
-                let visibleQualifiedTypeFacets = mergeVisibleQualifiedTypeFacets surfaceIndex moduleIdentity
-                let visibleTraits = mergeVisibleTraits surfaceIndex moduleIdentity
-                let visibleQualifiedTraits = mergeVisibleQualifiedTraits surfaceIndex moduleIdentity
-                let visibleStaticGroups = buildVisibleStaticGroups visibleTypeFacets Map.empty visibleTraits
-
-                let importedUnschemedOrdinaryTermNames =
-                    collectImportedOrdinaryTermCandidates surfaceIndex moduleIdentity
-                    |> importedUnschemedOrdinaryTermNamesFromCandidates
 
                 let baseEnvironment =
-                    { CurrentModuleIdentity = moduleIdentity
-                      CurrentModuleTopLevelDefinitions = topLevelDefinitionNames frontendModule.Declarations
-                      ImportedUnschemedOrdinaryTermNames = importedUnschemedOrdinaryTermNames
-                      SurfaceIndex = surfaceIndex
-                      VisibleTypeAliases = mergeVisibleTypeAliases surfaceIndex moduleIdentity
-                      VisibleTypeFacets = visibleTypeFacets
-                      VisibleQualifiedTypeFacets = visibleQualifiedTypeFacets
-                      VisibleStaticGroups = visibleStaticGroups
-                      VisibleStaticObjects = Map.empty
-                      VisibleModulePaths = visibleModulePaths
-                      VisibleModules = visibleModules
-                      VisibleRecordTypes = mergeVisibleRecordTypes surfaceIndex moduleIdentity
-                      VisibleBindings = visibleBindings
-                      VisibleConstructors = visibleConstructors
-                      VisibleOrdinaryGroups = visibleOrdinaryGroups
-                      VisibleProjections = mergeVisibleProjections surfaceIndex moduleIdentity
-                      VisibleTraits = visibleTraits
-                      VisibleQualifiedTraits = visibleQualifiedTraits
-                      VisibleInstances = visibleInstances surfaceIndex moduleIdentity
-                      ElaborationAvailableBindings =
+                    buildBaseBindingLoweringEnvironment
+                        surfaceIndex
+                        moduleIdentity
+                        (topLevelDefinitionNames frontendModule.Declarations)
                         visibleBindings
-                        |> Map.keys
-                        |> Set.ofSeq
-                        |> Set.intersect (IntrinsicCatalog.elaborationAvailableIntrinsicTermNames ())
-                      ConstraintDictionaries = Map.empty
-                      ConstrainedMembers = Map.empty }
+                        visibleComponents
 
                 let environment =
                     let staticObjectAliases =
@@ -27482,52 +27529,17 @@ module SurfaceElaboration =
                 Map.empty
 
         let visibleBindings = mergeVisibleBindings surfaceIndex moduleIdentity
-        let visibleTraits = mergeVisibleTraits surfaceIndex moduleIdentity
-        let visibleQualifiedTraits = mergeVisibleQualifiedTraits surfaceIndex moduleIdentity
-        let visibleTypeAliases = mergeVisibleTypeAliases surfaceIndex moduleIdentity
-        let visibleTypeFacets = mergeVisibleTypeFacets surfaceIndex moduleIdentity
-        let visibleQualifiedTypeFacets = mergeVisibleQualifiedTypeFacets surfaceIndex moduleIdentity
-        let visibleProjections = mergeVisibleProjections surfaceIndex moduleIdentity
-        let visibleModules = mergeVisibleModules surfaceIndex moduleIdentity
-        let visibleModulePaths = mergeVisibleModulePaths surfaceIndex moduleIdentity
-        let visibleConstructors = mergeVisibleConstructors surfaceIndex moduleIdentity
-        let ambiguousVisibleOrdinaryTerms = mergeAmbiguousVisibleOrdinaryTerms surfaceIndex moduleIdentity
-        let visibleOrdinaryGroups =
-            buildVisibleOrdinaryGroups visibleBindings visibleConstructors visibleModules ambiguousVisibleOrdinaryTerms
-        let visibleStaticGroups = buildVisibleStaticGroups visibleTypeFacets Map.empty visibleTraits
+        let visibleComponents = computeVisibleEnvironmentComponents surfaceIndex moduleIdentity
 
         let environment =
-            { CurrentModuleIdentity = moduleIdentity
-              CurrentModuleTopLevelDefinitions =
-                surfaceIndex[moduleIdentity].BindingSchemes
-                |> Map.keys
-                |> Set.ofSeq
-              ImportedUnschemedOrdinaryTermNames =
-                collectImportedOrdinaryTermCandidates surfaceIndex moduleIdentity
-                |> importedUnschemedOrdinaryTermNamesFromCandidates
-              SurfaceIndex = surfaceIndex
-              VisibleTypeAliases = visibleTypeAliases
-              VisibleTypeFacets = visibleTypeFacets
-              VisibleQualifiedTypeFacets = visibleQualifiedTypeFacets
-              VisibleStaticGroups = visibleStaticGroups
-              VisibleStaticObjects = Map.empty
-              VisibleModulePaths = visibleModulePaths
-              VisibleModules = visibleModules
-              VisibleRecordTypes = mergeVisibleRecordTypes surfaceIndex moduleIdentity
-              VisibleBindings = visibleBindings
-              VisibleConstructors = visibleConstructors
-              VisibleOrdinaryGroups = visibleOrdinaryGroups
-              VisibleProjections = visibleProjections
-              VisibleTraits = visibleTraits
-              VisibleQualifiedTraits = visibleQualifiedTraits
-              VisibleInstances = visibleInstances surfaceIndex moduleIdentity
-              ElaborationAvailableBindings =
+            buildBaseBindingLoweringEnvironment
+                surfaceIndex
+                moduleIdentity
+                (surfaceIndex[moduleIdentity].BindingSchemes
+                 |> Map.keys
+                 |> Set.ofSeq)
                 visibleBindings
-                |> Map.keys
-                |> Set.ofSeq
-                |> Set.intersect (IntrinsicCatalog.elaborationAvailableIntrinsicTermNames ())
-              ConstraintDictionaries = Map.empty
-              ConstrainedMembers = Map.empty }
+                visibleComponents
 
         let instanceConstraints = instanceInfo.Constraints
 
@@ -27715,48 +27727,16 @@ module SurfaceElaboration =
                 withScopedEffectDeclarations moduleIdentity topLevelEffects (fun () ->
                     let moduleInfo = surfaceIndex[moduleIdentity]
                     let recordLayouts = ref Map.empty
-                    let visibleModules = mergeVisibleModules surfaceIndex moduleIdentity
-                    let visibleModulePaths = mergeVisibleModulePaths surfaceIndex moduleIdentity
+                    let visibleComponents = computeVisibleEnvironmentComponents surfaceIndex moduleIdentity
                     let visibleBindings = mergeVisibleBindings surfaceIndex moduleIdentity
-                    let visibleConstructors = mergeVisibleConstructors surfaceIndex moduleIdentity
-                    let ambiguousVisibleOrdinaryTerms = mergeAmbiguousVisibleOrdinaryTerms surfaceIndex moduleIdentity
-                    let visibleOrdinaryGroups =
-                        buildVisibleOrdinaryGroups visibleBindings visibleConstructors visibleModules ambiguousVisibleOrdinaryTerms
-                    let visibleTypeFacets = mergeVisibleTypeFacets surfaceIndex moduleIdentity
-                    let visibleQualifiedTypeFacets = mergeVisibleQualifiedTypeFacets surfaceIndex moduleIdentity
-                    let visibleTraits = mergeVisibleTraits surfaceIndex moduleIdentity
-                    let visibleQualifiedTraits = mergeVisibleQualifiedTraits surfaceIndex moduleIdentity
-                    let visibleStaticGroups = buildVisibleStaticGroups visibleTypeFacets Map.empty visibleTraits
 
                     let baseEnvironment =
-                        { CurrentModuleIdentity = moduleIdentity
-                          CurrentModuleTopLevelDefinitions = topLevelDefinitionNames frontendModule.Declarations
-                          ImportedUnschemedOrdinaryTermNames =
-                            collectImportedOrdinaryTermCandidates surfaceIndex moduleIdentity
-                            |> importedUnschemedOrdinaryTermNamesFromCandidates
-                          SurfaceIndex = surfaceIndex
-                          VisibleTypeAliases = mergeVisibleTypeAliases surfaceIndex moduleIdentity
-                          VisibleTypeFacets = visibleTypeFacets
-                          VisibleQualifiedTypeFacets = visibleQualifiedTypeFacets
-                          VisibleStaticGroups = visibleStaticGroups
-                          VisibleStaticObjects = Map.empty
-                          VisibleModulePaths = visibleModulePaths
-                          VisibleModules = visibleModules
-                          VisibleRecordTypes = mergeVisibleRecordTypes surfaceIndex moduleIdentity
-                          VisibleBindings = visibleBindings
-                          VisibleConstructors = visibleConstructors
-                          VisibleOrdinaryGroups = visibleOrdinaryGroups
-                          VisibleProjections = mergeVisibleProjections surfaceIndex moduleIdentity
-                          VisibleTraits = visibleTraits
-                          VisibleQualifiedTraits = visibleQualifiedTraits
-                          VisibleInstances = visibleInstances surfaceIndex moduleIdentity
-                          ElaborationAvailableBindings =
+                        buildBaseBindingLoweringEnvironment
+                            surfaceIndex
+                            moduleIdentity
+                            (topLevelDefinitionNames frontendModule.Declarations)
                             visibleBindings
-                            |> Map.keys
-                            |> Set.ofSeq
-                            |> Set.intersect (IntrinsicCatalog.elaborationAvailableIntrinsicTermNames ())
-                          ConstraintDictionaries = Map.empty
-                          ConstrainedMembers = Map.empty }
+                            visibleComponents
 
                     let environment =
                         let staticObjectAliases =

@@ -241,23 +241,28 @@ module internal IlDotNetBackendInput =
     let internal buildRawDataTypes (modules: ClrAssemblyModule list) =
         modules
         |> List.map (fun moduleDump ->
+            let moduleIdentity = ModuleIdentity.ofDottedTextUnchecked moduleDump.Name
+
             let dataTypes =
                 moduleDump.DataTypes
                 |> List.map (fun dataType ->
+                    let dataTypeIdentity = TypeIdentity.topLevel moduleIdentity dataType.Name
+
                     let constructors =
                         dataType.Constructors
                         |> List.map (fun constructor ->
-                            { Name = constructor.Name
+                            { Identity =
+                                DeclarationIdentity.topLevel moduleIdentity constructor.Name ConstructorDeclaration
+                              ResultType = dataTypeIdentity
                               FieldTypeTexts = constructor.FieldTypeTexts
                               Arity = constructor.Arity })
 
                     let rawDataType: RawDataTypeInfo =
-                        { ModuleName = moduleDump.Name
-                          Name = dataType.Name
+                        { Identity = dataTypeIdentity
                           TypeParameters = dataType.TypeParameters
                           Constructors = constructors
                           ExternalRuntimeTypeName = dataType.ExternalRuntimeTypeName
-                          EmittedTypeName = emittedDataTypeName moduleDump.Name dataType.Name }
+                          EmittedTypeName = emittedDataTypeName dataTypeIdentity }
 
                     dataType.Name, rawDataType)
                 |> Map.ofList
@@ -270,6 +275,8 @@ module internal IlDotNetBackendInput =
 
         modules
         |> List.map (fun moduleDump ->
+            let moduleIdentity = ModuleIdentity.ofDottedTextUnchecked moduleDump.Name
+
             let bindings =
                 moduleDump.Bindings
                 |> List.filter (fun binding -> not binding.Intrinsic)
@@ -283,7 +290,7 @@ module internal IlDotNetBackendInput =
                 Set.union (moduleDataTypes |> Map.keys |> Set.ofSeq) (bundledTypeExports moduleDump.Name)
 
             moduleDump.Name,
-            { Name = moduleDump.Name
+            { Identity = moduleIdentity
               Imports = moduleDump.Imports
               Exports = moduleDump.Exports |> Set.ofList
               TypeExports = typeExports
@@ -577,26 +584,26 @@ module internal IlDotNetBackendInput =
                                                             (Result.Ok [])
 
                                                     let resolvedConstructor =
-                                                        { ModuleName = moduleName
-                                                          Name = rawConstructor.Name
-                                                          TypeName = rawDataType.Name
+                                                        { Identity = rawConstructor.Identity
+                                                          ResultType = rawConstructor.ResultType
                                                           TypeParameters = rawDataType.TypeParameters
                                                           FieldTypes = List.rev fieldTypes
-                                                          EmittedTypeName = emittedConstructorTypeName moduleName rawConstructor.Name }
+                                                          EmittedTypeName = emittedConstructorTypeName rawConstructor.Identity }
 
-                                                    return (rawConstructor.Name, resolvedConstructor) :: constructorsSoFar
+                                                    return
+                                                        (DeclarationIdentity.name rawConstructor.Identity, resolvedConstructor)
+                                                        :: constructorsSoFar
                                                 })
                                             (Result.Ok [])
 
                                     let resolvedDataType =
-                                        { ModuleName = moduleName
-                                          Name = rawDataType.Name
+                                        { Identity = rawDataType.Identity
                                           TypeParameters = rawDataType.TypeParameters
                                           Constructors = constructors |> Map.ofList
                                           ExternalRuntimeTypeName = rawDataType.ExternalRuntimeTypeName
                                           EmittedTypeName = rawDataType.EmittedTypeName }: DataTypeInfo
 
-                                    return (rawDataType.Name, resolvedDataType) :: entries
+                                    return (TypeIdentity.name rawDataType.Identity, resolvedDataType) :: entries
                                 })
                             (Result.Ok [])
 
@@ -679,10 +686,7 @@ module internal IlDotNetBackendInput =
             Result.Error $"IL backend could not unify {formatIlType template} with {formatIlType actual}."
 
     let internal constructorResultType (constructorInfo: ConstructorInfo) =
-        IlNamed(
-            TypeIdentity.ofDottedTextUnchecked constructorInfo.ModuleName constructorInfo.TypeName,
-            constructorInfo.TypeParameters |> List.map IlTypeParameter
-        )
+        IlNamed(constructorInfo.ResultType, constructorInfo.TypeParameters |> List.map IlTypeParameter)
 
     let internal buildDeclaredBindingLookup (modules: ClrAssemblyModule list) =
         modules
@@ -699,6 +703,8 @@ module internal IlDotNetBackendInput =
         |> List.fold
             (fun stateResult moduleDump ->
                 result {
+                    let moduleIdentity = ModuleIdentity.ofDottedTextUnchecked moduleDump.Name
+
                     let! instances = stateResult
 
                     let! discoveredInstances =
@@ -720,8 +726,11 @@ module internal IlDotNetBackendInput =
                                             (Result.Ok [])
 
                                     let instanceInfo =
-                                        { ModuleName = moduleDump.Name
-                                          TraitName = instanceDeclaration.TraitName
+                                        { ModuleIdentity = moduleIdentity
+                                          Trait =
+                                            instanceDeclaration.TraitName.Split('.', StringSplitOptions.RemoveEmptyEntries)
+                                            |> Array.toList
+                                            |> TypeSignatures.TraitReference.ofSegments
                                           InstanceKey = instanceDeclaration.InstanceKey
                                           HeadTypes = List.rev headTypes
                                           MemberBindings = instanceDeclaration.MemberBindings |> Map.ofList }
@@ -768,20 +777,31 @@ module internal IlDotNetBackendInput =
                    ReturnType = returnType }: DeclaredBindingTypes)
         }
 
-    let internal tryFindTraitInstance (environment: EmissionEnvironment) moduleName traitName instanceKey =
+    let internal tryFindTraitInstance (environment: EmissionEnvironment) (moduleName: string) (traitName: string) instanceKey =
+        let moduleIdentity = ModuleIdentity.ofDottedTextUnchecked moduleName
+        let traitReference =
+            traitName.Split('.', StringSplitOptions.RemoveEmptyEntries)
+            |> Array.toList
+            |> TypeSignatures.TraitReference.ofSegments
+
         environment.TraitInstances
         |> List.tryFind (fun instanceInfo ->
-            String.Equals(instanceInfo.ModuleName, moduleName, StringComparison.Ordinal)
-            && String.Equals(instanceInfo.TraitName, traitName, StringComparison.Ordinal)
+            instanceInfo.ModuleIdentity = moduleIdentity
+            && TypeSignatures.TraitReference.matches instanceInfo.Trait traitReference
             && String.Equals(instanceInfo.InstanceKey, instanceKey, StringComparison.Ordinal))
 
-    let internal traitMemberRoutes (environment: EmissionEnvironment) traitName memberName =
+    let internal traitMemberRoutes (environment: EmissionEnvironment) (traitName: string) memberName =
+        let traitReference =
+            traitName.Split('.', StringSplitOptions.RemoveEmptyEntries)
+            |> Array.toList
+            |> TypeSignatures.TraitReference.ofSegments
+
         environment.TraitInstances
         |> List.choose (fun instanceInfo ->
             instanceInfo.MemberBindings
             |> Map.tryFind memberName
             |> Option.bind (fun bindingName ->
-                if String.Equals(instanceInfo.TraitName, traitName, StringComparison.Ordinal) then
+                if TypeSignatures.TraitReference.matches instanceInfo.Trait traitReference then
                     Some(instanceInfo, bindingName)
                 else
                     None))
@@ -841,7 +861,9 @@ module internal IlDotNetBackendInput =
                 | Some importedModule
                     when selectionImportsTermName spec.Selection name
                          && importedModule.Exports.Contains(name) ->
-                    importedModule.Bindings |> Map.tryFind name |> Option.map (fun binding -> importedModule.Name, binding)
+                    importedModule.Bindings
+                    |> Map.tryFind name
+                    |> Option.map (fun binding -> ModuleIdentity.text importedModule.Identity, binding)
                 | _ ->
                     None)
         |> List.distinctBy fst
@@ -874,7 +896,7 @@ module internal IlDotNetBackendInput =
         |> Map.tryFind currentModule
         |> Option.bind (fun moduleInfo ->
             if moduleInfo.DataTypes.ContainsKey("File") then
-                Some(namedIlType moduleInfo.Name "File" [])
+                Some(namedIlType (TypeIdentity.topLevel moduleInfo.Identity "File") [])
             else
                 None)
 
@@ -894,8 +916,11 @@ module internal IlDotNetBackendInput =
                     importedModule.Constructors
                     |> Map.tryFind name
                     |> Option.filter (fun constructorInfo ->
-                        selectionImportsConstructorName spec.Selection name constructorInfo.TypeName)
-                    |> Option.map (fun constructorInfo -> importedModule.Name, constructorInfo)
+                        selectionImportsConstructorName
+                            spec.Selection
+                            name
+                            (TypeIdentity.name constructorInfo.ResultType))
+                    |> Option.map (fun constructorInfo -> ModuleIdentity.text importedModule.Identity, constructorInfo)
                 | _ ->
                     None)
         |> List.distinctBy fst
@@ -944,7 +969,7 @@ module internal IlDotNetBackendInput =
 
         if List.length argumentTemplates <> List.length expressionArguments then
             Result.Error
-                $"IL backend expected constructor '{constructorInfo.Name}' to receive {List.length argumentTemplates} argument(s), but received {List.length expressionArguments}."
+                $"IL backend expected constructor '{DeclarationIdentity.name constructorInfo.Identity}' to receive {List.length argumentTemplates} argument(s), but received {List.length expressionArguments}."
         else
             List.zip expressionArguments argumentTemplates
             |> List.fold
@@ -973,7 +998,7 @@ module internal IlDotNetBackendInput =
 
                 if containsTypeParametersOutside allowedTypeParameters resultType then
                     Result.Error
-                        $"IL backend could not infer concrete type arguments for constructor '{constructorInfo.Name}'."
+                        $"IL backend could not infer concrete type arguments for constructor '{DeclarationIdentity.name constructorInfo.Identity}'."
                 else
                     Result.Ok resultType)
 

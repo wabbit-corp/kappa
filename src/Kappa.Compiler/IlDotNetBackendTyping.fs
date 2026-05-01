@@ -12,6 +12,11 @@ module internal IlDotNetBackendTyping =
     open IlDotNetBackendModel
     open IlDotNetBackendInput
 
+    let private traitReferenceOfRuntimeName (traitName: string) =
+        traitName.Split('.', StringSplitOptions.RemoveEmptyEntries)
+        |> Array.toList
+        |> TypeSignatures.TraitReference.ofSegments
+
     let internal buildEnvironment (modules: ClrAssemblyModule list) (roots: (string * string) list option) =
         let rawSkeletons, rawDataTypes = buildRawModuleSkeletons modules
 
@@ -39,12 +44,14 @@ module internal IlDotNetBackendTyping =
                         loop pattern |> Set.ofList
 
                     let routeBindings traitName memberName =
+                        let traitReference = traitReferenceOfRuntimeName traitName
+
                         traitInstances
                         |> List.choose (fun instanceInfo ->
-                            if String.Equals(instanceInfo.TraitName, traitName, StringComparison.Ordinal) then
+                            if TypeSignatures.TraitReference.matches instanceInfo.Trait traitReference then
                                 instanceInfo.MemberBindings
                                 |> Map.tryFind memberName
-                                |> Option.map (fun bindingName -> instanceInfo.ModuleName, bindingName)
+                                |> Option.map (fun bindingName -> ModuleIdentity.text instanceInfo.ModuleIdentity, bindingName)
                             else
                                 None)
 
@@ -436,7 +443,7 @@ module internal IlDotNetBackendTyping =
                             |> Result.bind (fun substitution ->
                                 if List.length argumentPatterns <> List.length constructorInfo.FieldTypes then
                                     Result.Error
-                                        $"IL backend expected pattern '{constructorInfo.Name}' to receive {List.length constructorInfo.FieldTypes} argument(s), but received {List.length argumentPatterns}."
+                                        $"IL backend expected pattern '{DeclarationIdentity.name constructorInfo.Identity}' to receive {List.length constructorInfo.FieldTypes} argument(s), but received {List.length argumentPatterns}."
                                 else
                                     List.zip argumentPatterns constructorInfo.FieldTypes
                                     |> List.fold
@@ -493,7 +500,7 @@ module internal IlDotNetBackendTyping =
                                         constructorInfo
                                 | Some(targetModule, constructorInfo) ->
                                     Result.Error
-                                        $"IL backend does not support constructor-valued name '{targetModule}.{constructorInfo.Name}' yet."
+                                        $"IL backend does not support constructor-valued name '{targetModule}.{DeclarationIdentity.name constructorInfo.Identity}' yet."
                                 | None ->
                                     let localsText =
                                         localTypes |> Map.toList |> List.map fst |> String.concat ", "
@@ -539,6 +546,8 @@ module internal IlDotNetBackendTyping =
                                             $"IL backend does not support intrinsic '{name}' for argument types [{argumentText}].")
 
                     let inferTraitCall traitName memberName dictionary arguments =
+                        let traitReference = traitReferenceOfRuntimeName traitName
+
                         result {
                             let! _ = inferExpressionType currentModule localTypes active allowedTypeParameters None dictionary
 
@@ -559,8 +568,8 @@ module internal IlDotNetBackendTyping =
                                 match
                                     traitInstances
                                     |> List.tryFind (fun instanceInfo ->
-                                        String.Equals(instanceInfo.ModuleName, moduleName, StringComparison.Ordinal)
-                                        && String.Equals(instanceInfo.TraitName, traitName, StringComparison.Ordinal)
+                                        instanceInfo.ModuleIdentity = ModuleIdentity.ofDottedTextUnchecked moduleName
+                                        && TypeSignatures.TraitReference.matches instanceInfo.Trait traitReference
                                         && String.Equals(instanceInfo.InstanceKey, instanceKey, StringComparison.Ordinal))
                                 with
                                 | Some instanceInfo ->
@@ -583,8 +592,8 @@ module internal IlDotNetBackendTyping =
                                         instanceInfo.MemberBindings
                                         |> Map.tryFind memberName
                                         |> Option.bind (fun bindingName ->
-                                            if String.Equals(instanceInfo.TraitName, traitName, StringComparison.Ordinal) then
-                                                Some(instanceInfo.ModuleName, bindingName)
+                                            if TypeSignatures.TraitReference.matches instanceInfo.Trait traitReference then
+                                                Some(ModuleIdentity.text instanceInfo.ModuleIdentity, bindingName)
                                             else
                                                 None))
 
@@ -853,8 +862,8 @@ module internal IlDotNetBackendTyping =
                         match
                             traitInstances
                             |> List.tryFind (fun instanceInfo ->
-                                String.Equals(instanceInfo.ModuleName, moduleName, StringComparison.Ordinal)
-                                && String.Equals(instanceInfo.TraitName, traitName, StringComparison.Ordinal)
+                                instanceInfo.ModuleIdentity = ModuleIdentity.ofDottedTextUnchecked moduleName
+                                && TypeSignatures.TraitReference.matches instanceInfo.Trait (traitReferenceOfRuntimeName traitName)
                                 && String.Equals(instanceInfo.InstanceKey, instanceKey, StringComparison.Ordinal))
                         with
                         | Some instanceInfo ->
@@ -891,7 +900,7 @@ module internal IlDotNetBackendTyping =
                                     (Result.Ok [])
 
                             let moduleInfo =
-                                { Name = rawModule.Name
+                                { Identity = rawModule.Identity
                                   Imports = rawModule.Imports
                                   Exports = rawModule.Exports
                                   TypeExports = rawModule.TypeExports

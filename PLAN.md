@@ -45,6 +45,7 @@ Current M4 status note: started, not complete. The compiler now has a real effec
 ## 7. Symbolic names, spelling, and semantic identity
 
 - [ ] Introduce declaration-level and semantic-object identities beyond `ModuleIdentity`, so resolved declarations, constructors, traits, effect labels, projections, and reified static objects stop falling back to plain `string`.
+  Frontend elaboration and the internal CLR model now store `DeclarationIdentity`, `SemanticObjectIdentity`, `TypeIdentity`, and structured `TraitReference` values directly; the main remaining gap is carrying that identity through `KRuntimeIR` / `KBackendIR` and other target backends instead of collapsing back to runtime text.
 - [ ] Replace visible-name environments that collapse declaration kinds into plain `Map<string, ...>` lookup with an explicit binding-group model matching section 2.8.
   Ordinary term lookup and ambiguity now route through `VisibleOrdinaryGroups`, and qualified type/trait/static-object resolution now goes through structured `VisibleStaticGroups`, `VisibleQualifiedTypeFacets`, `VisibleQualifiedTraits`, and `VisibleModulePaths`.
   The remaining gap is the deeper same-spelling binding-group model itself: type/trait/static-object membership is still assembled from split maps instead of one first-class binding-group representation.
@@ -65,7 +66,9 @@ Current M4 status note: started, not complete. The compiler now has a real effec
   [ClrAssemblyIR.fs](/D:/ws/kappa/src/Kappa.Compiler/ClrAssemblyIR.fs),
   [IlDotNetBackendModel.fs](/D:/ws/kappa/src/Kappa.Compiler/IlDotNetBackendModel.fs),
   and remaining hosted/runtime boundary models.
-- [ ] Continue the CLR backend migration past `IlNamed`. `IlDotNetBackendModel.IlType` now has a structured `TypeIdentity`, but metadata carriers such as `RawDataTypeInfo`, `ConstructorInfo`, `DataTypeInfo`, `ModuleSurface`, and `TraitInstanceInfo` still record semantic ownership as raw text.
+- [ ] Continue the CLR backend migration past `IlNamed`.
+  `IlDotNetBackendModel.IlType`, `RawDataTypeInfo`, `ConstructorInfo`, `DataTypeInfo`, `ModuleSurface`, and `TraitInstanceInfo` now store structured identities internally, with text only exposed as derived projections for compatibility.
+  Remaining work is to remove those compatibility projections from downstream lowering and to stop the runtime/portable backend models from reintroducing text-based semantic ownership.
 - [ ] Finish slimming `Stdlib.fs` after the new `StandardLibraryCatalog` introduction. Prelude/bundled/synthetic module definitions now live in one typed catalog, but some convenience lookups still route through `Stdlib` rather than consuming the catalog directly.
 - [ ] Replace verifier/runtime stringly type carriers that force semantic checks over rendered text, especially `KRuntimeIR` type-text fields and the substring fallback in `CheckpointVerification.runtimeTypeLeaksErasureMetadata`.
 - [ ] Replace stringly trait/dictionary conventions that still depend on synthesized textual names or prefixes, including `TraitRuntime.dictionaryTypeName ...`, `__kappa_dict_*` prefix checks, and literal trait-name comparisons such as `InterpolatedMacro`, `LacksRec`, `IsProp`, and `IsTrait`.

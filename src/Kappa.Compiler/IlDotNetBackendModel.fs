@@ -22,36 +22,42 @@ module internal IlDotNetBackendModel =
         | IlTypeParameter of string
 
     type internal RawConstructorInfo =
-        { Name: string
+        { Identity: DeclarationIdentity
+          ResultType: TypeIdentity
           FieldTypeTexts: string list
           Arity: int }
+        member this.Name = DeclarationIdentity.name this.Identity
 
     type internal RawDataTypeInfo =
-        { ModuleName: string
-          Name: string
+        { Identity: TypeIdentity
           TypeParameters: string list
           Constructors: RawConstructorInfo list
           ExternalRuntimeTypeName: string option
           EmittedTypeName: string }
+        member this.ModuleName = TypeIdentity.moduleIdentity this.Identity |> ModuleIdentity.text
+        member this.Name = TypeIdentity.name this.Identity
 
     type internal ConstructorInfo =
-        { ModuleName: string
-          Name: string
-          TypeName: string
+        { Identity: DeclarationIdentity
+          ResultType: TypeIdentity
           TypeParameters: string list
           FieldTypes: IlType list
           EmittedTypeName: string }
+        member this.ModuleName = DeclarationIdentity.moduleIdentity this.Identity |> ModuleIdentity.text
+        member this.Name = DeclarationIdentity.name this.Identity
+        member this.TypeName = TypeIdentity.name this.ResultType
 
     type internal DataTypeInfo =
-        { ModuleName: string
-          Name: string
+        { Identity: TypeIdentity
           TypeParameters: string list
           Constructors: Map<string, ConstructorInfo>
           ExternalRuntimeTypeName: string option
           EmittedTypeName: string }
+        member this.ModuleName = TypeIdentity.moduleIdentity this.Identity |> ModuleIdentity.text
+        member this.Name = TypeIdentity.name this.Identity
 
     type internal ModuleSurface<'binding> =
-        { Name: string
+        { Identity: ModuleIdentity
           Imports: ImportSpec list
           Exports: Set<string>
           TypeExports: Set<string>
@@ -59,6 +65,7 @@ module internal IlDotNetBackendModel =
           Constructors: Map<string, ConstructorInfo>
           Bindings: Map<string, 'binding>
           EmittedTypeName: string option }
+        member this.Name = ModuleIdentity.text this.Identity
 
     type internal BindingInfo =
         { Binding: ClrAssemblyBinding
@@ -76,11 +83,13 @@ module internal IlDotNetBackendModel =
           ReturnType: string option }
 
     type internal TraitInstanceInfo =
-        { ModuleName: string
-          TraitName: string
+        { ModuleIdentity: ModuleIdentity
+          Trait: TypeSignatures.TraitReference
           InstanceKey: string
           HeadTypes: IlType list
           MemberBindings: Map<string, string> }
+        member this.ModuleName = ModuleIdentity.text this.ModuleIdentity
+        member this.TraitName = TypeSignatures.TraitReference.text this.Trait
 
     type internal RawModuleInfo = ModuleSurface<ClrAssemblyBinding>
     type internal ModuleInfo = ModuleSurface<BindingInfo>
@@ -154,24 +163,33 @@ module internal IlDotNetBackendModel =
         else
             "_" + text
 
-    let emittedModuleTypeName (moduleName: string) =
+    let private emittedModuleTypeNameFromIdentity (moduleIdentity: ModuleIdentity) =
         let segments =
-            moduleName.Split('.', StringSplitOptions.RemoveEmptyEntries ||| StringSplitOptions.TrimEntries)
-            |> Array.map sanitizeIdentifier
+            moduleIdentity
+            |> ModuleIdentity.segments
+            |> List.map sanitizeIdentifier
+            |> List.toArray
 
         if Array.isEmpty segments then
             invalidOp "Module name cannot be empty."
 
         "Kappa.Generated." + String.concat "." segments
 
+    let emittedModuleTypeName (moduleName: string) =
+        moduleName |> ModuleIdentity.ofDottedTextUnchecked |> emittedModuleTypeNameFromIdentity
+
     let emittedMethodName (bindingName: string) =
         sanitizeIdentifier bindingName
 
-    let internal emittedDataTypeName (moduleName: string) (typeName: string) =
-        emittedModuleTypeName moduleName + "." + sanitizeIdentifier typeName
+    let internal emittedDataTypeName (typeIdentity: TypeIdentity) =
+        emittedModuleTypeNameFromIdentity (TypeIdentity.moduleIdentity typeIdentity)
+        + "."
+        + sanitizeIdentifier (TypeIdentity.name typeIdentity)
 
-    let internal emittedConstructorTypeName (moduleName: string) (constructorName: string) =
-        emittedModuleTypeName moduleName + "." + sanitizeIdentifier constructorName
+    let internal emittedConstructorTypeName (constructorIdentity: DeclarationIdentity) =
+        emittedModuleTypeNameFromIdentity (DeclarationIdentity.moduleIdentity constructorIdentity)
+        + "."
+        + sanitizeIdentifier (DeclarationIdentity.name constructorIdentity)
 
     let internal primitiveRuntimeType =
         function
@@ -194,8 +212,8 @@ module internal IlDotNetBackendModel =
     let internal preludeTypeIdentity name =
         TypeIdentity.topLevel preludeModuleIdentity name
 
-    let internal namedIlType moduleName typeName arguments =
-        IlNamed(TypeIdentity.ofDottedTextUnchecked moduleName typeName, arguments)
+    let internal namedIlType typeIdentity arguments =
+        IlNamed(typeIdentity, arguments)
 
     let internal unitIlType =
         IlNamed(preludeTypeIdentity Stdlib.KnownTypeNames.Unit, [])
