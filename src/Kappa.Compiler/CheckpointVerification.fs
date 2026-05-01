@@ -658,7 +658,10 @@ module CheckpointVerification =
                             (fun state name _ ->
                                 if Map.containsKey name bindingsSoFar then
                                     state
-                                    @ [ makeOriginDiagnostic documents bindingOrigin $"Checkpoint '{checkpoint}' requires unique pattern binder names within '{bindingLabel}', but '{name}' was duplicated." ]
+                                    @ [ makeStructuredOriginDiagnostic
+                                            documents
+                                            bindingOrigin
+                                            (DuplicateBackendPatternBinder(checkpoint, bindingLabel, name)) ]
                                 else
                                     state)
                             diagnosticsSoFar
@@ -687,7 +690,10 @@ module CheckpointVerification =
                                 let state =
                                     if candidateNames <> firstNames then
                                         state
-                                        @ [ makeOriginDiagnostic documents bindingOrigin $"Checkpoint '{checkpoint}' requires each or-pattern alternative within '{bindingLabel}' to bind the same names." ]
+                                        @ [ makeStructuredOriginDiagnostic
+                                                documents
+                                                bindingOrigin
+                                                (BackendOrPatternAlternativesMustBindSameNames(checkpoint, bindingLabel)) ]
                                     else
                                         state
 
@@ -699,7 +705,10 @@ module CheckpointVerification =
                                             comparisonState
                                         | Some _ ->
                                             comparisonState
-                                            @ [ makeOriginDiagnostic documents bindingOrigin $"Checkpoint '{checkpoint}' requires binder '{name}' within '{bindingLabel}' to keep the same backend representation across every or-pattern alternative." ]
+                                            @ [ makeStructuredOriginDiagnostic
+                                                    documents
+                                                    bindingOrigin
+                                                    (BackendOrPatternBinderRepresentationMismatch(checkpoint, bindingLabel, name)) ]
                                         | None ->
                                             comparisonState)
                                     state)
@@ -733,7 +742,10 @@ module CheckpointVerification =
                         []
                     else
                         let constructorText = $"{moduleName}.{typeName}.{constructorName}@{tag}"
-                        [ makeOriginDiagnostic documents bindingOrigin $"Checkpoint '{checkpoint}' requires resolved constructor patterns, but '{constructorText}' in '{bindingLabel}' is not present in the backend module graph." ]
+                        [ makeStructuredOriginDiagnostic
+                              documents
+                              bindingOrigin
+                              (BackendPatternConstructorMissingFromModuleGraph(checkpoint, bindingLabel, constructorText)) ]
 
                 diagnostics @ (fieldPatterns |> List.collect verifyConstructors)
 

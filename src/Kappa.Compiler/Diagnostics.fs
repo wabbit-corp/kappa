@@ -906,6 +906,10 @@ type CheckpointVerificationEvidence =
     | PreErasureReturnTypeMetadataLeak of checkpoint: string * bindingLabel: string * typeText: string
     | PreErasureConstructorFieldMetadataLeak of checkpoint: string * fieldLabel: string * typeText: string
     | PreErasureInstanceHeadMetadataLeak of checkpoint: string * instanceHeadLabel: string * typeText: string
+    | DuplicateBackendPatternBinder of checkpoint: string * bindingLabel: string * binderName: string
+    | BackendOrPatternAlternativesMustBindSameNames of checkpoint: string * bindingLabel: string
+    | BackendOrPatternBinderRepresentationMismatch of checkpoint: string * bindingLabel: string * binderName: string
+    | BackendPatternConstructorMissingFromModuleGraph of checkpoint: string * bindingLabel: string * constructorText: string
 
 type SurfaceRecordContext =
     | RecordTypeTelescope
@@ -2963,6 +2967,49 @@ module DiagnosticFact =
                           field "checkpoint" (DiagnosticPayloadText checkpoint)
                           field "instance-head-label" (DiagnosticPayloadText instanceHeadLabel)
                           field "type-text" (DiagnosticPayloadText typeText) ])
+            | DuplicateBackendPatternBinder(checkpoint, bindingLabel, binderName) ->
+                descriptor
+                    DiagnosticCode.CheckpointVerification
+                    None
+                    $"Checkpoint '{checkpoint}' requires unique pattern binder names within '{bindingLabel}', but '{binderName}' was duplicated."
+                    (payload
+                        "checkpoint-verification-diagnostic"
+                        [ field "reason" (DiagnosticPayloadText "duplicate-backend-pattern-binder")
+                          field "checkpoint" (DiagnosticPayloadText checkpoint)
+                          field "binding-label" (DiagnosticPayloadText bindingLabel)
+                          field "binder-name" (DiagnosticPayloadText binderName) ])
+            | BackendOrPatternAlternativesMustBindSameNames(checkpoint, bindingLabel) ->
+                descriptor
+                    DiagnosticCode.CheckpointVerification
+                    None
+                    $"Checkpoint '{checkpoint}' requires each or-pattern alternative within '{bindingLabel}' to bind the same names."
+                    (payload
+                        "checkpoint-verification-diagnostic"
+                        [ field "reason" (DiagnosticPayloadText "backend-or-pattern-alternatives-must-bind-same-names")
+                          field "checkpoint" (DiagnosticPayloadText checkpoint)
+                          field "binding-label" (DiagnosticPayloadText bindingLabel) ])
+            | BackendOrPatternBinderRepresentationMismatch(checkpoint, bindingLabel, binderName) ->
+                descriptor
+                    DiagnosticCode.CheckpointVerification
+                    None
+                    $"Checkpoint '{checkpoint}' requires binder '{binderName}' within '{bindingLabel}' to keep the same backend representation across every or-pattern alternative."
+                    (payload
+                        "checkpoint-verification-diagnostic"
+                        [ field "reason" (DiagnosticPayloadText "backend-or-pattern-binder-representation-mismatch")
+                          field "checkpoint" (DiagnosticPayloadText checkpoint)
+                          field "binding-label" (DiagnosticPayloadText bindingLabel)
+                          field "binder-name" (DiagnosticPayloadText binderName) ])
+            | BackendPatternConstructorMissingFromModuleGraph(checkpoint, bindingLabel, constructorText) ->
+                descriptor
+                    DiagnosticCode.CheckpointVerification
+                    None
+                    $"Checkpoint '{checkpoint}' requires resolved constructor patterns, but '{constructorText}' in '{bindingLabel}' is not present in the backend module graph."
+                    (payload
+                        "checkpoint-verification-diagnostic"
+                        [ field "reason" (DiagnosticPayloadText "backend-pattern-constructor-missing-from-module-graph")
+                          field "checkpoint" (DiagnosticPayloadText checkpoint)
+                          field "binding-label" (DiagnosticPayloadText bindingLabel)
+                          field "constructor-text" (DiagnosticPayloadText constructorText) ])
         | SurfaceRecordDiagnostic evidence ->
             match evidence with
             | RecordFieldDeclaredMoreThanOnce fieldName ->

@@ -4769,6 +4769,30 @@ module SmokeTestsShard4 =
             )
         )
 
+        bag.AddError(
+            DiagnosticFact.checkpointVerification (
+                DuplicateBackendPatternBinder("KBackendIR", "main.match", "x")
+            )
+        )
+
+        bag.AddError(
+            DiagnosticFact.checkpointVerification (
+                BackendOrPatternAlternativesMustBindSameNames("KBackendIR", "main.match")
+            )
+        )
+
+        bag.AddError(
+            DiagnosticFact.checkpointVerification (
+                BackendOrPatternBinderRepresentationMismatch("KBackendIR", "main.match", "x")
+            )
+        )
+
+        bag.AddError(
+            DiagnosticFact.checkpointVerification (
+                BackendPatternConstructorMissingFromModuleGraph("KBackendIR", "main.match", "main.Payload.Box@0")
+            )
+        )
+
         let diagnostics = bag.Items
 
         let missingBackendModuleDiagnostic =
@@ -4897,6 +4921,30 @@ module SmokeTestsShard4 =
                 item.Code = DiagnosticCode.CheckpointVerification
                 && tryFindPayloadText "reason" item = Some "pre-erasure-instance-head-metadata-leak")
 
+        let duplicateBackendPatternBinderDiagnostic =
+            diagnostics
+            |> List.find (fun item ->
+                item.Code = DiagnosticCode.CheckpointVerification
+                && tryFindPayloadText "reason" item = Some "duplicate-backend-pattern-binder")
+
+        let backendOrPatternNamesDiagnostic =
+            diagnostics
+            |> List.find (fun item ->
+                item.Code = DiagnosticCode.CheckpointVerification
+                && tryFindPayloadText "reason" item = Some "backend-or-pattern-alternatives-must-bind-same-names")
+
+        let backendOrPatternRepresentationDiagnostic =
+            diagnostics
+            |> List.find (fun item ->
+                item.Code = DiagnosticCode.CheckpointVerification
+                && tryFindPayloadText "reason" item = Some "backend-or-pattern-binder-representation-mismatch")
+
+        let backendPatternConstructorMissingDiagnostic =
+            diagnostics
+            |> List.find (fun item ->
+                item.Code = DiagnosticCode.CheckpointVerification
+                && tryFindPayloadText "reason" item = Some "backend-pattern-constructor-missing-from-module-graph")
+
         Assert.Equal("checkpoint-verification-diagnostic", missingBackendModuleDiagnostic.Payload.Kind)
         Assert.Equal(Some "KBackendIR", tryFindPayloadText "checkpoint" missingBackendModuleDiagnostic)
         Assert.Equal(Some "main", tryFindPayloadText "runtime-module-name" missingBackendModuleDiagnostic)
@@ -4976,6 +5024,21 @@ module SmokeTestsShard4 =
         Assert.Equal("checkpoint-verification-diagnostic", instanceHeadMetadataLeakDiagnostic.Payload.Kind)
         Assert.Equal(Some "main.Show[0]", tryFindPayloadText "instance-head-label" instanceHeadMetadataLeakDiagnostic)
         Assert.Equal(Some "Quantity", tryFindPayloadText "type-text" instanceHeadMetadataLeakDiagnostic)
+
+        Assert.Equal("checkpoint-verification-diagnostic", duplicateBackendPatternBinderDiagnostic.Payload.Kind)
+        Assert.Equal(Some "main.match", tryFindPayloadText "binding-label" duplicateBackendPatternBinderDiagnostic)
+        Assert.Equal(Some "x", tryFindPayloadText "binder-name" duplicateBackendPatternBinderDiagnostic)
+
+        Assert.Equal("checkpoint-verification-diagnostic", backendOrPatternNamesDiagnostic.Payload.Kind)
+        Assert.Equal(Some "main.match", tryFindPayloadText "binding-label" backendOrPatternNamesDiagnostic)
+
+        Assert.Equal("checkpoint-verification-diagnostic", backendOrPatternRepresentationDiagnostic.Payload.Kind)
+        Assert.Equal(Some "main.match", tryFindPayloadText "binding-label" backendOrPatternRepresentationDiagnostic)
+        Assert.Equal(Some "x", tryFindPayloadText "binder-name" backendOrPatternRepresentationDiagnostic)
+
+        Assert.Equal("checkpoint-verification-diagnostic", backendPatternConstructorMissingDiagnostic.Payload.Kind)
+        Assert.Equal(Some "main.match", tryFindPayloadText "binding-label" backendPatternConstructorMissingDiagnostic)
+        Assert.Equal(Some "main.Payload.Box@0", tryFindPayloadText "constructor-text" backendPatternConstructorMissingDiagnostic)
 
     [<Fact>]
     let ``surface record diagnostics render from typed evidence`` () =
