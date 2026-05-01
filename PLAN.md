@@ -46,7 +46,8 @@ Current M4 status note: started, not complete. The compiler now has a real effec
 
 - [ ] Introduce declaration-level and semantic-object identities beyond `ModuleIdentity`, so resolved declarations, constructors, traits, effect labels, projections, and reified static objects stop falling back to plain `string`.
 - [ ] Replace visible-name environments that collapse declaration kinds into plain `Map<string, ...>` lookup with an explicit binding-group model matching section 2.8.
-  Ordinary term lookup and ambiguity now route through `VisibleOrdinaryGroups`, but type/trait/static-object environments and many dotted/member-resolution paths still read the old split maps directly.
+  Ordinary term lookup and ambiguity now route through `VisibleOrdinaryGroups`, and qualified type/trait/static-object resolution now goes through structured `VisibleStaticGroups`, `VisibleQualifiedTypeFacets`, `VisibleQualifiedTraits`, and `VisibleModulePaths`.
+  The remaining gap is the deeper same-spelling binding-group model itself: type/trait/static-object membership is still assembled from split maps instead of one first-class binding-group representation.
 - [ ] Rework same-spelling data-family handling so it is represented as one binding group with typed facets instead of separate text-keyed maps plus special cases.
 - [ ] Finish the provenance/ownership conversion so `KCoreOrigin`, `KCoreModule`, runtime lowering, dumps, and verification carry structured semantic identity end-to-end rather than rendered text.
 - [ ] Replace text-based post-resolution lookup in lowering and backend preparation with resolved symbolic references.
@@ -79,7 +80,7 @@ Current M4 status note: started, not complete. The compiler now has a real effec
   [SurfaceElaboration.fs](/D:/ws/kappa/src/Kappa.Compiler/SurfaceElaboration.fs) (manual `QueryCore`/`QueryMode`/`Res` scoped `TypeName` construction).
 - [ ] Remove remaining effect- and static-object lookup tables keyed by rendered dotted text instead of structured identities.
   Current hot spots:
-  [SurfaceElaboration.fs](/D:/ws/kappa/src/Kappa.Compiler/SurfaceElaboration.fs) (remaining dotted-name lookups around trait evidence/import qualification).
+  [SurfaceElaboration.fs](/D:/ws/kappa/src/Kappa.Compiler/SurfaceElaboration.fs) (remaining dotted-name lookups around trait evidence, dictionary naming, and same-spelling import qualification).
 - [ ] Remove fabricated semantic identities such as the `ModuleIdentity.ofSegments [ "__unknown__" ]` fallback that still exists in `SurfaceElaboration.validateFrontendModule`.
 - [ ] Preserve canonical module identity casing through all artifact names and backend metadata per section 17.3.4.2.
 - [ ] Keep bridge/host spelling distinct from Kappa semantic identity.

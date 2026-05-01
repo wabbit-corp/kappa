@@ -116,6 +116,11 @@ module SurfaceElaboration =
         | VisibleOrdinaryModule of ModuleIdentity
         | VisibleOrdinaryAmbiguous of OrdinaryVisibleTermCandidate list
 
+    type private VisibleStaticFacetGroup =
+        { StaticObject: StaticObjectInfo option
+          TypeFacet: TypeFacetInfo option
+          Trait: TraitInfo option }
+
     let private renderOrdinaryVisibleTermCandidate candidate =
         match candidate with
         | OrdinaryVisibleBindingCandidate(_, info) when info.IsPattern ->
@@ -209,7 +214,10 @@ module SurfaceElaboration =
           SurfaceIndex: Map<ModuleIdentity, ModuleSurfaceInfo>
           VisibleTypeAliases: Map<string, TypeAliasInfo>
           VisibleTypeFacets: Map<string, TypeFacetInfo>
+          VisibleQualifiedTypeFacets: Map<string list, TypeFacetInfo>
+          VisibleStaticGroups: Map<string list, VisibleStaticFacetGroup>
           VisibleStaticObjects: Map<string list, StaticObjectInfo>
+          VisibleModulePaths: Map<string list, ModuleIdentity>
           VisibleModules: Map<string, ModuleIdentity>
           VisibleRecordTypes: Map<string, RecordSurfaceInfo>
           VisibleBindings: Map<string, BindingSchemeInfo>
@@ -217,6 +225,7 @@ module SurfaceElaboration =
           VisibleOrdinaryGroups: Map<string, VisibleOrdinaryTermGroup>
           VisibleProjections: Map<string, ProjectionInfo>
           VisibleTraits: Map<string, TraitInfo>
+          VisibleQualifiedTraits: Map<string list, TraitInfo>
           VisibleInstances: InstanceInfo list
           ElaborationAvailableBindings: Set<string>
           ConstraintDictionaries: Map<string, KCoreExpression>
@@ -362,6 +371,22 @@ module SurfaceElaboration =
         { Trait = TypeSignatures.TraitReference.ofSegments traitNameSegments
           Arguments = arguments }
 
+    let private tryResolveVisibleTypeFacetByRoot
+        (environment: BindingLoweringEnvironment)
+        root
+        =
+        environment.VisibleStaticGroups
+        |> Map.tryFind [ root ]
+        |> Option.bind (fun group -> group.TypeFacet)
+
+    let private tryResolveVisibleTraitByRoot
+        (environment: BindingLoweringEnvironment)
+        root
+        =
+        environment.VisibleStaticGroups
+        |> Map.tryFind [ root ]
+        |> Option.bind (fun group -> group.Trait)
+
     let private tryResolveTraitInfoByReference
         (environment: BindingLoweringEnvironment)
         (traitReference: TypeSignatures.TraitReference)
@@ -379,26 +404,10 @@ module SurfaceElaboration =
             | [] ->
                 None
             | [ traitName ] ->
-                environment.VisibleTraits |> Map.tryFind traitName
+                tryResolveVisibleTraitByRoot environment traitName
             | _ ->
-                match List.rev (traitReferenceSegments traitReference) with
-                | traitName :: reversedModuleSegments ->
-                    let moduleSegments = List.rev reversedModuleSegments
-
-                    (environment.VisibleModules
-                     |> Map.tryFind (SyntaxFacts.moduleNameToText moduleSegments)
-                     |> Option.orElseWith (fun () ->
-                        let moduleIdentity = moduleIdentityOfSegments moduleSegments
-
-                        environment.SurfaceIndex
-                        |> Map.tryFind moduleIdentity
-                        |> Option.map (fun _ -> moduleIdentity)))
-                    |> Option.bind (fun moduleIdentity ->
-                        environment.SurfaceIndex
-                        |> Map.tryFind moduleIdentity
-                        |> Option.bind (fun moduleInfo -> moduleInfo.Traits |> Map.tryFind traitName))
-                | [] ->
-                    None
+                environment.VisibleQualifiedTraits
+                |> Map.tryFind (traitReferenceSegments traitReference)
 
     let private attachResolvedTraitReference
         (environment: BindingLoweringEnvironment)
@@ -436,9 +445,12 @@ module SurfaceElaboration =
     let private tryFindVisibleStaticObject (environment: BindingLoweringEnvironment) nameSegments =
         environment.VisibleStaticObjects |> Map.tryFind nameSegments
 
+    let private tryFindVisibleStaticGroup (environment: BindingLoweringEnvironment) nameSegments =
+        environment.VisibleStaticGroups |> Map.tryFind nameSegments
+
     let private tryResolveVisibleModuleIdentity (environment: BindingLoweringEnvironment) nameSegments =
-        environment.VisibleModules
-        |> Map.tryFind (SyntaxFacts.moduleNameToText nameSegments)
+        environment.VisibleModulePaths
+        |> Map.tryFind nameSegments
 
     let private tryResolveQualifiedModuleIdentity
         (environment: BindingLoweringEnvironment)
@@ -1309,15 +1321,12 @@ module SurfaceElaboration =
         | [] ->
             None
         | typeName :: reversedModuleSegments ->
-            environment.VisibleTypeFacets
-            |> Map.tryFind typeName
-            |> Option.filter (fun typeFacetInfo ->
-                match reversedModuleSegments with
-                | [] ->
-                    true
-                | _ ->
-                    tryResolveQualifiedModuleIdentity environment (List.rev reversedModuleSegments)
-                    |> Option.exists ((=) typeFacetInfo.ModuleIdentity))
+            match reversedModuleSegments with
+            | [] ->
+                tryResolveVisibleTypeFacetByRoot environment typeName
+            | _ ->
+                environment.VisibleQualifiedTypeFacets
+                |> Map.tryFind nameSegments
 
     let private tryResolveVisibleTraitInfo
         (environment: BindingLoweringEnvironment)
@@ -1329,13 +1338,10 @@ module SurfaceElaboration =
         | traitName :: reversedModuleSegments ->
             match reversedModuleSegments with
             | [] ->
-                environment.VisibleTraits |> Map.tryFind traitName
+                tryResolveVisibleTraitByRoot environment traitName
             | _ ->
-                tryResolveQualifiedModuleIdentity environment (List.rev reversedModuleSegments)
-                |> Option.bind (fun moduleIdentity ->
-                    environment.SurfaceIndex
-                    |> Map.tryFind moduleIdentity
-                    |> Option.bind (fun moduleInfo -> moduleInfo.Traits |> Map.tryFind traitName))
+                environment.VisibleQualifiedTraits
+                |> Map.tryFind nameSegments
 
     let private tryResolveStaticObject
         (environment: BindingLoweringEnvironment)
@@ -1356,18 +1362,17 @@ module SurfaceElaboration =
             else
                 None
         | Name nameSegments when not (List.isEmpty nameSegments) ->
-            tryFindVisibleStaticObject environment nameSegments
+            tryFindVisibleStaticGroup environment nameSegments
+            |> Option.bind (fun group -> group.StaticObject)
             |> Option.orElseWith (fun () ->
                 match nameSegments with
                 | [ root ]
                     when not (environment.VisibleBindings.ContainsKey root)
                          && Option.isNone (tryResolveVisibleConstructorInfo environment [ root ]) ->
-                    environment.VisibleTypeFacets
-                    |> Map.tryFind root
+                    tryResolveVisibleTypeFacetByRoot environment root
                     |> Option.map typeFacetStaticObject
                     |> Option.orElseWith (fun () ->
-                        environment.VisibleTraits
-                        |> Map.tryFind root
+                        tryResolveVisibleTraitByRoot environment root
                         |> Option.map traitStaticObject)
                 | _ ->
                     None)
@@ -1380,17 +1385,18 @@ module SurfaceElaboration =
         =
         match expression with
         | Name nameSegments when not (List.isEmpty nameSegments) ->
-            tryFindVisibleStaticObject environment nameSegments
+            tryFindVisibleStaticGroup environment nameSegments
+            |> Option.bind (fun group -> group.StaticObject)
             |> Option.orElseWith (fun () ->
                 match nameSegments with
                 | [ root ] ->
-                    environment.VisibleTypeFacets
-                    |> Map.tryFind root
+                    tryResolveVisibleTypeFacetByRoot environment root
                     |> Option.map typeFacetStaticObject
                 | _ ->
                     None)
         | _ ->
             tryResolveStaticObject environment expression
+
 
     let private scopedEffects = AsyncLocal<Map<string, EffectSemanticDeclaration> option>()
     let private scopedEffectDeclarations = AsyncLocal<EffectSemanticDeclaration list option>()
@@ -4443,11 +4449,59 @@ module SurfaceElaboration =
         |> Map.fold (fun state name info -> Map.add name info state) importedFacets
         |> fun state -> moduleFacets |> Map.fold (fun current name info -> Map.add name info current) state
 
+    let private mergeVisibleQualifiedTypeFacets (surfaceIndex: Map<ModuleIdentity, ModuleSurfaceInfo>) moduleIdentity =
+        let importedQualifiedFacets =
+            importedModuleInfos surfaceIndex moduleIdentity
+            |> List.fold (fun state (spec, importedModuleIdentity, importedModule) ->
+                match spec.Selection with
+                | QualifiedOnly ->
+                    let qualifiedPrefix =
+                        spec.Alias
+                        |> Option.map List.singleton
+                        |> Option.defaultValue (ModuleIdentity.segments importedModuleIdentity)
+
+                    importedModule.TypeFacets
+                    |> Map.fold (fun current name info ->
+                        if Set.contains name importedModule.ExportedTypes then
+                            Map.add (qualifiedPrefix @ [ name ]) info current
+                        else
+                            current) state
+                | _ ->
+                    state) Map.empty
+
+        let moduleQualifiedFacets =
+            surfaceIndex
+            |> Map.tryFind moduleIdentity
+            |> Option.map (fun moduleInfo ->
+                let qualifiedPrefix = ModuleIdentity.segments moduleIdentity
+
+                moduleInfo.TypeFacets
+                |> Map.fold (fun current name info -> Map.add (qualifiedPrefix @ [ name ]) info current) Map.empty)
+            |> Option.defaultValue Map.empty
+
+        importedQualifiedFacets
+        |> Map.fold (fun state nameSegments info -> Map.add nameSegments info state) moduleQualifiedFacets
+
     let private mergeVisibleModules (surfaceIndex: Map<ModuleIdentity, ModuleSurfaceInfo>) moduleIdentity =
         let importedTermCandidates = collectImportedOrdinaryTermCandidates surfaceIndex moduleIdentity
         let _, _, importedModules, _ = partitionImportedOrdinaryTermCandidates importedTermCandidates
 
         Map.add (ModuleIdentity.text moduleIdentity) moduleIdentity importedModules
+
+    let private mergeVisibleModulePaths (surfaceIndex: Map<ModuleIdentity, ModuleSurfaceInfo>) moduleIdentity =
+        let importedModulePaths =
+            importedModuleInfos surfaceIndex moduleIdentity
+            |> List.fold (fun state (spec, importedModuleIdentity, _importedModule) ->
+                match spec.Selection, spec.Alias with
+                | QualifiedOnly, Some alias ->
+                    Map.add [ alias ] importedModuleIdentity state
+                | QualifiedOnly, None ->
+                    Map.add (ModuleIdentity.segments importedModuleIdentity) importedModuleIdentity state
+                | _ ->
+                    state) Map.empty
+
+        importedModulePaths
+        |> Map.add (ModuleIdentity.segments moduleIdentity) moduleIdentity
 
     let private mergeAmbiguousVisibleOrdinaryTerms (surfaceIndex: Map<ModuleIdentity, ModuleSurfaceInfo>) moduleIdentity =
         let importedTermCandidates = collectImportedOrdinaryTermCandidates surfaceIndex moduleIdentity
@@ -4514,6 +4568,41 @@ module SurfaceElaboration =
                   AmbiguousCandidates = ambiguities |> Map.tryFind localName |> Option.defaultValue [] }
                 state)
                 Map.empty
+
+    let private buildVisibleStaticGroups
+        (visibleTypeFacets: Map<string, TypeFacetInfo>)
+        (visibleStaticObjects: Map<string list, StaticObjectInfo>)
+        (visibleTraits: Map<string, TraitInfo>)
+        =
+        [ visibleTypeFacets |> Map.keys |> Seq.map List.singleton |> Set.ofSeq
+          visibleStaticObjects |> Map.keys |> Set.ofSeq
+          visibleTraits |> Map.keys |> Seq.map List.singleton |> Set.ofSeq ]
+        |> Set.unionMany
+        |> Seq.fold (fun state nameSegments ->
+            let localRoot =
+                match nameSegments with
+                | [ root ] -> Some root
+                | _ -> None
+
+            Map.add
+                nameSegments
+                { StaticObject = visibleStaticObjects |> Map.tryFind nameSegments
+                  TypeFacet = localRoot |> Option.bind (fun root -> visibleTypeFacets |> Map.tryFind root)
+                  Trait = localRoot |> Option.bind (fun root -> visibleTraits |> Map.tryFind root) }
+                state)
+                Map.empty
+
+    let private withVisibleStaticObjects
+        (environment: BindingLoweringEnvironment)
+        (staticObjects: Map<string list, StaticObjectInfo>)
+        =
+        { environment with
+            VisibleStaticGroups =
+                buildVisibleStaticGroups
+                    environment.VisibleTypeFacets
+                    staticObjects
+                    environment.VisibleTraits
+            VisibleStaticObjects = staticObjects }
 
     let private mergeVisibleRecordTypes (surfaceIndex: Map<ModuleIdentity, ModuleSurfaceInfo>) moduleIdentity =
         let importedRecordTypes =
@@ -4583,6 +4672,39 @@ module SurfaceElaboration =
         preludeTraits
         |> Map.fold (fun state name info -> Map.add name info state) importedTraits
         |> fun state -> moduleTraits |> Map.fold (fun current name info -> Map.add name info current) state
+
+    let private mergeVisibleQualifiedTraits (surfaceIndex: Map<ModuleIdentity, ModuleSurfaceInfo>) moduleIdentity =
+        let importedQualifiedTraits =
+            importedModuleInfos surfaceIndex moduleIdentity
+            |> List.fold (fun state (spec, importedModuleIdentity, importedModule) ->
+                match spec.Selection with
+                | QualifiedOnly ->
+                    let qualifiedPrefix =
+                        spec.Alias
+                        |> Option.map List.singleton
+                        |> Option.defaultValue (ModuleIdentity.segments importedModuleIdentity)
+
+                    importedModule.Traits
+                    |> Map.fold (fun current name info ->
+                        if Set.contains name importedModule.ExportedTraits then
+                            Map.add (qualifiedPrefix @ [ name ]) info current
+                        else
+                            current) state
+                | _ ->
+                    state) Map.empty
+
+        let moduleQualifiedTraits =
+            surfaceIndex
+            |> Map.tryFind moduleIdentity
+            |> Option.map (fun moduleInfo ->
+                let qualifiedPrefix = ModuleIdentity.segments moduleIdentity
+
+                moduleInfo.Traits
+                |> Map.fold (fun current name info -> Map.add (qualifiedPrefix @ [ name ]) info current) Map.empty)
+            |> Option.defaultValue Map.empty
+
+        importedQualifiedTraits
+        |> Map.fold (fun state nameSegments info -> Map.add nameSegments info state) moduleQualifiedTraits
 
     let private moduleDependencyClosure (surfaceIndex: Map<ModuleIdentity, ModuleSurfaceInfo>) moduleIdentity =
         let rec visit visited currentModuleIdentity =
@@ -4673,8 +4795,7 @@ module SurfaceElaboration =
             (aliases: Map<string list, StaticObjectInfo>)
             =
             let aliasEnvironment =
-                { environment with
-                    VisibleStaticObjects = aliases }
+                withVisibleStaticObjects environment aliases
 
             match tryResolveStaticObject aliasEnvironment expression with
             | Some staticObject ->
@@ -5411,11 +5532,12 @@ module SurfaceElaboration =
                 | Some declaration, _ ->
                     TypeName(scopedEffectInterfaceNameSegments declaration, arguments |> List.map loop)
                 | None, [ name ] ->
-                    match environment.VisibleStaticObjects |> Map.tryFind [ name ] with
-                    | Some staticObject when staticObject.ObjectKind = TypeObject ->
+                    match tryFindVisibleStaticGroup environment [ name ] with
+                    | Some group when group.StaticObject |> Option.exists (fun staticObject -> staticObject.ObjectKind = TypeObject) ->
+                        let staticObject = group.StaticObject.Value
                         TypeName(staticObject.NameSegments, arguments |> List.map loop)
-                    | _ when environment.VisibleTypeFacets.ContainsKey(name) ->
-                        let typeFacet = environment.VisibleTypeFacets[name]
+                    | Some group when group.TypeFacet.IsSome ->
+                        let typeFacet = group.TypeFacet.Value
                         let qualifiedName =
                             (ModuleIdentity.segments typeFacet.ModuleIdentity) @ [ typeFacet.Name ]
 
@@ -7196,8 +7318,9 @@ module SurfaceElaboration =
                         None))
 
         match normalizeTypeAliases environment.VisibleTypeAliases receiverType with
-        | TypeName([ traitName ], arguments) when environment.VisibleTraits.ContainsKey(traitName) ->
-            tryFindOwnerTrait (TypeSignatures.TraitReference.unqualified traitName) arguments memberName
+        | TypeName([ traitName ], arguments) ->
+            tryResolveVisibleTraitByRoot environment traitName
+            |> Option.bind (fun _ -> tryFindOwnerTrait (TypeSignatures.TraitReference.unqualified traitName) arguments memberName)
         | TypeName(qualifiedName, arguments) ->
             tryResolveVisibleTraitInfo environment qualifiedName
             |> Option.bind (fun _ -> tryFindOwnerTrait (TypeSignatures.TraitReference.ofSegments qualifiedName) arguments memberName)
@@ -7331,8 +7454,8 @@ module SurfaceElaboration =
         =
         let supportsIntrinsicTraitEvidenceType argumentType =
             match argumentType with
-            | TypeName([ traitName ], _) when environment.VisibleTraits.ContainsKey(traitName) ->
-                true
+            | TypeName([ traitName ], _) ->
+                tryResolveVisibleTraitByRoot environment traitName |> Option.isSome
             | TypeName(qualifiedName, _) ->
                 tryResolveVisibleTraitInfo environment qualifiedName |> Option.isSome
             | _ ->
@@ -7410,8 +7533,8 @@ module SurfaceElaboration =
         =
         let supportsIntrinsicTraitEvidenceType argumentType =
             match normalizeTypeAliases environment.VisibleTypeAliases argumentType with
-            | TypeName([ traitName ], _) when environment.VisibleTraits.ContainsKey(traitName) ->
-                true
+            | TypeName([ traitName ], _) ->
+                tryResolveVisibleTraitByRoot environment traitName |> Option.isSome
             | TypeName(qualifiedName, _) ->
                 tryResolveVisibleTraitInfo environment qualifiedName |> Option.isSome
             | _ ->
@@ -7658,20 +7781,20 @@ module SurfaceElaboration =
         parameterType
         =
         match normalizeTypeAliases environment.VisibleTypeAliases parameterType with
-        | TypeName([ traitName ], arguments) when environment.VisibleTraits.ContainsKey(traitName) ->
-            environment.VisibleTraits
-            |> Map.tryFind traitName
-            |> Option.map (fun traitInfo ->
-                { Trait = TypeSignatures.TraitReference.unqualified traitName |> TypeSignatures.TraitReference.attachIdentity traitInfo.Identity
-                  Arguments = arguments })
-        | TypeName([ dictionaryTypeName ], arguments) ->
-            environment.VisibleTraits
-            |> Map.toSeq
-            |> Seq.tryFind (fun (_, traitInfo) ->
-                String.Equals(dictionaryTypeName, TraitRuntime.dictionaryTypeName traitInfo.Name, StringComparison.Ordinal))
-            |> Option.map (fun (_, traitInfo) ->
-                { Trait = TypeSignatures.TraitReference.unqualified traitInfo.Name |> TypeSignatures.TraitReference.attachIdentity traitInfo.Identity
-                  Arguments = arguments })
+        | TypeName([ traitName ], arguments) ->
+            match tryResolveVisibleTraitByRoot environment traitName with
+            | Some traitInfo ->
+                Some
+                    { Trait = TypeSignatures.TraitReference.unqualified traitName |> TypeSignatures.TraitReference.attachIdentity traitInfo.Identity
+                      Arguments = arguments }
+            | None ->
+                environment.VisibleTraits
+                |> Map.toSeq
+                |> Seq.tryFind (fun (_, traitInfo) ->
+                    String.Equals(traitName, TraitRuntime.dictionaryTypeName traitInfo.Name, StringComparison.Ordinal))
+                |> Option.map (fun (_, traitInfo) ->
+                    { Trait = TypeSignatures.TraitReference.unqualified traitInfo.Name |> TypeSignatures.TraitReference.attachIdentity traitInfo.Identity
+                      Arguments = arguments })
         | TypeName(qualifiedName, arguments) ->
             tryResolveVisibleTraitInfo environment qualifiedName
             |> Option.map (fun traitInfo ->
@@ -11113,7 +11236,15 @@ module SurfaceElaboration =
               explicitSignatureNames
               environment.VisibleProjections |> Map.keys |> Set.ofSeq ]
             |> Set.unionMany
-            |> fun names -> Set.difference names (environment.VisibleModules |> Map.keys |> Set.ofSeq)
+            |> fun names ->
+                Set.difference
+                    names
+                    (environment.VisibleModulePaths
+                     |> Map.keys
+                     |> Seq.choose (function
+                         | [ root ] -> Some root
+                         | _ -> None)
+                     |> Set.ofSeq)
             |> Set.remove "<anonymous>"
 
         let makeDiagnostic kind message =
@@ -12535,19 +12666,18 @@ module SurfaceElaboration =
 
         let isVisibleQualifiedRootName locals lexicalNames name =
             let isVisibleModuleRoot =
-                environment.VisibleModules
+                environment.VisibleModulePaths
                 |> Map.keys
-                |> Seq.exists (fun visibleModule ->
-                    String.Equals(visibleModule, name, StringComparison.Ordinal)
-                    || visibleModule.StartsWith(name + ".", StringComparison.Ordinal))
+                |> Seq.exists (function
+                    | root :: _ -> String.Equals(root, name, StringComparison.Ordinal)
+                    | [] -> false)
 
             (Map.containsKey name locals)
             || (Set.contains name lexicalNames)
             || (Set.contains name knownValueNames)
             || String.Equals(name, "this", StringComparison.Ordinal)
             || isVisibleModuleRoot
-            || environment.VisibleTypeFacets.ContainsKey(name)
-            || environment.VisibleStaticObjects.ContainsKey([ name ])
+            || (tryFindVisibleStaticGroup environment [ name ] |> Option.isSome)
             || (environment.VisibleOrdinaryGroups |> Map.containsKey name)
             || isTopLevelManifestStaticObjectRoot name
             || (tryResolveScopedStaticObject environment (Name [ name ]) |> Option.isSome)
@@ -12708,8 +12838,7 @@ module SurfaceElaboration =
 
         let tryResolveWithLocalAliases aliases expression =
             let aliasEnvironment =
-                { environment with
-                    VisibleStaticObjects = aliasesAsVisibleStaticObjects aliases }
+                withVisibleStaticObjects environment (aliasesAsVisibleStaticObjects aliases)
 
             tryResolveScopedStaticObject aliasEnvironment expression
 
@@ -14411,8 +14540,7 @@ module SurfaceElaboration =
                     when not (Map.containsKey name locals)
                          && not (environment.VisibleBindings.ContainsKey name)
                          && not (environment.VisibleConstructors.ContainsKey name)
-                         && (environment.VisibleTypeFacets.ContainsKey name
-                             || environment.VisibleStaticObjects.ContainsKey [ name ]) ->
+                         && (tryFindVisibleStaticGroup environment [ name] |> Option.isSome) ->
                     match tryResolveScopedStaticObject environment body with
                     | Some _ ->
                         []
@@ -15773,8 +15901,7 @@ module SurfaceElaboration =
 
         let rec validateExpressionWithFlow locals refinements lexicalNames aliases staticAliases constructorFacts expression =
             let environment =
-                { environment with
-                    VisibleStaticObjects = aliasesAsVisibleStaticObjects staticAliases }
+                withVisibleStaticObjects environment (aliasesAsVisibleStaticObjects staticAliases)
 
             let recurse = validateExpressionWithFlow locals refinements lexicalNames aliases staticAliases constructorFacts
 
@@ -17311,8 +17438,7 @@ module SurfaceElaboration =
 
                     let rootPreservesStaticObjectIdentity =
                         isTopLevelManifestStaticObjectRoot root
-                        || environment.VisibleTypeFacets.ContainsKey(root)
-                        || environment.VisibleStaticObjects.ContainsKey([ root ])
+                        || (tryFindVisibleStaticGroup environment [ root ] |> Option.isSome)
                         || (tryResolveScopedStaticObject environment (Name [ root ]) |> Option.isSome)
 
                     if allowUnresolvedCallDiagnostics
@@ -17384,8 +17510,7 @@ module SurfaceElaboration =
                     |> Option.defaultValue value
 
                 let aliasAwareEnvironment =
-                    { environment with
-                        VisibleStaticObjects = aliasesAsVisibleStaticObjects staticAliases }
+                    withVisibleStaticObjects environment (aliasesAsVisibleStaticObjects staticAliases)
 
                 let declaredType =
                     binding.TypeTokens
@@ -19348,8 +19473,7 @@ module SurfaceElaboration =
                 match statement with
                 | DoLet(binding, expression) ->
                     let aliasAwareEnvironment =
-                        { environment with
-                            VisibleStaticObjects = aliasesAsVisibleStaticObjects staticAliases }
+                        withVisibleStaticObjects environment (aliasesAsVisibleStaticObjects staticAliases)
 
                     let nextLexicalNames =
                         collectPatternNames binding.Pattern
@@ -19383,8 +19507,7 @@ module SurfaceElaboration =
                     @ validateDoStatementsWithFlow nextLocals refinements nextLexicalNames nextAliases nextStaticAliases constructorFacts restForValidation
                 | DoBind(binding, expression) ->
                     let aliasAwareEnvironment =
-                        { environment with
-                            VisibleStaticObjects = aliasesAsVisibleStaticObjects staticAliases }
+                        withVisibleStaticObjects environment (aliasesAsVisibleStaticObjects staticAliases)
 
                     let nextLexicalNames =
                         collectPatternNames binding.Pattern
@@ -19424,8 +19547,7 @@ module SurfaceElaboration =
                     @ validateDoStatementsWithFlow nextLocals refinements nextLexicalNames nextAliases nextStaticAliases constructorFacts rest
                 | DoLetQuestion(binding, expression, failure) ->
                     let aliasAwareEnvironment =
-                        { environment with
-                            VisibleStaticObjects = aliasesAsVisibleStaticObjects staticAliases }
+                        withVisibleStaticObjects environment (aliasesAsVisibleStaticObjects staticAliases)
 
                     let nextLexicalNames =
                         collectPatternNames binding.Pattern
@@ -19463,8 +19585,7 @@ module SurfaceElaboration =
                     @ validateDoStatementsWithFlow nextLocals refinements nextLexicalNames nextAliases nextStaticAliases constructorFacts rest
                 | DoUsing(binding, expression) ->
                     let aliasAwareEnvironment =
-                        { environment with
-                            VisibleStaticObjects = aliasesAsVisibleStaticObjects staticAliases }
+                        withVisibleStaticObjects environment (aliasesAsVisibleStaticObjects staticAliases)
 
                     let nextLexicalNames =
                         collectPatternNames binding.Pattern
@@ -19487,8 +19608,7 @@ module SurfaceElaboration =
                     @ validateDoStatementsWithFlow nextLocals refinements nextLexicalNames nextAliases nextStaticAliases constructorFacts rest
                 | DoVar(bindingName, expression) ->
                     let aliasAwareEnvironment =
-                        { environment with
-                            VisibleStaticObjects = aliasesAsVisibleStaticObjects staticAliases }
+                        withVisibleStaticObjects environment (aliasesAsVisibleStaticObjects staticAliases)
 
                     let nextLocals =
                         match inferValidationExpressionType aliasAwareEnvironment freshCounter locals expression with
@@ -20501,10 +20621,16 @@ module SurfaceElaboration =
                     sourceBindingInfosByName
                     |> Map.fold (fun state name bindingInfo -> Map.add name bindingInfo state) (mergeVisibleBindings surfaceIndex moduleIdentity)
                 let visibleModules = mergeVisibleModules surfaceIndex moduleIdentity
+                let visibleModulePaths = mergeVisibleModulePaths surfaceIndex moduleIdentity
                 let visibleConstructors = mergeVisibleConstructors surfaceIndex moduleIdentity
                 let ambiguousVisibleOrdinaryTerms = mergeAmbiguousVisibleOrdinaryTerms surfaceIndex moduleIdentity
                 let visibleOrdinaryGroups =
                     buildVisibleOrdinaryGroups visibleBindings visibleConstructors visibleModules ambiguousVisibleOrdinaryTerms
+                let visibleTypeFacets = mergeVisibleTypeFacets surfaceIndex moduleIdentity
+                let visibleQualifiedTypeFacets = mergeVisibleQualifiedTypeFacets surfaceIndex moduleIdentity
+                let visibleTraits = mergeVisibleTraits surfaceIndex moduleIdentity
+                let visibleQualifiedTraits = mergeVisibleQualifiedTraits surfaceIndex moduleIdentity
+                let visibleStaticGroups = buildVisibleStaticGroups visibleTypeFacets Map.empty visibleTraits
 
                 let importedUnschemedOrdinaryTermNames =
                     collectImportedOrdinaryTermCandidates surfaceIndex moduleIdentity
@@ -20516,15 +20642,19 @@ module SurfaceElaboration =
                       ImportedUnschemedOrdinaryTermNames = importedUnschemedOrdinaryTermNames
                       SurfaceIndex = surfaceIndex
                       VisibleTypeAliases = mergeVisibleTypeAliases surfaceIndex moduleIdentity
-                      VisibleTypeFacets = mergeVisibleTypeFacets surfaceIndex moduleIdentity
+                      VisibleTypeFacets = visibleTypeFacets
+                      VisibleQualifiedTypeFacets = visibleQualifiedTypeFacets
+                      VisibleStaticGroups = visibleStaticGroups
                       VisibleStaticObjects = Map.empty
+                      VisibleModulePaths = visibleModulePaths
                       VisibleModules = visibleModules
                       VisibleRecordTypes = mergeVisibleRecordTypes surfaceIndex moduleIdentity
                       VisibleBindings = visibleBindings
                       VisibleConstructors = visibleConstructors
                       VisibleOrdinaryGroups = visibleOrdinaryGroups
                       VisibleProjections = mergeVisibleProjections surfaceIndex moduleIdentity
-                      VisibleTraits = mergeVisibleTraits surfaceIndex moduleIdentity
+                      VisibleTraits = visibleTraits
+                      VisibleQualifiedTraits = visibleQualifiedTraits
                       VisibleInstances = visibleInstances surfaceIndex moduleIdentity
                       ElaborationAvailableBindings =
                         visibleBindings
@@ -20550,6 +20680,11 @@ module SurfaceElaboration =
                             Map.add (declaration.Name.Split('.', StringSplitOptions.RemoveEmptyEntries) |> Array.toList) (scopedEffectLabelStaticObject semanticDeclaration) current) localAliases
 
                     { baseEnvironment with
+                        VisibleStaticGroups =
+                            buildVisibleStaticGroups
+                                baseEnvironment.VisibleTypeFacets
+                                staticObjectAliases
+                                baseEnvironment.VisibleTraits
                         VisibleStaticObjects = staticObjectAliases }
 
                 let hasUnknownNonQualifiedImportSurface =
@@ -20609,10 +20744,14 @@ module SurfaceElaboration =
                       environment.VisibleBindings |> Map.keys |> Set.ofSeq
                       environment.VisibleConstructors |> Map.keys |> Set.ofSeq
                       collectImportedOrdinarySurfaceNames surfaceIndex moduleIdentity
-                      (environment.VisibleModules |> Map.keys |> Set.ofSeq)
-                      (environment.VisibleStaticObjects |> Map.keys |> Seq.map SyntaxFacts.moduleNameToText |> Set.ofSeq)
-                      environment.VisibleTypeFacets |> Map.keys |> Set.ofSeq
-                      environment.VisibleTraits |> Map.keys |> Set.ofSeq
+                      (environment.VisibleModulePaths
+                       |> Map.keys
+                       |> Seq.map SyntaxFacts.moduleNameToText
+                       |> Set.ofSeq)
+                      (environment.VisibleStaticGroups
+                       |> Map.keys
+                       |> Seq.map SyntaxFacts.moduleNameToText
+                       |> Set.ofSeq)
                       visibleTraitMemberNames
                       environment.ConstrainedMembers |> Map.keys |> Set.ofSeq ]
                     |> Set.unionMany
@@ -21736,10 +21875,14 @@ module SurfaceElaboration =
                           Set.ofList Stdlib.FixedPreludeConstructors
                           environment.VisibleBindings |> Map.keys |> Set.ofSeq
                           environment.VisibleConstructors |> Map.keys |> Set.ofSeq
-                          (environment.VisibleModules |> Map.keys |> Set.ofSeq)
-                          (environment.VisibleStaticObjects |> Map.keys |> Seq.map SyntaxFacts.moduleNameToText |> Set.ofSeq)
-                          environment.VisibleTypeFacets |> Map.keys |> Set.ofSeq
-                          environment.VisibleTraits |> Map.keys |> Set.ofSeq ]
+                          (environment.VisibleModulePaths
+                           |> Map.keys
+                           |> Seq.map SyntaxFacts.moduleNameToText
+                           |> Set.ofSeq)
+                          (environment.VisibleStaticGroups
+                           |> Map.keys
+                           |> Seq.map SyntaxFacts.moduleNameToText
+                           |> Set.ofSeq) ]
                         |> Set.unionMany
                         |> Set.remove "<anonymous>"
 
@@ -27287,14 +27430,18 @@ module SurfaceElaboration =
 
         let visibleBindings = mergeVisibleBindings surfaceIndex moduleIdentity
         let visibleTraits = mergeVisibleTraits surfaceIndex moduleIdentity
+        let visibleQualifiedTraits = mergeVisibleQualifiedTraits surfaceIndex moduleIdentity
         let visibleTypeAliases = mergeVisibleTypeAliases surfaceIndex moduleIdentity
         let visibleTypeFacets = mergeVisibleTypeFacets surfaceIndex moduleIdentity
+        let visibleQualifiedTypeFacets = mergeVisibleQualifiedTypeFacets surfaceIndex moduleIdentity
         let visibleProjections = mergeVisibleProjections surfaceIndex moduleIdentity
         let visibleModules = mergeVisibleModules surfaceIndex moduleIdentity
+        let visibleModulePaths = mergeVisibleModulePaths surfaceIndex moduleIdentity
         let visibleConstructors = mergeVisibleConstructors surfaceIndex moduleIdentity
         let ambiguousVisibleOrdinaryTerms = mergeAmbiguousVisibleOrdinaryTerms surfaceIndex moduleIdentity
         let visibleOrdinaryGroups =
             buildVisibleOrdinaryGroups visibleBindings visibleConstructors visibleModules ambiguousVisibleOrdinaryTerms
+        let visibleStaticGroups = buildVisibleStaticGroups visibleTypeFacets Map.empty visibleTraits
 
         let environment =
             { CurrentModuleIdentity = moduleIdentity
@@ -27308,7 +27455,10 @@ module SurfaceElaboration =
               SurfaceIndex = surfaceIndex
               VisibleTypeAliases = visibleTypeAliases
               VisibleTypeFacets = visibleTypeFacets
+              VisibleQualifiedTypeFacets = visibleQualifiedTypeFacets
+              VisibleStaticGroups = visibleStaticGroups
               VisibleStaticObjects = Map.empty
+              VisibleModulePaths = visibleModulePaths
               VisibleModules = visibleModules
               VisibleRecordTypes = mergeVisibleRecordTypes surfaceIndex moduleIdentity
               VisibleBindings = visibleBindings
@@ -27316,6 +27466,7 @@ module SurfaceElaboration =
               VisibleOrdinaryGroups = visibleOrdinaryGroups
               VisibleProjections = visibleProjections
               VisibleTraits = visibleTraits
+              VisibleQualifiedTraits = visibleQualifiedTraits
               VisibleInstances = visibleInstances surfaceIndex moduleIdentity
               ElaborationAvailableBindings =
                 visibleBindings
@@ -27512,11 +27663,17 @@ module SurfaceElaboration =
                     let moduleInfo = surfaceIndex[moduleIdentity]
                     let recordLayouts = ref Map.empty
                     let visibleModules = mergeVisibleModules surfaceIndex moduleIdentity
+                    let visibleModulePaths = mergeVisibleModulePaths surfaceIndex moduleIdentity
                     let visibleBindings = mergeVisibleBindings surfaceIndex moduleIdentity
                     let visibleConstructors = mergeVisibleConstructors surfaceIndex moduleIdentity
                     let ambiguousVisibleOrdinaryTerms = mergeAmbiguousVisibleOrdinaryTerms surfaceIndex moduleIdentity
                     let visibleOrdinaryGroups =
                         buildVisibleOrdinaryGroups visibleBindings visibleConstructors visibleModules ambiguousVisibleOrdinaryTerms
+                    let visibleTypeFacets = mergeVisibleTypeFacets surfaceIndex moduleIdentity
+                    let visibleQualifiedTypeFacets = mergeVisibleQualifiedTypeFacets surfaceIndex moduleIdentity
+                    let visibleTraits = mergeVisibleTraits surfaceIndex moduleIdentity
+                    let visibleQualifiedTraits = mergeVisibleQualifiedTraits surfaceIndex moduleIdentity
+                    let visibleStaticGroups = buildVisibleStaticGroups visibleTypeFacets Map.empty visibleTraits
 
                     let baseEnvironment =
                         { CurrentModuleIdentity = moduleIdentity
@@ -27526,15 +27683,19 @@ module SurfaceElaboration =
                             |> importedUnschemedOrdinaryTermNamesFromCandidates
                           SurfaceIndex = surfaceIndex
                           VisibleTypeAliases = mergeVisibleTypeAliases surfaceIndex moduleIdentity
-                          VisibleTypeFacets = mergeVisibleTypeFacets surfaceIndex moduleIdentity
+                          VisibleTypeFacets = visibleTypeFacets
+                          VisibleQualifiedTypeFacets = visibleQualifiedTypeFacets
+                          VisibleStaticGroups = visibleStaticGroups
                           VisibleStaticObjects = Map.empty
+                          VisibleModulePaths = visibleModulePaths
                           VisibleModules = visibleModules
                           VisibleRecordTypes = mergeVisibleRecordTypes surfaceIndex moduleIdentity
                           VisibleBindings = visibleBindings
                           VisibleConstructors = visibleConstructors
                           VisibleOrdinaryGroups = visibleOrdinaryGroups
                           VisibleProjections = mergeVisibleProjections surfaceIndex moduleIdentity
-                          VisibleTraits = mergeVisibleTraits surfaceIndex moduleIdentity
+                          VisibleTraits = visibleTraits
+                          VisibleQualifiedTraits = visibleQualifiedTraits
                           VisibleInstances = visibleInstances surfaceIndex moduleIdentity
                           ElaborationAvailableBindings =
                             visibleBindings
@@ -27560,6 +27721,11 @@ module SurfaceElaboration =
                                 Map.add (declaration.Name.Split('.', StringSplitOptions.RemoveEmptyEntries) |> Array.toList) (scopedEffectLabelStaticObject semanticDeclaration) current) localAliases
 
                         { baseEnvironment with
+                            VisibleStaticGroups =
+                                buildVisibleStaticGroups
+                                    baseEnvironment.VisibleTypeFacets
+                                    staticObjectAliases
+                                    baseEnvironment.VisibleTraits
                             VisibleStaticObjects = staticObjectAliases }
 
                     let declarations =
