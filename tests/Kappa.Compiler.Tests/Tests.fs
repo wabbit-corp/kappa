@@ -4745,6 +4745,30 @@ module SmokeTestsShard4 =
             )
         )
 
+        bag.AddError(
+            DiagnosticFact.checkpointVerification (
+                PreErasureParameterTypeMetadataLeak("KBackendIR", "main.id", "value", "Int captures (s)")
+            )
+        )
+
+        bag.AddError(
+            DiagnosticFact.checkpointVerification (
+                PreErasureReturnTypeMetadataLeak("KBackendIR", "main.id", "((Unit -> Int) captures (s))")
+            )
+        )
+
+        bag.AddError(
+            DiagnosticFact.checkpointVerification (
+                PreErasureConstructorFieldMetadataLeak("KBackendIR", "main.Box[0]", "Region")
+            )
+        )
+
+        bag.AddError(
+            DiagnosticFact.checkpointVerification (
+                PreErasureInstanceHeadMetadataLeak("KBackendIR", "main.Show[0]", "Quantity")
+            )
+        )
+
         let diagnostics = bag.Items
 
         let missingBackendModuleDiagnostic =
@@ -4849,6 +4873,30 @@ module SmokeTestsShard4 =
                 item.Code = DiagnosticCode.CheckpointVerification
                 && tryFindPayloadText "reason" item = Some "backend-function-must-have-body")
 
+        let parameterMetadataLeakDiagnostic =
+            diagnostics
+            |> List.find (fun item ->
+                item.Code = DiagnosticCode.CheckpointVerification
+                && tryFindPayloadText "reason" item = Some "pre-erasure-parameter-type-metadata-leak")
+
+        let returnMetadataLeakDiagnostic =
+            diagnostics
+            |> List.find (fun item ->
+                item.Code = DiagnosticCode.CheckpointVerification
+                && tryFindPayloadText "reason" item = Some "pre-erasure-return-type-metadata-leak")
+
+        let constructorFieldMetadataLeakDiagnostic =
+            diagnostics
+            |> List.find (fun item ->
+                item.Code = DiagnosticCode.CheckpointVerification
+                && tryFindPayloadText "reason" item = Some "pre-erasure-constructor-field-metadata-leak")
+
+        let instanceHeadMetadataLeakDiagnostic =
+            diagnostics
+            |> List.find (fun item ->
+                item.Code = DiagnosticCode.CheckpointVerification
+                && tryFindPayloadText "reason" item = Some "pre-erasure-instance-head-metadata-leak")
+
         Assert.Equal("checkpoint-verification-diagnostic", missingBackendModuleDiagnostic.Payload.Kind)
         Assert.Equal(Some "KBackendIR", tryFindPayloadText "checkpoint" missingBackendModuleDiagnostic)
         Assert.Equal(Some "main", tryFindPayloadText "runtime-module-name" missingBackendModuleDiagnostic)
@@ -4911,6 +4959,23 @@ module SmokeTestsShard4 =
 
         Assert.Equal("checkpoint-verification-diagnostic", missingBodyDiagnostic.Payload.Kind)
         Assert.Equal(Some "main.answer", tryFindPayloadText "binding-label" missingBodyDiagnostic)
+
+        Assert.Equal("checkpoint-verification-diagnostic", parameterMetadataLeakDiagnostic.Payload.Kind)
+        Assert.Equal(Some "main.id", tryFindPayloadText "binding-label" parameterMetadataLeakDiagnostic)
+        Assert.Equal(Some "value", tryFindPayloadText "parameter-name" parameterMetadataLeakDiagnostic)
+        Assert.Equal(Some "Int captures (s)", tryFindPayloadText "type-text" parameterMetadataLeakDiagnostic)
+
+        Assert.Equal("checkpoint-verification-diagnostic", returnMetadataLeakDiagnostic.Payload.Kind)
+        Assert.Equal(Some "main.id", tryFindPayloadText "binding-label" returnMetadataLeakDiagnostic)
+        Assert.Equal(Some "((Unit -> Int) captures (s))", tryFindPayloadText "type-text" returnMetadataLeakDiagnostic)
+
+        Assert.Equal("checkpoint-verification-diagnostic", constructorFieldMetadataLeakDiagnostic.Payload.Kind)
+        Assert.Equal(Some "main.Box[0]", tryFindPayloadText "field-label" constructorFieldMetadataLeakDiagnostic)
+        Assert.Equal(Some "Region", tryFindPayloadText "type-text" constructorFieldMetadataLeakDiagnostic)
+
+        Assert.Equal("checkpoint-verification-diagnostic", instanceHeadMetadataLeakDiagnostic.Payload.Kind)
+        Assert.Equal(Some "main.Show[0]", tryFindPayloadText "instance-head-label" instanceHeadMetadataLeakDiagnostic)
+        Assert.Equal(Some "Quantity", tryFindPayloadText "type-text" instanceHeadMetadataLeakDiagnostic)
 
     [<Fact>]
     let ``surface record diagnostics render from typed evidence`` () =

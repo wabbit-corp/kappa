@@ -790,20 +790,20 @@ module CheckpointVerification =
                             match parameter.TypeText with
                             | Some typeText when runtimeTypeLeaksErasureMetadata allowEffectRowMetadata typeText ->
                                 yield
-                                    makeOriginDiagnostic
+                                    makeStructuredOriginDiagnostic
                                         workspace.Documents
                                         binding.Provenance
-                                        $"Checkpoint 'KBackendIR' requires pre-erasure runtime metadata to be removed before backend lowering, but parameter '{runtimeModule.Name}.{binding.Name}.{parameter.Name}' still exposes '{typeText}'."
+                                        (PreErasureParameterTypeMetadataLeak("KBackendIR", $"{runtimeModule.Name}.{binding.Name}", parameter.Name, typeText))
                             | _ ->
                                 ()
 
                         match binding.ReturnTypeText with
                         | Some typeText when runtimeTypeLeaksErasureMetadata allowEffectRowMetadata typeText ->
                             yield
-                                makeOriginDiagnostic
+                                makeStructuredOriginDiagnostic
                                     workspace.Documents
                                     binding.Provenance
-                                    $"Checkpoint 'KBackendIR' requires pre-erasure runtime metadata to be removed before backend lowering, but return type of '{runtimeModule.Name}.{binding.Name}' still exposes '{typeText}'."
+                                    (PreErasureReturnTypeMetadataLeak("KBackendIR", $"{runtimeModule.Name}.{binding.Name}", typeText))
                         | _ ->
                             ()
 
@@ -812,20 +812,20 @@ module CheckpointVerification =
                             for index, fieldTypeText in constructor.FieldTypeTexts |> List.indexed do
                                 if runtimeTypeLeaksErasureMetadata allowEffectRowMetadata fieldTypeText then
                                     yield
-                                        makeOriginDiagnostic
+                                        makeStructuredOriginDiagnostic
                                             workspace.Documents
                                             constructor.Provenance
-                                            $"Checkpoint 'KBackendIR' requires pre-erasure runtime metadata to be removed before backend lowering, but constructor field '{runtimeModule.Name}.{constructor.Name}[{index}]' still exposes '{fieldTypeText}'."
+                                            (PreErasureConstructorFieldMetadataLeak("KBackendIR", $"{runtimeModule.Name}.{constructor.Name}[{index}]", fieldTypeText))
 
                     for instanceInfo in runtimeModule.TraitInstances do
                         for index, headTypeText in instanceInfo.HeadTypeTexts |> List.indexed do
                             if runtimeTypeLeaksErasureMetadata allowEffectRowMetadata headTypeText then
                                 yield
-                                    makeModuleDiagnostic
+                                    makeStructuredModuleDiagnostic
                                         workspace.Documents
                                         (renderedModuleIdentity runtimeModule.Name)
                                         runtimeModule.SourceFile
-                                        $"Checkpoint 'KBackendIR' requires pre-erasure runtime metadata to be removed before backend lowering, but instance head '{runtimeModule.Name}.{instanceInfo.TraitName}[{index}]' still exposes '{headTypeText}'."
+                                        (PreErasureInstanceHeadMetadataLeak("KBackendIR", $"{runtimeModule.Name}.{instanceInfo.TraitName}[{index}]", headTypeText))
             ]
 
         let constructorExists moduleName typeName constructorName tag fieldCount =

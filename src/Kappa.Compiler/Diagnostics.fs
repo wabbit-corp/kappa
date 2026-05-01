@@ -902,6 +902,10 @@ type CheckpointVerificationEvidence =
     | IntrinsicBackendFunctionMustBeListedInModuleIntrinsicTerms of checkpoint: string * bindingLabel: string
     | UnsupportedBackendIntrinsicFunction of checkpoint: string * moduleName: string * bindingName: string * backendProfile: string
     | BackendFunctionMustHaveBody of checkpoint: string * bindingLabel: string
+    | PreErasureParameterTypeMetadataLeak of checkpoint: string * bindingLabel: string * parameterName: string * typeText: string
+    | PreErasureReturnTypeMetadataLeak of checkpoint: string * bindingLabel: string * typeText: string
+    | PreErasureConstructorFieldMetadataLeak of checkpoint: string * fieldLabel: string * typeText: string
+    | PreErasureInstanceHeadMetadataLeak of checkpoint: string * instanceHeadLabel: string * typeText: string
 
 type SurfaceRecordContext =
     | RecordTypeTelescope
@@ -2914,6 +2918,51 @@ module DiagnosticFact =
                         [ field "reason" (DiagnosticPayloadText "backend-function-must-have-body")
                           field "checkpoint" (DiagnosticPayloadText checkpoint)
                           field "binding-label" (DiagnosticPayloadText bindingLabel) ])
+            | PreErasureParameterTypeMetadataLeak(checkpoint, bindingLabel, parameterName, typeText) ->
+                descriptor
+                    DiagnosticCode.CheckpointVerification
+                    None
+                    $"Checkpoint '{checkpoint}' requires pre-erasure runtime metadata to be removed before backend lowering, but parameter '{bindingLabel}.{parameterName}' still exposes '{typeText}'."
+                    (payload
+                        "checkpoint-verification-diagnostic"
+                        [ field "reason" (DiagnosticPayloadText "pre-erasure-parameter-type-metadata-leak")
+                          field "checkpoint" (DiagnosticPayloadText checkpoint)
+                          field "binding-label" (DiagnosticPayloadText bindingLabel)
+                          field "parameter-name" (DiagnosticPayloadText parameterName)
+                          field "type-text" (DiagnosticPayloadText typeText) ])
+            | PreErasureReturnTypeMetadataLeak(checkpoint, bindingLabel, typeText) ->
+                descriptor
+                    DiagnosticCode.CheckpointVerification
+                    None
+                    $"Checkpoint '{checkpoint}' requires pre-erasure runtime metadata to be removed before backend lowering, but return type of '{bindingLabel}' still exposes '{typeText}'."
+                    (payload
+                        "checkpoint-verification-diagnostic"
+                        [ field "reason" (DiagnosticPayloadText "pre-erasure-return-type-metadata-leak")
+                          field "checkpoint" (DiagnosticPayloadText checkpoint)
+                          field "binding-label" (DiagnosticPayloadText bindingLabel)
+                          field "type-text" (DiagnosticPayloadText typeText) ])
+            | PreErasureConstructorFieldMetadataLeak(checkpoint, fieldLabel, typeText) ->
+                descriptor
+                    DiagnosticCode.CheckpointVerification
+                    None
+                    $"Checkpoint '{checkpoint}' requires pre-erasure runtime metadata to be removed before backend lowering, but constructor field '{fieldLabel}' still exposes '{typeText}'."
+                    (payload
+                        "checkpoint-verification-diagnostic"
+                        [ field "reason" (DiagnosticPayloadText "pre-erasure-constructor-field-metadata-leak")
+                          field "checkpoint" (DiagnosticPayloadText checkpoint)
+                          field "field-label" (DiagnosticPayloadText fieldLabel)
+                          field "type-text" (DiagnosticPayloadText typeText) ])
+            | PreErasureInstanceHeadMetadataLeak(checkpoint, instanceHeadLabel, typeText) ->
+                descriptor
+                    DiagnosticCode.CheckpointVerification
+                    None
+                    $"Checkpoint '{checkpoint}' requires pre-erasure runtime metadata to be removed before backend lowering, but instance head '{instanceHeadLabel}' still exposes '{typeText}'."
+                    (payload
+                        "checkpoint-verification-diagnostic"
+                        [ field "reason" (DiagnosticPayloadText "pre-erasure-instance-head-metadata-leak")
+                          field "checkpoint" (DiagnosticPayloadText checkpoint)
+                          field "instance-head-label" (DiagnosticPayloadText instanceHeadLabel)
+                          field "type-text" (DiagnosticPayloadText typeText) ])
         | SurfaceRecordDiagnostic evidence ->
             match evidence with
             | RecordFieldDeclaredMoreThanOnce fieldName ->
