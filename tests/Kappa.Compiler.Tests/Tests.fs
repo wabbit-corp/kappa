@@ -1240,9 +1240,9 @@ module SmokeTestsShard1 =
 
         let expectedConstraints : TypeSignatures.TraitConstraint list =
             [
-                { TraitName = "Eq"
+                { Trait = TypeSignatures.TraitReference.unqualified "Eq"
                   Arguments = [ TypeSignatures.TypeVariable "a" ] }
-                { TraitName = "Hashable"
+                { Trait = TypeSignatures.TraitReference.unqualified "Hashable"
                   Arguments = [ TypeSignatures.TypeVariable "a" ] }
             ]
 

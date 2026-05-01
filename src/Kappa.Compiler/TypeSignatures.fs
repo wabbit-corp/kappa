@@ -44,8 +44,32 @@ module TypeSignatures =
           Quantity: Quantity
           Type: TypeExpr }
 
+    type TraitReference = private TraitReference of string list
+
+    module TraitReference =
+        let ofSegments segments =
+            match segments with
+            | [] ->
+                invalidArg (nameof segments) "Trait references must contain at least one segment."
+            | _ ->
+                TraitReference segments
+
+        let unqualified name = ofSegments [ name ]
+
+        let segments (TraitReference segments) = segments
+
+        let text traitReference =
+            traitReference
+            |> segments
+            |> SyntaxFacts.moduleNameToText
+
+        let localName traitReference =
+            traitReference
+            |> segments
+            |> List.last
+
     type TraitConstraint =
-        { TraitName: string
+        { Trait: TraitReference
           Arguments: TypeExpr list }
 
     type ForallBinder =
@@ -1218,10 +1242,7 @@ module TypeSignatures =
                 match constraintParser.ParseType() with
                 | Some(TypeName(name, arguments)) ->
                     Some
-                        { TraitName =
-                            match name with
-                            | [ singleName ] -> singleName
-                            | _ -> SyntaxFacts.moduleNameToText name
+                        { Trait = TraitReference.ofSegments name
                           Arguments = arguments }
                 | _ ->
                     None
@@ -2417,7 +2438,7 @@ module TypeSignatures =
         && List.length left.Constraints = List.length right.Constraints
         && List.forall2
             (fun leftConstraint rightConstraint ->
-                String.Equals(leftConstraint.TraitName, rightConstraint.TraitName, StringComparison.Ordinal)
+                TraitReference.segments leftConstraint.Trait = TraitReference.segments rightConstraint.Trait
                 && List.length leftConstraint.Arguments = List.length rightConstraint.Arguments
                 && List.forall2 definitionallyEqual leftConstraint.Arguments rightConstraint.Arguments)
             left.Constraints

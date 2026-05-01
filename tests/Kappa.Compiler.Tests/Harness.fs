@@ -496,11 +496,21 @@ let private resolveFixtureTypeScheme
         Constraints =
             scheme.Constraints
             |> List.map (fun constraintInfo ->
+                let resolvedTraitSegments =
+                    constraintInfo.Trait
+                    |> TypeSignatures.TraitReference.segments
+                    |> fun traitSegments ->
+                        match traitSegments with
+                        | [ singleName ] ->
+                            traitResolutions
+                            |> Map.tryFind singleName
+                            |> Option.map (fun resolvedName -> [ resolvedName ])
+                            |> Option.defaultValue traitSegments
+                        | _ ->
+                            traitSegments
+
                 { constraintInfo with
-                    TraitName =
-                        traitResolutions
-                        |> Map.tryFind constraintInfo.TraitName
-                        |> Option.defaultValue constraintInfo.TraitName
+                    Trait = TypeSignatures.TraitReference.ofSegments resolvedTraitSegments
                     Arguments =
                         constraintInfo.Arguments
                         |> List.map (resolveFixtureTypeExpr typeResolutions) })

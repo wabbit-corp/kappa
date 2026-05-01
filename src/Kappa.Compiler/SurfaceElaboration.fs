@@ -280,6 +280,35 @@ module SurfaceElaboration =
     let private semanticObjectIdentity declarationIdentity kind =
         SemanticObjectIdentity.create declarationIdentity kind
 
+    let private traitReferenceSegments traitReference =
+        TypeSignatures.TraitReference.segments traitReference
+
+    let private traitReferenceText traitReference =
+        TypeSignatures.TraitReference.text traitReference
+
+    let private traitReferenceLocalName traitReference =
+        TypeSignatures.TraitReference.localName traitReference
+
+    let private traitConstraintText (constraintInfo: TraitConstraint) =
+        traitReferenceText constraintInfo.Trait
+
+    let private traitConstraintLocalName (constraintInfo: TraitConstraint) =
+        traitReferenceLocalName constraintInfo.Trait
+
+    let private traitConstraintTypeName (constraintInfo: TraitConstraint) =
+        TypeName(traitReferenceSegments constraintInfo.Trait, constraintInfo.Arguments)
+
+    let private traitConstraintBinderStem (constraintInfo: TraitConstraint) =
+        (traitConstraintText constraintInfo).Replace(".", "_", StringComparison.Ordinal)
+
+    let private unqualifiedTraitConstraint traitName arguments =
+        { Trait = TypeSignatures.TraitReference.unqualified traitName
+          Arguments = arguments }
+
+    let private qualifiedTraitConstraint traitNameSegments arguments =
+        { Trait = TypeSignatures.TraitReference.ofSegments traitNameSegments
+          Arguments = arguments }
+
     let private tryFindVisibleStaticObject (environment: BindingLoweringEnvironment) nameSegments =
         environment.VisibleStaticObjects |> Map.tryFind nameSegments
 
@@ -940,15 +969,11 @@ module SurfaceElaboration =
         let constraintMatchesLayoutType (constraintInfo: TraitConstraint) layoutType =
             match layoutType with
             | TypeName([ traitName ], arguments) ->
-                String.Equals(traitName, constraintInfo.TraitName, StringComparison.Ordinal)
+                [ traitName ] = traitReferenceSegments constraintInfo.Trait
                 && List.length arguments = List.length constraintInfo.Arguments
                 && List.forall2 TypeSignatures.definitionallyEqual arguments constraintInfo.Arguments
             | TypeName(qualifiedName, arguments) ->
-                String.Equals(
-                    SyntaxFacts.moduleNameToText qualifiedName,
-                    constraintInfo.TraitName,
-                    StringComparison.Ordinal
-                )
+                qualifiedName = traitReferenceSegments constraintInfo.Trait
                 && List.length arguments = List.length constraintInfo.Arguments
                 && List.forall2 TypeSignatures.definitionallyEqual arguments constraintInfo.Arguments
             | _ ->
@@ -2689,12 +2714,7 @@ module SurfaceElaboration =
         TypeSignatures.parseType tokens
         |> Option.bind (function
             | TypeName(nameSegments, arguments) ->
-                Some
-                    { TraitName =
-                        match nameSegments with
-                        | [ singleName ] -> singleName
-                        | _ -> SyntaxFacts.moduleNameToText nameSegments
-                      Arguments = arguments }
+                Some(qualifiedTraitConstraint nameSegments arguments)
             | _ ->
                 None)
 
@@ -4742,9 +4762,9 @@ module SurfaceElaboration =
 
         let constraintText (constraintInfo: TypeSignatures.TraitConstraint) =
             match constraintInfo.Arguments with
-            | [] -> constraintInfo.TraitName
+            | [] -> traitConstraintText constraintInfo
             | arguments ->
-                String.concat " " (constraintInfo.TraitName :: (arguments |> List.map TypeSignatures.toText))
+                String.concat " " ((traitConstraintText constraintInfo) :: (arguments |> List.map TypeSignatures.toText))
 
         let forallPrefix =
             match scheme.Forall with
@@ -5694,8 +5714,8 @@ module SurfaceElaboration =
             | Some scheme ->
                 scheme.Constraints
                 |> List.mapi (fun index constraintInfo ->
-                    let dictionaryParameterName = $"__kappa_dict_{constraintInfo.TraitName}_{index}"
-                    dictionaryParameterName, TypeName([ constraintInfo.TraitName ], constraintInfo.Arguments))
+                    let dictionaryParameterName = $"__kappa_dict_{traitConstraintBinderStem constraintInfo}_{index}"
+                    dictionaryParameterName, traitConstraintTypeName constraintInfo)
             | None ->
                 []
 
@@ -5763,8 +5783,8 @@ module SurfaceElaboration =
             | Some scheme ->
                 scheme.Constraints
                 |> List.mapi (fun index constraintInfo ->
-                    let dictionaryParameterName = $"__kappa_dict_{constraintInfo.TraitName}_{index}"
-                    dictionaryParameterName, TypeName([ constraintInfo.TraitName ], constraintInfo.Arguments))
+                    let dictionaryParameterName = $"__kappa_dict_{traitConstraintBinderStem constraintInfo}_{index}"
+                    dictionaryParameterName, traitConstraintTypeName constraintInfo)
             | None ->
                 []
 
@@ -6986,19 +7006,20 @@ module SurfaceElaboration =
         else
             None
 
-    let private tryResolveTraitInfoByConstraintName
+    let private tryResolveTraitInfoByConstraint
         (environment: BindingLoweringEnvironment)
-        (traitName: string)
+        (traitReference: TypeSignatures.TraitReference)
         =
+        let traitSegments = traitReferenceSegments traitReference
+
         environment.VisibleTraits
-        |> Map.tryFind traitName
+        |> Map.tryFind (traitReferenceLocalName traitReference)
         |> Option.orElseWith (fun () ->
-            if String.IsNullOrWhiteSpace(traitName) || not (traitName.Contains(".")) then
+            match traitSegments with
+            | [] | [ _ ] ->
                 None
-            else
-                traitName.Split('.')
-                |> Array.toList
-                |> tryResolveVisibleTraitInfo environment)
+            | _ ->
+                tryResolveVisibleTraitInfo environment traitSegments)
 
     let private reachableTraitConstraints
         (environment: BindingLoweringEnvironment)
@@ -7006,7 +7027,7 @@ module SurfaceElaboration =
         =
         let rec visit visited acc (current: TraitConstraint) =
             let key =
-                current.TraitName,
+                traitReferenceSegments current.Trait,
                 (current.Arguments
                  |> List.map (normalizeTypeAliases environment.VisibleTypeAliases >> TypeSignatures.toText))
 
@@ -7017,7 +7038,7 @@ module SurfaceElaboration =
                 let acc = current :: acc
 
                 let nextConstraints =
-                    tryResolveTraitInfoByConstraintName environment current.TraitName
+                    tryResolveTraitInfoByConstraint environment current.Trait
                     |> Option.bind (fun traitInfo -> tryInstantiateTraitSupertraits traitInfo current.Arguments)
                     |> Option.defaultValue []
 
@@ -7030,14 +7051,14 @@ module SurfaceElaboration =
         (receiverType: TypeExpr)
         memberName
         =
-        let tryFindOwnerTrait traitName arguments memberName =
+        let tryFindOwnerTrait traitReference arguments memberName =
             let rootConstraint: TraitConstraint =
-                { TraitName = traitName
+                { Trait = traitReference
                   Arguments = arguments }
 
             reachableTraitConstraints environment rootConstraint
             |> List.tryPick (fun candidateConstraint ->
-                tryResolveTraitInfoByConstraintName environment candidateConstraint.TraitName
+                tryResolveTraitInfoByConstraint environment candidateConstraint.Trait
                 |> Option.bind (fun candidateTraitInfo ->
                     if candidateTraitInfo.Members.ContainsKey(memberName) then
                         Some(candidateTraitInfo, memberName, candidateConstraint.Arguments)
@@ -7046,10 +7067,10 @@ module SurfaceElaboration =
 
         match normalizeTypeAliases environment.VisibleTypeAliases receiverType with
         | TypeName([ traitName ], arguments) when environment.VisibleTraits.ContainsKey(traitName) ->
-            tryFindOwnerTrait traitName arguments memberName
+            tryFindOwnerTrait (TypeSignatures.TraitReference.unqualified traitName) arguments memberName
         | TypeName(qualifiedName, arguments) ->
             tryResolveVisibleTraitInfo environment qualifiedName
-            |> Option.bind (fun _ -> tryFindOwnerTrait (SyntaxFacts.moduleNameToText qualifiedName) arguments memberName)
+            |> Option.bind (fun _ -> tryFindOwnerTrait (TypeSignatures.TraitReference.ofSegments qualifiedName) arguments memberName)
         | _ ->
             None
 
@@ -7191,8 +7212,10 @@ module SurfaceElaboration =
             constraintInfo.Arguments
             |> List.map (normalizeTypeAliases environment.VisibleTypeAliases)
 
+        let constraintTraitName = traitConstraintLocalName constraintInfo
+
         let canonicalArgumentTexts, moduleIdentity, instancePrefix =
-            match constraintInfo.TraitName, normalizedArguments with
+            match constraintTraitName, normalizedArguments with
             | "IsTrait", [ argumentType ] ->
                 (if supportsIntrinsicTraitEvidenceType argumentType then
                      Some [ TypeSignatures.toText argumentType ]
@@ -7236,11 +7259,11 @@ module SurfaceElaboration =
                 canonicalArgumentTexts |> String.concat ","
 
             let instanceKey =
-                $"{instancePrefix}:{constraintInfo.TraitName}:{normalizedArgumentText}"
+                $"{instancePrefix}:{constraintTraitName}:{normalizedArgumentText}"
 
             Some
                 { ModuleIdentity = moduleIdentity
-                  TraitName = constraintInfo.TraitName
+                  TraitName = constraintTraitName
                   InstanceKey = instanceKey
                   Constraints = []
                   HeadTypes = normalizedArguments
@@ -7269,9 +7292,7 @@ module SurfaceElaboration =
             | TypeName(nameSegments, [ argumentType ])
                 when matchesKnownType CompilerKnownSymbols.IsTraitType nameSegments
                      && supportsIntrinsicTraitEvidenceType argumentType ->
-                Some
-                    { TraitName = "IsTrait"
-                      Arguments = [ argumentType ] }
+                Some(unqualifiedTraitConstraint "IsTrait" [ argumentType ])
             | _ ->
                 None
 
@@ -7296,7 +7317,7 @@ module SurfaceElaboration =
                 |> List.map (normalizeTypeAliases environment.VisibleTypeAliases >> TypeSignatures.toText)
                 |> String.concat ","
 
-            $"{constraintInfo.TraitName}({normalizedArguments})"
+            $"{traitConstraintText constraintInfo}({normalizedArguments})"
 
         let rec solve visited (goal: TraitConstraint) =
             let goalKey = normalizeConstraint goal
@@ -7311,7 +7332,7 @@ module SurfaceElaboration =
                 let survivingCandidates =
                     environment.VisibleInstances
                     |> List.choose (fun instanceInfo ->
-                        if not (String.Equals(instanceInfo.TraitName, goal.TraitName, StringComparison.Ordinal)) then
+                        if not (String.Equals(instanceInfo.TraitName, traitConstraintLocalName goal, StringComparison.Ordinal)) then
                             None
                         elif List.length instanceInfo.HeadTypes <> List.length goal.Arguments then
                             None
@@ -7390,7 +7411,7 @@ module SurfaceElaboration =
             |> List.map (normalizeTypeAliases environment.VisibleTypeAliases >> TypeSignatures.toText)
             |> String.concat ","
 
-        $"{constraintInfo.TraitName}({normalizedArguments})"
+        $"{traitConstraintText constraintInfo}({normalizedArguments})"
 
     let private addReachableConstraintDictionary
         (environment: BindingLoweringEnvironment)
@@ -7475,7 +7496,7 @@ module SurfaceElaboration =
         =
         match preparedCall.InstantiatedScheme.Constraints with
         | owningConstraint :: _
-            when String.Equals(owningConstraint.TraitName, traitName, StringComparison.Ordinal) ->
+            when String.Equals(traitConstraintLocalName owningConstraint, traitName, StringComparison.Ordinal) ->
             tryLowerResolvedDictionaryValue environment owningConstraint
             |> Option.defaultValue (
                 KCoreDictionaryValue(
@@ -7499,20 +7520,17 @@ module SurfaceElaboration =
         =
         match normalizeTypeAliases environment.VisibleTypeAliases parameterType with
         | TypeName([ traitName ], arguments) when environment.VisibleTraits.ContainsKey(traitName) ->
-            Some { TraitName = traitName; Arguments = arguments }
+            Some(unqualifiedTraitConstraint traitName arguments)
         | TypeName([ dictionaryTypeName ], arguments) ->
             environment.VisibleTraits
             |> Map.keys
             |> Seq.tryFind (fun traitName ->
                 String.Equals(dictionaryTypeName, TraitRuntime.dictionaryTypeName traitName, StringComparison.Ordinal))
             |> Option.map (fun traitName ->
-                { TraitName = traitName
-                  Arguments = arguments })
+                unqualifiedTraitConstraint traitName arguments)
         | TypeName(qualifiedName, arguments) ->
             tryResolveVisibleTraitInfo environment qualifiedName
-            |> Option.map (fun traitInfo ->
-                { TraitName = traitInfo.Name
-                  Arguments = arguments })
+            |> Option.map (fun _ -> qualifiedTraitConstraint qualifiedName arguments)
         | _ ->
             None
 
@@ -7526,7 +7544,7 @@ module SurfaceElaboration =
             tryTraitConstraintFromType environment rightType
         with
         | Some leftConstraint, Some rightConstraint ->
-            String.Equals(leftConstraint.TraitName, rightConstraint.TraitName, StringComparison.Ordinal)
+            traitReferenceSegments leftConstraint.Trait = traitReferenceSegments rightConstraint.Trait
             && List.length leftConstraint.Arguments = List.length rightConstraint.Arguments
             && List.forall2
                 (fun leftArgument rightArgument ->
@@ -7564,8 +7582,7 @@ module SurfaceElaboration =
         let addConstraintMembers state dictionaryParameterName constraintInfo =
             reachableTraitConstraints environment constraintInfo
             |> List.fold (fun current reachableConstraint ->
-                environment.VisibleTraits
-                |> Map.tryFind reachableConstraint.TraitName
+                tryResolveTraitInfoByConstraint environment reachableConstraint.Trait
                 |> Option.map (fun traitInfo ->
                     traitInfo.Members
                     |> Map.toList
@@ -7573,12 +7590,12 @@ module SurfaceElaboration =
                         if Map.containsKey memberName innerState then
                             innerState
                         else
-                            Map.add memberName (reachableConstraint.TraitName, dictionaryParameterName) innerState) current)
+                            Map.add memberName (traitConstraintLocalName reachableConstraint, dictionaryParameterName) innerState) current)
                 |> Option.defaultValue current) state
 
         constraints
         |> List.mapi (fun index constraintInfo ->
-            let dictionaryParameterName = $"__kappa_dict_{constraintInfo.TraitName}_{index}"
+            let dictionaryParameterName = $"__kappa_dict_{traitConstraintBinderStem constraintInfo}_{index}"
             constraintInfo, dictionaryParameterName)
         |> List.fold (fun state (constraintInfo, dictionaryParameterName) ->
             addConstraintMembers state dictionaryParameterName constraintInfo) Map.empty
@@ -7640,8 +7657,7 @@ module SurfaceElaboration =
                     | Some constraintInfo ->
                         reachableTraitConstraints environment constraintInfo
                         |> List.fold (fun current reachableConstraint ->
-                            environment.VisibleTraits
-                            |> Map.tryFind reachableConstraint.TraitName
+                            tryResolveTraitInfoByConstraint environment reachableConstraint.Trait
                             |> Option.map (fun traitInfo ->
                                 traitInfo.Members
                                 |> Map.toList
@@ -7649,7 +7665,7 @@ module SurfaceElaboration =
                                     if Map.containsKey memberName innerState then
                                         innerState
                                     else
-                                        Map.add memberName (reachableConstraint.TraitName, parameter.Name) innerState) current)
+                                        Map.add memberName (traitConstraintLocalName reachableConstraint, parameter.Name) innerState) current)
                             |> Option.defaultValue current) state
                     | None ->
                         state
@@ -7779,9 +7795,9 @@ module SurfaceElaboration =
             |> String.concat ", "
 
         if String.IsNullOrWhiteSpace normalizedArguments then
-            constraintInfo.TraitName
+            traitConstraintText constraintInfo
         else
-            $"{constraintInfo.TraitName} {normalizedArguments}"
+            $"{traitConstraintText constraintInfo} {normalizedArguments}"
 
     let private renderInstanceCandidate (instanceInfo: InstanceInfo) =
         let headArguments =
@@ -7889,8 +7905,7 @@ module SurfaceElaboration =
                 Some(expectedType, None)
             else
                 let constraintInfo =
-                    { TraitName = numericLiteralConstraintName literal
-                      Arguments = [ normalizedTargetType ] }
+                    unqualifiedTraitConstraint (numericLiteralConstraintName literal) [ normalizedTargetType ]
 
                 resolveConstraintInstance environment constraintInfo
                 |> Option.map (fun instanceInfo -> expectedType, Some instanceInfo)
@@ -8021,7 +8036,7 @@ module SurfaceElaboration =
                     |> List.filter (fun (_, localConstraint: TraitConstraint) ->
                         reachableTraitConstraints environment localConstraint
                         |> List.exists (fun (reachableConstraint: TraitConstraint) ->
-                            String.Equals(reachableConstraint.TraitName, goalConstraint.TraitName, StringComparison.Ordinal)
+                            traitReferenceSegments reachableConstraint.Trait = traitReferenceSegments goalConstraint.Trait
                             && List.length reachableConstraint.Arguments = List.length goalConstraint.Arguments
                             && List.forall2
                                 (fun left right ->
@@ -9029,8 +9044,7 @@ module SurfaceElaboration =
                     let overloadedScheme =
                         { memberInfo.Scheme with
                             Constraints =
-                                { TraitName = traitInfo.Name
-                                  Arguments = traitInfo.TypeParameters |> List.map TypeVariable }
+                                unqualifiedTraitConstraint traitInfo.Name (traitInfo.TypeParameters |> List.map TypeVariable)
                                 :: memberInfo.Scheme.Constraints }
 
                     let bindingInfo =
@@ -9046,7 +9060,7 @@ module SurfaceElaboration =
                     tryPrepareVisibleBindingCall environment candidateCounter bindingInfo None inferArgumentType noLocalImplicit arguments
                     |> Option.bind (fun preparedCall ->
                         match preparedCall.InstantiatedScheme.Constraints with
-                        | owningConstraint :: [] when String.Equals(owningConstraint.TraitName, traitInfo.Name, StringComparison.Ordinal) ->
+                        | owningConstraint :: [] when String.Equals(traitConstraintLocalName owningConstraint, traitInfo.Name, StringComparison.Ordinal) ->
                             resolveConstraintInstance environment owningConstraint
                             |> Option.map (fun instanceInfo ->
                                 traitInfo, memberInfo, preparedCall, instanceInfo, candidateCounter.Value)
@@ -11451,7 +11465,7 @@ module SurfaceElaboration =
                 false
 
         let tryResolveTraitConstraint typeExpr traitName =
-            resolveConstraintInstanceWithSubstitution environment { TraitName = traitName; Arguments = [ typeExpr ] }
+            resolveConstraintInstanceWithSubstitution environment (unqualifiedTraitConstraint traitName [ typeExpr ])
             |> Option.map (fun (instanceInfo, substitution) ->
                 instanceInfo,
                 substitution)
@@ -13496,7 +13510,7 @@ module SurfaceElaboration =
                 |> Option.exists (fun scheme ->
                     scheme.Constraints
                     |> List.exists (fun constraintInfo ->
-                        String.Equals(constraintInfo.TraitName, "LacksRec", StringComparison.Ordinal)
+                        String.Equals(traitConstraintLocalName constraintInfo, "LacksRec", StringComparison.Ordinal)
                         && match constraintInfo.Arguments with
                            | [ TypeVariable row; TypeVariable label ] ->
                                String.Equals(row, rowName, StringComparison.Ordinal)
@@ -18476,7 +18490,7 @@ module SurfaceElaboration =
                                             traitInfo.Members.ContainsKey(memberName)
                                             || (traitInfo.Supertraits
                                                 |> List.exists (fun supertrait ->
-                                                    traitOrSupertraitProvidesMember supertrait.TraitName memberName)))
+                                                    traitOrSupertraitProvidesMember (traitReferenceLocalName supertrait.Trait) memberName)))
 
                                     let localConstraintProjectionAvailable =
                                         locals
@@ -18484,7 +18498,7 @@ module SurfaceElaboration =
                                         |> Seq.exists (fun localType ->
                                             tryTraitConstraintFromType environment localType
                                             |> Option.exists (fun constraintInfo ->
-                                                traitOrSupertraitProvidesMember constraintInfo.TraitName calleeName))
+                                                traitOrSupertraitProvidesMember (traitConstraintLocalName constraintInfo) calleeName))
 
                                     let isKnownVisibleCallee =
                                         isLexicallyBoundName
@@ -18774,8 +18788,7 @@ module SurfaceElaboration =
                         match tryResolveComparableOperandTypes locals left right with
                         | Some(normalizedLeftType, _, leftType, rightType) ->
                                 let constraintInfo =
-                                    { TraitName = requiredTraitName
-                                      Arguments = [ normalizedLeftType ] }
+                                    unqualifiedTraitConstraint requiredTraitName [ normalizedLeftType ]
 
                                 if constraintHasLocalDictionary environment constraintInfo then
                                     []
@@ -18817,8 +18830,7 @@ module SurfaceElaboration =
                         match tryResolveComparableOperandTypes locals left right with
                         | Some(normalizedLeftType, _, leftType, rightType) ->
                                 let constraintInfo =
-                                    { TraitName = "Rangeable"
-                                      Arguments = [ normalizedLeftType ] }
+                                    unqualifiedTraitConstraint "Rangeable" [ normalizedLeftType ]
 
                                 if constraintHasLocalDictionary environment constraintInfo then
                                     []
@@ -21524,7 +21536,7 @@ module SurfaceElaboration =
                         environment.VisibleTraits
 
                     let constraintMatches (expected: TraitConstraint) (actual: TraitConstraint) =
-                        String.Equals(expected.TraitName, actual.TraitName, StringComparison.Ordinal)
+                        traitReferenceSegments expected.Trait = traitReferenceSegments actual.Trait
                         && List.length expected.Arguments = List.length actual.Arguments
                         && List.forall2
                             (fun left right ->
@@ -21946,7 +21958,7 @@ module SurfaceElaboration =
                                     let schemeConstraintDictionaries =
                                         scheme.Constraints
                                         |> List.mapi (fun index constraintInfo ->
-                                            constraintInfo, KCoreName [ $"__kappa_dict_{constraintInfo.TraitName}_{index}" ])
+                                            constraintInfo, KCoreName [ $"__kappa_dict_{traitConstraintBinderStem constraintInfo}_{index}" ])
                                         |> buildConstraintDictionaries environment
 
                                     let parameterConstrainedMembers =
@@ -22290,9 +22302,9 @@ module SurfaceElaboration =
 
             let constraintText (constraintInfo: TypeSignatures.TraitConstraint) =
                 match constraintInfo.Arguments with
-                | [] -> constraintInfo.TraitName
+                | [] -> traitConstraintText constraintInfo
                 | arguments ->
-                    String.concat " " (constraintInfo.TraitName :: (arguments |> List.map TypeSignatures.toText))
+                    String.concat " " ((traitConstraintText constraintInfo) :: (arguments |> List.map TypeSignatures.toText))
 
             let forallPrefix =
                 match scheme.Forall with
@@ -23339,8 +23351,7 @@ module SurfaceElaboration =
                 let monadType = TypeName(monadName, [])
 
                 let releasableConstraint =
-                    { TraitName = "Releasable"
-                      Arguments = [ monadType; resourceType ] }
+                    unqualifiedTraitConstraint "Releasable" [ monadType; resourceType ]
 
                 match tryLowerResolvedDictionaryValue environment releasableConstraint with
                 | Some dictionaryValue ->
@@ -24929,16 +24940,15 @@ module SurfaceElaboration =
                         |> Option.defaultValue (KCoreLiteral LiteralValue.Unit)
                     | Some(targetType, Some instanceInfo) ->
                         let literalConstraint =
-                            { TraitName = numericLiteralConstraintName literal
-                              Arguments = [ targetType ] }
+                            unqualifiedTraitConstraint (numericLiteralConstraintName literal) [ targetType ]
 
                         let semanticArgument =
                             tryLowerNumericLiteralForRuntime literal
                             |> Option.defaultValue (KCoreLiteral LiteralValue.Unit)
 
                         KCoreTraitCall(
-                            literalConstraint.TraitName,
-                            (if literalConstraint.TraitName = "FromInteger" then
+                            traitConstraintLocalName literalConstraint,
+                            (if traitConstraintLocalName literalConstraint = "FromInteger" then
                                  "fromInteger"
                              else
                                  "fromFloat"),
@@ -26179,7 +26189,7 @@ module SurfaceElaboration =
                 (left: TypeSignatures.TraitConstraint)
                 (right: TypeSignatures.TraitConstraint)
                 =
-                String.Equals(left.TraitName, right.TraitName, StringComparison.Ordinal)
+                traitReferenceSegments left.Trait = traitReferenceSegments right.Trait
                 && List.length left.Arguments = List.length right.Arguments
                 && List.forall2 TypeSignatures.definitionallyEqual left.Arguments right.Arguments
 
@@ -26205,14 +26215,14 @@ module SurfaceElaboration =
                                 restConstraints
                                 restParameters
                                 (parameter.Name :: consumedNames)
-                                ((parameter.Name, TypeName([ constraintInfo.TraitName ], constraintInfo.Arguments))
+                                ((parameter.Name, traitConstraintTypeName constraintInfo)
                                  :: consumedLocalTypes)
                         | None when parameter.TypeTokens.IsNone ->
                             consumeLeadingConstraintParameters
                                 restConstraints
                                 restParameters
                                 (parameter.Name :: consumedNames)
-                                ((parameter.Name, TypeName([ constraintInfo.TraitName ], constraintInfo.Arguments))
+                                ((parameter.Name, traitConstraintTypeName constraintInfo)
                                  :: consumedLocalTypes)
                         | _ ->
                             List.rev consumedNames, List.rev consumedLocalTypes, remainingParameters
@@ -26231,7 +26241,7 @@ module SurfaceElaboration =
                     |> List.mapi (fun index constraintInfo ->
                         consumedNames
                         |> List.tryItem index
-                        |> Option.defaultValue $"__kappa_dict_{constraintInfo.TraitName}_{index}")
+                        |> Option.defaultValue $"__kappa_dict_{traitConstraintBinderStem constraintInfo}_{index}")
 
                 runtimeParameterNames, consumedLocalTypes, remainingParameters
             | None ->
@@ -26253,7 +26263,7 @@ module SurfaceElaboration =
                         let dictionaryParameterName =
                             constraintRuntimeParameterNames
                             |> List.tryItem index
-                            |> Option.defaultValue $"__kappa_dict_{constraintInfo.TraitName}_{index}"
+                            |> Option.defaultValue $"__kappa_dict_{traitConstraintBinderStem constraintInfo}_{index}"
 
                         constraintInfo, dictionaryParameterName)
 
@@ -26311,7 +26321,7 @@ module SurfaceElaboration =
                     dictionaryParameterName
                     None
                     true
-                    (Some(dictionaryType constraintInfo.TraitName constraintInfo.Arguments)))
+                    (Some(dictionaryType (traitConstraintLocalName constraintInfo) constraintInfo.Arguments)))
 
         let tryInferLambdaParameterTypesFromTopLevelCalls (lambdaParameters: Parameter list) =
             definition.Name
@@ -26953,7 +26963,7 @@ module SurfaceElaboration =
         let hiddenConstraintEntries =
             instanceConstraints
             |> List.mapi (fun index constraintInfo ->
-                let dictionaryParameterName = $"__kappa_dict_{constraintInfo.TraitName}_{index}"
+                let dictionaryParameterName = $"__kappa_dict_{traitConstraintBinderStem constraintInfo}_{index}"
                 constraintInfo, dictionaryParameterName)
 
         let selfConstrainedMembers =
@@ -26976,8 +26986,7 @@ module SurfaceElaboration =
             let selfConstraintDictionaries =
                 buildConstraintDictionaries
                     environment
-                    [ { TraitName = instanceInfo.TraitName
-                        Arguments = instanceInfo.HeadTypes },
+                    [ unqualifiedTraitConstraint instanceInfo.TraitName instanceInfo.HeadTypes,
                       KCoreName [ selfDictionaryName ] ]
 
             { environment with
@@ -27019,7 +27028,7 @@ module SurfaceElaboration =
                             [ selfDictionaryName, TypeName([ instanceInfo.TraitName ], instanceInfo.HeadTypes) ]
                             @ (hiddenConstraintEntries
                                |> List.map (fun (constraintInfo, dictionaryParameterName) ->
-                                   dictionaryParameterName, TypeName([ constraintInfo.TraitName ], constraintInfo.Arguments)))
+                                   dictionaryParameterName, traitConstraintTypeName constraintInfo))
 
                         let loweredBody =
                             definition.Body
@@ -27044,7 +27053,7 @@ module SurfaceElaboration =
                                         dictionaryParameterName
                                         None
                                         true
-                                        (Some(dictionaryType constraintInfo.TraitName constraintInfo.Arguments))))
+                                        (Some(dictionaryType (traitConstraintLocalName constraintInfo) constraintInfo.Arguments))))
                             @ buildBindingParameters environment.VisibleTypeAliases (Some specializedScheme) definition.Parameters
 
                         let provenance =
@@ -27070,7 +27079,7 @@ module SurfaceElaboration =
                         dictionaryParameterName
                         None
                         true
-                        (Some(dictionaryType constraintInfo.TraitName constraintInfo.Arguments)))
+                        (Some(dictionaryType (traitConstraintLocalName constraintInfo) constraintInfo.Arguments)))
 
             let dictionaryCaptures =
                 hiddenConstraintEntries

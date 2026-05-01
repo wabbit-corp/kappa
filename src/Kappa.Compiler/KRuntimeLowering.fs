@@ -337,7 +337,7 @@ module internal KRuntimeLowering =
         || (parameterTypes |> List.exists touches)
         || (scheme.Constraints
             |> List.exists (fun constraintInfo ->
-                Set.contains constraintInfo.TraitName compileTimeTraitNames
+                Set.contains (TypeSignatures.TraitReference.localName constraintInfo.Trait) compileTimeTraitNames
                 || (constraintInfo.Arguments |> List.exists touches)))
 
     let private tryParseTraitMemberScheme (memberDeclaration: TraitMember) =
