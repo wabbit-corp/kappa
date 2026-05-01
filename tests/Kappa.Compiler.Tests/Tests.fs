@@ -1140,7 +1140,12 @@ module SmokeTestsShard1 =
                 ]
 
         Assert.True(workspace.HasErrors, "Expected an out-of-range integer literal diagnostic.")
-        Assert.Contains(workspace.Diagnostics, fun diagnostic -> diagnostic.Code = DiagnosticCode.NumericLiteralOutOfRange)
+        let diagnostic =
+            workspace.Diagnostics
+            |> List.find (fun item -> item.Code = DiagnosticCode.NumericLiteralOutOfRange)
+
+        Assert.Equal("numeric-literal-out-of-range", diagnostic.Payload.Kind)
+        Assert.Equal(Some "9223372036854775808", tryFindPayloadText "literal-text" diagnostic)
 
 
     [<Fact>]
@@ -3778,6 +3783,30 @@ module SmokeTestsShard4 =
         Assert.Equal(Some "String", tryFindPayloadText "actual" expectedActualDiagnostic)
         Assert.Equal(Some "application-argument-mismatch", tryFindPayloadText "mismatch-kind" expectedActualDiagnostic)
         Assert.Equal(Some "general-expected-actual-mismatch", tryFindPayloadText "reason" expectedActualDiagnostic)
+
+    [<Fact>]
+    let ``macro and numeric literal diagnostics render from typed evidence`` () =
+        let bag = DiagnosticBag()
+        bag.AddError(DiagnosticFact.macroExpansion (FailElabMessage "macro failed"))
+        bag.AddError(DiagnosticFact.macroExpansion (FailElabWithCode(DiagnosticCode.UnsupportedSyntax, "typed macro failure")))
+        bag.AddError(DiagnosticFact.numericLiteralOutOfRange "999999999999999999999")
+
+        let diagnostics = bag.Items
+        let failElabDiagnostic = diagnostics |> List.find (fun item -> item.Code = DiagnosticCode.ElaborationFailed)
+        let failElabWithDiagnostic = diagnostics |> List.find (fun item -> item.Code = DiagnosticCode.UnsupportedSyntax)
+        let numericDiagnostic = diagnostics |> List.find (fun item -> item.Code = DiagnosticCode.NumericLiteralOutOfRange)
+
+        Assert.Equal("macro-expansion-diagnostic", failElabDiagnostic.Payload.Kind)
+        Assert.Equal(Some "fail-elab", tryFindPayloadText "reason" failElabDiagnostic)
+        Assert.Equal(Some "macro failed", tryFindPayloadText "message" failElabDiagnostic)
+
+        Assert.Equal("macro-expansion-diagnostic", failElabWithDiagnostic.Payload.Kind)
+        Assert.Equal(Some "fail-elab-with", tryFindPayloadText "reason" failElabWithDiagnostic)
+        Assert.Equal(Some "typed macro failure", tryFindPayloadText "message" failElabWithDiagnostic)
+        Assert.Equal(Some "E_UNSUPPORTED_SYNTAX", tryFindPayloadText "diagnostic-code" failElabWithDiagnostic)
+
+        Assert.Equal("numeric-literal-out-of-range", numericDiagnostic.Payload.Kind)
+        Assert.Equal(Some "999999999999999999999", tryFindPayloadText "literal-text" numericDiagnostic)
 
     [<Fact>]
     let ``typechecking diagnostics render from typed evidence`` () =

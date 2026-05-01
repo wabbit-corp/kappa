@@ -12770,7 +12770,12 @@ module SurfaceElaboration =
 
         let numericLiteralRangeDiagnostic literal =
             let sourceText = SurfaceNumericLiteral.toSurfaceText literal
-            makeDiagnostic SimpleDiagnosticKind.NumericLiteralOutOfRange $"Numeric literal '{sourceText}' is outside the currently supported runtime range for its target type."
+            Diagnostics.errorFact
+                "KFrontIR"
+                (Some(KFrontIRPhase.phaseName CORE_LOWERING))
+                None
+                []
+                (DiagnosticFact.numericLiteralOutOfRange sourceText)
 
         let tryNumericLiteralRangeDiagnostic expectedType expression =
             match tryInferNumericExpressionTypeFromContext environment expectedType expression with
@@ -20387,7 +20392,12 @@ module SurfaceElaboration =
                                         [ makeSurfaceElaborationDiagnostic
                                             QuantityZeroImplicitCannotSatisfyRuntimeParameter ]
                                     | Some [ _, QuantityBorrow _ ] when inEscapingLambda ->
-                                        [ makeDiagnostic SimpleDiagnosticKind.QttBorrowEscape "A lambda cannot capture a borrowed implicit value that may escape its borrow scope." ]
+                                        [ Diagnostics.errorFact
+                                            "KFrontIR"
+                                            (Some(KFrontIRPhase.phaseName CORE_LOWERING))
+                                            None
+                                            []
+                                            (DiagnosticFact.qttBorrowEscape LambdaCapturesBorrowedRegion) ]
                                     | Some _ ->
                                         [])
                 | None ->

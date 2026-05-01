@@ -704,6 +704,9 @@ type MacroExpansionDiagnosticEvidence =
     | FailElabWithCode of code: DiagnosticCode * message: string
     | WarnElabWithCode of code: DiagnosticCode * message: string
 
+type NumericLiteralOutOfRangeEvidence =
+    { LiteralText: string }
+
 type NameUnresolvedReferenceKind =
     | OrdinaryNameReference
     | ModuleQualifierReference
@@ -1222,6 +1225,7 @@ type DiagnosticFact =
     | ModuleCaseFoldCollisionDiagnostic of ModuleCaseFoldCollisionEvidence
     | InvalidUtf8SourceDiagnostic of InvalidUtf8SourceEvidence
     | MacroExpansionDiagnostic of MacroExpansionDiagnosticEvidence
+    | NumericLiteralOutOfRangeDiagnostic of NumericLiteralOutOfRangeEvidence
     | ModuleNameUnresolvedDiagnostic of ModuleNameUnresolvedEvidence
     | HostModuleReservedRootDiagnostic of HostModuleReservedRootEvidence
     | ModulePathMismatchDiagnostic of ModulePathMismatchEvidence
@@ -1430,6 +1434,9 @@ module DiagnosticFact =
 
     let macroExpansion evidence =
         MacroExpansionDiagnostic evidence
+
+    let numericLiteralOutOfRange literalText =
+        NumericLiteralOutOfRangeDiagnostic { LiteralText = literalText }
 
     let nameUnresolved spelling =
         NameUnresolvedDiagnostic
@@ -1880,6 +1887,14 @@ module DiagnosticFact =
                         [ field "reason" (DiagnosticPayloadText "warn-elab-with")
                           field "message" (DiagnosticPayloadText message)
                           field "diagnostic-code" (DiagnosticPayloadText(DiagnosticCode.toIdentifier code)) ])
+        | NumericLiteralOutOfRangeDiagnostic evidence ->
+            descriptor
+                DiagnosticCode.NumericLiteralOutOfRange
+                None
+                $"Numeric literal '{evidence.LiteralText}' is outside the currently supported runtime range for its target type."
+                (payload
+                    "numeric-literal-out-of-range"
+                    [ field "literal-text" (DiagnosticPayloadText evidence.LiteralText) ])
         | NameUnresolvedDiagnostic evidence ->
             let referenceKindText, message =
                 match evidence.ReferenceKind with
