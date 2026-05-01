@@ -3739,6 +3739,44 @@ module SmokeTestsShard4 =
         Assert.Equal(Some "projection-section-update-target-unsupported", tryFindPayloadText "reason" projectionUpdateDiagnostic)
 
     [<Fact>]
+    let ``surface elaboration diagnostics render from typed evidence`` () =
+        let bag = DiagnosticBag()
+        bag.AddError(DiagnosticFact.surfaceElaboration (StaticConstructorRequiresPreservedStaticObjectIdentity "Some"))
+        bag.AddError(DiagnosticFact.surfaceElaboration (PatternHeadResolvedToOrdinaryTerm "Bad"))
+        bag.AddError(DiagnosticFact.surfaceElaboration (ActivePatternLinearlyConsumesScrutineeInRefutableContext("MaybeTake", "let?")))
+        bag.AddError(DiagnosticFact.surfaceElaboration (MatchReturningActivePatternNotPermittedInPlainLetQuestion "TakePositive"))
+        bag.AddError(DiagnosticFact.surfaceElaboration ActivePatternDeclarationRequiresExplicitScrutineeBinder)
+        bag.AddError(DiagnosticFact.surfaceElaboration ActivePatternDeclarationResultMustNotBeMonadic)
+
+        let diagnostics = bag.Items
+        let staticObjectDiagnostic = diagnostics |> List.find (fun item -> item.Code = DiagnosticCode.StaticObjectUnresolved)
+        let patternHeadDiagnostic = diagnostics |> List.find (fun item -> item.Code = DiagnosticCode.PatternHeadNotConstructorOrActivePattern)
+
+        let linearityDiagnostic =
+            diagnostics
+            |> List.find (fun item ->
+                item.Code = DiagnosticCode.ActivePatternLinearityViolation
+                && tryFindPayloadText "pattern-name" item = Some "MaybeTake")
+
+        let matchResultDiagnostic =
+            diagnostics
+            |> List.find (fun item ->
+                item.Code = DiagnosticCode.ActivePatternMatchResultNotAllowedInPlainLetQuestion
+                && tryFindPayloadText "pattern-name" item = Some "TakePositive")
+
+        let missingBinderDiagnostic = diagnostics |> List.find (fun item -> item.Code = DiagnosticCode.ActivePatternMissingScrutineeBinder)
+        let monadicResultDiagnostic = diagnostics |> List.find (fun item -> item.Code = DiagnosticCode.ActivePatternMonadicResult)
+
+        Assert.Equal("surface-elaboration-diagnostic", staticObjectDiagnostic.Payload.Kind)
+        Assert.Equal(Some "Some", tryFindPayloadText "member-name" staticObjectDiagnostic)
+        Assert.Equal(Some "Bad", tryFindPayloadText "head-name" patternHeadDiagnostic)
+        Assert.Equal(Some "let?", tryFindPayloadText "context" linearityDiagnostic)
+        Assert.Equal(Some "active-pattern-linearly-consumes-scrutinee-in-refutable-context", tryFindPayloadText "reason" linearityDiagnostic)
+        Assert.Equal(Some "match-returning-active-pattern-not-permitted-in-plain-let-question", tryFindPayloadText "reason" matchResultDiagnostic)
+        Assert.Equal(Some "active-pattern-declaration-requires-explicit-scrutinee-binder", tryFindPayloadText "reason" missingBinderDiagnostic)
+        Assert.Equal(Some "active-pattern-declaration-result-must-not-be-monadic", tryFindPayloadText "reason" monadicResultDiagnostic)
+
+    [<Fact>]
     let ``parser syntax diagnostics render from typed evidence`` () =
         let bag = DiagnosticBag()
         bag.AddError(DiagnosticFact.parserSyntax (ExpectedListComma ImportItemList))
@@ -7378,10 +7416,46 @@ module SmokeTestsShard6 =
                 ]
 
         Assert.True(workspace.HasErrors, "Expected active pattern declarations without an explicit scrutinee binder to be rejected.")
-        Assert.Contains(
-            workspace.Diagnostics,
-            fun diagnostic -> diagnostic.Code = DiagnosticCode.ActivePatternMissingScrutineeBinder
+        let diagnostic =
+            workspace.Diagnostics
+            |> List.find (fun item -> item.Code = DiagnosticCode.ActivePatternMissingScrutineeBinder)
+
+        Assert.Equal("surface-elaboration-diagnostic", diagnostic.Payload.Kind)
+        Assert.Equal(
+            Some "active-pattern-declaration-requires-explicit-scrutinee-binder",
+            tryFindPayloadText "reason" diagnostic
         )
+
+    [<Fact>]
+    let ``source compilation rejects static constructors after static object identity is forgotten`` () =
+        let workspace =
+            compileInMemoryWorkspace
+                "memory-static-object-identity-forgotten-root"
+                [
+                    "main.kp",
+                    [
+                        "@PrivateByDefault module main"
+                        ""
+                        "forget : (F : Type -> Type) -> (G : Type -> Type,)"
+                        "let forget F = (G = F,)"
+                        ""
+                        "pkg : (G : Type -> Type,)"
+                        "let pkg = forget Option"
+                        ""
+                        "bad : pkg.G Int"
+                        "let bad = pkg.G.Some 1"
+                    ]
+                    |> String.concat "\n"
+                ]
+
+        Assert.True(workspace.HasErrors, "Expected forgotten static object identity to reject static constructor lookup.")
+
+        let diagnostic =
+            workspace.Diagnostics
+            |> List.find (fun item -> item.Code = DiagnosticCode.StaticObjectUnresolved)
+
+        Assert.Equal("surface-elaboration-diagnostic", diagnostic.Payload.Kind)
+        Assert.Equal(Some "Some", tryFindPayloadText "member-name" diagnostic)
 
 
     [<Fact>]

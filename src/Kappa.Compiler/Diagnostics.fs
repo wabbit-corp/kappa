@@ -817,6 +817,14 @@ type SurfaceRecordDiagnosticEvidence =
     | RecordPatchContinuesThroughNonRecordField of fieldName: string
     | ProjectionSectionUpdateTargetUnsupported
 
+type SurfaceElaborationDiagnosticEvidence =
+    | StaticConstructorRequiresPreservedStaticObjectIdentity of memberName: string
+    | PatternHeadResolvedToOrdinaryTerm of headName: string
+    | ActivePatternLinearlyConsumesScrutineeInRefutableContext of patternName: string * context: string
+    | MatchReturningActivePatternNotPermittedInPlainLetQuestion of patternName: string
+    | ActivePatternDeclarationRequiresExplicitScrutineeBinder
+    | ActivePatternDeclarationResultMustNotBeMonadic
+
 type CorePatternParsingEvidence =
     | UnsupportedParameterBinderSyntax
     | ExpectedParameterBinder
@@ -1154,6 +1162,7 @@ type DiagnosticFact =
     | TypeEqualityMismatchDiagnostic of TypeEqualityMismatchEvidence
     | TypecheckingDiagnostic of TypecheckingDiagnosticEvidence
     | SurfaceRecordDiagnostic of SurfaceRecordDiagnosticEvidence
+    | SurfaceElaborationDiagnostic of SurfaceElaborationDiagnosticEvidence
     | ParserSyntaxDiagnostic of ParserSyntaxEvidence
     | CorePatternParsingDiagnostic of CorePatternParsingEvidence
     | CoreExpressionParsingDiagnostic of CoreExpressionParsingEvidence
@@ -1445,6 +1454,9 @@ module DiagnosticFact =
 
     let surfaceRecord evidence =
         SurfaceRecordDiagnostic evidence
+
+    let surfaceElaboration evidence =
+        SurfaceElaborationDiagnostic evidence
 
     let parserSyntax evidence =
         ParserSyntaxDiagnostic evidence
@@ -2126,6 +2138,61 @@ module DiagnosticFact =
                     (payload
                         "surface-record-diagnostic"
                         [ field "reason" (DiagnosticPayloadText "projection-section-update-target-unsupported") ])
+        | SurfaceElaborationDiagnostic evidence ->
+            match evidence with
+            | StaticConstructorRequiresPreservedStaticObjectIdentity memberName ->
+                descriptor
+                    DiagnosticCode.StaticObjectUnresolved
+                    None
+                    $"Static constructor '{memberName}' requires a receiver with preserved static-object identity."
+                    (payload
+                        "surface-elaboration-diagnostic"
+                        [ field "reason" (DiagnosticPayloadText "static-constructor-requires-preserved-static-object-identity")
+                          field "member-name" (DiagnosticPayloadText memberName) ])
+            | PatternHeadResolvedToOrdinaryTerm headName ->
+                descriptor
+                    DiagnosticCode.PatternHeadNotConstructorOrActivePattern
+                    None
+                    $"Pattern head '{headName}' resolves to an ordinary term, not a constructor or active pattern."
+                    (payload
+                        "surface-elaboration-diagnostic"
+                        [ field "reason" (DiagnosticPayloadText "pattern-head-resolved-to-ordinary-term")
+                          field "head-name" (DiagnosticPayloadText headName) ])
+            | ActivePatternLinearlyConsumesScrutineeInRefutableContext(patternName, context) ->
+                descriptor
+                    DiagnosticCode.ActivePatternLinearityViolation
+                    None
+                    $"Option-returning active pattern '{patternName}' consumes its scrutinee linearly in a refutable {context}."
+                    (payload
+                        "surface-elaboration-diagnostic"
+                        [ field "reason" (DiagnosticPayloadText "active-pattern-linearly-consumes-scrutinee-in-refutable-context")
+                          field "pattern-name" (DiagnosticPayloadText patternName)
+                          field "context" (DiagnosticPayloadText context) ])
+            | MatchReturningActivePatternNotPermittedInPlainLetQuestion patternName ->
+                descriptor
+                    DiagnosticCode.ActivePatternMatchResultNotAllowedInPlainLetQuestion
+                    None
+                    $"Match-returning active pattern '{patternName}' is not permitted in plain let? destructuring."
+                    (payload
+                        "surface-elaboration-diagnostic"
+                        [ field "reason" (DiagnosticPayloadText "match-returning-active-pattern-not-permitted-in-plain-let-question")
+                          field "pattern-name" (DiagnosticPayloadText patternName) ])
+            | ActivePatternDeclarationRequiresExplicitScrutineeBinder ->
+                descriptor
+                    DiagnosticCode.ActivePatternMissingScrutineeBinder
+                    None
+                    "An active pattern declaration must have at least one explicit binder for the scrutinee."
+                    (payload
+                        "surface-elaboration-diagnostic"
+                        [ field "reason" (DiagnosticPayloadText "active-pattern-declaration-requires-explicit-scrutinee-binder") ])
+            | ActivePatternDeclarationResultMustNotBeMonadic ->
+                descriptor
+                    DiagnosticCode.ActivePatternMonadicResult
+                    None
+                    "An active pattern declaration result type must not be monadic."
+                    (payload
+                        "surface-elaboration-diagnostic"
+                        [ field "reason" (DiagnosticPayloadText "active-pattern-declaration-result-must-not-be-monadic") ])
         | ParserSyntaxDiagnostic evidence ->
             match evidence with
             | ExpectedKeyword keyword ->

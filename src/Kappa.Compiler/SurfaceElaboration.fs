@@ -12904,7 +12904,14 @@ module SurfaceElaboration =
         let staticConstructorIdentityDiagnostic locals receiver memberName =
             if isVisibleConstructorName memberName
                && not (hasProvenStaticObjectIdentity locals receiver) then
-                [ makeDiagnostic SimpleDiagnosticKind.StaticObjectUnresolved $"Static constructor '{memberName}' requires a receiver with preserved static-object identity." ]
+                [
+                    Diagnostics.errorFact
+                        "KFrontIR"
+                        (Some(KFrontIRPhase.phaseName CORE_LOWERING))
+                        None
+                        []
+                        (DiagnosticFact.surfaceElaboration (StaticConstructorRequiresPreservedStaticObjectIdentity memberName))
+                ]
             else
                 []
 
@@ -13125,7 +13132,14 @@ module SurfaceElaboration =
 
                             match environment.VisibleBindings |> Map.tryFind headName with
                             | Some bindingInfo when not bindingInfo.IsPattern && not isConstructor ->
-                                [ makeDiagnostic SimpleDiagnosticKind.PatternHeadNotConstructorOrActivePattern $"Pattern head '{headName}' resolves to an ordinary term, not a constructor or active pattern." ]
+                                [
+                                    Diagnostics.errorFact
+                                        "KFrontIR"
+                                        (Some(KFrontIRPhase.phaseName CORE_LOWERING))
+                                        None
+                                        []
+                                        (DiagnosticFact.surfaceElaboration (PatternHeadResolvedToOrdinaryTerm headName))
+                                ]
                             | _ ->
                                 []
 
@@ -13150,11 +13164,27 @@ module SurfaceElaboration =
             | Some bindingInfo ->
                 match activePatternResultKind bindingInfo, activePatternScrutineeQuantity bindingInfo with
                 | Some resultKind, Some QuantityOne when String.Equals(resultKind, CompilerKnownSymbols.KnownTypeNames.Option, StringComparison.Ordinal) ->
-                    [ makeDiagnostic SimpleDiagnosticKind.ActivePatternLinearityViolation $"Option-returning active pattern '{bindingInfo.Name}' consumes its scrutinee linearly in a refutable {context}." ]
+                    [
+                        Diagnostics.errorFact
+                            "KFrontIR"
+                            (Some(KFrontIRPhase.phaseName CORE_LOWERING))
+                            None
+                            []
+                            (DiagnosticFact.surfaceElaboration
+                                (ActivePatternLinearlyConsumesScrutineeInRefutableContext(bindingInfo.Name, context)))
+                    ]
                 | Some resultKind, _ when
                     String.Equals(resultKind, CompilerKnownSymbols.KnownTypeNames.Match, StringComparison.Ordinal)
                     && String.Equals(context, "let?", StringComparison.Ordinal) ->
-                    [ makeDiagnostic SimpleDiagnosticKind.ActivePatternMatchResultNotAllowedInPlainLetQuestion $"Match-returning active pattern '{bindingInfo.Name}' is not permitted in plain let? destructuring." ]
+                    [
+                        Diagnostics.errorFact
+                            "KFrontIR"
+                            (Some(KFrontIRPhase.phaseName CORE_LOWERING))
+                            None
+                            []
+                            (DiagnosticFact.surfaceElaboration
+                                (MatchReturningActivePatternNotPermittedInPlainLetQuestion bindingInfo.Name))
+                    ]
                 | _ ->
                     []
             | None ->
@@ -20457,7 +20487,14 @@ module SurfaceElaboration =
 
                 let binderDiagnostics =
                     if explicitParameterCount = 0 then
-                        [ makeDiagnostic SimpleDiagnosticKind.ActivePatternMissingScrutineeBinder "An active pattern declaration must have at least one explicit binder for the scrutinee." ]
+                        [
+                            Diagnostics.errorFact
+                                "KFrontIR"
+                                (Some(KFrontIRPhase.phaseName CORE_LOWERING))
+                                None
+                                []
+                                (DiagnosticFact.surfaceElaboration ActivePatternDeclarationRequiresExplicitScrutineeBinder)
+                        ]
                     else
                         []
 
@@ -20465,7 +20502,14 @@ module SurfaceElaboration =
                     scheme
                     |> Option.map (fun parsedScheme ->
                         if isMonadicType parsedScheme.Body then
-                            [ makeDiagnostic SimpleDiagnosticKind.ActivePatternMonadicResult "An active pattern declaration result type must not be monadic." ]
+                            [
+                                Diagnostics.errorFact
+                                    "KFrontIR"
+                                    (Some(KFrontIRPhase.phaseName CORE_LOWERING))
+                                    None
+                                    []
+                                    (DiagnosticFact.surfaceElaboration ActivePatternDeclarationResultMustNotBeMonadic)
+                            ]
                         else
                             [])
                     |> Option.defaultValue []
