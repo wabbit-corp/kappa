@@ -910,6 +910,17 @@ type CheckpointVerificationEvidence =
     | BackendOrPatternAlternativesMustBindSameNames of checkpoint: string * bindingLabel: string
     | BackendOrPatternBinderRepresentationMismatch of checkpoint: string * bindingLabel: string * binderName: string
     | BackendPatternConstructorMissingFromModuleGraph of checkpoint: string * bindingLabel: string * constructorText: string
+    | BackendResolvedRuntimeNameMissing of checkpoint: string * bindingLabel: string * resolvedNameText: string
+    | DuplicateBackendClosureParameter of checkpoint: string * bindingLabel: string * parameterName: string
+    | DuplicateBackendClosureCapture of checkpoint: string * bindingLabel: string * captureName: string
+    | BackendClosureEnvironmentLayoutMissing of checkpoint: string * bindingLabel: string * layoutName: string * moduleName: string
+    | BackendClosureCallingConventionArityMismatch of checkpoint: string * bindingLabel: string
+    | BackendClosureParameterRepresentationsMismatch of checkpoint: string * bindingLabel: string
+    | BackendClosureRepresentationLayoutMismatch of checkpoint: string * bindingLabel: string * layoutName: string
+    | BackendClosureRepresentationMustBeClosure of checkpoint: string * bindingLabel: string
+    | BackendCallConventionArityMismatch of checkpoint: string * bindingLabel: string
+    | BackendCallParameterRepresentationCountMismatch of checkpoint: string * bindingLabel: string
+    | BackendConstructedDataMissingLayout of checkpoint: string * bindingLabel: string * constructorText: string
 
 type SurfaceRecordContext =
     | RecordTypeTelescope
@@ -3007,6 +3018,123 @@ module DiagnosticFact =
                     (payload
                         "checkpoint-verification-diagnostic"
                         [ field "reason" (DiagnosticPayloadText "backend-pattern-constructor-missing-from-module-graph")
+                          field "checkpoint" (DiagnosticPayloadText checkpoint)
+                          field "binding-label" (DiagnosticPayloadText bindingLabel)
+                          field "constructor-text" (DiagnosticPayloadText constructorText) ])
+            | BackendResolvedRuntimeNameMissing(checkpoint, bindingLabel, resolvedNameText) ->
+                descriptor
+                    DiagnosticCode.CheckpointVerification
+                    None
+                    $"Checkpoint '{checkpoint}' requires resolved runtime names, but '{resolvedNameText}' in '{bindingLabel}' is not present in the backend module graph."
+                    (payload
+                        "checkpoint-verification-diagnostic"
+                        [ field "reason" (DiagnosticPayloadText "backend-resolved-runtime-name-missing")
+                          field "checkpoint" (DiagnosticPayloadText checkpoint)
+                          field "binding-label" (DiagnosticPayloadText bindingLabel)
+                          field "resolved-name-text" (DiagnosticPayloadText resolvedNameText) ])
+            | DuplicateBackendClosureParameter(checkpoint, bindingLabel, parameterName) ->
+                descriptor
+                    DiagnosticCode.CheckpointVerification
+                    None
+                    $"Checkpoint '{checkpoint}' requires closures in '{bindingLabel}' to have unique parameter names, but '{parameterName}' was duplicated."
+                    (payload
+                        "checkpoint-verification-diagnostic"
+                        [ field "reason" (DiagnosticPayloadText "duplicate-backend-closure-parameter")
+                          field "checkpoint" (DiagnosticPayloadText checkpoint)
+                          field "binding-label" (DiagnosticPayloadText bindingLabel)
+                          field "parameter-name" (DiagnosticPayloadText parameterName) ])
+            | DuplicateBackendClosureCapture(checkpoint, bindingLabel, captureName) ->
+                descriptor
+                    DiagnosticCode.CheckpointVerification
+                    None
+                    $"Checkpoint '{checkpoint}' requires closures in '{bindingLabel}' to have unique capture names, but '{captureName}' was duplicated."
+                    (payload
+                        "checkpoint-verification-diagnostic"
+                        [ field "reason" (DiagnosticPayloadText "duplicate-backend-closure-capture")
+                          field "checkpoint" (DiagnosticPayloadText checkpoint)
+                          field "binding-label" (DiagnosticPayloadText bindingLabel)
+                          field "capture-name" (DiagnosticPayloadText captureName) ])
+            | BackendClosureEnvironmentLayoutMissing(checkpoint, bindingLabel, layoutName, moduleName) ->
+                descriptor
+                    DiagnosticCode.CheckpointVerification
+                    None
+                    $"Checkpoint '{checkpoint}' requires closure environment layout '{layoutName}' in '{bindingLabel}' to be present in module '{moduleName}'."
+                    (payload
+                        "checkpoint-verification-diagnostic"
+                        [ field "reason" (DiagnosticPayloadText "backend-closure-environment-layout-missing")
+                          field "checkpoint" (DiagnosticPayloadText checkpoint)
+                          field "binding-label" (DiagnosticPayloadText bindingLabel)
+                          field "layout-name" (DiagnosticPayloadText layoutName)
+                          field "module-name" (DiagnosticPayloadText moduleName) ])
+            | BackendClosureCallingConventionArityMismatch(checkpoint, bindingLabel) ->
+                descriptor
+                    DiagnosticCode.CheckpointVerification
+                    None
+                    $"Checkpoint '{checkpoint}' requires closure '{bindingLabel}' to have a calling convention arity matching its parameter count."
+                    (payload
+                        "checkpoint-verification-diagnostic"
+                        [ field "reason" (DiagnosticPayloadText "backend-closure-calling-convention-arity-mismatch")
+                          field "checkpoint" (DiagnosticPayloadText checkpoint)
+                          field "binding-label" (DiagnosticPayloadText bindingLabel) ])
+            | BackendClosureParameterRepresentationsMismatch(checkpoint, bindingLabel) ->
+                descriptor
+                    DiagnosticCode.CheckpointVerification
+                    None
+                    $"Checkpoint '{checkpoint}' requires closure '{bindingLabel}' to have calling convention parameter representations that match its parameters."
+                    (payload
+                        "checkpoint-verification-diagnostic"
+                        [ field "reason" (DiagnosticPayloadText "backend-closure-parameter-representations-mismatch")
+                          field "checkpoint" (DiagnosticPayloadText checkpoint)
+                          field "binding-label" (DiagnosticPayloadText bindingLabel) ])
+            | BackendClosureRepresentationLayoutMismatch(checkpoint, bindingLabel, layoutName) ->
+                descriptor
+                    DiagnosticCode.CheckpointVerification
+                    None
+                    $"Checkpoint '{checkpoint}' requires closure '{bindingLabel}' to have a representation that references environment layout '{layoutName}'."
+                    (payload
+                        "checkpoint-verification-diagnostic"
+                        [ field "reason" (DiagnosticPayloadText "backend-closure-representation-layout-mismatch")
+                          field "checkpoint" (DiagnosticPayloadText checkpoint)
+                          field "binding-label" (DiagnosticPayloadText bindingLabel)
+                          field "layout-name" (DiagnosticPayloadText layoutName) ])
+            | BackendClosureRepresentationMustBeClosure(checkpoint, bindingLabel) ->
+                descriptor
+                    DiagnosticCode.CheckpointVerification
+                    None
+                    $"Checkpoint '{checkpoint}' requires closure '{bindingLabel}' to use a closure representation."
+                    (payload
+                        "checkpoint-verification-diagnostic"
+                        [ field "reason" (DiagnosticPayloadText "backend-closure-representation-must-be-closure")
+                          field "checkpoint" (DiagnosticPayloadText checkpoint)
+                          field "binding-label" (DiagnosticPayloadText bindingLabel) ])
+            | BackendCallConventionArityMismatch(checkpoint, bindingLabel) ->
+                descriptor
+                    DiagnosticCode.CheckpointVerification
+                    None
+                    $"Checkpoint '{checkpoint}' requires calls in '{bindingLabel}' to have an argument count matching the calling convention arity."
+                    (payload
+                        "checkpoint-verification-diagnostic"
+                        [ field "reason" (DiagnosticPayloadText "backend-call-convention-arity-mismatch")
+                          field "checkpoint" (DiagnosticPayloadText checkpoint)
+                          field "binding-label" (DiagnosticPayloadText bindingLabel) ])
+            | BackendCallParameterRepresentationCountMismatch(checkpoint, bindingLabel) ->
+                descriptor
+                    DiagnosticCode.CheckpointVerification
+                    None
+                    $"Checkpoint '{checkpoint}' requires calls in '{bindingLabel}' to have a parameter representation for each argument."
+                    (payload
+                        "checkpoint-verification-diagnostic"
+                        [ field "reason" (DiagnosticPayloadText "backend-call-parameter-representation-count-mismatch")
+                          field "checkpoint" (DiagnosticPayloadText checkpoint)
+                          field "binding-label" (DiagnosticPayloadText bindingLabel) ])
+            | BackendConstructedDataMissingLayout(checkpoint, bindingLabel, constructorText) ->
+                descriptor
+                    DiagnosticCode.CheckpointVerification
+                    None
+                    $"Checkpoint '{checkpoint}' requires constructed data '{constructorText}' in '{bindingLabel}' to match a backend data layout."
+                    (payload
+                        "checkpoint-verification-diagnostic"
+                        [ field "reason" (DiagnosticPayloadText "backend-constructed-data-missing-layout")
                           field "checkpoint" (DiagnosticPayloadText checkpoint)
                           field "binding-label" (DiagnosticPayloadText bindingLabel)
                           field "constructor-text" (DiagnosticPayloadText constructorText) ])

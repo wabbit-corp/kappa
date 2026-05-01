@@ -886,7 +886,10 @@ module CheckpointVerification =
                 if resolvedNameExists resolvedName then
                     []
                 else
-                    [ makeOriginDiagnostic workspace.Documents bindingOrigin $"Checkpoint 'KBackendIR' requires resolved runtime names, but '{resolvedNameText resolvedName}' in '{bindingLabel}' is not present in the backend module graph." ]
+                    [ makeStructuredOriginDiagnostic
+                          workspace.Documents
+                          bindingOrigin
+                          (BackendResolvedRuntimeNameMissing("KBackendIR", bindingLabel, resolvedNameText resolvedName)) ]
             | BackendEffectLabel _ ->
                 []
             | BackendEffectOperation(label, _, _, _) ->
@@ -897,35 +900,60 @@ module CheckpointVerification =
                     |> List.countBy (fun parameter -> parameter.Name)
                     |> List.filter (fun (_, count) -> count > 1)
                     |> List.map (fun (name, _) ->
-                        makeOriginDiagnostic workspace.Documents bindingOrigin $"Checkpoint 'KBackendIR' requires closures in '{bindingLabel}' to have unique parameter names, but '{name}' was duplicated.")
+                        makeStructuredOriginDiagnostic
+                            workspace.Documents
+                            bindingOrigin
+                            (DuplicateBackendClosureParameter("KBackendIR", bindingLabel, name)))
 
                 let duplicateCaptures =
                     captures
                     |> List.countBy (fun capture -> capture.Name)
                     |> List.filter (fun (_, count) -> count > 1)
                     |> List.map (fun (name, _) ->
-                        makeOriginDiagnostic workspace.Documents bindingOrigin $"Checkpoint 'KBackendIR' requires closures in '{bindingLabel}' to have unique capture names, but '{name}' was duplicated.")
+                        makeStructuredOriginDiagnostic
+                            workspace.Documents
+                            bindingOrigin
+                            (DuplicateBackendClosureCapture("KBackendIR", bindingLabel, name)))
 
                 let environmentDiagnostics =
                     if environmentLayoutNames currentModule |> Set.contains environmentLayout then
                         []
                     else
-                        [ makeOriginDiagnostic workspace.Documents bindingOrigin $"Checkpoint 'KBackendIR' requires closure environment layout '{environmentLayout}' in '{bindingLabel}' to be present in module '{currentModule.Name}'." ]
+                        [ makeStructuredOriginDiagnostic
+                              workspace.Documents
+                              bindingOrigin
+                              (BackendClosureEnvironmentLayoutMissing("KBackendIR", bindingLabel, environmentLayout, currentModule.Name)) ]
 
                 let conventionDiagnostics =
                     [
                         if convention.RuntimeArity <> List.length parameters then
-                            yield makeOriginDiagnostic workspace.Documents bindingOrigin $"Checkpoint 'KBackendIR' requires closure '{bindingLabel}' to have a calling convention arity matching its parameter count."
+                            yield
+                                makeStructuredOriginDiagnostic
+                                    workspace.Documents
+                                    bindingOrigin
+                                    (BackendClosureCallingConventionArityMismatch("KBackendIR", bindingLabel))
 
                         if convention.ParameterRepresentations <> (parameters |> List.map (fun parameter -> parameter.Representation)) then
-                            yield makeOriginDiagnostic workspace.Documents bindingOrigin $"Checkpoint 'KBackendIR' requires closure '{bindingLabel}' to have calling convention parameter representations that match its parameters."
+                            yield
+                                makeStructuredOriginDiagnostic
+                                    workspace.Documents
+                                    bindingOrigin
+                                    (BackendClosureParameterRepresentationsMismatch("KBackendIR", bindingLabel))
 
                         match representation with
                         | BackendRepClosure layoutName when not (String.Equals(layoutName, environmentLayout, StringComparison.Ordinal)) ->
-                            yield makeOriginDiagnostic workspace.Documents bindingOrigin $"Checkpoint 'KBackendIR' requires closure '{bindingLabel}' to have a representation that references environment layout '{environmentLayout}'."
+                            yield
+                                makeStructuredOriginDiagnostic
+                                    workspace.Documents
+                                    bindingOrigin
+                                    (BackendClosureRepresentationLayoutMismatch("KBackendIR", bindingLabel, environmentLayout))
                         | BackendRepClosure _ -> ()
                         | _ ->
-                            yield makeOriginDiagnostic workspace.Documents bindingOrigin $"Checkpoint 'KBackendIR' requires closure '{bindingLabel}' to use a closure representation."
+                            yield
+                                makeStructuredOriginDiagnostic
+                                    workspace.Documents
+                                    bindingOrigin
+                                    (BackendClosureRepresentationMustBeClosure("KBackendIR", bindingLabel))
                     ]
 
                 duplicateParameters
@@ -978,10 +1006,18 @@ module CheckpointVerification =
                 let conventionDiagnostics =
                     [
                         if convention.RuntimeArity <> List.length arguments then
-                            yield makeOriginDiagnostic workspace.Documents bindingOrigin $"Checkpoint 'KBackendIR' requires calls in '{bindingLabel}' to have an argument count matching the calling convention arity."
+                            yield
+                                makeStructuredOriginDiagnostic
+                                    workspace.Documents
+                                    bindingOrigin
+                                    (BackendCallConventionArityMismatch("KBackendIR", bindingLabel))
 
                         if List.length convention.ParameterRepresentations <> List.length arguments then
-                            yield makeOriginDiagnostic workspace.Documents bindingOrigin $"Checkpoint 'KBackendIR' requires calls in '{bindingLabel}' to have a parameter representation for each argument."
+                            yield
+                                makeStructuredOriginDiagnostic
+                                    workspace.Documents
+                                    bindingOrigin
+                                    (BackendCallParameterRepresentationCountMismatch("KBackendIR", bindingLabel))
                     ]
 
                 conventionDiagnostics
@@ -998,7 +1034,10 @@ module CheckpointVerification =
                         []
                     else
                         let constructorText = $"{moduleName}.{typeName}.{constructorName}@{tag}"
-                        [ makeOriginDiagnostic workspace.Documents bindingOrigin $"Checkpoint 'KBackendIR' requires constructed data '{constructorText}' in '{bindingLabel}' to match a backend data layout." ]
+                        [ makeStructuredOriginDiagnostic
+                              workspace.Documents
+                              bindingOrigin
+                              (BackendConstructedDataMissingLayout("KBackendIR", bindingLabel, constructorText)) ]
 
                 constructorDiagnostics @ (fields |> List.collect (verifyBackendExpression currentModule bindingLabel bindingOrigin))
             | BackendPrefixedString(_, parts, _) ->

@@ -4793,6 +4793,72 @@ module SmokeTestsShard4 =
             )
         )
 
+        bag.AddError(
+            DiagnosticFact.checkpointVerification (
+                BackendResolvedRuntimeNameMissing("KBackendIR", "main.answer", "main.missing")
+            )
+        )
+
+        bag.AddError(
+            DiagnosticFact.checkpointVerification (
+                DuplicateBackendClosureParameter("KBackendIR", "main.answer", "x")
+            )
+        )
+
+        bag.AddError(
+            DiagnosticFact.checkpointVerification (
+                DuplicateBackendClosureCapture("KBackendIR", "main.answer", "captured")
+            )
+        )
+
+        bag.AddError(
+            DiagnosticFact.checkpointVerification (
+                BackendClosureEnvironmentLayoutMissing("KBackendIR", "main.answer", "main$arity1", "main")
+            )
+        )
+
+        bag.AddError(
+            DiagnosticFact.checkpointVerification (
+                BackendClosureCallingConventionArityMismatch("KBackendIR", "main.answer")
+            )
+        )
+
+        bag.AddError(
+            DiagnosticFact.checkpointVerification (
+                BackendClosureParameterRepresentationsMismatch("KBackendIR", "main.answer")
+            )
+        )
+
+        bag.AddError(
+            DiagnosticFact.checkpointVerification (
+                BackendClosureRepresentationLayoutMismatch("KBackendIR", "main.answer", "main$arity1")
+            )
+        )
+
+        bag.AddError(
+            DiagnosticFact.checkpointVerification (
+                BackendClosureRepresentationMustBeClosure("KBackendIR", "main.answer")
+            )
+        )
+
+        bag.AddError(
+            DiagnosticFact.checkpointVerification (
+                BackendCallConventionArityMismatch("KBackendIR", "main.answer")
+            )
+        )
+
+        bag.AddError(
+            DiagnosticFact.checkpointVerification (
+                BackendCallParameterRepresentationCountMismatch("KBackendIR", "main.answer")
+            )
+        )
+
+        bag.AddError(
+            DiagnosticFact.checkpointVerification (
+                BackendConstructedDataMissingLayout("KBackendIR", "main.answer", "main.Payload.Box@0")
+            )
+        )
+
         let diagnostics = bag.Items
 
         let missingBackendModuleDiagnostic =
@@ -4945,6 +5011,72 @@ module SmokeTestsShard4 =
                 item.Code = DiagnosticCode.CheckpointVerification
                 && tryFindPayloadText "reason" item = Some "backend-pattern-constructor-missing-from-module-graph")
 
+        let unresolvedRuntimeNameDiagnostic =
+            diagnostics
+            |> List.find (fun item ->
+                item.Code = DiagnosticCode.CheckpointVerification
+                && tryFindPayloadText "reason" item = Some "backend-resolved-runtime-name-missing")
+
+        let duplicateClosureParameterDiagnostic =
+            diagnostics
+            |> List.find (fun item ->
+                item.Code = DiagnosticCode.CheckpointVerification
+                && tryFindPayloadText "reason" item = Some "duplicate-backend-closure-parameter")
+
+        let duplicateClosureCaptureDiagnostic =
+            diagnostics
+            |> List.find (fun item ->
+                item.Code = DiagnosticCode.CheckpointVerification
+                && tryFindPayloadText "reason" item = Some "duplicate-backend-closure-capture")
+
+        let closureEnvironmentLayoutDiagnostic =
+            diagnostics
+            |> List.find (fun item ->
+                item.Code = DiagnosticCode.CheckpointVerification
+                && tryFindPayloadText "reason" item = Some "backend-closure-environment-layout-missing")
+
+        let closureArityDiagnostic =
+            diagnostics
+            |> List.find (fun item ->
+                item.Code = DiagnosticCode.CheckpointVerification
+                && tryFindPayloadText "reason" item = Some "backend-closure-calling-convention-arity-mismatch")
+
+        let closureParameterRepresentationDiagnostic =
+            diagnostics
+            |> List.find (fun item ->
+                item.Code = DiagnosticCode.CheckpointVerification
+                && tryFindPayloadText "reason" item = Some "backend-closure-parameter-representations-mismatch")
+
+        let closureRepresentationLayoutDiagnostic =
+            diagnostics
+            |> List.find (fun item ->
+                item.Code = DiagnosticCode.CheckpointVerification
+                && tryFindPayloadText "reason" item = Some "backend-closure-representation-layout-mismatch")
+
+        let closureRepresentationMustBeClosureDiagnostic =
+            diagnostics
+            |> List.find (fun item ->
+                item.Code = DiagnosticCode.CheckpointVerification
+                && tryFindPayloadText "reason" item = Some "backend-closure-representation-must-be-closure")
+
+        let callArityDiagnostic =
+            diagnostics
+            |> List.find (fun item ->
+                item.Code = DiagnosticCode.CheckpointVerification
+                && tryFindPayloadText "reason" item = Some "backend-call-convention-arity-mismatch")
+
+        let callRepresentationCountDiagnostic =
+            diagnostics
+            |> List.find (fun item ->
+                item.Code = DiagnosticCode.CheckpointVerification
+                && tryFindPayloadText "reason" item = Some "backend-call-parameter-representation-count-mismatch")
+
+        let constructedDataDiagnostic =
+            diagnostics
+            |> List.find (fun item ->
+                item.Code = DiagnosticCode.CheckpointVerification
+                && tryFindPayloadText "reason" item = Some "backend-constructed-data-missing-layout")
+
         Assert.Equal("checkpoint-verification-diagnostic", missingBackendModuleDiagnostic.Payload.Kind)
         Assert.Equal(Some "KBackendIR", tryFindPayloadText "checkpoint" missingBackendModuleDiagnostic)
         Assert.Equal(Some "main", tryFindPayloadText "runtime-module-name" missingBackendModuleDiagnostic)
@@ -5039,6 +5171,46 @@ module SmokeTestsShard4 =
         Assert.Equal("checkpoint-verification-diagnostic", backendPatternConstructorMissingDiagnostic.Payload.Kind)
         Assert.Equal(Some "main.match", tryFindPayloadText "binding-label" backendPatternConstructorMissingDiagnostic)
         Assert.Equal(Some "main.Payload.Box@0", tryFindPayloadText "constructor-text" backendPatternConstructorMissingDiagnostic)
+
+        Assert.Equal("checkpoint-verification-diagnostic", unresolvedRuntimeNameDiagnostic.Payload.Kind)
+        Assert.Equal(Some "main.answer", tryFindPayloadText "binding-label" unresolvedRuntimeNameDiagnostic)
+        Assert.Equal(Some "main.missing", tryFindPayloadText "resolved-name-text" unresolvedRuntimeNameDiagnostic)
+
+        Assert.Equal("checkpoint-verification-diagnostic", duplicateClosureParameterDiagnostic.Payload.Kind)
+        Assert.Equal(Some "main.answer", tryFindPayloadText "binding-label" duplicateClosureParameterDiagnostic)
+        Assert.Equal(Some "x", tryFindPayloadText "parameter-name" duplicateClosureParameterDiagnostic)
+
+        Assert.Equal("checkpoint-verification-diagnostic", duplicateClosureCaptureDiagnostic.Payload.Kind)
+        Assert.Equal(Some "main.answer", tryFindPayloadText "binding-label" duplicateClosureCaptureDiagnostic)
+        Assert.Equal(Some "captured", tryFindPayloadText "capture-name" duplicateClosureCaptureDiagnostic)
+
+        Assert.Equal("checkpoint-verification-diagnostic", closureEnvironmentLayoutDiagnostic.Payload.Kind)
+        Assert.Equal(Some "main.answer", tryFindPayloadText "binding-label" closureEnvironmentLayoutDiagnostic)
+        Assert.Equal(Some "main$arity1", tryFindPayloadText "layout-name" closureEnvironmentLayoutDiagnostic)
+        Assert.Equal(Some "main", tryFindPayloadText "module-name" closureEnvironmentLayoutDiagnostic)
+
+        Assert.Equal("checkpoint-verification-diagnostic", closureArityDiagnostic.Payload.Kind)
+        Assert.Equal(Some "main.answer", tryFindPayloadText "binding-label" closureArityDiagnostic)
+
+        Assert.Equal("checkpoint-verification-diagnostic", closureParameterRepresentationDiagnostic.Payload.Kind)
+        Assert.Equal(Some "main.answer", tryFindPayloadText "binding-label" closureParameterRepresentationDiagnostic)
+
+        Assert.Equal("checkpoint-verification-diagnostic", closureRepresentationLayoutDiagnostic.Payload.Kind)
+        Assert.Equal(Some "main.answer", tryFindPayloadText "binding-label" closureRepresentationLayoutDiagnostic)
+        Assert.Equal(Some "main$arity1", tryFindPayloadText "layout-name" closureRepresentationLayoutDiagnostic)
+
+        Assert.Equal("checkpoint-verification-diagnostic", closureRepresentationMustBeClosureDiagnostic.Payload.Kind)
+        Assert.Equal(Some "main.answer", tryFindPayloadText "binding-label" closureRepresentationMustBeClosureDiagnostic)
+
+        Assert.Equal("checkpoint-verification-diagnostic", callArityDiagnostic.Payload.Kind)
+        Assert.Equal(Some "main.answer", tryFindPayloadText "binding-label" callArityDiagnostic)
+
+        Assert.Equal("checkpoint-verification-diagnostic", callRepresentationCountDiagnostic.Payload.Kind)
+        Assert.Equal(Some "main.answer", tryFindPayloadText "binding-label" callRepresentationCountDiagnostic)
+
+        Assert.Equal("checkpoint-verification-diagnostic", constructedDataDiagnostic.Payload.Kind)
+        Assert.Equal(Some "main.answer", tryFindPayloadText "binding-label" constructedDataDiagnostic)
+        Assert.Equal(Some "main.Payload.Box@0", tryFindPayloadText "constructor-text" constructedDataDiagnostic)
 
     [<Fact>]
     let ``surface record diagnostics render from typed evidence`` () =
