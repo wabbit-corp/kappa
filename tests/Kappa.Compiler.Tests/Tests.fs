@@ -3771,6 +3771,9 @@ module SmokeTestsShard4 =
         bag.AddError(DiagnosticFact.surfaceElaboration (RecursiveTypeAliasDependsOnItself "Loop"))
         bag.AddError(DiagnosticFact.surfaceElaboration (TopLevelRecursiveBindingRequiresPrecedingSignature "loop"))
         bag.AddError(DiagnosticFact.surfaceElaboration (TrivialRecursiveCycleMustBeRejected "cycle"))
+        bag.AddError(DiagnosticFact.surfaceElaboration (ConstructorDeclarationStartsWithDeclarationKeyword("Tree", "let")))
+        bag.AddError(DiagnosticFact.surfaceElaboration (ConstructorExposesRuntimeFieldMetadataOfType "Wrap"))
+        bag.AddError(DiagnosticFact.surfaceElaboration (ConstructorDeclarationMalformedInDataType("Tree", "Broken")))
 
         let diagnostics = bag.Items
         let staticObjectDiagnostic = diagnostics |> List.find (fun item -> item.Code = DiagnosticCode.StaticObjectUnresolved)
@@ -3835,6 +3838,24 @@ module SmokeTestsShard4 =
                 item.Code = DiagnosticCode.RecursionRequiresSignature
                 && tryFindPayloadText "reason" item = Some "trivial-recursive-cycle-must-be-rejected")
 
+        let constructorKeywordDiagnostic =
+            diagnostics
+            |> List.find (fun item ->
+                item.Code = DiagnosticCode.MalformedConstructorDeclaration
+                && tryFindPayloadText "reason" item = Some "constructor-declaration-starts-with-declaration-keyword")
+
+        let constructorTypeFieldDiagnostic =
+            diagnostics
+            |> List.find (fun item ->
+                item.Code = DiagnosticCode.MalformedConstructorDeclaration
+                && tryFindPayloadText "reason" item = Some "constructor-exposes-runtime-field-metadata-of-type")
+
+        let malformedConstructorDiagnostic =
+            diagnostics
+            |> List.find (fun item ->
+                item.Code = DiagnosticCode.MalformedConstructorDeclaration
+                && tryFindPayloadText "reason" item = Some "constructor-declaration-malformed-in-data-type")
+
         Assert.Equal("surface-elaboration-diagnostic", staticObjectDiagnostic.Payload.Kind)
         Assert.Equal(Some "Some", tryFindPayloadText "member-name" staticObjectDiagnostic)
         Assert.Equal(Some "Bad", tryFindPayloadText "head-name" patternHeadDiagnostic)
@@ -3856,6 +3877,11 @@ module SmokeTestsShard4 =
         Assert.Equal(Some "Loop", tryFindPayloadText "alias-name" recursiveAliasDiagnostic)
         Assert.Equal(Some "loop", tryFindPayloadText "binding-name" recursiveBindingDiagnostic)
         Assert.Equal(Some "cycle", tryFindPayloadText "binding-name" trivialCycleDiagnostic)
+        Assert.Equal(Some "Tree", tryFindPayloadText "data-type-name" constructorKeywordDiagnostic)
+        Assert.Equal(Some "let", tryFindPayloadText "constructor-name" constructorKeywordDiagnostic)
+        Assert.Equal(Some "Wrap", tryFindPayloadText "constructor-name" constructorTypeFieldDiagnostic)
+        Assert.Equal(Some "Tree", tryFindPayloadText "data-type-name" malformedConstructorDiagnostic)
+        Assert.Equal(Some "Broken", tryFindPayloadText "constructor-name" malformedConstructorDiagnostic)
 
     [<Fact>]
     let ``parser syntax diagnostics render from typed evidence`` () =
@@ -7589,6 +7615,32 @@ module SmokeTestsShard6 =
 
         Assert.Equal("surface-elaboration-diagnostic", diagnostic.Payload.Kind)
         Assert.Equal(Some "loop", tryFindPayloadText "binding-name" diagnostic)
+
+    [<Fact>]
+    let ``source compilation rejects constructors that expose runtime Type metadata`` () =
+        let workspace =
+            compileInMemoryWorkspace
+                "memory-constructor-runtime-type-field-root"
+                [
+                    "main.kp",
+                    [
+                        "module main"
+                        "data Bad : Type ="
+                        "    Wrap Type"
+                    ]
+                    |> String.concat "\n"
+                ]
+
+        Assert.True(workspace.HasErrors, "Expected constructors that expose runtime Type metadata to be rejected.")
+
+        let diagnostic =
+            workspace.Diagnostics
+            |> List.find (fun item ->
+                item.Code = DiagnosticCode.MalformedConstructorDeclaration
+                && tryFindPayloadText "reason" item = Some "constructor-exposes-runtime-field-metadata-of-type")
+
+        Assert.Equal("surface-elaboration-diagnostic", diagnostic.Payload.Kind)
+        Assert.Equal(Some "Wrap", tryFindPayloadText "constructor-name" diagnostic)
 
     [<Fact>]
     let ``source compilation reports structured projection definition diagnostics`` () =

@@ -828,6 +828,9 @@ type SurfaceElaborationDiagnosticEvidence =
     | RecursiveTypeAliasDependsOnItself of aliasName: string
     | TopLevelRecursiveBindingRequiresPrecedingSignature of bindingName: string
     | TrivialRecursiveCycleMustBeRejected of bindingName: string
+    | ConstructorDeclarationStartsWithDeclarationKeyword of dataTypeName: string * constructorName: string
+    | ConstructorExposesRuntimeFieldMetadataOfType of constructorName: string
+    | ConstructorDeclarationMalformedInDataType of dataTypeName: string * constructorName: string
     | StaticConstructorRequiresPreservedStaticObjectIdentity of memberName: string
     | PatternHeadResolvedToOrdinaryTerm of headName: string
     | ActivePatternLinearlyConsumesScrutineeInRefutableContext of patternName: string * context: string
@@ -2259,6 +2262,35 @@ module DiagnosticFact =
                         "surface-elaboration-diagnostic"
                         [ field "reason" (DiagnosticPayloadText "trivial-recursive-cycle-must-be-rejected")
                           field "binding-name" (DiagnosticPayloadText bindingName) ])
+            | ConstructorDeclarationStartsWithDeclarationKeyword(dataTypeName, constructorName) ->
+                descriptor
+                    DiagnosticCode.MalformedConstructorDeclaration
+                    None
+                    $"Constructor declaration in data type '{dataTypeName}' starts with declaration keyword '{constructorName}'."
+                    (payload
+                        "surface-elaboration-diagnostic"
+                        [ field "reason" (DiagnosticPayloadText "constructor-declaration-starts-with-declaration-keyword")
+                          field "data-type-name" (DiagnosticPayloadText dataTypeName)
+                          field "constructor-name" (DiagnosticPayloadText constructorName) ])
+            | ConstructorExposesRuntimeFieldMetadataOfType constructorName ->
+                descriptor
+                    DiagnosticCode.MalformedConstructorDeclaration
+                    None
+                    $"Constructor '{constructorName}' exposes runtime field metadata of type 'Type'."
+                    (payload
+                        "surface-elaboration-diagnostic"
+                        [ field "reason" (DiagnosticPayloadText "constructor-exposes-runtime-field-metadata-of-type")
+                          field "constructor-name" (DiagnosticPayloadText constructorName) ])
+            | ConstructorDeclarationMalformedInDataType(dataTypeName, constructorName) ->
+                descriptor
+                    DiagnosticCode.MalformedConstructorDeclaration
+                    None
+                    $"Constructor declaration '{constructorName}' in data type '{dataTypeName}' is malformed."
+                    (payload
+                        "surface-elaboration-diagnostic"
+                        [ field "reason" (DiagnosticPayloadText "constructor-declaration-malformed-in-data-type")
+                          field "data-type-name" (DiagnosticPayloadText dataTypeName)
+                          field "constructor-name" (DiagnosticPayloadText constructorName) ])
             | StaticConstructorRequiresPreservedStaticObjectIdentity memberName ->
                 descriptor
                     DiagnosticCode.StaticObjectUnresolved

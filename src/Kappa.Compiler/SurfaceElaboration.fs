@@ -21292,11 +21292,35 @@ module SurfaceElaboration =
                             declaration.Constructors
                             |> List.choose (fun constructor ->
                                 if Set.contains constructor.Name declarationKeywordNames then
-                                    Some(makeDiagnostic SimpleDiagnosticKind.MalformedConstructorDeclaration $"Constructor declaration in data type '{declaration.Name}' starts with declaration keyword '{constructor.Name}'.")
+                                    Some(
+                                        Diagnostics.errorFact
+                                            "KFrontIR"
+                                            (Some(KFrontIRPhase.phaseName CORE_LOWERING))
+                                            None
+                                            []
+                                            (DiagnosticFact.surfaceElaboration
+                                                (ConstructorDeclarationStartsWithDeclarationKeyword(declaration.Name, constructor.Name)))
+                                    )
                                 elif exposesRuntimeTypeField constructor then
-                                    Some(makeDiagnostic SimpleDiagnosticKind.MalformedConstructorDeclaration $"Constructor '{constructor.Name}' exposes runtime field metadata of type 'Type'.")
+                                    Some(
+                                        Diagnostics.errorFact
+                                            "KFrontIR"
+                                            (Some(KFrontIRPhase.phaseName CORE_LOWERING))
+                                            None
+                                            []
+                                            (DiagnosticFact.surfaceElaboration
+                                                (ConstructorExposesRuntimeFieldMetadataOfType constructor.Name))
+                                    )
                                 elif constructorHasMalformedShape constructor then
-                                    Some(makeDiagnostic SimpleDiagnosticKind.MalformedConstructorDeclaration $"Constructor declaration '{constructor.Name}' in data type '{declaration.Name}' is malformed.")
+                                    Some(
+                                        Diagnostics.errorFact
+                                            "KFrontIR"
+                                            (Some(KFrontIRPhase.phaseName CORE_LOWERING))
+                                            None
+                                            []
+                                            (DiagnosticFact.surfaceElaboration
+                                                (ConstructorDeclarationMalformedInDataType(declaration.Name, constructor.Name)))
+                                    )
                                 else
                                     None)
                         | _ ->
