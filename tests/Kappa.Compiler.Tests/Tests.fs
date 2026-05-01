@@ -3758,6 +3758,11 @@ module SmokeTestsShard4 =
         bag.AddError(DiagnosticFact.coreExpressionParsing ExpectedProjectionSetAccessor)
         bag.AddError(DiagnosticFact.coreExpressionParsing ProjectionSetAccessorRequiresTypedParameter)
         bag.AddError(DiagnosticFact.coreExpressionParsing ProjectionSetAccessorUsesOrdinaryParameter)
+        bag.AddError(DiagnosticFact.coreExpressionParsing ExpectedProjectionPlaceBinder)
+        bag.AddError(DiagnosticFact.coreExpressionParsing ProjectionParametersMustNotUseInout)
+        bag.AddError(DiagnosticFact.coreExpressionParsing ExpectedProjectionResultTypeColon)
+        bag.AddError(DiagnosticFact.coreExpressionParsing UnterminatedProjectionBinder)
+        bag.AddError(DiagnosticFact.coreExpressionParsing UnsupportedProjectionBinderSyntax)
 
         let diagnostics = bag.Items
         let usingDiagnostic =
@@ -3939,6 +3944,26 @@ module SmokeTestsShard4 =
         let projectionSetOrdinaryParameterDiagnostic =
             diagnostics
             |> List.find (fun item -> item.Message = "Projection set accessors use an ordinary '(name : Type)' parameter.")
+
+        let projectionPlaceBinderDiagnostic =
+            diagnostics
+            |> List.find (fun item -> item.Message = "Expected a projection place binder of the form '(place name : Type)'.")
+
+        let projectionInoutDiagnostic =
+            diagnostics
+            |> List.find (fun item -> item.Message = "Projection parameters must not use 'inout'.")
+
+        let projectionResultTypeColonDiagnostic =
+            diagnostics
+            |> List.find (fun item -> item.Message = "Expected ':' before the projection result type.")
+
+        let unterminatedProjectionBinderDiagnostic =
+            diagnostics
+            |> List.find (fun item -> item.Message = "Unterminated projection binder.")
+
+        let unsupportedProjectionBinderDiagnostic =
+            diagnostics
+            |> List.find (fun item -> item.Message = "Unsupported projection binder syntax.")
 
         Assert.Equal("core-expression-parsing", usingDiagnostic.Payload.Kind)
         Assert.Contains(
@@ -4209,6 +4234,36 @@ module SmokeTestsShard4 =
             fun field ->
                 field.Name = "reason"
                 && field.Value = DiagnosticPayloadText "projection-set-accessor-uses-ordinary-parameter"
+        )
+        Assert.Contains(
+            projectionPlaceBinderDiagnostic.Payload.Fields,
+            fun field ->
+                field.Name = "reason"
+                && field.Value = DiagnosticPayloadText "expected-projection-place-binder"
+        )
+        Assert.Contains(
+            projectionInoutDiagnostic.Payload.Fields,
+            fun field ->
+                field.Name = "reason"
+                && field.Value = DiagnosticPayloadText "projection-parameters-must-not-use-inout"
+        )
+        Assert.Contains(
+            projectionResultTypeColonDiagnostic.Payload.Fields,
+            fun field ->
+                field.Name = "reason"
+                && field.Value = DiagnosticPayloadText "expected-projection-result-type-colon"
+        )
+        Assert.Contains(
+            unterminatedProjectionBinderDiagnostic.Payload.Fields,
+            fun field ->
+                field.Name = "reason"
+                && field.Value = DiagnosticPayloadText "unterminated-projection-binder"
+        )
+        Assert.Contains(
+            unsupportedProjectionBinderDiagnostic.Payload.Fields,
+            fun field ->
+                field.Name = "reason"
+                && field.Value = DiagnosticPayloadText "unsupported-projection-binder-syntax"
         )
 
     [<Fact>]
@@ -4776,6 +4831,62 @@ module SmokeTestsShard4 =
         Assert.Equal("core-expression-parsing", setAccessorDiagnostic.Payload.Kind)
         Assert.Equal("core-expression-parsing", typedParameterDiagnostic.Payload.Kind)
         Assert.Equal("core-expression-parsing", ordinaryParameterDiagnostic.Payload.Kind)
+
+    [<Fact>]
+    let ``parser reports structured projection binder diagnostics`` () =
+        let sourceText =
+            [
+                "module main"
+                "projection badPlace place this : Int) : Int ="
+                "    yield this"
+                "projection badInout (inout this : Int) : Int ="
+                "    yield this"
+                "projection badResult (place this : Int) Int ="
+                "    yield this"
+                "projection badUnterminated (place this : Int ="
+                "    yield this"
+                "projection badUnsupported , : Int ="
+                "    yield this"
+            ]
+            |> String.concat "\n"
+
+        let _, lexed, parsed =
+            lexAndParse
+                "main.kp"
+                sourceText
+
+        Assert.Empty(lexed.Diagnostics)
+
+        let placeBinderDiagnostic =
+            parsed.Diagnostics
+            |> List.find (fun diagnostic ->
+                tryFindPayloadText "reason" diagnostic = Some "expected-projection-place-binder")
+
+        let inoutDiagnostic =
+            parsed.Diagnostics
+            |> List.find (fun diagnostic ->
+                tryFindPayloadText "reason" diagnostic = Some "projection-parameters-must-not-use-inout")
+
+        let resultTypeDiagnostic =
+            parsed.Diagnostics
+            |> List.find (fun diagnostic ->
+                tryFindPayloadText "reason" diagnostic = Some "expected-projection-result-type-colon")
+
+        let unterminatedDiagnostic =
+            parsed.Diagnostics
+            |> List.find (fun diagnostic ->
+                tryFindPayloadText "reason" diagnostic = Some "unterminated-projection-binder")
+
+        let unsupportedDiagnostic =
+            parsed.Diagnostics
+            |> List.find (fun diagnostic ->
+                tryFindPayloadText "reason" diagnostic = Some "unsupported-projection-binder-syntax")
+
+        Assert.Equal("core-expression-parsing", placeBinderDiagnostic.Payload.Kind)
+        Assert.Equal("core-expression-parsing", inoutDiagnostic.Payload.Kind)
+        Assert.Equal("core-expression-parsing", resultTypeDiagnostic.Payload.Kind)
+        Assert.Equal("core-expression-parsing", unterminatedDiagnostic.Payload.Kind)
+        Assert.Equal("core-expression-parsing", unsupportedDiagnostic.Payload.Kind)
 
     [<Fact>]
     let ``parser reports structured local let and expression recovery diagnostics`` () =

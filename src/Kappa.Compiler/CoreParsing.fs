@@ -6649,12 +6649,18 @@ module CoreParsing =
                               IsReceiver = false }
                     )
                 | _ ->
-                    diagnostics.AddError(DiagnosticFact.simple SimpleDiagnosticKind.ExpectedSyntaxToken "Expected a projection place binder of the form '(place name : Type)'.", source.GetLocation(startSpan))
+                    diagnostics.AddError(
+                        DiagnosticFact.coreExpressionParsing ExpectedProjectionPlaceBinder,
+                        source.GetLocation(startSpan)
+                    )
                     None
             | _ ->
                 match SurfaceBinderParsing.parseParameterFromTokens diagnostics source startSpan trimmed with
                 | Some parameter when parameter.IsInout ->
-                    diagnostics.AddError(DiagnosticFact.simple SimpleDiagnosticKind.ExpectedSyntaxToken "Projection parameters must not use 'inout'.", source.GetLocation(startSpan))
+                    diagnostics.AddError(
+                        DiagnosticFact.coreExpressionParsing ProjectionParametersMustNotUseInout,
+                        source.GetLocation(startSpan)
+                    )
                     Some(ProjectionValueBinder { parameter with IsInout = false })
                 | Some parameter ->
                     Some(ProjectionValueBinder parameter)
@@ -6666,7 +6672,10 @@ module CoreParsing =
             | Some(parameterTokens, returnTypeTokens) ->
                 parameterTokens, returnTypeTokens
             | None ->
-                diagnostics.AddError(DiagnosticFact.simple SimpleDiagnosticKind.ExpectedSyntaxToken "Expected ':' before the projection result type.", source.GetLocation(TextSpan.FromBounds(source.Length, source.Length)))
+                diagnostics.AddError(
+                    DiagnosticFact.coreExpressionParsing ExpectedProjectionResultTypeColon,
+                    source.GetLocation(TextSpan.FromBounds(source.Length, source.Length))
+                )
                 tokens, []
 
         let tokenArray = List.toArray parameterTokens
@@ -6689,7 +6698,10 @@ module CoreParsing =
                     endIndex <- endIndex + 1
 
                 if depth > 0 then
-                    diagnostics.AddError(DiagnosticFact.simple SimpleDiagnosticKind.ExpectedSyntaxToken "Unterminated projection binder.", source.GetLocation(startToken.Span))
+                    diagnostics.AddError(
+                        DiagnosticFact.coreExpressionParsing UnterminatedProjectionBinder,
+                        source.GetLocation(startToken.Span)
+                    )
                     index <- tokenArray.Length
                 else
                     let innerTokens = List.ofArray tokenArray[index + 1 .. endIndex - 2]
@@ -6710,7 +6722,10 @@ module CoreParsing =
 
                 index <- index + 1
             | _ ->
-                diagnostics.AddError(DiagnosticFact.simple SimpleDiagnosticKind.ExpectedSyntaxToken "Unsupported projection binder syntax.", source.GetLocation(tokenArray[index].Span))
+                diagnostics.AddError(
+                    DiagnosticFact.coreExpressionParsing UnsupportedProjectionBinderSyntax,
+                    source.GetLocation(tokenArray[index].Span)
+                )
                 index <- index + 1
 
         { Binders = List.ofSeq binders

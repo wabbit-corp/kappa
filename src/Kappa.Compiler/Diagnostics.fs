@@ -900,6 +900,11 @@ type CoreExpressionParsingEvidence =
     | ExpectedProjectionSetAccessor
     | ProjectionSetAccessorRequiresTypedParameter
     | ProjectionSetAccessorUsesOrdinaryParameter
+    | ExpectedProjectionPlaceBinder
+    | ProjectionParametersMustNotUseInout
+    | ExpectedProjectionResultTypeColon
+    | UnterminatedProjectionBinder
+    | UnsupportedProjectionBinderSyntax
 
 and CoreHeaderContext =
     | TopLevelFunctionHeader
@@ -2683,6 +2688,36 @@ module DiagnosticFact =
                     (payload
                         "core-expression-parsing"
                         [ field "reason" (DiagnosticPayloadText "projection-set-accessor-uses-ordinary-parameter") ])
+            | ExpectedProjectionPlaceBinder ->
+                descriptor
+                    DiagnosticCode.ExpectedSyntaxToken
+                    None
+                    "Expected a projection place binder of the form '(place name : Type)'."
+                    (payload "core-expression-parsing" [ field "reason" (DiagnosticPayloadText "expected-projection-place-binder") ])
+            | ProjectionParametersMustNotUseInout ->
+                descriptor
+                    DiagnosticCode.ExpectedSyntaxToken
+                    None
+                    "Projection parameters must not use 'inout'."
+                    (payload "core-expression-parsing" [ field "reason" (DiagnosticPayloadText "projection-parameters-must-not-use-inout") ])
+            | ExpectedProjectionResultTypeColon ->
+                descriptor
+                    DiagnosticCode.ExpectedSyntaxToken
+                    None
+                    "Expected ':' before the projection result type."
+                    (payload "core-expression-parsing" [ field "reason" (DiagnosticPayloadText "expected-projection-result-type-colon") ])
+            | UnterminatedProjectionBinder ->
+                descriptor
+                    DiagnosticCode.ExpectedSyntaxToken
+                    None
+                    "Unterminated projection binder."
+                    (payload "core-expression-parsing" [ field "reason" (DiagnosticPayloadText "unterminated-projection-binder") ])
+            | UnsupportedProjectionBinderSyntax ->
+                descriptor
+                    DiagnosticCode.ExpectedSyntaxToken
+                    None
+                    "Unsupported projection binder syntax."
+                    (payload "core-expression-parsing" [ field "reason" (DiagnosticPayloadText "unsupported-projection-binder-syntax") ])
         | UnicodeScalarLiteralDiagnostic evidence ->
             match evidence with
             | UnicodeScalarInvalidLiteralForm ->
