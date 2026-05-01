@@ -92,7 +92,7 @@ module private SurfaceBinderParsing =
 
     let parseParameterFromTokens (diagnostics: DiagnosticBag) (source: SourceText) eofSpan (tokens: Token list) =
         let unsupported span =
-            diagnostics.AddError(DiagnosticFact.simple SimpleDiagnosticKind.ExpectedSyntaxToken "Unsupported parameter binder syntax.", source.GetLocation(span))
+            diagnostics.AddError(DiagnosticFact.corePatternParsing UnsupportedParameterBinderSyntax, source.GetLocation(span))
 
         let rec parseBody isImplicit isInout explicitQuantity remaining =
             let quantity, bodyTokens =
@@ -113,7 +113,7 @@ module private SurfaceBinderParsing =
 
             match bodyTokens with
             | [] ->
-                diagnostics.AddError(DiagnosticFact.simple SimpleDiagnosticKind.ExpectedSyntaxToken "Expected a parameter binder.", source.GetLocation(eofSpan))
+                diagnostics.AddError(DiagnosticFact.corePatternParsing ExpectedParameterBinder, source.GetLocation(eofSpan))
                 None
             | thisToken :: colon :: typeTokens
                 when (not isImplicit)
@@ -157,12 +157,12 @@ module private SurfaceBinderParsing =
 
                 Some(makeParameter name typeTokens quantity isImplicit isInout)
             | head :: _ ->
-                diagnostics.AddError(DiagnosticFact.simple SimpleDiagnosticKind.ExpectedSyntaxToken "Expected a parameter name.", source.GetLocation(head.Span))
+                diagnostics.AddError(DiagnosticFact.corePatternParsing ExpectedParameterName, source.GetLocation(head.Span))
                 None
 
         match tokens with
         | [] ->
-            diagnostics.AddError(DiagnosticFact.simple SimpleDiagnosticKind.ExpectedSyntaxToken "Expected a parameter binder.", source.GetLocation(eofSpan))
+            diagnostics.AddError(DiagnosticFact.corePatternParsing ExpectedParameterBinder, source.GetLocation(eofSpan))
             None
         | { Kind = AtSign } :: rest ->
             parseBody true false None rest
@@ -578,7 +578,7 @@ type private PatternParser(tokens: Token list, source: SourceText, diagnostics: 
                 this.Advance() |> ignore
                 segments.Add(SyntaxFacts.trimIdentifierQuotes (this.Advance().Text))
         else
-            diagnostics.AddError(DiagnosticFact.simple SimpleDiagnosticKind.ExpectedSyntaxToken "Expected a pattern name.", source.GetLocation(this.Current.Span))
+            diagnostics.AddError(DiagnosticFact.corePatternParsing ExpectedPatternName, source.GetLocation(this.Current.Span))
 
         List.ofSeq segments
 
@@ -647,7 +647,7 @@ type private PatternParser(tokens: Token list, source: SourceText, diagnostics: 
                     (this.CollectPatternNames alternative |> Set.ofList) <> firstNames)
 
             if mismatched then
-                diagnostics.AddError(DiagnosticFact.simple SimpleDiagnosticKind.OrPatternBinderMismatch "Each or-pattern alternative must bind the same set of names.",
+                diagnostics.AddError(DiagnosticFact.corePatternParsing OrPatternAlternativesMustBindSameNames,
                     source.GetLocation(operatorToken.Span)
                 )
 
@@ -672,7 +672,7 @@ type private PatternParser(tokens: Token list, source: SourceText, diagnostics: 
             | Result.Ok parsed ->
                 match parsed.Suffix with
                 | Some _ ->
-                    diagnostics.AddError(DiagnosticFact.simple SimpleDiagnosticKind.ExpectedSyntaxToken $"Numeric literal suffixes are not permitted in patterns: '{token.Text}'.",
+                    diagnostics.AddError(DiagnosticFact.corePatternParsing (NumericLiteralSuffixesNotPermittedInPatterns token.Text),
                         source.GetLocation(token.Span)
                     )
 
@@ -680,7 +680,7 @@ type private PatternParser(tokens: Token list, source: SourceText, diagnostics: 
                     | Some literal ->
                         LiteralPattern literal
                     | None ->
-                        diagnostics.AddError(DiagnosticFact.simple SimpleDiagnosticKind.ExpectedSyntaxToken $"Numeric literal '{token.Text}' is not representable in patterns.",
+                        diagnostics.AddError(DiagnosticFact.corePatternParsing (NumericLiteralNotRepresentableInPatterns token.Text),
                             source.GetLocation(token.Span)
                         )
 
@@ -690,7 +690,7 @@ type private PatternParser(tokens: Token list, source: SourceText, diagnostics: 
                     | Some literal ->
                         LiteralPattern literal
                     | None ->
-                        diagnostics.AddError(DiagnosticFact.simple SimpleDiagnosticKind.ExpectedSyntaxToken $"Numeric literal '{token.Text}' is not representable in patterns.",
+                        diagnostics.AddError(DiagnosticFact.corePatternParsing (NumericLiteralNotRepresentableInPatterns token.Text),
                             source.GetLocation(token.Span)
                         )
 
@@ -703,7 +703,7 @@ type private PatternParser(tokens: Token list, source: SourceText, diagnostics: 
             | Result.Ok parsed ->
                 match parsed.Suffix with
                 | Some _ ->
-                    diagnostics.AddError(DiagnosticFact.simple SimpleDiagnosticKind.ExpectedSyntaxToken $"Numeric literal suffixes are not permitted in patterns: '{token.Text}'.",
+                    diagnostics.AddError(DiagnosticFact.corePatternParsing (NumericLiteralSuffixesNotPermittedInPatterns token.Text),
                         source.GetLocation(token.Span)
                     )
 
@@ -711,7 +711,7 @@ type private PatternParser(tokens: Token list, source: SourceText, diagnostics: 
                     | Some literal ->
                         LiteralPattern literal
                     | None ->
-                        diagnostics.AddError(DiagnosticFact.simple SimpleDiagnosticKind.ExpectedSyntaxToken $"Numeric literal '{token.Text}' is not representable in patterns.",
+                        diagnostics.AddError(DiagnosticFact.corePatternParsing (NumericLiteralNotRepresentableInPatterns token.Text),
                             source.GetLocation(token.Span)
                         )
 
@@ -721,7 +721,7 @@ type private PatternParser(tokens: Token list, source: SourceText, diagnostics: 
                     | Some literal ->
                         LiteralPattern literal
                     | None ->
-                        diagnostics.AddError(DiagnosticFact.simple SimpleDiagnosticKind.ExpectedSyntaxToken $"Numeric literal '{token.Text}' is not representable in patterns.",
+                        diagnostics.AddError(DiagnosticFact.corePatternParsing (NumericLiteralNotRepresentableInPatterns token.Text),
                             source.GetLocation(token.Span)
                         )
 
@@ -742,7 +742,7 @@ type private PatternParser(tokens: Token list, source: SourceText, diagnostics: 
                 diagnostics.AddError(DiagnosticFact.simple SimpleDiagnosticKind.UnicodeInvalidScalarLiteral message, source.GetLocation(token.Span))
                 LiteralPattern(LiteralValue.Character "\u0000")
         | _ ->
-            diagnostics.AddError(DiagnosticFact.simple SimpleDiagnosticKind.ExpectedSyntaxToken "Expected a literal pattern.", source.GetLocation(token.Span))
+            diagnostics.AddError(DiagnosticFact.corePatternParsing ExpectedLiteralPattern, source.GetLocation(token.Span))
             LiteralPattern LiteralValue.Unit
 
     member private this.CollectParenthesizedTokens() =
@@ -768,7 +768,7 @@ type private PatternParser(tokens: Token list, source: SourceText, diagnostics: 
                 innerTokens.Add(this.Advance())
 
         if depth > 0 then
-            diagnostics.AddError(DiagnosticFact.simple SimpleDiagnosticKind.ExpectedSyntaxToken "Expected ')' to close the pattern.", source.GetLocation(start.Span))
+            diagnostics.AddError(DiagnosticFact.corePatternParsing ExpectedPatternCloseParenthesis, source.GetLocation(start.Span))
 
         List.ofSeq innerTokens
 
@@ -967,13 +967,13 @@ type private PatternParser(tokens: Token list, source: SourceText, diagnostics: 
                                   IsImplicit = true
                                   Pattern = nestedParser.Parse() }
                         | labelToken :: _ ->
-                            diagnostics.AddError(DiagnosticFact.simple SimpleDiagnosticKind.ExpectedSyntaxToken "Expected a record pattern field label.", source.GetLocation(labelToken.Span))
+                            diagnostics.AddError(DiagnosticFact.corePatternParsing ExpectedRecordPatternFieldLabel, source.GetLocation(labelToken.Span))
                             Some
                                 { Name = "<missing>"
                                   IsImplicit = false
                                   Pattern = WildcardPattern }
                         | [] ->
-                            diagnostics.AddError(DiagnosticFact.simple SimpleDiagnosticKind.ExpectedSyntaxToken "Expected a record pattern field label.", source.GetLocation(eofSpan))
+                            diagnostics.AddError(DiagnosticFact.corePatternParsing ExpectedRecordPatternFieldLabel, source.GetLocation(eofSpan))
                             Some
                                 { Name = "<missing>"
                                   IsImplicit = false
@@ -998,7 +998,7 @@ type private PatternParser(tokens: Token list, source: SourceText, diagnostics: 
                                 | token :: _ -> token.Span
                                 | [] -> eofSpan
 
-                            diagnostics.AddError(DiagnosticFact.simple SimpleDiagnosticKind.ExpectedSyntaxToken "Expected a record pattern field of the form 'name = pattern'.", source.GetLocation(errorSpan))
+                            diagnostics.AddError(DiagnosticFact.corePatternParsing ExpectedRecordPatternField, source.GetLocation(errorSpan))
                             Some
                                 { Name = "<missing>"
                                   IsImplicit = false
@@ -1048,7 +1048,7 @@ type private PatternParser(tokens: Token list, source: SourceText, diagnostics: 
                 innerTokens.Add(this.Advance())
 
         if depth > 0 then
-            diagnostics.AddError(DiagnosticFact.simple SimpleDiagnosticKind.ExpectedSyntaxToken "Expected '}' to close the pattern.", source.GetLocation(start.Span))
+            diagnostics.AddError(DiagnosticFact.corePatternParsing ExpectedPatternCloseBrace, source.GetLocation(start.Span))
 
         List.ofSeq innerTokens
 
@@ -1082,12 +1082,12 @@ type private PatternParser(tokens: Token list, source: SourceText, diagnostics: 
                           IsImplicit = true
                           Pattern = nestedParser.Parse() }
                     | labelToken :: _ ->
-                        diagnostics.AddError(DiagnosticFact.simple SimpleDiagnosticKind.ExpectedSyntaxToken "Expected a named constructor pattern field label.", source.GetLocation(labelToken.Span))
+                        diagnostics.AddError(DiagnosticFact.corePatternParsing ExpectedNamedConstructorPatternFieldLabel, source.GetLocation(labelToken.Span))
                         { Name = "<missing>"
                           IsImplicit = false
                           Pattern = WildcardPattern }
                     | [] ->
-                        diagnostics.AddError(DiagnosticFact.simple SimpleDiagnosticKind.ExpectedSyntaxToken "Expected a named constructor pattern field label.", source.GetLocation(eofSpan))
+                        diagnostics.AddError(DiagnosticFact.corePatternParsing ExpectedNamedConstructorPatternFieldLabel, source.GetLocation(eofSpan))
                         { Name = "<missing>"
                           IsImplicit = false
                           Pattern = WildcardPattern }
@@ -1104,7 +1104,7 @@ type private PatternParser(tokens: Token list, source: SourceText, diagnostics: 
                           IsImplicit = true
                           Pattern = NamePattern name }
                     | token :: _ ->
-                        diagnostics.AddError(DiagnosticFact.simple SimpleDiagnosticKind.ExpectedSyntaxToken "Expected a named constructor pattern field.", source.GetLocation(token.Span))
+                        diagnostics.AddError(DiagnosticFact.corePatternParsing ExpectedNamedConstructorPatternField, source.GetLocation(token.Span))
                         { Name = "<missing>"
                           IsImplicit = false
                           Pattern = WildcardPattern }
@@ -1162,7 +1162,7 @@ type private PatternParser(tokens: Token list, source: SourceText, diagnostics: 
                 | [ name ] -> NamePattern name
                 | _ -> ConstructorPattern(segments, [])
         | _ ->
-            diagnostics.AddError(DiagnosticFact.simple SimpleDiagnosticKind.ExpectedSyntaxToken "Expected a pattern.", source.GetLocation(this.Current.Span))
+            diagnostics.AddError(DiagnosticFact.corePatternParsing ExpectedPattern, source.GetLocation(this.Current.Span))
             WildcardPattern
 
     member private this.ParseApplicationPattern() =
@@ -1176,7 +1176,7 @@ type private PatternParser(tokens: Token list, source: SourceText, diagnostics: 
         | ConstructorPattern(name, existingArguments), additionalArguments ->
             ConstructorPattern(name, existingArguments @ additionalArguments)
         | NamedConstructorPattern _, _ :: _ ->
-            diagnostics.AddError(DiagnosticFact.simple SimpleDiagnosticKind.ExpectedSyntaxToken "Named constructor patterns cannot take positional subpatterns.", source.GetLocation(this.Current.Span))
+            diagnostics.AddError(DiagnosticFact.corePatternParsing NamedConstructorPatternsCannotTakePositionalSubpatterns, source.GetLocation(this.Current.Span))
             head
         | NamePattern name, [] ->
             NamePattern name
@@ -1185,7 +1185,7 @@ type private PatternParser(tokens: Token list, source: SourceText, diagnostics: 
         | literalPattern, [] ->
             literalPattern
         | _, _ ->
-            diagnostics.AddError(DiagnosticFact.simple SimpleDiagnosticKind.ExpectedSyntaxToken "Only constructor patterns may take arguments.", source.GetLocation(this.Current.Span))
+            diagnostics.AddError(DiagnosticFact.corePatternParsing OnlyConstructorPatternsMayTakeArguments, source.GetLocation(this.Current.Span))
             head
 
     member private this.ParsePattern(minimumPrecedence: int) =
@@ -1244,7 +1244,7 @@ type private PatternParser(tokens: Token list, source: SourceText, diagnostics: 
             this.SkipLayout()
 
             if this.Current.Kind <> EndOfFile then
-                diagnostics.AddError(DiagnosticFact.simple SimpleDiagnosticKind.ExpectedSyntaxToken "Unexpected tokens at the end of the pattern.", source.GetLocation(this.Current.Span))
+                diagnostics.AddError(DiagnosticFact.corePatternParsing UnexpectedTrailingPatternTokens, source.GetLocation(this.Current.Span))
 
             pattern
 

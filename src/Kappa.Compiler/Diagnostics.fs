@@ -727,6 +727,238 @@ type InvalidUtf8SourceEvidence =
 type ModuleNameUnresolvedEvidence =
     { FilePath: string }
 
+type HostModuleReservedRootEvidence =
+    { ModuleName: string }
+
+type ModulePathMismatchEvidence =
+    { DeclaredModuleName: string
+      InferredModuleName: string }
+
+type UrlImportUnsupportedEvidence =
+    { SpecifierText: string }
+
+type HostModuleUnsupportedBackendEvidence =
+    { BackendProfile: string
+      HostBindingRoot: string }
+
+type ImportAmbiguousEvidence =
+    { FullModuleName: string
+      ParentModuleName: string
+      ItemName: string }
+
+type ImportModuleNameUnresolvedEvidence =
+    | BareImportTargetNotFound of fullModuleName: string * parentModuleName: string * itemName: string
+    | ImportedModuleNotFound of importedModuleName: string
+
+type ImportBuildSettingRequirement =
+    | AllowUnhiding
+    | AllowClarify
+
+type ImportModifierBuildSettingEvidence =
+    { ItemText: string
+      RequiredSetting: ImportBuildSettingRequirement }
+
+type ImportItemModifierReexportForbiddenEvidence =
+    { ItemText: string }
+
+type ImportItemLookupContext =
+    | IncludedImportItem
+    | ExcludedImportItem
+
+type ImportItemNotFoundEvidence =
+    { ItemName: string
+      ImportedModuleName: string
+      LookupContext: ImportItemLookupContext }
+
+type ExpectDeclarationKind =
+    | ExpectedTypeDeclaration
+    | ExpectedTraitDeclaration
+    | ExpectedTermDeclaration
+
+type ExpectSatisfactionEvidence =
+    { ExpectedKind: ExpectDeclarationKind
+      ExpectedName: string }
+
+type SignatureUnsatisfiedEvidence =
+    { SignatureName: string
+      SignatureTypeText: string }
+
+type UrlImportPackageModeEvidence =
+    | UrlImportUnpinnedInPackageMode of specifierText: string
+    | UrlImportRefPinRequiresLock of specifierText: string
+
+type TypeEqualityMismatchEvidence =
+    | ReflRequiresDefinitionallyEqualSides
+
+type CorePatternParsingEvidence =
+    | UnsupportedParameterBinderSyntax
+    | ExpectedParameterBinder
+    | ExpectedParameterName
+    | ExpectedPatternName
+    | OrPatternAlternativesMustBindSameNames
+    | NumericLiteralSuffixesNotPermittedInPatterns of tokenText: string
+    | NumericLiteralNotRepresentableInPatterns of tokenText: string
+    | ExpectedLiteralPattern
+    | ExpectedPatternCloseParenthesis
+    | ExpectedRecordPatternFieldLabel
+    | ExpectedRecordPatternField
+    | ExpectedPatternCloseBrace
+    | ExpectedNamedConstructorPatternFieldLabel
+    | ExpectedNamedConstructorPatternField
+    | ExpectedPattern
+    | NamedConstructorPatternsCannotTakePositionalSubpatterns
+    | OnlyConstructorPatternsMayTakeArguments
+    | UnexpectedTrailingPatternTokens
+
+type ParserNameExpectationRole =
+    | BindingName
+    | DataTypeName
+    | ModuleName
+    | ModuleNameSegment
+    | ModuleAttributeName
+    | NameInList
+    | NameInSignatureDeclaration
+    | ProjectionName
+    | TypeAliasName
+    | TraitNameAfterExpectTrait
+    | TypeNameAfterExpectType
+    | TermNameAfterExpectTerm
+    | EffectName
+    | ImportedName
+    | ExcludedImportName
+    | AliasAfterAs
+
+type ParserListContext =
+    | NameList
+    | ExclusionList
+    | ImportItemList
+
+type ParserDeclarationSubject =
+    | ParserEffectDeclarationSubject
+    | ParserInstanceDeclarationSubject
+    | ParserInstanceMemberDeclarationSubject
+    | ParserProjectionDeclarationSubject
+    | ParserNamedDeclarationSubject of keywordText: string
+
+type ParserDeclarationBlockDelimiter =
+    | ParserRightParenthesisDelimiter
+    | ParserRightBraceDelimiter
+    | ParserRightBracketDelimiter
+    | ParserRightSetBraceDelimiter
+    | ParserDedentDelimiter
+
+type ParserModifierTarget =
+    | ProjectionDeclarationTarget
+    | DataDeclarationTarget
+    | EffectDeclarationTarget
+    | TraitDeclarationTarget
+    | SignatureDeclarationTarget
+    | InstanceDeclarationTarget
+    | TermDeclarationsOnly
+
+type ParserSyntaxEvidence =
+    | ExpectedKeyword of keywordText: string
+    | ExpectedName of ParserNameExpectationRole
+    | ExpectedColonInExpectTermDeclaration
+    | ExpectedColonInSignatureDeclaration
+    | ExpectedListStart of ParserListContext
+    | ExpectedListClose of ParserListContext
+    | ExpectedListComma of ParserListContext
+    | DuplicateImportItemModifier of modifierKeyword: string
+    | ExpectedImportItemAfterDot
+    | CtorAllCannotBeCombinedWithAlias
+    | MultipleTotalityAssertionsOnSameDeclaration
+    | ExpectedExpectDeclarationKind
+    | ExpectedFixityDeclaration
+    | ExpectedNumericPrecedenceInFixityDeclaration
+    | ExpectedValidIntegerPrecedenceInFixityDeclaration
+    | ExpectedFixityOperatorLeftParenthesis
+    | ExpectedFixityOperatorToken
+    | ExpectedFixityOperatorRightParenthesis
+    | ExpectedTopLevelDeclaration
+    | ExpectedTraitHeadAfterTrait
+    | ExpectedTraitMemberSignatureOrDefaultDefinition
+    | ExpectedTypeAliasBody
+    | ExpectedValidTypeAliasBody
+    | ExpectedSignatureType
+    | ExpectedValidSignatureType
+    | ExpectedConstructorName
+    | UnsupportedConstructorParameterSyntax
+    | ExpectedEffectOperationSignatureShape
+    | ExpectedEffectOperationSignature
+    | ExpectedEqualsInDeclaration of ParserDeclarationSubject
+    | ExpectedIndentedBlock
+    | ExpectedDeclarationBlockClosure of ParserDeclarationBlockDelimiter
+    | ExpectedValidInstanceHeadAfterInstance
+    | ExpectedInstanceMemberDefinitionStartingWithLet
+    | UnexpectedIndentationAtTopLevel
+    | ModuleHeaderExpectedAfterTopLevelAttributes
+    | ModuleHeaderMisplacedAfterTopLevelItems
+    | TotalityAssertionNotApplicableTo of ParserModifierTarget
+    | OpacityModifierNotApplicableToProjectionDeclaration
+    | OpacityAndTotalityNotApplicableToEffectDeclaration
+    | VisibilityOpacityAndTotalityNotApplicableToInstanceDeclaration
+
+type QttCardinalityEffect =
+    | Discard
+    | Duplicate
+    | DuplicateOrDiscard
+    | Reorder
+
+type QttDemandSatisfactionMode =
+    | Available
+    | Usable
+
+type QttLinearDropEvidence =
+    | ShadowedBindingMustConsumePreviousValue of shadowedBindingName: string
+    | BindingNotConsumedOnEveryPath of bindingName: string
+    | ClauseMayDiscardRowBinding of clauseLabel: string * bindingName: string
+    | DropClauseCardinalityMayAffectRowBinding of
+        clauseLabel: string * bindingName: string * effect: QttCardinalityEffect * cardinalityText: string
+    | RecordPatternOmittedField of fieldName: string
+    | PlainLetQuestionDiscardRefutationResidue
+
+type QttLinearOveruseEvidence =
+    | WholeResourceConsumedAfterFieldPath of resourceName: string
+    | WholeResourceUsedAfterFieldPath of resourceName: string
+    | FieldPathConsumedAfterRoot of placeText: string
+    | FieldPathAlreadyConsumed of placeText: string
+    | ResourceConsumedMoreThanOnce of resourceName: string
+    | ClauseMustNotConsumeRowBinding of clauseLabel: string * bindingName: string
+    | OveruseClauseCardinalityMayAffectRowBinding of
+        clauseLabel: string * bindingName: string * effect: QttCardinalityEffect * cardinalityText: string
+    | LeftJoinCapturesLinearOuterRowBinding of bindingName: string
+    | RecordUpdateRequiresRepair of receiverRoot: string * firstUnrepairedPath: string
+    | QuantityCannotSatisfyParameterDemand of
+        capabilityText: string * demandText: string * mode: QttDemandSatisfactionMode
+
+type QttBorrowConsumeEvidence =
+    | BorrowedResourceCannotBeConsumed of resourceName: string
+
+type QttBorrowOverlapEvidence =
+    | PlaceOverlapsActiveBorrowedFootprint of placeText: string
+    | InoutArgumentsRequireDisjointFootprints
+    | TemporaryBorrowOverlapsLaterConsumingArgument
+
+type QttBorrowEscapeEvidence =
+    | ValueCapturesBorrowedRegion
+    | LambdaCapturesBorrowedRegion
+    | ForkedChildCapturesBorrowedRegion
+
+type QttErasedRuntimeUseEvidence =
+    | QuantityZeroBindingUsedAtRuntime of bindingName: string
+    | RuntimeClosureCapturesErasedBinding of bindingName: string
+    | MatchScrutineeUsesErasedValue
+
+type QttInoutMarkerRequiredEvidence =
+    | InoutMarkerRequired
+
+type QttInoutMarkerUnexpectedEvidence =
+    | InoutMarkerUnexpected
+
+type QttInoutThreadedFieldMissingEvidence =
+    | InoutThreadedFieldMissing of parameterName: string
+
 type DiagnosticFact =
     | SimpleDiagnostic of SimpleDiagnosticEvidence
     | CodeDetailDiagnostic of CodeDetailEvidence
@@ -738,6 +970,31 @@ type DiagnosticFact =
     | ModuleCaseFoldCollisionDiagnostic of ModuleCaseFoldCollisionEvidence
     | InvalidUtf8SourceDiagnostic of InvalidUtf8SourceEvidence
     | ModuleNameUnresolvedDiagnostic of ModuleNameUnresolvedEvidence
+    | HostModuleReservedRootDiagnostic of HostModuleReservedRootEvidence
+    | ModulePathMismatchDiagnostic of ModulePathMismatchEvidence
+    | UrlImportUnsupportedDiagnostic of UrlImportUnsupportedEvidence
+    | HostModuleUnsupportedBackendDiagnostic of HostModuleUnsupportedBackendEvidence
+    | ImportAmbiguousDiagnostic of ImportAmbiguousEvidence
+    | ImportModuleNameUnresolvedDiagnostic of ImportModuleNameUnresolvedEvidence
+    | ImportModifierBuildSettingDiagnostic of ImportModifierBuildSettingEvidence
+    | ImportItemModifierReexportForbiddenDiagnostic of ImportItemModifierReexportForbiddenEvidence
+    | ImportItemNotFoundDiagnostic of ImportItemNotFoundEvidence
+    | ExpectUnsatisfiedDiagnostic of ExpectSatisfactionEvidence
+    | ExpectAmbiguousDiagnostic of ExpectSatisfactionEvidence
+    | SignatureUnsatisfiedDiagnostic of SignatureUnsatisfiedEvidence
+    | UrlImportPackageModeDiagnostic of UrlImportPackageModeEvidence
+    | TypeEqualityMismatchDiagnostic of TypeEqualityMismatchEvidence
+    | ParserSyntaxDiagnostic of ParserSyntaxEvidence
+    | CorePatternParsingDiagnostic of CorePatternParsingEvidence
+    | QttLinearDropDiagnostic of QttLinearDropEvidence
+    | QttLinearOveruseDiagnostic of QttLinearOveruseEvidence
+    | QttBorrowConsumeDiagnostic of QttBorrowConsumeEvidence
+    | QttBorrowOverlapDiagnostic of QttBorrowOverlapEvidence
+    | QttBorrowEscapeDiagnostic of QttBorrowEscapeEvidence
+    | QttErasedRuntimeUseDiagnostic of QttErasedRuntimeUseEvidence
+    | QttInoutMarkerRequiredDiagnostic of QttInoutMarkerRequiredEvidence
+    | QttInoutMarkerUnexpectedDiagnostic of QttInoutMarkerUnexpectedEvidence
+    | QttInoutThreadedFieldMissingDiagnostic of QttInoutThreadedFieldMissingEvidence
 
 module DiagnosticFact =
     let private field name value =
@@ -941,6 +1198,157 @@ module DiagnosticFact =
     let moduleNameUnresolved filePath =
         ModuleNameUnresolvedDiagnostic { FilePath = filePath }
 
+    let hostModuleReservedRoot moduleName =
+        HostModuleReservedRootDiagnostic { ModuleName = moduleName }
+
+    let modulePathMismatch declaredModuleName inferredModuleName =
+        ModulePathMismatchDiagnostic
+            { DeclaredModuleName = declaredModuleName
+              InferredModuleName = inferredModuleName }
+
+    let urlImportUnsupported specifierText =
+        UrlImportUnsupportedDiagnostic { SpecifierText = specifierText }
+
+    let hostModuleUnsupportedBackend backendProfile hostBindingRoot =
+        HostModuleUnsupportedBackendDiagnostic
+            { BackendProfile = backendProfile
+              HostBindingRoot = hostBindingRoot }
+
+    let importAmbiguous fullModuleName parentModuleName itemName =
+        ImportAmbiguousDiagnostic
+            { FullModuleName = fullModuleName
+              ParentModuleName = parentModuleName
+              ItemName = itemName }
+
+    let bareImportTargetNotFound fullModuleName parentModuleName itemName =
+        ImportModuleNameUnresolvedDiagnostic(BareImportTargetNotFound(fullModuleName, parentModuleName, itemName))
+
+    let importedModuleNotFound importedModuleName =
+        ImportModuleNameUnresolvedDiagnostic(ImportedModuleNotFound importedModuleName)
+
+    let importModifierRequiresBuildSetting itemText requiredSetting =
+        ImportModifierBuildSettingDiagnostic
+            { ItemText = itemText
+              RequiredSetting = requiredSetting }
+
+    let importItemModifierReexportForbidden itemText =
+        ImportItemModifierReexportForbiddenDiagnostic { ItemText = itemText }
+
+    let importItemNotFound itemName importedModuleName lookupContext =
+        ImportItemNotFoundDiagnostic
+            { ItemName = itemName
+              ImportedModuleName = importedModuleName
+              LookupContext = lookupContext }
+
+    let expectUnsatisfied expectedKind expectedName =
+        ExpectUnsatisfiedDiagnostic
+            { ExpectedKind = expectedKind
+              ExpectedName = expectedName }
+
+    let expectAmbiguous expectedKind expectedName =
+        ExpectAmbiguousDiagnostic
+            { ExpectedKind = expectedKind
+              ExpectedName = expectedName }
+
+    let signatureUnsatisfied signatureName signatureTypeText =
+        SignatureUnsatisfiedDiagnostic
+            { SignatureName = signatureName
+              SignatureTypeText = signatureTypeText }
+
+    let urlImportUnpinnedInPackageMode specifierText =
+        UrlImportPackageModeDiagnostic(UrlImportUnpinnedInPackageMode specifierText)
+
+    let urlImportRefPinRequiresLock specifierText =
+        UrlImportPackageModeDiagnostic(UrlImportRefPinRequiresLock specifierText)
+
+    let reflRequiresDefinitionallyEqualSides =
+        TypeEqualityMismatchDiagnostic ReflRequiresDefinitionallyEqualSides
+
+    let parserSyntax evidence =
+        ParserSyntaxDiagnostic evidence
+
+    let corePatternParsing evidence =
+        CorePatternParsingDiagnostic evidence
+
+    let qttLinearDrop evidence = QttLinearDropDiagnostic evidence
+    let qttLinearOveruse evidence = QttLinearOveruseDiagnostic evidence
+    let qttBorrowConsume evidence = QttBorrowConsumeDiagnostic evidence
+    let qttBorrowOverlap evidence = QttBorrowOverlapDiagnostic evidence
+    let qttBorrowEscape evidence = QttBorrowEscapeDiagnostic evidence
+    let qttErasedRuntimeUse evidence = QttErasedRuntimeUseDiagnostic evidence
+    let qttInoutMarkerRequired evidence = QttInoutMarkerRequiredDiagnostic evidence
+    let qttInoutMarkerUnexpected evidence = QttInoutMarkerUnexpectedDiagnostic evidence
+    let qttInoutThreadedFieldMissing evidence = QttInoutThreadedFieldMissingDiagnostic evidence
+
+    let private qttCardinalityEffectText effect =
+        match effect with
+        | Discard -> "discard"
+        | Duplicate -> "duplicate"
+        | DuplicateOrDiscard -> "duplicate or discard"
+        | Reorder -> "reorder"
+
+    let private importBuildSettingText setting =
+        match setting with
+        | AllowUnhiding -> "allow_unhiding"
+        | AllowClarify -> "allow_clarify"
+
+    let private expectDeclarationKindText kind =
+        match kind with
+        | ExpectedTypeDeclaration -> "type"
+        | ExpectedTraitDeclaration -> "trait"
+        | ExpectedTermDeclaration -> "term"
+
+    let private parserNameRoleText role =
+        match role with
+        | BindingName -> "binding name"
+        | DataTypeName -> "data type name"
+        | ModuleName -> "module name"
+        | ModuleNameSegment -> "module name segment"
+        | ModuleAttributeName -> "module attribute name"
+        | NameInList -> "name in the list"
+        | NameInSignatureDeclaration -> "name in the signature declaration"
+        | ProjectionName -> "projection name"
+        | TypeAliasName -> "type alias name"
+        | TraitNameAfterExpectTrait -> "trait name after 'expect trait'"
+        | TypeNameAfterExpectType -> "type name after 'expect type'"
+        | TermNameAfterExpectTerm -> "term name after 'expect term'"
+        | EffectName -> "effect name"
+        | ImportedName -> "imported name"
+        | ExcludedImportName -> "excluded import name"
+        | AliasAfterAs -> "alias after 'as'"
+
+    let private parserListContextText context =
+        match context with
+        | NameList -> "list"
+        | ExclusionList -> "exclusion list"
+        | ImportItemList -> "import item list"
+
+    let private parserDeclarationSubjectText subject =
+        match subject with
+        | ParserEffectDeclarationSubject -> "effect declaration"
+        | ParserInstanceDeclarationSubject -> "instance declaration"
+        | ParserInstanceMemberDeclarationSubject -> "instance member declaration"
+        | ParserProjectionDeclarationSubject -> "projection declaration"
+        | ParserNamedDeclarationSubject keywordText -> $"{keywordText} declaration"
+
+    let private parserDeclarationBlockDelimiterText delimiter =
+        match delimiter with
+        | ParserRightParenthesisDelimiter -> "')'"
+        | ParserRightBraceDelimiter -> "'}'"
+        | ParserRightBracketDelimiter -> "']'"
+        | ParserRightSetBraceDelimiter -> "'>}'"
+        | ParserDedentDelimiter -> "the declaration block to dedent"
+
+    let private parserModifierTargetText target =
+        match target with
+        | ProjectionDeclarationTarget -> "projection declarations"
+        | DataDeclarationTarget -> "data declarations"
+        | EffectDeclarationTarget -> "effect declarations"
+        | TraitDeclarationTarget -> "trait declarations"
+        | SignatureDeclarationTarget -> "signature declarations"
+        | InstanceDeclarationTarget -> "instance declarations"
+        | TermDeclarationsOnly -> "term declarations"
+
     let describe fact =
         match fact with
         | SimpleDiagnostic evidence ->
@@ -1046,6 +1454,894 @@ module DiagnosticFact =
                 (Some "kappa.name.unresolved")
                 $"Could not derive a Kappa module name from '{evidence.FilePath}'. Source files must live under the source root, end in the exact '.kp' suffix, and every directory, basename, and fragment segment must match [A-Za-z_][A-Za-z0-9_]*."
                 (payload "module-name-unresolved" [ field "file-path" (DiagnosticPayloadText evidence.FilePath) ])
+        | HostModuleReservedRootDiagnostic evidence ->
+            descriptor
+                DiagnosticCode.HostModuleReservedRoot
+                None
+                $"Source-defined module '{evidence.ModuleName}' uses a reserved host binding root. Host binding modules are supplied from host metadata, not user-written Kappa source."
+                (payload
+                    "host-module-reserved-root"
+                    [ field "module-name" (DiagnosticPayloadText evidence.ModuleName) ])
+        | ModulePathMismatchDiagnostic evidence ->
+            descriptor
+                DiagnosticCode.ModulePathMismatch
+                None
+                $"Module header '{evidence.DeclaredModuleName}' does not match the path-derived module name '{evidence.InferredModuleName}'."
+                (payload
+                    "module-path-mismatch"
+                    [ field "declared-module-name" (DiagnosticPayloadText evidence.DeclaredModuleName)
+                      field "inferred-module-name" (DiagnosticPayloadText evidence.InferredModuleName) ])
+        | UrlImportUnsupportedDiagnostic evidence ->
+            descriptor
+                DiagnosticCode.UrlImportUnsupported
+                None
+                $"URL module specifier '{evidence.SpecifierText}' is not supported by this toolchain. URL imports and exports require fetch/cache/lock resolution, which is not implemented."
+                (payload
+                    "url-import-unsupported"
+                    [ field "specifier-text" (DiagnosticPayloadText evidence.SpecifierText) ])
+        | HostModuleUnsupportedBackendDiagnostic evidence ->
+            descriptor
+                DiagnosticCode.HostModuleUnsupportedBackend
+                None
+                $"Backend profile '{evidence.BackendProfile}' does not provide host binding root '{evidence.HostBindingRoot}'."
+                (payload
+                    "host-module-unsupported-backend"
+                    [ field "backend-profile" (DiagnosticPayloadText evidence.BackendProfile)
+                      field "host-binding-root" (DiagnosticPayloadText evidence.HostBindingRoot) ])
+        | ImportAmbiguousDiagnostic evidence ->
+            descriptor
+                DiagnosticCode.ImportAmbiguous
+                (Some "kappa.import.ambiguous-dotted")
+                $"Bare dotted import/export '{evidence.FullModuleName}' is ambiguous between module '{evidence.FullModuleName}' and item '{evidence.ItemName}' from module '{evidence.ParentModuleName}'. Use an explicit module-only form or '(...)' singleton syntax."
+                (payload
+                    "import-ambiguous"
+                    [ field "full-module-name" (DiagnosticPayloadText evidence.FullModuleName)
+                      field "parent-module-name" (DiagnosticPayloadText evidence.ParentModuleName)
+                      field "item-name" (DiagnosticPayloadText evidence.ItemName) ])
+        | ImportModuleNameUnresolvedDiagnostic evidence ->
+            match evidence with
+            | BareImportTargetNotFound(fullModuleName, parentModuleName, itemName) ->
+                descriptor
+                    DiagnosticCode.ModuleNameUnresolved
+                    (Some "kappa.name.unresolved")
+                    $"Neither module '{fullModuleName}' nor item '{itemName}' from module '{parentModuleName}' was found."
+                    (payload
+                        "import-module-name-unresolved"
+                        [ field "reason" (DiagnosticPayloadText "bare-import-target-not-found")
+                          field "full-module-name" (DiagnosticPayloadText fullModuleName)
+                          field "parent-module-name" (DiagnosticPayloadText parentModuleName)
+                          field "item-name" (DiagnosticPayloadText itemName) ])
+            | ImportedModuleNotFound importedModuleName ->
+                descriptor
+                    DiagnosticCode.ModuleNameUnresolved
+                    (Some "kappa.name.unresolved")
+                    $"Imported module '{importedModuleName}' was not found."
+                    (payload
+                        "import-module-name-unresolved"
+                        [ field "reason" (DiagnosticPayloadText "imported-module-not-found")
+                          field "imported-module-name" (DiagnosticPayloadText importedModuleName) ])
+        | ImportModifierBuildSettingDiagnostic evidence ->
+            let buildSetting = importBuildSettingText evidence.RequiredSetting
+
+            let code =
+                match evidence.RequiredSetting with
+                | AllowUnhiding -> DiagnosticCode.ImportUnhideRequiresBuildSetting
+                | AllowClarify -> DiagnosticCode.ImportClarifyRequiresBuildSetting
+
+            descriptor
+                code
+                None
+                $"Import item '{evidence.ItemText}' requires build setting '{buildSetting}', which is disabled in package mode."
+                (payload
+                    "import-modifier-build-setting"
+                    [ field "item-text" (DiagnosticPayloadText evidence.ItemText)
+                      field "required-setting" (DiagnosticPayloadText buildSetting) ])
+        | ImportItemModifierReexportForbiddenDiagnostic evidence ->
+            descriptor
+                DiagnosticCode.ImportItemModifierReexportForbidden
+                None
+                $"Import item '{evidence.ItemText}' uses unhide/clarify and must not be re-exported."
+                (payload
+                    "import-item-modifier-reexport-forbidden"
+                    [ field "item-text" (DiagnosticPayloadText evidence.ItemText) ])
+        | ImportItemNotFoundDiagnostic evidence ->
+            let messagePrefix =
+                match evidence.LookupContext with
+                | IncludedImportItem -> "Import item"
+                | ExcludedImportItem -> "Excluded import item"
+
+            let lookupContext =
+                match evidence.LookupContext with
+                | IncludedImportItem -> "included-import-item"
+                | ExcludedImportItem -> "excluded-import-item"
+
+            descriptor
+                DiagnosticCode.ImportItemNotFound
+                None
+                $"{messagePrefix} '{evidence.ItemName}' was not found in module '{evidence.ImportedModuleName}'."
+                (payload
+                    "import-item-not-found"
+                    [ field "item-name" (DiagnosticPayloadText evidence.ItemName)
+                      field "imported-module-name" (DiagnosticPayloadText evidence.ImportedModuleName)
+                      field "lookup-context" (DiagnosticPayloadText lookupContext) ])
+        | ExpectUnsatisfiedDiagnostic evidence ->
+            let expectedKind = expectDeclarationKindText evidence.ExpectedKind
+
+            descriptor
+                DiagnosticCode.ExpectUnsatisfied
+                None
+                $"Unsatisfied expect declaration for {expectedKind} '{evidence.ExpectedName}'."
+                (payload
+                    "expect-unsatisfied"
+                    [ field "expected-kind" (DiagnosticPayloadText expectedKind)
+                      field "expected-name" (DiagnosticPayloadText evidence.ExpectedName) ])
+        | ExpectAmbiguousDiagnostic evidence ->
+            let expectedKind = expectDeclarationKindText evidence.ExpectedKind
+
+            descriptor
+                DiagnosticCode.ExpectAmbiguous
+                None
+                $"Multiple satisfactions were found for expected {expectedKind} '{evidence.ExpectedName}'."
+                (payload
+                    "expect-ambiguous"
+                    [ field "expected-kind" (DiagnosticPayloadText expectedKind)
+                      field "expected-name" (DiagnosticPayloadText evidence.ExpectedName) ])
+        | SignatureUnsatisfiedDiagnostic evidence ->
+            descriptor
+                DiagnosticCode.SignatureUnsatisfied
+                None
+                $"Top-level signature '{evidence.SignatureName} : {evidence.SignatureTypeText}' has no matching definition in the same source file. Define it with 'let {evidence.SignatureName} = ...' or declare it as 'expect term {evidence.SignatureName} : {evidence.SignatureTypeText}'."
+                (payload
+                    "signature-unsatisfied"
+                    [ field "signature-name" (DiagnosticPayloadText evidence.SignatureName)
+                      field "signature-type-text" (DiagnosticPayloadText evidence.SignatureTypeText) ])
+        | UrlImportPackageModeDiagnostic evidence ->
+            match evidence with
+            | UrlImportUnpinnedInPackageMode specifierText ->
+                descriptor
+                    DiagnosticCode.UrlImportUnpinnedInPackageMode
+                    None
+                    $"URL import '{specifierText}' is unpinned. Package mode requires pinned URL imports."
+                    (payload
+                        "url-import-package-mode"
+                        [ field "reason" (DiagnosticPayloadText "url-import-unpinned-in-package-mode")
+                          field "specifier-text" (DiagnosticPayloadText specifierText) ])
+            | UrlImportRefPinRequiresLock specifierText ->
+                descriptor
+                    DiagnosticCode.UrlImportRefPinRequiresLock
+                    None
+                    $"URL import '{specifierText}' uses a ref pin, but this toolchain has no recorded immutable resolution for it in package mode."
+                    (payload
+                        "url-import-package-mode"
+                        [ field "reason" (DiagnosticPayloadText "url-import-ref-pin-requires-lock")
+                          field "specifier-text" (DiagnosticPayloadText specifierText) ])
+        | TypeEqualityMismatchDiagnostic evidence ->
+            match evidence with
+            | ReflRequiresDefinitionallyEqualSides ->
+                descriptor
+                    DiagnosticCode.TypeEqualityMismatch
+                    None
+                    "The proof term 'refl' requires both sides of the equality type to be definitionally equal. Function binder quantities are part of type identity."
+                    (payload
+                    "type-equality-mismatch"
+                        [ field "reason" (DiagnosticPayloadText "refl-requires-definitionally-equal-sides") ])
+        | ParserSyntaxDiagnostic evidence ->
+            match evidence with
+            | ExpectedKeyword keyword ->
+                descriptor
+                    DiagnosticCode.ExpectedSyntaxToken
+                    None
+                    $"Expected '{keyword}'."
+                    (payload
+                        "parser-syntax"
+                        [ field "reason" (DiagnosticPayloadText "expected-keyword")
+                          field "keyword" (DiagnosticPayloadText keyword) ])
+            | ExpectedName role ->
+                descriptor
+                    DiagnosticCode.ExpectedSyntaxToken
+                    None
+                    $"Expected a {parserNameRoleText role}."
+                    (payload
+                        "parser-syntax"
+                        [ field "reason" (DiagnosticPayloadText "expected-name")
+                          field "name-role" (DiagnosticPayloadText(parserNameRoleText role)) ])
+            | ExpectedColonInExpectTermDeclaration ->
+                descriptor
+                    DiagnosticCode.ExpectedSyntaxToken
+                    None
+                    "Expected ':' in the expect term declaration."
+                    (payload
+                        "parser-syntax"
+                        [ field "reason" (DiagnosticPayloadText "expected-colon-in-expect-term-declaration") ])
+            | ExpectedColonInSignatureDeclaration ->
+                descriptor
+                    DiagnosticCode.ExpectedSyntaxToken
+                    None
+                    "Expected ':' in the signature declaration."
+                    (payload
+                        "parser-syntax"
+                        [ field "reason" (DiagnosticPayloadText "expected-colon-in-signature-declaration") ])
+            | ExpectedListStart context ->
+                descriptor
+                    DiagnosticCode.ExpectedSyntaxToken
+                    None
+                    $"Expected '(' to start the {parserListContextText context}."
+                    (payload
+                        "parser-syntax"
+                        [ field "reason" (DiagnosticPayloadText "expected-list-start")
+                          field "list-context" (DiagnosticPayloadText(parserListContextText context)) ])
+            | ExpectedListClose context ->
+                descriptor
+                    DiagnosticCode.ExpectedSyntaxToken
+                    None
+                    $"Expected ')' to close the {parserListContextText context}."
+                    (payload
+                        "parser-syntax"
+                        [ field "reason" (DiagnosticPayloadText "expected-list-close")
+                          field "list-context" (DiagnosticPayloadText(parserListContextText context)) ])
+            | ExpectedListComma context ->
+                let message =
+                    match context with
+                    | NameList -> "Expected ',' between list items."
+                    | ExclusionList -> "Expected ',' between excluded import items."
+                    | ImportItemList -> "Expected ',' between import items."
+
+                descriptor
+                    DiagnosticCode.ExpectedSyntaxToken
+                    None
+                    message
+                    (payload
+                        "parser-syntax"
+                        [ field "reason" (DiagnosticPayloadText "expected-list-comma")
+                          field "list-context" (DiagnosticPayloadText(parserListContextText context)) ])
+            | DuplicateImportItemModifier modifierKeyword ->
+                descriptor
+                    DiagnosticCode.ExpectedSyntaxToken
+                    None
+                    $"Duplicate '{modifierKeyword}' modifier in import item."
+                    (payload
+                        "parser-syntax"
+                        [ field "reason" (DiagnosticPayloadText "duplicate-import-item-modifier")
+                          field "modifier-keyword" (DiagnosticPayloadText modifierKeyword) ])
+            | ExpectedImportItemAfterDot ->
+                descriptor
+                    DiagnosticCode.ExpectedSyntaxToken
+                    None
+                    "Expected '*', '(...)', or a singleton item after '.'."
+                    (payload "parser-syntax" [ field "reason" (DiagnosticPayloadText "expected-import-item-after-dot") ])
+            | CtorAllCannotBeCombinedWithAlias ->
+                descriptor
+                    DiagnosticCode.ExpectedSyntaxToken
+                    None
+                    "ctorAll may not be combined with an alias."
+                    (payload "parser-syntax" [ field "reason" (DiagnosticPayloadText "ctor-all-cannot-be-combined-with-alias") ])
+            | MultipleTotalityAssertionsOnSameDeclaration ->
+                descriptor
+                    DiagnosticCode.ExpectedSyntaxToken
+                    None
+                    "Multiple totality assertions cannot be applied to the same declaration."
+                    (payload
+                        "parser-syntax"
+                        [ field "reason" (DiagnosticPayloadText "multiple-totality-assertions-on-same-declaration") ])
+            | ExpectedExpectDeclarationKind ->
+                descriptor
+                    DiagnosticCode.ExpectedSyntaxToken
+                    None
+                    "Expected 'type', 'trait', or 'term' after 'expect'."
+                    (payload "parser-syntax" [ field "reason" (DiagnosticPayloadText "expected-expect-declaration-kind") ])
+            | ExpectedFixityDeclaration ->
+                descriptor
+                    DiagnosticCode.ExpectedSyntaxToken
+                    None
+                    "Expected a fixity declaration."
+                    (payload "parser-syntax" [ field "reason" (DiagnosticPayloadText "expected-fixity-declaration") ])
+            | ExpectedNumericPrecedenceInFixityDeclaration ->
+                descriptor
+                    DiagnosticCode.ExpectedSyntaxToken
+                    None
+                    "Expected a numeric precedence in the fixity declaration."
+                    (payload
+                        "parser-syntax"
+                        [ field "reason" (DiagnosticPayloadText "expected-numeric-precedence-in-fixity-declaration") ])
+            | ExpectedValidIntegerPrecedenceInFixityDeclaration ->
+                descriptor
+                    DiagnosticCode.ExpectedSyntaxToken
+                    None
+                    "Expected a valid integer precedence in the fixity declaration."
+                    (payload
+                        "parser-syntax"
+                        [ field "reason" (DiagnosticPayloadText "expected-valid-integer-precedence-in-fixity-declaration") ])
+            | ExpectedFixityOperatorLeftParenthesis ->
+                descriptor
+                    DiagnosticCode.ExpectedSyntaxToken
+                    None
+                    "Expected '(' before the operator token in the fixity declaration."
+                    (payload
+                        "parser-syntax"
+                        [ field "reason" (DiagnosticPayloadText "expected-fixity-operator-left-parenthesis") ])
+            | ExpectedFixityOperatorToken ->
+                descriptor
+                    DiagnosticCode.ExpectedSyntaxToken
+                    None
+                    "Expected an operator token in the fixity declaration."
+                    (payload "parser-syntax" [ field "reason" (DiagnosticPayloadText "expected-fixity-operator-token") ])
+            | ExpectedFixityOperatorRightParenthesis ->
+                descriptor
+                    DiagnosticCode.ExpectedSyntaxToken
+                    None
+                    "Expected ')' after the operator token in the fixity declaration."
+                    (payload
+                        "parser-syntax"
+                        [ field "reason" (DiagnosticPayloadText "expected-fixity-operator-right-parenthesis") ])
+            | ExpectedTopLevelDeclaration ->
+                descriptor
+                    DiagnosticCode.ExpectedSyntaxToken
+                    None
+                    "Expected a top-level declaration."
+                    (payload "parser-syntax" [ field "reason" (DiagnosticPayloadText "expected-top-level-declaration") ])
+            | ExpectedTraitHeadAfterTrait ->
+                descriptor
+                    DiagnosticCode.ExpectedSyntaxToken
+                    None
+                    "Expected a trait head after 'trait'."
+                    (payload "parser-syntax" [ field "reason" (DiagnosticPayloadText "expected-trait-head-after-trait") ])
+            | ExpectedTraitMemberSignatureOrDefaultDefinition ->
+                descriptor
+                    DiagnosticCode.ExpectedSyntaxToken
+                    None
+                    "Expected a trait member signature or a default member definition."
+                    (payload
+                        "parser-syntax"
+                        [ field "reason" (DiagnosticPayloadText "expected-trait-member-signature-or-default-definition") ])
+            | ExpectedTypeAliasBody ->
+                descriptor
+                    DiagnosticCode.ExpectedSyntaxToken
+                    None
+                    "Expected a type alias body."
+                    (payload "parser-syntax" [ field "reason" (DiagnosticPayloadText "expected-type-alias-body") ])
+            | ExpectedValidTypeAliasBody ->
+                descriptor
+                    DiagnosticCode.ExpectedSyntaxToken
+                    None
+                    "Expected a valid type alias body."
+                    (payload "parser-syntax" [ field "reason" (DiagnosticPayloadText "expected-valid-type-alias-body") ])
+            | ExpectedSignatureType ->
+                descriptor
+                    DiagnosticCode.ExpectedSyntaxToken
+                    None
+                    "Expected a signature type."
+                    (payload "parser-syntax" [ field "reason" (DiagnosticPayloadText "expected-signature-type") ])
+            | ExpectedValidSignatureType ->
+                descriptor
+                    DiagnosticCode.ExpectedSyntaxToken
+                    None
+                    "Expected a valid signature type."
+                    (payload "parser-syntax" [ field "reason" (DiagnosticPayloadText "expected-valid-signature-type") ])
+            | ExpectedConstructorName ->
+                descriptor
+                    DiagnosticCode.ExpectedSyntaxToken
+                    None
+                    "Expected a constructor name."
+                    (payload "parser-syntax" [ field "reason" (DiagnosticPayloadText "expected-constructor-name") ])
+            | UnsupportedConstructorParameterSyntax ->
+                descriptor
+                    DiagnosticCode.ExpectedSyntaxToken
+                    None
+                    "Unsupported constructor parameter syntax."
+                    (payload "parser-syntax" [ field "reason" (DiagnosticPayloadText "unsupported-constructor-parameter-syntax") ])
+            | ExpectedEffectOperationSignatureShape ->
+                descriptor
+                    DiagnosticCode.ExpectedSyntaxToken
+                    None
+                    "Expected an effect operation signature of the form 'op : ...'."
+                    (payload
+                        "parser-syntax"
+                        [ field "reason" (DiagnosticPayloadText "expected-effect-operation-signature-shape") ])
+            | ExpectedEffectOperationSignature ->
+                descriptor
+                    DiagnosticCode.ExpectedSyntaxToken
+                    None
+                    "Expected an effect operation signature."
+                    (payload
+                        "parser-syntax"
+                        [ field "reason" (DiagnosticPayloadText "expected-effect-operation-signature") ])
+            | ExpectedEqualsInDeclaration subject ->
+                descriptor
+                    DiagnosticCode.ExpectedSyntaxToken
+                    None
+                    $"Expected '=' in the {parserDeclarationSubjectText subject}."
+                    (payload
+                        "parser-syntax"
+                        [ field "reason" (DiagnosticPayloadText "expected-equals-in-declaration")
+                          field "declaration-subject" (DiagnosticPayloadText(parserDeclarationSubjectText subject)) ])
+            | ExpectedIndentedBlock ->
+                descriptor
+                    DiagnosticCode.ExpectedSyntaxToken
+                    None
+                    "Expected an indented block."
+                    (payload "parser-syntax" [ field "reason" (DiagnosticPayloadText "expected-indented-block") ])
+            | ExpectedDeclarationBlockClosure delimiter ->
+                let message =
+                    match delimiter with
+                    | ParserDedentDelimiter -> "Expected the declaration block to dedent."
+                    | _ -> $"Expected {parserDeclarationBlockDelimiterText delimiter} to close the declaration block item."
+
+                descriptor
+                    DiagnosticCode.ExpectedSyntaxToken
+                    None
+                    message
+                    (payload
+                        "parser-syntax"
+                        [ field "reason" (DiagnosticPayloadText "expected-declaration-block-closure")
+                          field "delimiter" (DiagnosticPayloadText(parserDeclarationBlockDelimiterText delimiter)) ])
+            | ExpectedValidInstanceHeadAfterInstance ->
+                descriptor
+                    DiagnosticCode.ExpectedSyntaxToken
+                    None
+                    "Expected a valid instance head after 'instance'."
+                    (payload "parser-syntax" [ field "reason" (DiagnosticPayloadText "expected-valid-instance-head-after-instance") ])
+            | ExpectedInstanceMemberDefinitionStartingWithLet ->
+                descriptor
+                    DiagnosticCode.ExpectedSyntaxToken
+                    None
+                    "Expected an instance member definition starting with 'let'."
+                    (payload
+                        "parser-syntax"
+                        [ field "reason" (DiagnosticPayloadText "expected-instance-member-definition-starting-with-let") ])
+            | UnexpectedIndentationAtTopLevel ->
+                descriptor
+                    DiagnosticCode.UnexpectedIndentation
+                    None
+                    "Unexpected indentation."
+                    (payload "parser-syntax" [ field "reason" (DiagnosticPayloadText "unexpected-indentation-at-top-level") ])
+            | ModuleHeaderExpectedAfterTopLevelAttributes ->
+                descriptor
+                    DiagnosticCode.ModuleHeaderExpectedAfterAttributes
+                    None
+                    "Top-level module attributes must be followed immediately by a module header."
+                    (payload
+                        "parser-syntax"
+                        [ field "reason" (DiagnosticPayloadText "module-header-expected-after-top-level-attributes") ])
+            | ModuleHeaderMisplacedAfterTopLevelItems ->
+                descriptor
+                    DiagnosticCode.ModuleHeaderMisplaced
+                    None
+                    "A module header may appear only once and must be the first top-level item in the file after any leading module attributes."
+                    (payload
+                        "parser-syntax"
+                        [ field "reason" (DiagnosticPayloadText "module-header-misplaced-after-top-level-items") ])
+            | TotalityAssertionNotApplicableTo target ->
+                let targetText = parserModifierTargetText target
+
+                let message =
+                    match target with
+                    | TermDeclarationsOnly -> "Totality assertions currently apply only to term declarations."
+                    | _ -> $"Totality assertions do not apply to {targetText}."
+
+                descriptor
+                    DiagnosticCode.ExpectedSyntaxToken
+                    None
+                    message
+                    (payload
+                        "parser-syntax"
+                        [ field "reason" (DiagnosticPayloadText "totality-assertion-not-applicable-to")
+                          field "target" (DiagnosticPayloadText targetText) ])
+            | OpacityModifierNotApplicableToProjectionDeclaration ->
+                descriptor
+                    DiagnosticCode.ExpectedSyntaxToken
+                    None
+                    "Opacity modifiers do not apply to projection declarations."
+                    (payload
+                        "parser-syntax"
+                        [ field "reason" (DiagnosticPayloadText "opacity-modifier-not-applicable-to-projection-declaration") ])
+            | OpacityAndTotalityNotApplicableToEffectDeclaration ->
+                descriptor
+                    DiagnosticCode.ExpectedSyntaxToken
+                    None
+                    "Opacity and totality assertions do not apply to effect declarations."
+                    (payload
+                        "parser-syntax"
+                        [ field "reason" (DiagnosticPayloadText "opacity-and-totality-not-applicable-to-effect-declaration") ])
+            | VisibilityOpacityAndTotalityNotApplicableToInstanceDeclaration ->
+                descriptor
+                    DiagnosticCode.ExpectedSyntaxToken
+                    None
+                    "Visibility, opacity, and totality modifiers do not apply to instance declarations."
+                    (payload
+                        "parser-syntax"
+                        [ field "reason" (DiagnosticPayloadText "visibility-opacity-and-totality-not-applicable-to-instance-declaration") ])
+        | CorePatternParsingDiagnostic evidence ->
+            match evidence with
+            | UnsupportedParameterBinderSyntax ->
+                descriptor
+                    DiagnosticCode.ExpectedSyntaxToken
+                    None
+                    "Unsupported parameter binder syntax."
+                    (payload "core-pattern-parsing" [ field "reason" (DiagnosticPayloadText "unsupported-parameter-binder-syntax") ])
+            | ExpectedParameterBinder ->
+                descriptor
+                    DiagnosticCode.ExpectedSyntaxToken
+                    None
+                    "Expected a parameter binder."
+                    (payload "core-pattern-parsing" [ field "reason" (DiagnosticPayloadText "expected-parameter-binder") ])
+            | ExpectedParameterName ->
+                descriptor
+                    DiagnosticCode.ExpectedSyntaxToken
+                    None
+                    "Expected a parameter name."
+                    (payload "core-pattern-parsing" [ field "reason" (DiagnosticPayloadText "expected-parameter-name") ])
+            | ExpectedPatternName ->
+                descriptor
+                    DiagnosticCode.ExpectedSyntaxToken
+                    None
+                    "Expected a pattern name."
+                    (payload "core-pattern-parsing" [ field "reason" (DiagnosticPayloadText "expected-pattern-name") ])
+            | OrPatternAlternativesMustBindSameNames ->
+                descriptor
+                    DiagnosticCode.OrPatternBinderMismatch
+                    None
+                    "Each or-pattern alternative must bind the same set of names."
+                    (payload "core-pattern-parsing" [ field "reason" (DiagnosticPayloadText "or-pattern-alternatives-must-bind-same-names") ])
+            | NumericLiteralSuffixesNotPermittedInPatterns tokenText ->
+                descriptor
+                    DiagnosticCode.ExpectedSyntaxToken
+                    None
+                    $"Numeric literal suffixes are not permitted in patterns: '{tokenText}'."
+                    (payload
+                        "core-pattern-parsing"
+                        [ field "reason" (DiagnosticPayloadText "numeric-literal-suffixes-not-permitted-in-patterns")
+                          field "token-text" (DiagnosticPayloadText tokenText) ])
+            | NumericLiteralNotRepresentableInPatterns tokenText ->
+                descriptor
+                    DiagnosticCode.ExpectedSyntaxToken
+                    None
+                    $"Numeric literal '{tokenText}' is not representable in patterns."
+                    (payload
+                        "core-pattern-parsing"
+                        [ field "reason" (DiagnosticPayloadText "numeric-literal-not-representable-in-patterns")
+                          field "token-text" (DiagnosticPayloadText tokenText) ])
+            | ExpectedLiteralPattern ->
+                descriptor
+                    DiagnosticCode.ExpectedSyntaxToken
+                    None
+                    "Expected a literal pattern."
+                    (payload "core-pattern-parsing" [ field "reason" (DiagnosticPayloadText "expected-literal-pattern") ])
+            | ExpectedPatternCloseParenthesis ->
+                descriptor
+                    DiagnosticCode.ExpectedSyntaxToken
+                    None
+                    "Expected ')' to close the pattern."
+                    (payload "core-pattern-parsing" [ field "reason" (DiagnosticPayloadText "expected-pattern-close-parenthesis") ])
+            | ExpectedRecordPatternFieldLabel ->
+                descriptor
+                    DiagnosticCode.ExpectedSyntaxToken
+                    None
+                    "Expected a record pattern field label."
+                    (payload "core-pattern-parsing" [ field "reason" (DiagnosticPayloadText "expected-record-pattern-field-label") ])
+            | ExpectedRecordPatternField ->
+                descriptor
+                    DiagnosticCode.ExpectedSyntaxToken
+                    None
+                    "Expected a record pattern field of the form 'name = pattern'."
+                    (payload "core-pattern-parsing" [ field "reason" (DiagnosticPayloadText "expected-record-pattern-field") ])
+            | ExpectedPatternCloseBrace ->
+                descriptor
+                    DiagnosticCode.ExpectedSyntaxToken
+                    None
+                    "Expected '}' to close the pattern."
+                    (payload "core-pattern-parsing" [ field "reason" (DiagnosticPayloadText "expected-pattern-close-brace") ])
+            | ExpectedNamedConstructorPatternFieldLabel ->
+                descriptor
+                    DiagnosticCode.ExpectedSyntaxToken
+                    None
+                    "Expected a named constructor pattern field label."
+                    (payload "core-pattern-parsing" [ field "reason" (DiagnosticPayloadText "expected-named-constructor-pattern-field-label") ])
+            | ExpectedNamedConstructorPatternField ->
+                descriptor
+                    DiagnosticCode.ExpectedSyntaxToken
+                    None
+                    "Expected a named constructor pattern field."
+                    (payload "core-pattern-parsing" [ field "reason" (DiagnosticPayloadText "expected-named-constructor-pattern-field") ])
+            | ExpectedPattern ->
+                descriptor
+                    DiagnosticCode.ExpectedSyntaxToken
+                    None
+                    "Expected a pattern."
+                    (payload "core-pattern-parsing" [ field "reason" (DiagnosticPayloadText "expected-pattern") ])
+            | NamedConstructorPatternsCannotTakePositionalSubpatterns ->
+                descriptor
+                    DiagnosticCode.ExpectedSyntaxToken
+                    None
+                    "Named constructor patterns cannot take positional subpatterns."
+                    (payload "core-pattern-parsing" [ field "reason" (DiagnosticPayloadText "named-constructor-patterns-cannot-take-positional-subpatterns") ])
+            | OnlyConstructorPatternsMayTakeArguments ->
+                descriptor
+                    DiagnosticCode.ExpectedSyntaxToken
+                    None
+                    "Only constructor patterns may take arguments."
+                    (payload "core-pattern-parsing" [ field "reason" (DiagnosticPayloadText "only-constructor-patterns-may-take-arguments") ])
+            | UnexpectedTrailingPatternTokens ->
+                descriptor
+                    DiagnosticCode.ExpectedSyntaxToken
+                    None
+                    "Unexpected tokens at the end of the pattern."
+                    (payload "core-pattern-parsing" [ field "reason" (DiagnosticPayloadText "unexpected-trailing-pattern-tokens") ])
+        | QttLinearDropDiagnostic evidence ->
+            match evidence with
+            | ShadowedBindingMustConsumePreviousValue shadowedBindingName ->
+                descriptor
+                    DiagnosticCode.QttLinearDrop
+                    None
+                    $"Shadowing binding '{shadowedBindingName}' must consume the previous linear value exactly once in the right-hand side."
+                    (payload
+                        "qtt-linear-drop"
+                        [ field "reason" (DiagnosticPayloadText "shadowed-binding-must-consume-previous-value")
+                          field "binding" (DiagnosticPayloadText shadowedBindingName) ])
+            | BindingNotConsumedOnEveryPath bindingName ->
+                descriptor
+                    DiagnosticCode.QttLinearDrop
+                    None
+                    $"Linear resource '{bindingName}' is not consumed on every path."
+                    (payload
+                        "qtt-linear-drop"
+                        [ field "reason" (DiagnosticPayloadText "binding-not-consumed-on-every-path")
+                          field "binding" (DiagnosticPayloadText bindingName) ])
+            | ClauseMayDiscardRowBinding(clauseLabel, bindingName) ->
+                descriptor
+                    DiagnosticCode.QttLinearDrop
+                    None
+                    $"`{clauseLabel}` may discard linear row binding '{bindingName}'."
+                    (payload
+                        "qtt-linear-drop"
+                        [ field "reason" (DiagnosticPayloadText "clause-may-discard-row-binding")
+                          field "clause" (DiagnosticPayloadText clauseLabel)
+                          field "binding" (DiagnosticPayloadText bindingName) ])
+            | DropClauseCardinalityMayAffectRowBinding(clauseLabel, bindingName, effect, cardinalityText) ->
+                descriptor
+                    DiagnosticCode.QttLinearDrop
+                    None
+                    $"`{clauseLabel}` may {qttCardinalityEffectText effect} linear row binding '{bindingName}' because the clause cardinality is {cardinalityText}."
+                    (payload
+                        "qtt-linear-drop"
+                        [ field "reason" (DiagnosticPayloadText "clause-cardinality-may-affect-row-binding")
+                          field "clause" (DiagnosticPayloadText clauseLabel)
+                          field "binding" (DiagnosticPayloadText bindingName)
+                          field "effect" (DiagnosticPayloadText(qttCardinalityEffectText effect))
+                          field "cardinality" (DiagnosticPayloadText cardinalityText) ])
+            | RecordPatternOmittedField fieldName ->
+                descriptor
+                    DiagnosticCode.QttLinearDrop
+                    None
+                    $"Record pattern omits linear field '{fieldName}'."
+                    (payload
+                        "qtt-linear-drop"
+                        [ field "reason" (DiagnosticPayloadText "record-pattern-omitted-field")
+                          field "field" (DiagnosticPayloadText fieldName) ])
+            | PlainLetQuestionDiscardRefutationResidue ->
+                descriptor
+                    DiagnosticCode.QttLinearDrop
+                    None
+                    "Plain let? would discard a refutation residue carrying a positive lower-bound obligation; use an explicit else arm."
+                    (payload
+                        "qtt-linear-drop"
+                        [ field "reason" (DiagnosticPayloadText "plain-let-question-discard-refutation-residue") ])
+        | QttLinearOveruseDiagnostic evidence ->
+            match evidence with
+            | WholeResourceConsumedAfterFieldPath resourceName ->
+                descriptor
+                    DiagnosticCode.QttLinearOveruse
+                    None
+                    $"Linear resource '{resourceName}' cannot be consumed as a whole after one of its field paths has already been consumed."
+                    (payload
+                        "qtt-linear-overuse"
+                        [ field "reason" (DiagnosticPayloadText "whole-resource-consumed-after-field-path")
+                          field "resource" (DiagnosticPayloadText resourceName) ])
+            | WholeResourceUsedAfterFieldPath resourceName ->
+                descriptor
+                    DiagnosticCode.QttLinearOveruse
+                    None
+                    $"Linear resource '{resourceName}' cannot be used as a whole after one of its field paths has already been consumed."
+                    (payload
+                        "qtt-linear-overuse"
+                        [ field "reason" (DiagnosticPayloadText "whole-resource-used-after-field-path")
+                          field "resource" (DiagnosticPayloadText resourceName) ])
+            | FieldPathConsumedAfterRoot placeText ->
+                descriptor
+                    DiagnosticCode.QttLinearOveruse
+                    None
+                    $"Field path '{placeText}' cannot be consumed after its root resource has already been consumed."
+                    (payload
+                        "qtt-linear-overuse"
+                        [ field "reason" (DiagnosticPayloadText "field-path-consumed-after-root")
+                          field "place" (DiagnosticPayloadText placeText) ])
+            | FieldPathAlreadyConsumed placeText ->
+                descriptor
+                    DiagnosticCode.QttLinearOveruse
+                    None
+                    $"Field path '{placeText}' has already been consumed."
+                    (payload
+                        "qtt-linear-overuse"
+                        [ field "reason" (DiagnosticPayloadText "field-path-already-consumed")
+                          field "place" (DiagnosticPayloadText placeText) ])
+            | ResourceConsumedMoreThanOnce resourceName ->
+                descriptor
+                    DiagnosticCode.QttLinearOveruse
+                    None
+                    $"Linear resource '{resourceName}' is consumed more than once."
+                    (payload
+                        "qtt-linear-overuse"
+                        [ field "reason" (DiagnosticPayloadText "resource-consumed-more-than-once")
+                          field "resource" (DiagnosticPayloadText resourceName) ])
+            | ClauseMustNotConsumeRowBinding(clauseLabel, bindingName) ->
+                descriptor
+                    DiagnosticCode.QttLinearOveruse
+                    None
+                    $"`{clauseLabel}` must not consume row binding '{bindingName}'."
+                    (payload
+                        "qtt-linear-overuse"
+                        [ field "reason" (DiagnosticPayloadText "clause-must-not-consume-row-binding")
+                          field "clause" (DiagnosticPayloadText clauseLabel)
+                          field "binding" (DiagnosticPayloadText bindingName) ])
+            | OveruseClauseCardinalityMayAffectRowBinding(clauseLabel, bindingName, effect, cardinalityText) ->
+                descriptor
+                    DiagnosticCode.QttLinearOveruse
+                    None
+                    $"`{clauseLabel}` may {qttCardinalityEffectText effect} linear row binding '{bindingName}' because the clause cardinality is {cardinalityText}."
+                    (payload
+                        "qtt-linear-overuse"
+                        [ field "reason" (DiagnosticPayloadText "clause-cardinality-may-affect-row-binding")
+                          field "clause" (DiagnosticPayloadText clauseLabel)
+                          field "binding" (DiagnosticPayloadText bindingName)
+                          field "effect" (DiagnosticPayloadText(qttCardinalityEffectText effect))
+                          field "cardinality" (DiagnosticPayloadText cardinalityText) ])
+            | LeftJoinCapturesLinearOuterRowBinding bindingName ->
+                descriptor
+                    DiagnosticCode.QttLinearOveruse
+                    None
+                    $"`left join ... into` would capture linear outer row binding '{bindingName}' for delayed query use."
+                    (payload
+                        "qtt-linear-overuse"
+                        [ field "reason" (DiagnosticPayloadText "left-join-captures-linear-outer-row-binding")
+                          field "binding" (DiagnosticPayloadText bindingName) ])
+            | RecordUpdateRequiresRepair(receiverRoot, firstUnrepairedPath) ->
+                descriptor
+                    DiagnosticCode.QttLinearOveruse
+                    None
+                    $"Record update on '{receiverRoot}' must explicitly repair previously consumed path '{firstUnrepairedPath}'."
+                    (payload
+                        "qtt-linear-overuse"
+                        [ field "reason" (DiagnosticPayloadText "record-update-requires-repair")
+                          field "receiver-root" (DiagnosticPayloadText receiverRoot)
+                          field "path" (DiagnosticPayloadText firstUnrepairedPath) ])
+            | QuantityCannotSatisfyParameterDemand(capabilityText, demandText, mode) ->
+                let capabilityVerb =
+                    match mode with
+                    | Available -> "available"
+                    | Usable -> "usable"
+
+                descriptor
+                    DiagnosticCode.QttLinearOveruse
+                    None
+                    $"An argument {capabilityVerb} at quantity '{capabilityText}' cannot satisfy parameter demand '{demandText}'."
+                    (payload
+                        "qtt-linear-overuse"
+                        [ field "reason" (DiagnosticPayloadText "quantity-cannot-satisfy-parameter-demand")
+                          field "mode" (DiagnosticPayloadText capabilityVerb)
+                          field "capability" (DiagnosticPayloadText capabilityText)
+                          field "demand" (DiagnosticPayloadText demandText) ])
+        | QttBorrowConsumeDiagnostic evidence ->
+            match evidence with
+            | BorrowedResourceCannotBeConsumed resourceName ->
+                descriptor
+                    DiagnosticCode.QttBorrowConsume
+                    None
+                    $"Borrowed resource '{resourceName}' cannot be consumed."
+                    (payload
+                        "qtt-borrow-consume"
+                        [ field "reason" (DiagnosticPayloadText "borrowed-resource-cannot-be-consumed")
+                          field "resource" (DiagnosticPayloadText resourceName) ])
+        | QttBorrowOverlapDiagnostic evidence ->
+            match evidence with
+            | PlaceOverlapsActiveBorrowedFootprint placeText ->
+                descriptor
+                    DiagnosticCode.QttBorrowOverlap
+                    None
+                    $"Place '{placeText}' overlaps an active borrowed footprint."
+                    (payload
+                        "qtt-borrow-overlap"
+                        [ field "reason" (DiagnosticPayloadText "place-overlaps-active-borrowed-footprint")
+                          field "place" (DiagnosticPayloadText placeText) ])
+            | InoutArgumentsRequireDisjointFootprints ->
+                descriptor
+                    DiagnosticCode.QttBorrowOverlap
+                    None
+                    "Inout arguments must have disjoint place footprints."
+                    (payload
+                        "qtt-borrow-overlap"
+                        [ field "reason" (DiagnosticPayloadText "inout-arguments-require-disjoint-footprints") ])
+            | TemporaryBorrowOverlapsLaterConsumingArgument ->
+                descriptor
+                    DiagnosticCode.QttBorrowOverlap
+                    None
+                    "A temporary borrow introduced earlier in this application spine overlaps a later consuming argument."
+                    (payload
+                        "qtt-borrow-overlap"
+                        [ field "reason" (DiagnosticPayloadText "temporary-borrow-overlaps-later-consuming-argument") ])
+        | QttBorrowEscapeDiagnostic evidence ->
+            match evidence with
+            | ValueCapturesBorrowedRegion ->
+                descriptor
+                    DiagnosticCode.QttBorrowEscape
+                    None
+                    "A value that captures a borrowed region cannot escape its protected scope."
+                    (payload "qtt-borrow-escape" [ field "reason" (DiagnosticPayloadText "value-captures-borrowed-region") ])
+            | LambdaCapturesBorrowedRegion ->
+                descriptor
+                    DiagnosticCode.QttBorrowEscape
+                    None
+                    "A lambda that captures a borrowed region cannot escape its protected scope."
+                    (payload "qtt-borrow-escape" [ field "reason" (DiagnosticPayloadText "lambda-captures-borrowed-region") ])
+            | ForkedChildCapturesBorrowedRegion ->
+                descriptor
+                    DiagnosticCode.QttBorrowEscape
+                    None
+                    "A forked child computation cannot capture a borrowed region from the parent fiber."
+                    (payload
+                        "qtt-borrow-escape"
+                        [ field "reason" (DiagnosticPayloadText "forked-child-captures-borrowed-region") ])
+        | QttErasedRuntimeUseDiagnostic evidence ->
+            match evidence with
+            | QuantityZeroBindingUsedAtRuntime bindingName ->
+                descriptor
+                    DiagnosticCode.QttErasedRuntimeUse
+                    None
+                    $"Quantity-0 binding '{bindingName}' cannot be used at runtime."
+                    (payload
+                        "qtt-erased-runtime-use"
+                        [ field "reason" (DiagnosticPayloadText "quantity-zero-binding-used-at-runtime")
+                          field "binding" (DiagnosticPayloadText bindingName) ])
+            | RuntimeClosureCapturesErasedBinding bindingName ->
+                descriptor
+                    DiagnosticCode.QttErasedRuntimeUse
+                    None
+                    $"A runtime closure cannot capture erased quantity-0 binding '{bindingName}'."
+                    (payload
+                        "qtt-erased-runtime-use"
+                        [ field "reason" (DiagnosticPayloadText "runtime-closure-captures-erased-binding")
+                          field "binding" (DiagnosticPayloadText bindingName) ])
+            | MatchScrutineeUsesErasedValue ->
+                descriptor
+                    DiagnosticCode.QttErasedRuntimeUse
+                    None
+                    "A match scrutinee cannot use an erased quantity-0 value at runtime."
+                    (payload
+                        "qtt-erased-runtime-use"
+                        [ field "reason" (DiagnosticPayloadText "match-scrutinee-uses-erased-value") ])
+        | QttInoutMarkerRequiredDiagnostic InoutMarkerRequired ->
+            descriptor
+                DiagnosticCode.QttInoutMarkerRequired
+                None
+                "An argument supplied to an 'inout' parameter must be marked with '~'."
+                (payload
+                    "qtt-inout-marker-required"
+                    [ field "reason" (DiagnosticPayloadText "inout-marker-required") ])
+        | QttInoutMarkerUnexpectedDiagnostic InoutMarkerUnexpected ->
+            descriptor
+                DiagnosticCode.QttInoutMarkerUnexpected
+                None
+                "The '~' marker can only be used for an 'inout' parameter."
+                (payload
+                    "qtt-inout-marker-unexpected"
+                    [ field "reason" (DiagnosticPayloadText "inout-marker-unexpected") ])
+        | QttInoutThreadedFieldMissingDiagnostic(InoutThreadedFieldMissing parameterName) ->
+            descriptor
+                DiagnosticCode.QttInoutThreadedFieldMissing
+                None
+                $"An 'inout' parameter '{parameterName}' requires the result type to contain a quantity-1 field named '{parameterName}' after peeling any enclosing monad."
+                (payload
+                    "qtt-inout-threaded-field-missing"
+                    [ field "reason" (DiagnosticPayloadText "inout-threaded-field-missing")
+                      field "parameter" (DiagnosticPayloadText parameterName) ])
 
 type Diagnostic =
     { Severity: DiagnosticSeverity

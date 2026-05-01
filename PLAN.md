@@ -98,3 +98,9 @@ Current M4 status note: started, not complete. The compiler now has a real effec
 - [ ] Use the first `zig` slice to pressure-test what still belongs in `KBackendIR` versus what is really target-specific lowering state before expanding the CLR backend further.
 - [ ] Decide whether section 2.6.2 stays normative for the current milestone or whether the spec needs a bootstrap prelude/profile split.
 - [ ] Bring the test harness up to Appendix T and convert more of the existing suites to the standard directive set.
+
+## 9. Structured diagnostics only
+
+- [ ] Remove the remaining string escape hatches from `Diagnostics.fs`, especially `SimpleDiagnosticEvidence.Detail` and `CodeDetailEvidence.Detail`, so compiler phases cannot smuggle raw prose into emitted diagnostics.
+- [ ] Convert each diagnostic-producing subsystem to typed evidence ADTs with centralized formatting. The QTT/resource-checking family now uses structured evidence end-to-end, `CompilationFrontend` checking diagnostics now use typed evidence for module/import/URL/expect/signature/`refl` errors, `Parser.fs` routes its static syntax/module-header/modifier diagnostics through `ParserSyntaxEvidence`, and `CoreParsing.fs` now routes its parameter-binder and pattern diagnostics through `CorePatternParsingEvidence`. Dynamic literal/string decode failures in `CoreParsing.fs`, dynamic string-literal/URL parse failures in `Parser.fs`, plus elaboration, backend, checkpoint verification, lexer, and the remaining frontend diagnostics still rely heavily on raw detail strings.
+- [ ] Preserve machine-readable payload structure as the primary contract, and keep tests asserting codes/families/payload fields rather than exact prose except where the spec mandates wording-sensitive content.

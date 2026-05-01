@@ -3419,6 +3419,211 @@ module SmokeTestsShard4 =
                 && field.Value = DiagnosticPayloadText "Expected an expression."
         )
 
+    [<Fact>]
+    let ``QTT structured diagnostics render from typed evidence`` () =
+        let bag = DiagnosticBag()
+
+        bag.AddError(
+            DiagnosticFact.qttLinearOveruse
+                (QuantityCannotSatisfyParameterDemand("1", "&", Available))
+        )
+
+        let diagnostic = Assert.Single(bag.Items)
+        Assert.Equal(DiagnosticCode.QttLinearOveruse, diagnostic.Code)
+        Assert.Equal("An argument available at quantity '1' cannot satisfy parameter demand '&'.", diagnostic.Message)
+        Assert.Equal("qtt-linear-overuse", diagnostic.Payload.Kind)
+        Assert.Contains(
+            diagnostic.Payload.Fields,
+            fun field ->
+                field.Name = "reason"
+                && field.Value = DiagnosticPayloadText "quantity-cannot-satisfy-parameter-demand"
+        )
+
+    [<Fact>]
+    let ``QTT drop diagnostics render canonical messages from typed evidence`` () =
+        let bag = DiagnosticBag()
+
+        bag.AddError(
+            DiagnosticFact.qttLinearDrop
+                (BindingNotConsumedOnEveryPath "file")
+        )
+
+        let diagnostic = Assert.Single(bag.Items)
+        Assert.Equal(DiagnosticCode.QttLinearDrop, diagnostic.Code)
+        Assert.Equal("Linear resource 'file' is not consumed on every path.", diagnostic.Message)
+        Assert.Equal("qtt-linear-drop", diagnostic.Payload.Kind)
+        Assert.Contains(
+            diagnostic.Payload.Fields,
+            fun field ->
+                field.Name = "binding"
+                && field.Value = DiagnosticPayloadText "file"
+        )
+
+    [<Fact>]
+    let ``frontend import diagnostics render from typed evidence`` () =
+        let bag = DiagnosticBag()
+
+        bag.AddError(
+            DiagnosticFact.importItemNotFound
+                "Hidden"
+                "library.secret"
+                ExcludedImportItem
+        )
+
+        let diagnostic = Assert.Single(bag.Items)
+        Assert.Equal(DiagnosticCode.ImportItemNotFound, diagnostic.Code)
+        Assert.Equal("Excluded import item 'Hidden' was not found in module 'library.secret'.", diagnostic.Message)
+        Assert.Equal("import-item-not-found", diagnostic.Payload.Kind)
+        Assert.Contains(
+            diagnostic.Payload.Fields,
+            fun field ->
+                field.Name = "lookup-context"
+                && field.Value = DiagnosticPayloadText "excluded-import-item"
+        )
+
+    [<Fact>]
+    let ``frontend expect and signature diagnostics render from typed evidence`` () =
+        let bag = DiagnosticBag()
+        bag.AddError(DiagnosticFact.expectUnsatisfied ExpectedTraitDeclaration "Eq")
+        bag.AddError(DiagnosticFact.signatureUnsatisfied "main" "IO Unit")
+
+        let diagnostics = bag.Items
+        let expectDiagnostic = diagnostics |> List.find (fun item -> item.Code = DiagnosticCode.ExpectUnsatisfied)
+        let signatureDiagnostic = diagnostics |> List.find (fun item -> item.Code = DiagnosticCode.SignatureUnsatisfied)
+
+        Assert.Equal("Unsatisfied expect declaration for trait 'Eq'.", expectDiagnostic.Message)
+        Assert.Equal("expect-unsatisfied", expectDiagnostic.Payload.Kind)
+        Assert.Contains(
+            expectDiagnostic.Payload.Fields,
+            fun field ->
+                field.Name = "expected-kind"
+                && field.Value = DiagnosticPayloadText "trait"
+        )
+
+        Assert.Equal(
+            "Top-level signature 'main : IO Unit' has no matching definition in the same source file. Define it with 'let main = ...' or declare it as 'expect term main : IO Unit'.",
+            signatureDiagnostic.Message
+        )
+        Assert.Equal("signature-unsatisfied", signatureDiagnostic.Payload.Kind)
+        Assert.Contains(
+            signatureDiagnostic.Payload.Fields,
+            fun field ->
+                field.Name = "signature-name"
+                && field.Value = DiagnosticPayloadText "main"
+        )
+
+    [<Fact>]
+    let ``frontend url import and refl diagnostics render from typed evidence`` () =
+        let bag = DiagnosticBag()
+        bag.AddError(DiagnosticFact.urlImportRefPinRequiresLock "https://example.com/mod.kp#ref=main")
+        bag.AddError(DiagnosticFact.reflRequiresDefinitionallyEqualSides)
+
+        let diagnostics = bag.Items
+        let urlDiagnostic = diagnostics |> List.find (fun item -> item.Code = DiagnosticCode.UrlImportRefPinRequiresLock)
+        let reflDiagnostic = diagnostics |> List.find (fun item -> item.Code = DiagnosticCode.TypeEqualityMismatch)
+
+        Assert.Equal(
+            "URL import 'https://example.com/mod.kp#ref=main' uses a ref pin, but this toolchain has no recorded immutable resolution for it in package mode.",
+            urlDiagnostic.Message
+        )
+        Assert.Equal("url-import-package-mode", urlDiagnostic.Payload.Kind)
+        Assert.Contains(
+            urlDiagnostic.Payload.Fields,
+            fun field ->
+                field.Name = "reason"
+                && field.Value = DiagnosticPayloadText "url-import-ref-pin-requires-lock"
+        )
+
+        Assert.Equal(
+            "The proof term 'refl' requires both sides of the equality type to be definitionally equal. Function binder quantities are part of type identity.",
+            reflDiagnostic.Message
+        )
+        Assert.Equal("type-equality-mismatch", reflDiagnostic.Payload.Kind)
+        Assert.Contains(
+            reflDiagnostic.Payload.Fields,
+            fun field ->
+                field.Name = "reason"
+                && field.Value = DiagnosticPayloadText "refl-requires-definitionally-equal-sides"
+        )
+
+    [<Fact>]
+    let ``parser syntax diagnostics render from typed evidence`` () =
+        let bag = DiagnosticBag()
+        bag.AddError(DiagnosticFact.parserSyntax (ExpectedListComma ImportItemList))
+        bag.AddError(DiagnosticFact.parserSyntax (ExpectedEqualsInDeclaration(ParserNamedDeclarationSubject "let")))
+        bag.AddError(DiagnosticFact.parserSyntax (TotalityAssertionNotApplicableTo SignatureDeclarationTarget))
+
+        let diagnostics = bag.Items
+        let commaDiagnostic = diagnostics |> List.find (fun item -> item.Message = "Expected ',' between import items.")
+        let equalsDiagnostic = diagnostics |> List.find (fun item -> item.Message = "Expected '=' in the let declaration.")
+        let totalityDiagnostic =
+            diagnostics
+            |> List.find (fun item -> item.Message = "Totality assertions do not apply to signature declarations.")
+
+        Assert.Equal(DiagnosticCode.ExpectedSyntaxToken, commaDiagnostic.Code)
+        Assert.Equal("parser-syntax", commaDiagnostic.Payload.Kind)
+        Assert.Contains(
+            commaDiagnostic.Payload.Fields,
+            fun field ->
+                field.Name = "list-context"
+                && field.Value = DiagnosticPayloadText "import item list"
+        )
+
+        Assert.Equal(DiagnosticCode.ExpectedSyntaxToken, equalsDiagnostic.Code)
+        Assert.Contains(
+            equalsDiagnostic.Payload.Fields,
+            fun field ->
+                field.Name = "declaration-subject"
+                && field.Value = DiagnosticPayloadText "let declaration"
+        )
+
+        Assert.Equal(DiagnosticCode.ExpectedSyntaxToken, totalityDiagnostic.Code)
+        Assert.Contains(
+            totalityDiagnostic.Payload.Fields,
+            fun field ->
+                field.Name = "target"
+                && field.Value = DiagnosticPayloadText "signature declarations"
+        )
+
+    [<Fact>]
+    let ``core pattern parsing diagnostics render from typed evidence`` () =
+        let bag = DiagnosticBag()
+        bag.AddError(DiagnosticFact.corePatternParsing (NumericLiteralSuffixesNotPermittedInPatterns "1u8"))
+        bag.AddError(DiagnosticFact.corePatternParsing ExpectedRecordPatternFieldLabel)
+        bag.AddError(DiagnosticFact.corePatternParsing OrPatternAlternativesMustBindSameNames)
+
+        let diagnostics = bag.Items
+        let literalDiagnostic =
+            diagnostics
+            |> List.find (fun item -> item.Message = "Numeric literal suffixes are not permitted in patterns: '1u8'.")
+
+        let fieldDiagnostic =
+            diagnostics
+            |> List.find (fun item -> item.Message = "Expected a record pattern field label.")
+
+        let orPatternDiagnostic =
+            diagnostics
+            |> List.find (fun item -> item.Code = DiagnosticCode.OrPatternBinderMismatch)
+
+        Assert.Equal("core-pattern-parsing", literalDiagnostic.Payload.Kind)
+        Assert.Contains(
+            literalDiagnostic.Payload.Fields,
+            fun field ->
+                field.Name = "token-text"
+                && field.Value = DiagnosticPayloadText "1u8"
+        )
+
+        Assert.Equal(DiagnosticCode.ExpectedSyntaxToken, fieldDiagnostic.Code)
+        Assert.Contains(
+            fieldDiagnostic.Payload.Fields,
+            fun field ->
+                field.Name = "reason"
+                && field.Value = DiagnosticPayloadText "expected-record-pattern-field-label"
+        )
+
+        Assert.Equal("Each or-pattern alternative must bind the same set of names.", orPatternDiagnostic.Message)
+        Assert.Equal("core-pattern-parsing", orPatternDiagnostic.Payload.Kind)
+
 
     [<Fact>]
     let ``byte literal decoder preserves raw byte escape provenance`` () =
