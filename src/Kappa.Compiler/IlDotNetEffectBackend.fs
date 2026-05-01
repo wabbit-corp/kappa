@@ -25,6 +25,10 @@ module internal IlDotNetEffectBackend =
         | ArgumentArrayIndex of int
         | CaptureArrayIndex of LocalBuilder * int
 
+    type private NonGenericConstructorResolution =
+        | NonGenericClassConstructor of System.Reflection.ConstructorInfo * FieldInfo array
+        | NonGenericEnumCase of int * Type
+
     type private EffectEmissionState =
         { Modules: Map<string, RawModuleInfo>
           TraitInstances: TraitInstanceInfo list
@@ -216,10 +220,26 @@ module internal IlDotNetEffectBackend =
             Result.Error
                 $"The effectful dotnet backend does not yet support generic constructor '{constructorInfo.ModuleName}.{constructorInfo.Name}'."
         else
-            let dataEmission = state.DataTypeBuilders[constructorInfo.ModuleName, constructorInfo.TypeName]
-            let constructorEmission = dataEmission.Constructors[constructorInfo.Name]
-            let fieldInfos = constructorEmission.FieldBuilders |> Array.map (fun fieldBuilder -> fieldBuilder :> FieldInfo)
-            Result.Ok(constructorEmission.ConstructorBuilder :> System.Reflection.ConstructorInfo, fieldInfos)
+            match tryResolveEnumConstructorOrdinal (createClrResolutionState state) constructorInfo with
+            | Some caseOrdinal ->
+                let enumType =
+                    resolveClrType
+                        (createClrResolutionState state)
+                        Map.empty
+                        (IlNamed(constructorInfo.ResultType, []))
+
+                Result.Ok(NonGenericEnumCase(caseOrdinal, enumType))
+            | None ->
+                let dataEmission = state.DataTypeBuilders[constructorInfo.ModuleName, constructorInfo.TypeName]
+
+                match dataEmission with
+                | ClassHierarchyEmission classEmission ->
+                    let constructorEmission = classEmission.Constructors[constructorInfo.Name]
+                    let fieldInfos = constructorEmission.FieldBuilders |> Array.map (fun fieldBuilder -> fieldBuilder :> FieldInfo)
+                    Result.Ok(NonGenericClassConstructor(constructorEmission.ConstructorBuilder :> System.Reflection.ConstructorInfo, fieldInfos))
+                | EnumEmission _ ->
+                    Result.Error
+                        $"The effectful dotnet backend could not resolve enum constructor '{constructorInfo.ModuleName}.{constructorInfo.Name}'."
 
     let private resolveBindingGetter (state: EffectEmissionState) currentModule segments =
         tryResolveBinding state.Modules currentModule segments
@@ -907,37 +927,51 @@ module internal IlDotNetEffectBackend =
                             | Some(_, constructorInfo) ->
                                 result {
                                     if List.isEmpty constructorInfo.TypeParameters then
-                                        let! constructor, fieldInfos = resolveNonGenericConstructor state constructorInfo
+                                        let! constructorResolution = resolveNonGenericConstructor state constructorInfo
 
-                                        if List.length argumentPatterns <> fieldInfos.Length then
+                                        match constructorResolution with
+                                        | NonGenericEnumCase(caseOrdinal, enumType) ->
+                                            if not (List.isEmpty argumentPatterns) then
+                                                return!
+                                                    Result.Error
+                                                        $"The effectful dotnet backend expected pattern '{constructorInfo.Name}' to receive 0 argument(s), but received {List.length argumentPatterns}."
+
+                                            il.Emit(OpCodes.Ldloc, valueLocal)
+                                            il.Emit(OpCodes.Unbox_Any, enumType)
+                                            il.Emit(OpCodes.Ldc_I4, caseOrdinal)
+                                            il.Emit(OpCodes.Ceq)
+                                            il.Emit(OpCodes.Brfalse, failureLabel)
+                                            return currentScope
+                                        | NonGenericClassConstructor(constructor, fieldInfos) ->
+                                            if List.length argumentPatterns <> fieldInfos.Length then
+                                                return!
+                                                    Result.Error
+                                                        $"The effectful dotnet backend expected pattern '{constructorInfo.Name}' to receive {fieldInfos.Length} argument(s), but received {List.length argumentPatterns}."
+
+                                            let constructorType = constructor.DeclaringType
+                                            let castLocal = il.DeclareLocal(constructorType)
+                                            il.Emit(OpCodes.Ldloc, valueLocal)
+                                            il.Emit(OpCodes.Isinst, constructorType)
+                                            il.Emit(OpCodes.Stloc, castLocal)
+                                            il.Emit(OpCodes.Ldloc, castLocal)
+                                            il.Emit(OpCodes.Brfalse, failureLabel)
+
                                             return!
-                                                Result.Error
-                                                    $"The effectful dotnet backend expected pattern '{constructorInfo.Name}' to receive {fieldInfos.Length} argument(s), but received {List.length argumentPatterns}."
+                                                List.zip argumentPatterns (fieldInfos |> Array.toList)
+                                                |> List.fold
+                                                    (fun stateResult (argumentPattern, fieldInfo) ->
+                                                        stateResult
+                                                        |> Result.bind (fun scope ->
+                                                            let fieldLocal = il.DeclareLocal(objectType)
+                                                            il.Emit(OpCodes.Ldloc, castLocal)
+                                                            il.Emit(OpCodes.Ldfld, fieldInfo)
 
-                                        let constructorType = constructor.DeclaringType
-                                        let castLocal = il.DeclareLocal(constructorType)
-                                        il.Emit(OpCodes.Ldloc, valueLocal)
-                                        il.Emit(OpCodes.Isinst, constructorType)
-                                        il.Emit(OpCodes.Stloc, castLocal)
-                                        il.Emit(OpCodes.Ldloc, castLocal)
-                                        il.Emit(OpCodes.Brfalse, failureLabel)
+                                                            if fieldInfo.FieldType.IsValueType then
+                                                                il.Emit(OpCodes.Box, fieldInfo.FieldType)
 
-                                        return!
-                                            List.zip argumentPatterns (fieldInfos |> Array.toList)
-                                            |> List.fold
-                                                (fun stateResult (argumentPattern, fieldInfo) ->
-                                                    stateResult
-                                                    |> Result.bind (fun scope ->
-                                                        let fieldLocal = il.DeclareLocal(objectType)
-                                                        il.Emit(OpCodes.Ldloc, castLocal)
-                                                        il.Emit(OpCodes.Ldfld, fieldInfo)
-
-                                                        if fieldInfo.FieldType.IsValueType then
-                                                            il.Emit(OpCodes.Box, fieldInfo.FieldType)
-
-                                                        il.Emit(OpCodes.Stloc, fieldLocal)
-                                                        emitPatternMatch scope argumentPattern fieldLocal failureLabel))
-                                                (Result.Ok currentScope)
+                                                            il.Emit(OpCodes.Stloc, fieldLocal)
+                                                            emitPatternMatch scope argumentPattern fieldLocal failureLabel))
+                                                    (Result.Ok currentScope)
                                     else
                                         let erasedLocal = il.DeclareLocal(typeof<KappaErasedDataValue>)
                                         let fieldsLocal = il.DeclareLocal(objectArrayType)
@@ -1206,10 +1240,16 @@ module internal IlDotNetEffectBackend =
                                 | Some(_, constructorInfo) when List.isEmpty constructorInfo.FieldTypes ->
                                     result {
                                         if List.isEmpty constructorInfo.TypeParameters then
-                                            let! constructor, _ = resolveNonGenericConstructor state constructorInfo
-                                            il.Emit(OpCodes.Newobj, constructor)
-                                            if constructor.DeclaringType.IsValueType then
-                                                il.Emit(OpCodes.Box, constructor.DeclaringType)
+                                            let! constructorResolution = resolveNonGenericConstructor state constructorInfo
+
+                                            match constructorResolution with
+                                            | NonGenericEnumCase(caseOrdinal, enumType) ->
+                                                il.Emit(OpCodes.Ldc_I4, caseOrdinal)
+                                                il.Emit(OpCodes.Box, enumType)
+                                            | NonGenericClassConstructor(constructor, _) ->
+                                                il.Emit(OpCodes.Newobj, constructor)
+                                                if constructor.DeclaringType.IsValueType then
+                                                    il.Emit(OpCodes.Box, constructor.DeclaringType)
                                         else
                                             do!
                                                 emitErasedDataValue
@@ -1557,34 +1597,44 @@ module internal IlDotNetEffectBackend =
                         | Some(_, constructorInfo) ->
                             result {
                                 if List.isEmpty constructorInfo.TypeParameters then
-                                    let! constructor, fieldInfos = resolveNonGenericConstructor state constructorInfo
+                                    let! constructorResolution = resolveNonGenericConstructor state constructorInfo
 
-                                    if List.length arguments <> fieldInfos.Length then
-                                        return!
-                                            Result.Error
-                                                $"The effectful dotnet backend expected constructor '{constructorInfo.Name}' to receive {fieldInfos.Length} argument(s), but received {List.length arguments}."
+                                    match constructorResolution with
+                                    | NonGenericEnumCase(caseOrdinal, enumType) ->
+                                        if not (List.isEmpty arguments) then
+                                            return!
+                                                Result.Error
+                                                    $"The effectful dotnet backend expected constructor '{constructorInfo.Name}' to receive 0 argument(s), but received {List.length arguments}."
 
-                                    let fieldTypes = constructorInfo.FieldTypes
+                                        il.Emit(OpCodes.Ldc_I4, caseOrdinal)
+                                        il.Emit(OpCodes.Box, enumType)
+                                    | NonGenericClassConstructor(constructor, fieldInfos) ->
+                                        if List.length arguments <> fieldInfos.Length then
+                                            return!
+                                                Result.Error
+                                                    $"The effectful dotnet backend expected constructor '{constructorInfo.Name}' to receive {fieldInfos.Length} argument(s), but received {List.length arguments}."
 
-                                    do!
-                                        List.zip arguments fieldTypes
-                                        |> List.fold
-                                            (fun stateResult (argumentExpression, fieldType) ->
-                                                result {
-                                                    do! stateResult
-                                                    do! emitExpression currentModule locals il argumentExpression
-                                                    let clrFieldType = resolveClrType clrResolverState Map.empty fieldType
+                                        let fieldTypes = constructorInfo.FieldTypes
 
-                                                    if clrFieldType.IsValueType then
-                                                        il.Emit(OpCodes.Unbox_Any, clrFieldType)
-                                                    else
-                                                        il.Emit(OpCodes.Castclass, clrFieldType)
-                                                })
-                                            (Result.Ok())
+                                        do!
+                                            List.zip arguments fieldTypes
+                                            |> List.fold
+                                                (fun stateResult (argumentExpression, fieldType) ->
+                                                    result {
+                                                        do! stateResult
+                                                        do! emitExpression currentModule locals il argumentExpression
+                                                        let clrFieldType = resolveClrType clrResolverState Map.empty fieldType
 
-                                    il.Emit(OpCodes.Newobj, constructor)
-                                    if constructor.DeclaringType.IsValueType then
-                                        il.Emit(OpCodes.Box, constructor.DeclaringType)
+                                                        if clrFieldType.IsValueType then
+                                                            il.Emit(OpCodes.Unbox_Any, clrFieldType)
+                                                        else
+                                                            il.Emit(OpCodes.Castclass, clrFieldType)
+                                                    })
+                                                (Result.Ok())
+
+                                        il.Emit(OpCodes.Newobj, constructor)
+                                        if constructor.DeclaringType.IsValueType then
+                                            il.Emit(OpCodes.Box, constructor.DeclaringType)
                                 else
                                     if List.length arguments <> List.length constructorInfo.FieldTypes then
                                         return!
@@ -1755,12 +1805,21 @@ module internal IlDotNetEffectBackend =
             | Result.Ok() ->
                 try
                     state.DataTypeBuilders
-                    |> Map.iter (fun _ dataEmission -> dataEmission.BaseTypeBuilder.CreateType() |> ignore)
+                    |> Map.iter (fun _ dataEmission ->
+                        match dataEmission with
+                        | EnumEmission enumEmission ->
+                            enumEmission.EnumBuilder.CreateType() |> ignore
+                        | ClassHierarchyEmission classEmission ->
+                            classEmission.BaseTypeBuilder.CreateType() |> ignore)
 
                     state.DataTypeBuilders
                     |> Map.iter (fun _ dataEmission ->
-                        dataEmission.Constructors
-                        |> Map.iter (fun _ constructorEmission -> constructorEmission.TypeBuilder.CreateType() |> ignore))
+                        match dataEmission with
+                        | EnumEmission _ ->
+                            ()
+                        | ClassHierarchyEmission classEmission ->
+                            classEmission.Constructors
+                            |> Map.iter (fun _ constructorEmission -> constructorEmission.TypeBuilder.CreateType() |> ignore))
 
                     state.ModuleBuilders |> Map.iter (fun _ moduleTypeBuilder -> moduleTypeBuilder.CreateType() |> ignore)
                     assemblyBuilder.Save(assemblyPath)

@@ -63,6 +63,39 @@ module internal IlDotNetBackendEmit =
         | None ->
             invalidOp $"IL backend is missing emitted type builder metadata for '{moduleName}.{typeName}'."
 
+    let private lookupClassHierarchyEmission (state: EmissionState) moduleName typeName =
+        match lookupDataTypeEmission state moduleName typeName with
+        | ClassHierarchyEmission emission ->
+            emission
+        | EnumEmission _ ->
+            invalidOp $"IL backend expected '{moduleName}.{typeName}' to use class-hierarchy lowering."
+
+    let private lookupEnumCaseEmission (state: EmissionState) moduleName typeName constructorName =
+        match lookupDataTypeEmission state moduleName typeName with
+        | EnumEmission emission ->
+            match emission.Cases |> Map.tryFind constructorName with
+            | Some caseEmission ->
+                caseEmission
+            | None ->
+                invalidOp
+                    $"IL backend is missing enum case metadata for constructor '{moduleName}.{constructorName}'."
+        | ClassHierarchyEmission _ ->
+            invalidOp $"IL backend expected '{moduleName}.{typeName}' to use enum lowering."
+
+    let private tryFindDataTypeInfo (state: EmissionState) (typeIdentity: TypeIdentity) =
+        let moduleName = TypeIdentity.moduleIdentity typeIdentity |> ModuleIdentity.text
+        let typeName = TypeIdentity.name typeIdentity
+        state.Environment.DataTypes |> Map.tryFind (moduleName, typeName)
+
+    let private isClrEnumIlType (state: EmissionState) ilType =
+        match ilType with
+        | IlNamed(typeIdentity, []) ->
+            tryFindDataTypeInfo state typeIdentity
+            |> Option.exists (fun dataTypeInfo ->
+                dataTypeInfo.Representation = IlClrEnum && dataTypeInfo.ExternalRuntimeTypeName.IsNone)
+        | _ ->
+            false
+
     let private resolveExternalRuntimeType (typeName: string) =
         Type.GetType(typeName, throwOnError = false, ignoreCase = false)
         |> Option.ofObj
@@ -115,16 +148,23 @@ module internal IlDotNetBackendEmit =
                     baseType.MakeGenericType(genericArguments)
             | _ ->
                 let emission = lookupDataTypeEmission state moduleName typeName
-                let baseType =
-                    emission.BaseTypeBuilder :> Type
+                match emission with
+                | ClassHierarchyEmission classEmission ->
+                    let baseType =
+                        classEmission.BaseTypeBuilder :> Type
 
-                if List.isEmpty arguments then
-                    baseType
-                else
-                    let genericArguments =
-                        arguments |> List.map (resolveClrType state typeParameters) |> List.toArray
+                    if List.isEmpty arguments then
+                        baseType
+                    else
+                        let genericArguments =
+                            arguments |> List.map (resolveClrType state typeParameters) |> List.toArray
 
-                    baseType.MakeGenericType(genericArguments)
+                        baseType.MakeGenericType(genericArguments)
+                | EnumEmission enumEmission ->
+                    if not (List.isEmpty arguments) then
+                        invalidOp $"IL backend enum '{moduleName}.{typeName}' cannot take CLR generic arguments."
+
+                    enumEmission.EnumBuilder :> Type
 
     let internal resolveConstructorTypeAndMembers
         (state: EmissionState)
@@ -132,7 +172,7 @@ module internal IlDotNetBackendEmit =
         (substitution: Map<string, IlType>)
         (constructorInfo: ConstructorInfo)
         =
-        let dataTypeEmission = lookupDataTypeEmission state constructorInfo.ModuleName constructorInfo.TypeName
+        let dataTypeEmission = lookupClassHierarchyEmission state constructorInfo.ModuleName constructorInfo.TypeName
         let emission = dataTypeEmission.Constructors[constructorInfo.Name]
 
         if Array.isEmpty emission.GenericParameters then
@@ -148,6 +188,16 @@ module internal IlDotNetBackendEmit =
             let constructor = TypeBuilder.GetConstructor(constructedType, emission.ConstructorBuilder)
             let fields = emission.FieldBuilders |> Array.map (fun fieldBuilder -> TypeBuilder.GetField(constructedType, fieldBuilder))
             constructedType, constructor, fields
+
+    let internal tryResolveEnumConstructorOrdinal (state: EmissionState) (constructorInfo: ConstructorInfo) =
+        match tryFindDataTypeInfo state constructorInfo.ResultType with
+        | Some dataTypeInfo when dataTypeInfo.Representation = IlClrEnum ->
+            let caseEmission =
+                lookupEnumCaseEmission state constructorInfo.ModuleName constructorInfo.TypeName constructorInfo.Name
+
+            Some caseEmission.CaseOrdinal
+        | _ ->
+            None
 
     let internal loadValue (il: ILGenerator) localValue =
         match localValue.Location with
@@ -556,6 +606,9 @@ module internal IlDotNetBackendEmit =
                                             when TypeIdentity.hasTopLevelName preludeModuleIdentity Stdlib.KnownTypeNames.Bool leftIdentity
                                                  && TypeIdentity.hasTopLevelName preludeModuleIdentity Stdlib.KnownTypeNames.Bool rightIdentity ->
                                             ensureExpected (IlPrimitive IlBool)
+                                        | ("==" | "!="), leftEnumType, rightEnumType
+                                            when leftEnumType = rightEnumType && isClrEnumIlType state leftEnumType ->
+                                            ensureExpected (IlPrimitive IlBool)
                                         | ("==" | "!="), IlPrimitive IlString, IlPrimitive IlString ->
                                             ensureExpected (IlPrimitive IlBool)
                                         | ("==" | "!="), IlPrimitive IlChar, IlPrimitive IlChar ->
@@ -760,18 +813,27 @@ module internal IlDotNetBackendEmit =
                         Result.Error
                             $"IL backend could not infer concrete type arguments for constructor '{constructorInfo.Name}'."
 
-                let _, constructor, _ = resolveConstructorTypeAndMembers state typeParameters substitution constructorInfo
+                match tryResolveEnumConstructorOrdinal state constructorInfo with
+                | Some caseOrdinal ->
+                    if not (List.isEmpty arguments) then
+                        return!
+                            Result.Error
+                                $"IL backend enum constructor '{constructorInfo.Name}' cannot receive arguments."
 
-                do!
-                    List.zip arguments argumentTypes
-                    |> List.fold
-                        (fun stateResult (argumentExpression, argumentType) ->
-                            stateResult
-                            |> Result.bind (fun () ->
-                                emitExpression state currentModule typeParameters localValues (Some argumentType) il argumentExpression))
-                        (Result.Ok())
+                    il.Emit(OpCodes.Ldc_I4, caseOrdinal)
+                | None ->
+                    let _, constructor, _ = resolveConstructorTypeAndMembers state typeParameters substitution constructorInfo
 
-                il.Emit(OpCodes.Newobj, constructor)
+                    do!
+                        List.zip arguments argumentTypes
+                        |> List.fold
+                            (fun stateResult (argumentExpression, argumentType) ->
+                                stateResult
+                                |> Result.bind (fun () ->
+                                    emitExpression state currentModule typeParameters localValues (Some argumentType) il argumentExpression))
+                            (Result.Ok())
+
+                    il.Emit(OpCodes.Newobj, constructor)
             }
 
         let emitBuiltinBinary operatorName left right =
@@ -783,26 +845,32 @@ module internal IlDotNetBackendEmit =
 
                     return!
                         match tryResolveConstructor state.Environment.Modules currentModule constructorName with
-                        | None ->
-                            let constructorText = String.concat "." constructorName
-                            Result.Error
-                                $"IL backend could not resolve constructor '{constructorText}' for operator 'is'."
-                        | Some(_, constructorInfo) ->
-                            unifyTypes Map.empty (constructorResultType constructorInfo) leftType
-                            |> Result.bind (fun substitution ->
-                                let constructorType, _, _ =
-                                    resolveConstructorTypeAndMembers state typeParameters substitution constructorInfo
+                                        | None ->
+                                            let constructorText = String.concat "." constructorName
+                                            Result.Error
+                                                $"IL backend could not resolve constructor '{constructorText}' for operator 'is'."
+                                        | Some(_, constructorInfo) ->
+                                            unifyTypes Map.empty (constructorResultType constructorInfo) leftType
+                                            |> Result.bind (fun substitution ->
+                                                match tryResolveEnumConstructorOrdinal state constructorInfo with
+                                                | Some caseOrdinal ->
+                                                    il.Emit(OpCodes.Ldc_I4, caseOrdinal)
+                                                    emitComparisonFromCeq il false
+                                                    Result.Ok()
+                                                | None ->
+                                                    let constructorType, _, _ =
+                                                        resolveConstructorTypeAndMembers state typeParameters substitution constructorInfo
 
-                                let successLabel = il.DefineLabel()
-                                let doneLabel = il.DefineLabel()
-                                il.Emit(OpCodes.Isinst, constructorType)
-                                il.Emit(OpCodes.Brtrue, successLabel)
-                                il.Emit(OpCodes.Ldc_I4_0)
-                                il.Emit(OpCodes.Br, doneLabel)
-                                il.MarkLabel(successLabel)
-                                il.Emit(OpCodes.Ldc_I4_1)
-                                il.MarkLabel(doneLabel)
-                                Result.Ok())
+                                                    let successLabel = il.DefineLabel()
+                                                    let doneLabel = il.DefineLabel()
+                                                    il.Emit(OpCodes.Isinst, constructorType)
+                                                    il.Emit(OpCodes.Brtrue, successLabel)
+                                                    il.Emit(OpCodes.Ldc_I4_0)
+                                                    il.Emit(OpCodes.Br, doneLabel)
+                                                    il.MarkLabel(successLabel)
+                                                    il.Emit(OpCodes.Ldc_I4_1)
+                                                    il.MarkLabel(doneLabel)
+                                                    Result.Ok())
                 | _ ->
                     let! leftType = inferExpressionType currentModule localTypes None left
                     let! rightType = inferExpressionType currentModule localTypes None right
@@ -840,11 +908,17 @@ module internal IlDotNetBackendEmit =
                         when TypeIdentity.hasTopLevelName preludeModuleIdentity Stdlib.KnownTypeNames.Bool leftIdentity
                              && TypeIdentity.hasTopLevelName preludeModuleIdentity Stdlib.KnownTypeNames.Bool rightIdentity ->
                         emitComparisonFromCeq il false
+                    | "==", leftEnumType, rightEnumType
+                        when leftEnumType = rightEnumType && isClrEnumIlType state leftEnumType ->
+                        emitComparisonFromCeq il false
                     | "!=", IlPrimitive IlBool, IlPrimitive IlBool ->
                         emitComparisonFromCeq il true
                     | "!=", IlNamed(leftIdentity, []), IlNamed(rightIdentity, [])
                         when TypeIdentity.hasTopLevelName preludeModuleIdentity Stdlib.KnownTypeNames.Bool leftIdentity
                              && TypeIdentity.hasTopLevelName preludeModuleIdentity Stdlib.KnownTypeNames.Bool rightIdentity ->
+                        emitComparisonFromCeq il true
+                    | "!=", leftEnumType, rightEnumType
+                        when leftEnumType = rightEnumType && isClrEnumIlType state leftEnumType ->
                         emitComparisonFromCeq il true
                     | "==", IlPrimitive IlString, IlPrimitive IlString ->
                         emitStringEquality il false
@@ -965,14 +1039,19 @@ module internal IlDotNetBackendEmit =
                             Result.Error
                                 $"IL backend does not support intrinsic '{name}' for argument types [{argumentText}]."
                 | Some(parameterTypes, resultType) ->
-                    do!
-                        List.zip arguments parameterTypes
-                        |> List.fold
-                            (fun stateResult (argumentExpression, parameterType) ->
-                                stateResult
-                                |> Result.bind (fun () ->
-                                    emitExpression state currentModule typeParameters localValues (Some parameterType) il argumentExpression))
-                            (Result.Ok())
+                    let usesCustomArgumentEmission =
+                        String.Equals(name, KnownPreludeSemantics.BuiltinPreludeShowHelperName, StringComparison.Ordinal)
+                        || String.Equals(name, KnownPreludeSemantics.BuiltinPreludeCompareHelperName, StringComparison.Ordinal)
+
+                    if not usesCustomArgumentEmission then
+                        do!
+                            List.zip arguments parameterTypes
+                            |> List.fold
+                                (fun stateResult (argumentExpression, parameterType) ->
+                                    stateResult
+                                    |> Result.bind (fun () ->
+                                        emitExpression state currentModule typeParameters localValues (Some parameterType) il argumentExpression))
+                                (Result.Ok())
 
                     let emitBoxedArgument argumentExpression argumentType =
                         result {
@@ -986,11 +1065,16 @@ module internal IlDotNetBackendEmit =
                     let emitOrderingConstructor constructorName =
                         match tryResolveConstructor state.Environment.Modules currentModule [ constructorName ] with
                         | Some(_, constructorInfo) ->
-                            let _, constructor, _ =
-                                resolveConstructorTypeAndMembers state typeParameters Map.empty constructorInfo
+                            match tryResolveEnumConstructorOrdinal state constructorInfo with
+                            | Some caseOrdinal ->
+                                il.Emit(OpCodes.Ldc_I4, caseOrdinal)
+                                Result.Ok()
+                            | None ->
+                                let _, constructor, _ =
+                                    resolveConstructorTypeAndMembers state typeParameters Map.empty constructorInfo
 
-                            il.Emit(OpCodes.Newobj, constructor)
-                            Result.Ok()
+                                il.Emit(OpCodes.Newobj, constructor)
+                                Result.Ok()
                         | None ->
                             Result.Error $"IL backend could not resolve Ordering constructor '{constructorName}'."
 
@@ -1046,6 +1130,7 @@ module internal IlDotNetBackendEmit =
                         il.Emit(OpCodes.Call, showBuiltinMethod)
                     | intrinsicName, IlNamed(typeIdentity, []) when intrinsicName = KnownPreludeSemantics.BuiltinPreludeCompareHelperName && TypeIdentity.hasTopLevelName preludeModuleIdentity Stdlib.KnownTypeNames.Ordering typeIdentity ->
                         let comparisonLocal = il.DeclareLocal(typeof<int>)
+                        let orderingLocal = il.DeclareLocal(resolveClrType state typeParameters resultType)
                         let lessLabel = il.DefineLabel()
                         let greaterLabel = il.DefineLabel()
                         let equalLabel = il.DefineLabel()
@@ -1063,13 +1148,17 @@ module internal IlDotNetBackendEmit =
                         il.Emit(OpCodes.Br, equalLabel)
                         il.MarkLabel(lessLabel)
                         do! emitOrderingConstructor "LT"
+                        il.Emit(OpCodes.Stloc, orderingLocal)
                         il.Emit(OpCodes.Br, doneLabel)
                         il.MarkLabel(greaterLabel)
                         do! emitOrderingConstructor "GT"
+                        il.Emit(OpCodes.Stloc, orderingLocal)
                         il.Emit(OpCodes.Br, doneLabel)
                         il.MarkLabel(equalLabel)
                         do! emitOrderingConstructor "EQ"
+                        il.Emit(OpCodes.Stloc, orderingLocal)
                         il.MarkLabel(doneLabel)
+                        il.Emit(OpCodes.Ldloc, orderingLocal)
                     | _ ->
                         return! Result.Error $"IL backend intrinsic '{name}' is not implemented yet."
             }
@@ -1372,26 +1461,34 @@ module internal IlDotNetBackendEmit =
                             Result.Error
                                 $"IL backend expected pattern '{constructorInfo.Name}' to receive {List.length constructorInfo.FieldTypes} argument(s), but received {List.length argumentPatterns}."
                         else
-                            let constructorType, _, fieldInfos = resolveConstructorTypeAndMembers state typeParameters substitution constructorInfo
-                            let castLocal = il.DeclareLocal(constructorType)
-                            emitLoadLocal il valueLocal
-                            il.Emit(OpCodes.Isinst, constructorType)
-                            il.Emit(OpCodes.Stloc, castLocal)
-                            il.Emit(OpCodes.Ldloc, castLocal)
-                            il.Emit(OpCodes.Brfalse, (failureLabel: Label))
+                            match tryResolveEnumConstructorOrdinal state constructorInfo with
+                            | Some caseOrdinal ->
+                                emitLoadLocal il valueLocal
+                                il.Emit(OpCodes.Ldc_I4, caseOrdinal)
+                                il.Emit(OpCodes.Ceq)
+                                il.Emit(OpCodes.Brfalse, (failureLabel: Label))
+                                Result.Ok currentScope
+                            | None ->
+                                let constructorType, _, fieldInfos = resolveConstructorTypeAndMembers state typeParameters substitution constructorInfo
+                                let castLocal = il.DeclareLocal(constructorType)
+                                emitLoadLocal il valueLocal
+                                il.Emit(OpCodes.Isinst, constructorType)
+                                il.Emit(OpCodes.Stloc, castLocal)
+                                il.Emit(OpCodes.Ldloc, castLocal)
+                                il.Emit(OpCodes.Brfalse, (failureLabel: Label))
 
-                            List.zip3 argumentPatterns constructorInfo.FieldTypes (fieldInfos |> Array.toList)
-                            |> List.fold
-                                (fun stateResult (argumentPattern, fieldTemplate, fieldInfo) ->
-                                    stateResult
-                                    |> Result.bind (fun scope ->
-                                        let fieldType = substituteType substitution fieldTemplate
-                                        let fieldLocal = il.DeclareLocal(resolveClrType state typeParameters fieldType)
-                                        il.Emit(OpCodes.Ldloc, castLocal)
-                                        il.Emit(OpCodes.Ldfld, (fieldInfo: FieldInfo))
-                                        il.Emit(OpCodes.Stloc, fieldLocal)
-                                        emitPatternMatch scope fieldType argumentPattern fieldLocal failureLabel))
-                                (Result.Ok currentScope))
+                                List.zip3 argumentPatterns constructorInfo.FieldTypes (fieldInfos |> Array.toList)
+                                |> List.fold
+                                    (fun stateResult (argumentPattern, fieldTemplate, fieldInfo) ->
+                                        stateResult
+                                        |> Result.bind (fun scope ->
+                                            let fieldType = substituteType substitution fieldTemplate
+                                            let fieldLocal = il.DeclareLocal(resolveClrType state typeParameters fieldType)
+                                            il.Emit(OpCodes.Ldloc, castLocal)
+                                            il.Emit(OpCodes.Ldfld, (fieldInfo: FieldInfo))
+                                            il.Emit(OpCodes.Stloc, fieldLocal)
+                                            emitPatternMatch scope fieldType argumentPattern fieldLocal failureLabel))
+                                    (Result.Ok currentScope))
 
         let emitMatch (scrutinee: KRuntimeExpression) (cases: KRuntimeMatchCase list) =
             result {
@@ -1900,135 +1997,167 @@ module internal IlDotNetBackendEmit =
             |> Map.toList
             |> List.filter (fun (_, dataTypeInfo) -> dataTypeInfo.ExternalRuntimeTypeName.IsNone)
             |> List.map (fun ((moduleName, typeName), dataTypeInfo) ->
-                let baseTypeBuilder =
-                    moduleBuilder.DefineType(
-                        dataTypeInfo.EmittedTypeName,
-                        TypeAttributes.Public ||| TypeAttributes.Abstract ||| TypeAttributes.Class
-                    )
+                let emission =
+                    match dataTypeInfo.Representation with
+                    | IlClrEnum ->
+                        let enumBuilder =
+                            moduleBuilder.DefineEnum(
+                                dataTypeInfo.EmittedTypeName,
+                                TypeAttributes.Public,
+                                typeof<int>
+                            )
 
-                let genericParameters =
-                    match dataTypeInfo.TypeParameters with
-                    | [] -> [||]
-                    | parameters -> baseTypeBuilder.DefineGenericParameters(parameters |> List.toArray)
+                        let cases =
+                            dataTypeInfo.Constructors
+                            |> Map.toList
+                            |> List.map (fun (constructorName, constructorInfo) ->
+                                constructorName,
+                                { LiteralField =
+                                    enumBuilder.DefineLiteral(
+                                        constructorName,
+                                        box constructorInfo.CaseOrdinal
+                                    )
+                                  CaseOrdinal = constructorInfo.CaseOrdinal })
+                            |> Map.ofList
 
-                let baseConstructor =
-                    baseTypeBuilder.DefineDefaultConstructor(MethodAttributes.Family)
+                        EnumEmission
+                            { EnumBuilder = enumBuilder
+                              Cases = cases }
+                    | IlClassHierarchy ->
+                        let baseTypeBuilder =
+                            moduleBuilder.DefineType(
+                                dataTypeInfo.EmittedTypeName,
+                                TypeAttributes.Public ||| TypeAttributes.Abstract ||| TypeAttributes.Class
+                            )
 
-                ((moduleName, typeName),
-                 { BaseTypeBuilder = baseTypeBuilder
-                   GenericParameters = genericParameters
-                   BaseConstructor = baseConstructor
-                   Constructors = Map.empty }))
+                        let genericParameters =
+                            match dataTypeInfo.TypeParameters with
+                            | [] -> [||]
+                            | parameters -> baseTypeBuilder.DefineGenericParameters(parameters |> List.toArray)
+
+                        let baseConstructor =
+                            baseTypeBuilder.DefineDefaultConstructor(MethodAttributes.Family)
+
+                        ClassHierarchyEmission
+                            { BaseTypeBuilder = baseTypeBuilder
+                              GenericParameters = genericParameters
+                              BaseConstructor = baseConstructor
+                              Constructors = Map.empty }
+
+                (moduleName, typeName), emission)
             |> Map.ofList
 
         baseTypeDefinitions
         |> Map.map (fun (moduleName, typeName) dataEmission ->
             let dataTypeInfo = environment.DataTypes[moduleName, typeName]
+            match dataEmission with
+            | EnumEmission _ ->
+                dataEmission
+            | ClassHierarchyEmission classEmission ->
+                let genericTypeParameterMap =
+                    List.zip dataTypeInfo.TypeParameters (classEmission.GenericParameters |> Array.toList)
+                    |> List.map (fun (name, parameter) -> name, (parameter :> Type))
+                    |> Map.ofList
 
-            let genericTypeParameterMap =
-                List.zip dataTypeInfo.TypeParameters (dataEmission.GenericParameters |> Array.toList)
-                |> List.map (fun (name, parameter) -> name, (parameter :> Type))
-                |> Map.ofList
+                let constructors =
+                    dataTypeInfo.Constructors
+                    |> Map.toList
+                    |> List.map (fun (constructorName, constructorInfo) ->
+                        let constructorTypeBuilder =
+                            moduleBuilder.DefineType(
+                                constructorInfo.EmittedTypeName,
+                                TypeAttributes.Public ||| TypeAttributes.Sealed ||| TypeAttributes.Class
+                            )
 
-            let constructors =
-                dataTypeInfo.Constructors
-                |> Map.toList
-                |> List.map (fun (constructorName, constructorInfo) ->
-                    let constructorTypeBuilder =
-                        moduleBuilder.DefineType(
-                            constructorInfo.EmittedTypeName,
-                            TypeAttributes.Public ||| TypeAttributes.Sealed ||| TypeAttributes.Class
-                        )
+                        let constructorGenericParameters =
+                            match dataTypeInfo.TypeParameters with
+                            | [] -> [||]
+                            | parameters -> constructorTypeBuilder.DefineGenericParameters(parameters |> List.toArray)
 
-                    let constructorGenericParameters =
-                        match dataTypeInfo.TypeParameters with
-                        | [] -> [||]
-                        | parameters -> constructorTypeBuilder.DefineGenericParameters(parameters |> List.toArray)
+                        let constructorTypeParameterMap =
+                            if Array.isEmpty constructorGenericParameters then
+                                genericTypeParameterMap
+                            else
+                                List.zip dataTypeInfo.TypeParameters (constructorGenericParameters |> Array.toList)
+                                |> List.map (fun (name, parameter) -> name, (parameter :> Type))
+                                |> Map.ofList
 
-                    let constructorTypeParameterMap =
-                        if Array.isEmpty constructorGenericParameters then
-                            genericTypeParameterMap
-                        else
-                            List.zip dataTypeInfo.TypeParameters (constructorGenericParameters |> Array.toList)
-                            |> List.map (fun (name, parameter) -> name, (parameter :> Type))
-                            |> Map.ofList
+                        let baseType =
+                            if Array.isEmpty constructorGenericParameters then
+                                classEmission.BaseTypeBuilder :> Type
+                            else
+                                let baseArguments =
+                                    constructorGenericParameters |> Array.map (fun parameter -> parameter :> Type)
 
-                    let baseType =
-                        if Array.isEmpty constructorGenericParameters then
-                            dataEmission.BaseTypeBuilder :> Type
-                        else
-                            let baseArguments =
-                                constructorGenericParameters |> Array.map (fun parameter -> parameter :> Type)
+                                (classEmission.BaseTypeBuilder :> Type).MakeGenericType(baseArguments)
 
-                            (dataEmission.BaseTypeBuilder :> Type).MakeGenericType(baseArguments)
+                        constructorTypeBuilder.SetParent(baseType)
 
-                    constructorTypeBuilder.SetParent(baseType)
+                        let fieldBuilders =
+                            constructorInfo.FieldTypes
+                            |> List.mapi (fun index fieldType ->
+                                constructorTypeBuilder.DefineField(
+                                    $"Item{index + 1}",
+                                    resolveClrType
+                                        { Environment = environment
+                                          ModuleBuilders = Map.empty
+                                          MethodBuilders = Map.empty
+                                          DataTypeBuilders = baseTypeDefinitions }
+                                        constructorTypeParameterMap
+                                        fieldType,
+                                    FieldAttributes.Public ||| FieldAttributes.InitOnly
+                                ))
+                            |> List.toArray
 
-                    let fieldBuilders =
+                        let constructorParameterTypes =
+                            constructorInfo.FieldTypes
+                            |> List.map (resolveClrType
+                                { Environment = environment
+                                  ModuleBuilders = Map.empty
+                                  MethodBuilders = Map.empty
+                                  DataTypeBuilders = baseTypeDefinitions }
+                                constructorTypeParameterMap)
+                            |> List.toArray
+
+                        let constructorBuilder =
+                            constructorTypeBuilder.DefineConstructor(
+                                MethodAttributes.Public,
+                                CallingConventions.Standard,
+                                constructorParameterTypes
+                            )
+
                         constructorInfo.FieldTypes
-                        |> List.mapi (fun index fieldType ->
-                            constructorTypeBuilder.DefineField(
-                                $"Item{index + 1}",
-                                resolveClrType
-                                    { Environment = environment
-                                      ModuleBuilders = Map.empty
-                                      MethodBuilders = Map.empty
-                                      DataTypeBuilders = baseTypeDefinitions }
-                                    constructorTypeParameterMap
-                                    fieldType,
-                                FieldAttributes.Public ||| FieldAttributes.InitOnly
-                            ))
-                        |> List.toArray
+                        |> List.iteri (fun index _ ->
+                            constructorBuilder.DefineParameter(index + 1, ParameterAttributes.None, $"item{index + 1}")
+                            |> ignore)
 
-                    let constructorParameterTypes =
-                        constructorInfo.FieldTypes
-                        |> List.map (resolveClrType
-                            { Environment = environment
-                              ModuleBuilders = Map.empty
-                              MethodBuilders = Map.empty
-                              DataTypeBuilders = baseTypeDefinitions }
-                            constructorTypeParameterMap)
-                        |> List.toArray
-
-                    let constructorBuilder =
-                        constructorTypeBuilder.DefineConstructor(
-                            MethodAttributes.Public,
-                            CallingConventions.Standard,
-                            constructorParameterTypes
-                        )
-
-                    constructorInfo.FieldTypes
-                    |> List.iteri (fun index _ ->
-                        constructorBuilder.DefineParameter(index + 1, ParameterAttributes.None, $"item{index + 1}")
-                        |> ignore)
-
-                    let constructorIl = constructorBuilder.GetILGenerator()
-                    constructorIl.Emit(OpCodes.Ldarg_0)
-
-                    let baseConstructor =
-                        if Array.isEmpty constructorGenericParameters then
-                            dataEmission.BaseConstructor :> System.Reflection.ConstructorInfo
-                        else
-                            TypeBuilder.GetConstructor(baseType, dataEmission.BaseConstructor)
-
-                    constructorIl.Emit(OpCodes.Call, baseConstructor)
-
-                    fieldBuilders
-                    |> Array.iteri (fun index fieldBuilder ->
+                        let constructorIl = constructorBuilder.GetILGenerator()
                         constructorIl.Emit(OpCodes.Ldarg_0)
-                        constructorIl.Emit(OpCodes.Ldarg, index + 1)
-                        constructorIl.Emit(OpCodes.Stfld, fieldBuilder))
 
-                    constructorIl.Emit(OpCodes.Ret)
+                        let baseConstructor =
+                            if Array.isEmpty constructorGenericParameters then
+                                classEmission.BaseConstructor :> System.Reflection.ConstructorInfo
+                            else
+                                TypeBuilder.GetConstructor(baseType, classEmission.BaseConstructor)
 
-                    constructorName,
-                    { TypeBuilder = constructorTypeBuilder
-                      GenericParameters = constructorGenericParameters
-                      ConstructorBuilder = constructorBuilder
-                      FieldBuilders = fieldBuilders })
-                |> Map.ofList
+                        constructorIl.Emit(OpCodes.Call, baseConstructor)
 
-            { dataEmission with Constructors = constructors })
+                        fieldBuilders
+                        |> Array.iteri (fun index fieldBuilder ->
+                            constructorIl.Emit(OpCodes.Ldarg_0)
+                            constructorIl.Emit(OpCodes.Ldarg, index + 1)
+                            constructorIl.Emit(OpCodes.Stfld, fieldBuilder))
+
+                        constructorIl.Emit(OpCodes.Ret)
+
+                        constructorName,
+                        { TypeBuilder = constructorTypeBuilder
+                          GenericParameters = constructorGenericParameters
+                          ConstructorBuilder = constructorBuilder
+                          FieldBuilders = fieldBuilders })
+                    |> Map.ofList
+
+                ClassHierarchyEmission { classEmission with Constructors = constructors })
 
     let emitClrAssemblyArtifactWithRoots
         (modules: ClrAssemblyModule list)
@@ -2142,12 +2271,21 @@ module internal IlDotNetBackendEmit =
                     Result.Error message
                 | Result.Ok() ->
                     dataTypeBuilders
-                    |> Map.iter (fun _ dataEmission -> dataEmission.BaseTypeBuilder.CreateType() |> ignore)
+                    |> Map.iter (fun _ dataEmission ->
+                        match dataEmission with
+                        | EnumEmission enumEmission ->
+                            enumEmission.EnumBuilder.CreateType() |> ignore
+                        | ClassHierarchyEmission classEmission ->
+                            classEmission.BaseTypeBuilder.CreateType() |> ignore)
 
                     dataTypeBuilders
                     |> Map.iter (fun _ dataEmission ->
-                        dataEmission.Constructors
-                        |> Map.iter (fun _ constructorEmission -> constructorEmission.TypeBuilder.CreateType() |> ignore))
+                        match dataEmission with
+                        | EnumEmission _ ->
+                            ()
+                        | ClassHierarchyEmission classEmission ->
+                            classEmission.Constructors
+                            |> Map.iter (fun _ constructorEmission -> constructorEmission.TypeBuilder.CreateType() |> ignore))
 
                     moduleBuilders |> Map.iter (fun _ moduleTypeBuilder -> moduleTypeBuilder.CreateType() |> ignore)
                     assemblyBuilder.Save(assemblyPath)

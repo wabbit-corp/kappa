@@ -3898,6 +3898,55 @@ module SmokeTestsShard3 =
         | other ->
             failwithf "Expected builtin compare to lower through Ord trait dispatch, got %A" other
 
+    [<Fact>]
+    let ``KRuntime keeps ordinary builtin comparison operators as ordinary prelude calls`` () =
+        let workspace =
+            compileInMemoryWorkspace
+                "memory-kruntime-ordinary-ord-operators-root"
+                [
+                    "main.kp",
+                    [
+                        "module main"
+                        "let less = \"a\" < \"b\""
+                        "let different = \"a\" /= \"b\""
+                    ]
+                    |> String.concat "\n"
+                ]
+
+        let runtimeModule =
+            workspace.KRuntimeIR
+            |> List.find (fun moduleDump -> moduleDump.Name = "main")
+
+        let tryFindBindingBody bindingName =
+            runtimeModule.Bindings
+            |> List.tryFind (fun binding -> binding.Name = bindingName)
+            |> Option.bind _.Body
+
+        let matchesOrdinaryPreludeCall expectedName expectedDictionaryTrait expectedInstanceKey expression =
+            match expression with
+            | KRuntimeApply(
+                KRuntimeName calleeSegments,
+                [ KRuntimeDictionaryValue(moduleName, traitName, instanceKey, [])
+                  KRuntimeLiteral(LiteralValue.String "a")
+                  KRuntimeLiteral(LiteralValue.String "b") ]
+              ) ->
+                List.tryLast calleeSegments = Some expectedName
+                && moduleName = Stdlib.PreludeModuleText
+                && traitName = expectedDictionaryTrait
+                && instanceKey = expectedInstanceKey
+            | _ ->
+                false
+
+        match tryFindBindingBody "less" with
+        | Some body when matchesOrdinaryPreludeCall "<" "Ord" "builtin-prelude:Ord:String" body -> ()
+        | other ->
+            failwithf "Expected '<' to remain an ordinary prelude call in KRuntimeIR, got %A" other
+
+        match tryFindBindingBody "different" with
+        | Some body when matchesOrdinaryPreludeCall "/=" "Eq" "builtin-prelude:Eq:String" body -> ()
+        | other ->
+            failwithf "Expected '/=' to remain an ordinary prelude call in KRuntimeIR, got %A" other
+
 
     [<Fact>]
     let ``top level syntax splices still charge quoted linear uses at the splice site`` () =
@@ -4545,6 +4594,17 @@ module SmokeTestsShard4 =
             let ordinaryCase, ordinarySpec = getSpecProperties ordinaryPreludeName
             Assert.Equal("None", ordinaryCase)
             Assert.True(ordinarySpec.IsNone)
+
+        for builtinOperatorName in [ "+"; "=="; "is" ] do
+            let operatorCase, operatorSpec = getSpecProperties builtinOperatorName
+            Assert.Equal("None", operatorCase)
+            Assert.True(operatorSpec.IsNone)
+
+        let runtimeIntrinsicNames =
+            Stdlib.runtimeIntrinsicTermNamesForBackend BackendProfile.DotNet Stdlib.PreludeModuleName
+
+        for ordinaryRuntimeName in [ "<"; "<="; ">"; ">="; "/="; "not"; "and"; "or"; "True"; "False" ] do
+            Assert.DoesNotContain(ordinaryRuntimeName, runtimeIntrinsicNames)
 
         let unknownCase, unknownSpec = getSpecProperties "__missing_intrinsic__"
         Assert.Equal("None", unknownCase)

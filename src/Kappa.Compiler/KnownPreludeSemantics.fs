@@ -6,6 +6,10 @@ open TypeSignatures
 // Compiler-known lowering and trait-helper semantics for ordinary std.prelude surface.
 // This is distinct from true compiler/runtime intrinsic ABI contracts.
 module internal KnownPreludeSemantics =
+    type RuntimeSpecialCallSpec =
+        { RuntimeArity: int
+          ReturnsBoolean: bool }
+
     type BuiltinPreludeTraitMemberLowering =
         | ForwardToBuiltinBinaryOperator of string
         | ForwardToIntrinsicTerm of string
@@ -32,6 +36,12 @@ module internal KnownPreludeSemantics =
 
     let binaryOperatorNames =
         Set.ofList [ "+"; "-"; "*"; "/"; "=="; "!="; "<"; "<="; ">"; ">="; "&&"; "||"; "is" ]
+
+    let runtimeSpecialBinaryOperatorNames =
+        Set.ofList [ "+"; "-"; "*"; "/"; "=="; "!="; "&&"; "||"; "is" ]
+
+    let private booleanRuntimeSpecialBinaryOperatorNames =
+        Set.ofList [ "=="; "!="; "&&"; "||"; "is" ]
 
     let shortCircuitBinaryOperatorNames =
         Set.ofList [ "&&"; "||" ]
@@ -166,7 +176,6 @@ module internal KnownPreludeSemantics =
 
     let elaborationAvailableTermNames bundledPreludeExpectTermNames =
         Set.intersect bundledPreludeExpectTermNames elaborationAvailablePreludeTermNames
-        |> Set.union binaryOperatorNames
 
     let isBuiltinBinaryOperator name =
         binaryOperatorNames.Contains name
@@ -176,3 +185,11 @@ module internal KnownPreludeSemantics =
 
     let isEagerBuiltinBinaryOperator name =
         eagerBuiltinBinaryOperatorNames.Contains name
+
+    let tryRuntimeSpecialBinaryOperatorSpec name =
+        if runtimeSpecialBinaryOperatorNames.Contains name then
+            Some
+                { RuntimeArity = 2
+                  ReturnsBoolean = booleanRuntimeSpecialBinaryOperatorNames.Contains name }
+        else
+            None

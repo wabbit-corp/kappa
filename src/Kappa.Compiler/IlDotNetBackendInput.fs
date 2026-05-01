@@ -218,6 +218,24 @@ module internal IlDotNetBackendInput =
         | AllExcept _ ->
             false
 
+    let private classifyDataTypeRepresentation (constructors: RawConstructorInfo list) typeParameters =
+        if List.isEmpty typeParameters
+           && not (List.isEmpty constructors)
+           && constructors
+              |> List.forall (fun constructor -> constructor.Arity = 0 && List.isEmpty constructor.FieldTypeTexts) then
+            IlClrEnum
+        else
+            IlClassHierarchy
+
+    let private classifyConstructorOrdinal (dataTypeIdentity: TypeIdentity) constructorName index =
+        if TypeIdentity.hasTopLevelName preludeModuleIdentity Stdlib.KnownTypeNames.Bool dataTypeIdentity then
+            match constructorName with
+            | "False" -> 0
+            | "True" -> 1
+            | _ -> index
+        else
+            index
+
     let internal buildRawDataTypes (modules: ClrAssemblyModule list) =
         modules
         |> List.map (fun moduleDump ->
@@ -230,17 +248,22 @@ module internal IlDotNetBackendInput =
 
                     let constructors =
                         dataType.Constructors
-                        |> List.map (fun constructor ->
+                        |> List.mapi (fun index constructor ->
                             { Identity =
                                 DeclarationIdentity.topLevel moduleIdentity constructor.Name ConstructorDeclaration
                               ResultType = dataTypeIdentity
                               FieldTypeTexts = constructor.FieldTypeTexts
-                              Arity = constructor.Arity })
+                              Arity = constructor.Arity
+                              CaseOrdinal = classifyConstructorOrdinal dataTypeIdentity constructor.Name index })
+
+                    let representation =
+                        classifyDataTypeRepresentation constructors dataType.TypeParameters
 
                     let rawDataType: RawDataTypeInfo =
                         { Identity = dataTypeIdentity
                           TypeParameters = dataType.TypeParameters
                           Constructors = constructors
+                          Representation = representation
                           ExternalRuntimeTypeName = dataType.ExternalRuntimeTypeName
                           EmittedTypeName = emittedDataTypeName dataTypeIdentity }
 
@@ -568,6 +591,7 @@ module internal IlDotNetBackendInput =
                                                           ResultType = rawConstructor.ResultType
                                                           TypeParameters = rawDataType.TypeParameters
                                                           FieldTypes = List.rev fieldTypes
+                                                          CaseOrdinal = rawConstructor.CaseOrdinal
                                                           EmittedTypeName = emittedConstructorTypeName rawConstructor.Identity }
 
                                                     return
@@ -580,6 +604,7 @@ module internal IlDotNetBackendInput =
                                         { Identity = rawDataType.Identity
                                           TypeParameters = rawDataType.TypeParameters
                                           Constructors = constructors |> Map.ofList
+                                          Representation = rawDataType.Representation
                                           ExternalRuntimeTypeName = rawDataType.ExternalRuntimeTypeName
                                           EmittedTypeName = rawDataType.EmittedTypeName }: DataTypeInfo
 
@@ -643,27 +668,47 @@ module internal IlDotNetBackendInput =
         |> Set.toList
         |> List.sort
 
+    let private tryPrimitiveEquivalent ilType =
+        match ilType with
+        | IlPrimitive primitive -> Some primitive
+        | IlNamed(identity, []) ->
+            match tryParsePrimitiveTypeIdentity identity with
+            | Some(IlPrimitive primitive) -> Some primitive
+            | _ -> None
+        | _ ->
+            None
+
     let rec internal unifyTypes substitution template actual =
         match template, actual with
         | IlPrimitive left, IlPrimitive right when left = right ->
             Result.Ok substitution
-        | IlTypeParameter name, _ ->
-            match substitution |> Map.tryFind name with
-            | Some existing when existing = actual ->
+        | left, right ->
+            match tryPrimitiveEquivalent left, tryPrimitiveEquivalent right with
+            | Some leftPrimitive, Some rightPrimitive when leftPrimitive = rightPrimitive ->
                 Result.Ok substitution
-            | Some existing ->
-                Result.Error $"IL backend could not unify {formatIlType existing} with {formatIlType actual}."
-            | None ->
-                Result.Ok(substitution |> Map.add name actual)
-        | IlNamed(leftIdentity, leftArguments), IlNamed(rightIdentity, rightArguments)
-            when leftIdentity = rightIdentity && List.length leftArguments = List.length rightArguments ->
-            List.zip leftArguments rightArguments
-            |> List.fold
-                (fun stateResult (leftArgument, rightArgument) ->
-                    stateResult |> Result.bind (fun state -> unifyTypes state leftArgument rightArgument))
-                (Result.Ok substitution)
-        | _ ->
-            Result.Error $"IL backend could not unify {formatIlType template} with {formatIlType actual}."
+            | _ ->
+                match template, actual with
+                | IlTypeParameter name, _ ->
+                    match substitution |> Map.tryFind name with
+                    | Some existing when existing = actual ->
+                        Result.Ok substitution
+                    | Some existing ->
+                        match tryPrimitiveEquivalent existing, tryPrimitiveEquivalent actual with
+                        | Some existingPrimitive, Some actualPrimitive when existingPrimitive = actualPrimitive ->
+                            Result.Ok substitution
+                        | _ ->
+                            Result.Error $"IL backend could not unify {formatIlType existing} with {formatIlType actual}."
+                    | None ->
+                        Result.Ok(substitution |> Map.add name actual)
+                | IlNamed(leftIdentity, leftArguments), IlNamed(rightIdentity, rightArguments)
+                    when leftIdentity = rightIdentity && List.length leftArguments = List.length rightArguments ->
+                    List.zip leftArguments rightArguments
+                    |> List.fold
+                        (fun stateResult (leftArgument, rightArgument) ->
+                            stateResult |> Result.bind (fun state -> unifyTypes state leftArgument rightArgument))
+                        (Result.Ok substitution)
+                | _ ->
+                    Result.Error $"IL backend could not unify {formatIlType template} with {formatIlType actual}."
 
     let internal constructorResultType (constructorInfo: ConstructorInfo) =
         IlNamed(constructorInfo.ResultType, constructorInfo.TypeParameters |> List.map IlTypeParameter)

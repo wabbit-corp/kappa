@@ -587,11 +587,6 @@ module internal KRuntimeLowering =
         && isBuiltinPreludeInstanceKey traitName instanceKey
         && List.isEmpty captures
 
-    let private runtimeNameEndsWith (expectedName: string) (segments: string list) =
-        match List.tryLast segments with
-        | Some actualName -> String.Equals(actualName, expectedName, StringComparison.Ordinal)
-        | None -> false
-
     let private specializeBuiltinPreludeRuntimeExpression expression =
         let rec rewrite expression =
             let rebuilt =
@@ -665,28 +660,6 @@ module internal KRuntimeLowering =
                     )
 
             match rebuilt with
-            | KRuntimeApply(
-                KRuntimeName calleeSegments,
-                [ KRuntimeDictionaryValue(moduleName, "Eq", instanceKey, captures)
-                  left
-                  right ]
-              )
-                when runtimeNameEndsWith "/=" calleeSegments
-                     && isBuiltinPreludeDictionary moduleName "Eq" instanceKey captures ->
-                KRuntimeBinary(left, "!=", right)
-            | KRuntimeApply(
-                KRuntimeName calleeSegments,
-                [ KRuntimeDictionaryValue(moduleName, "Ord", instanceKey, captures)
-                  left
-                  right ]
-              )
-                when ((runtimeNameEndsWith "<" calleeSegments)
-                      || (runtimeNameEndsWith "<=" calleeSegments)
-                      || (runtimeNameEndsWith ">" calleeSegments)
-                      || (runtimeNameEndsWith ">=" calleeSegments))
-                     && isBuiltinPreludeDictionary moduleName "Ord" instanceKey captures ->
-                let operatorName = List.last calleeSegments
-                KRuntimeBinary(left, operatorName, right)
             | KRuntimeTraitCall(
                 "Eq",
                 "==",

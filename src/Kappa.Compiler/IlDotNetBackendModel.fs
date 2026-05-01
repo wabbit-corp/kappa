@@ -16,6 +16,10 @@ module internal IlDotNetBackendModel =
         | IlString
         | IlChar
 
+    type internal DataTypeRepresentation =
+        | IlClassHierarchy
+        | IlClrEnum
+
     type internal IlType =
         | IlPrimitive of IlPrimitiveType
         | IlNamed of identity: TypeIdentity * arguments: IlType list
@@ -25,13 +29,15 @@ module internal IlDotNetBackendModel =
         { Identity: DeclarationIdentity
           ResultType: TypeIdentity
           FieldTypeTexts: string list
-          Arity: int }
+          Arity: int
+          CaseOrdinal: int }
         member this.Name = DeclarationIdentity.name this.Identity
 
     type internal RawDataTypeInfo =
         { Identity: TypeIdentity
           TypeParameters: string list
           Constructors: RawConstructorInfo list
+          Representation: DataTypeRepresentation
           ExternalRuntimeTypeName: string option
           EmittedTypeName: string }
         member this.ModuleName = TypeIdentity.moduleIdentity this.Identity |> ModuleIdentity.text
@@ -42,6 +48,7 @@ module internal IlDotNetBackendModel =
           ResultType: TypeIdentity
           TypeParameters: string list
           FieldTypes: IlType list
+          CaseOrdinal: int
           EmittedTypeName: string }
         member this.ModuleName = DeclarationIdentity.moduleIdentity this.Identity |> ModuleIdentity.text
         member this.Name = DeclarationIdentity.name this.Identity
@@ -51,6 +58,7 @@ module internal IlDotNetBackendModel =
         { Identity: TypeIdentity
           TypeParameters: string list
           Constructors: Map<string, ConstructorInfo>
+          Representation: DataTypeRepresentation
           ExternalRuntimeTypeName: string option
           EmittedTypeName: string }
         member this.ModuleName = TypeIdentity.moduleIdentity this.Identity |> ModuleIdentity.text
@@ -105,11 +113,23 @@ module internal IlDotNetBackendModel =
           ConstructorBuilder: ConstructorBuilder
           FieldBuilders: FieldBuilder array }
 
-    type internal DataTypeEmission =
+    type internal EnumCaseEmission =
+        { LiteralField: FieldBuilder
+          CaseOrdinal: int }
+
+    type internal ClassHierarchyEmission =
         { BaseTypeBuilder: TypeBuilder
           GenericParameters: GenericTypeParameterBuilder array
           BaseConstructor: ConstructorBuilder
           Constructors: Map<string, ConstructorEmission> }
+
+    type internal EnumEmission =
+        { EnumBuilder: EnumBuilder
+          Cases: Map<string, EnumCaseEmission> }
+
+    type internal DataTypeEmission =
+        | ClassHierarchyEmission of ClassHierarchyEmission
+        | EnumEmission of EnumEmission
 
     type internal EmissionState =
         { Environment: EmissionEnvironment

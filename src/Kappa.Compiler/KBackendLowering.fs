@@ -780,23 +780,62 @@ module internal KBackendLowering =
                         resultRepresentation
                     )
                 | BackendIntrinsicName(moduleName, bindingName, _) ->
-                    let intrinsicArity = IntrinsicCatalog.intrinsicRuntimeArity bindingName
-                    let resultRepresentation =
-                        IntrinsicCatalog.intrinsicResultRepresentation bindingName
-                        |> Option.defaultValue fallbackResultRepresentation
+                    match IntrinsicCatalog.tryFindIntrinsicSpec bindingName with
+                    | Some spec ->
+                        let resultRepresentation =
+                            spec.LoweredResultRepresentation
+                            |> Option.defaultValue fallbackResultRepresentation
 
-                    if List.length loweredArguments = intrinsicArity then
-                        Result.Ok(
-                            BackendCall(
-                                BackendName resolvedName,
-                                loweredArguments,
-                                makeCallingConvention intrinsicArity argumentRepresentations (Some resultRepresentation),
+                        if List.length loweredArguments = spec.RuntimeArity then
+                            Result.Ok(
+                                BackendCall(
+                                    BackendName resolvedName,
+                                    loweredArguments,
+                                    makeCallingConvention spec.RuntimeArity argumentRepresentations (Some resultRepresentation),
+                                    resultRepresentation
+                                ),
                                 resultRepresentation
-                            ),
-                            resultRepresentation
-                        )
-                    else
-                        Result.Error(RuntimeIntrinsicArityMismatch($"{moduleName}.{bindingName}", intrinsicArity, List.length loweredArguments))
+                            )
+                        else
+                            Result.Error(
+                                RuntimeIntrinsicArityMismatch(
+                                    $"{moduleName}.{bindingName}",
+                                    spec.RuntimeArity,
+                                    List.length loweredArguments
+                                )
+                            )
+                    | None ->
+                        match KnownPreludeSemantics.tryRuntimeSpecialBinaryOperatorSpec bindingName with
+                        | Some specialSpec ->
+                            let resultRepresentation =
+                                if specialSpec.ReturnsBoolean then
+                                    BackendRepBoolean
+                                else
+                                    fallbackResultRepresentation
+
+                            if List.length loweredArguments = specialSpec.RuntimeArity then
+                                Result.Ok(
+                                    BackendCall(
+                                        BackendName resolvedName,
+                                        loweredArguments,
+                                        makeCallingConvention
+                                            specialSpec.RuntimeArity
+                                            argumentRepresentations
+                                            (Some resultRepresentation),
+                                        resultRepresentation
+                                    ),
+                                    resultRepresentation
+                                )
+                            else
+                                Result.Error(
+                                    RuntimeIntrinsicArityMismatch(
+                                        $"{moduleName}.{bindingName}",
+                                        specialSpec.RuntimeArity,
+                                        List.length loweredArguments
+                                    )
+                                )
+                        | None ->
+                            Result.Error(RuntimeCallTargetCouldNotBeLowered(moduleName, bindingName))
                 | BackendGlobalBindingName(moduleName, bindingName, _) ->
                     let conventionResult =
                         match tryLookupBindingInfo moduleName bindingName with

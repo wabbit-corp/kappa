@@ -51,7 +51,7 @@ module internal IntrinsicCatalog =
         let contract = bundledPreludeExpectContract ()
         Set.unionMany
             [ contract.TermNames
-              KnownPreludeSemantics.binaryOperatorNames
+              KnownPreludeSemantics.runtimeSpecialBinaryOperatorNames
               KnownPreludeSemantics.hiddenRuntimeHelperTermNames ]
 
     let namedIntrinsicTermNames () =
@@ -137,18 +137,7 @@ module internal IntrinsicCatalog =
                      "hashNatTag", plainIntrinsicSpec 2 (Some(BackendRepOpaque(Some "HashState")))
                  ]
 
-             let operatorSpecs =
-                 KnownPreludeSemantics.binaryOperatorNames
-                 |> Seq.map (fun name ->
-                     let resultRepresentation =
-                         if Set.contains name (Set.ofList [ "&&"; "||"; "=="; "!="; "<"; "<="; ">"; ">="; "is" ]) then
-                             Some BackendRepBoolean
-                         else
-                             None
-
-                     name, plainIntrinsicSpec 2 resultRepresentation)
-
-             Seq.append specs operatorSpecs |> Map.ofSeq)
+             specs |> Map.ofList)
 
     let private derivedStandardLibraryIntrinsicSpecsValue =
         lazy

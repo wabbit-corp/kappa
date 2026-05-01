@@ -3656,7 +3656,7 @@ module ObservabilityTestsShard5 =
                     |> String.concat "\n"
                 ]
 
-        Assert.Contains("&&", supportedWorkspace.ElaborationAvailableIntrinsicTerms)
+        Assert.Contains("failElab", supportedWorkspace.ElaborationAvailableIntrinsicTerms)
         Assert.DoesNotContain("printInt", supportedWorkspace.ElaborationAvailableIntrinsicTerms)
 
         let supportedJson =
@@ -3672,7 +3672,7 @@ module ObservabilityTestsShard5 =
             |> Seq.filter (isNull >> not)
             |> Seq.toList
 
-        Assert.Contains("&&", supportedTerms)
+        Assert.Contains("failElab", supportedTerms)
         Assert.DoesNotContain("printInt", supportedTerms)
 
         let unsupportedWorkspace =

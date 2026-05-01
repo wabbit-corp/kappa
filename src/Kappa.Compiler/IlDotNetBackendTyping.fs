@@ -17,6 +17,20 @@ module internal IlDotNetBackendTyping =
         |> Array.toList
         |> TypeSignatures.TraitReference.ofSegments
 
+    let private isClrEnumIlType (rawModules: Map<string, RawModuleInfo>) ilType =
+        match ilType with
+        | IlNamed(typeIdentity, []) ->
+            let moduleName = TypeIdentity.moduleIdentity typeIdentity |> ModuleIdentity.text
+            let typeName = TypeIdentity.name typeIdentity
+
+            rawModules
+            |> Map.tryFind moduleName
+            |> Option.bind (fun moduleInfo -> moduleInfo.DataTypes |> Map.tryFind typeName)
+            |> Option.exists (fun dataTypeInfo ->
+                dataTypeInfo.Representation = IlClrEnum && dataTypeInfo.ExternalRuntimeTypeName.IsNone)
+        | _ ->
+            false
+
     let internal buildEnvironment (modules: ClrAssemblyModule list) (roots: (string * string) list option) =
         let rawSkeletons, rawDataTypes = buildRawModuleSkeletons modules
 
@@ -214,6 +228,9 @@ module internal IlDotNetBackendTyping =
                         Result.Ok None
 
                 let rec inferBindingInfo currentModule bindingName active =
+                    let typesEquivalent left right =
+                        Result.isOk (unifyTypes Map.empty left right) && Result.isOk (unifyTypes Map.empty right left)
+
                     let cacheKey = currentModule, bindingName
 
                     match cache.TryGetValue(cacheKey) with
@@ -269,7 +286,7 @@ module internal IlDotNetBackendTyping =
                                             body
 
                                     match declaredReturnType with
-                                    | Some expectedReturnType when expectedReturnType <> bodyType ->
+                                    | Some expectedReturnType when not (typesEquivalent expectedReturnType bodyType) ->
                                         return!
                                             Result.Error
                                                 $"IL backend expected '{currentModule}.{bindingName}' to return {formatIlType expectedReturnType}, but the body returns {formatIlType bodyType}."
@@ -348,7 +365,7 @@ module internal IlDotNetBackendTyping =
                                         let resolvedReturnType =
                                             declaredReturnType |> Option.defaultValue bodyType
 
-                                        if bodyType <> resolvedReturnType then
+                                        if not (typesEquivalent bodyType resolvedReturnType) then
                                             cache.Remove(cacheKey) |> ignore
 
                                             return!
@@ -693,6 +710,9 @@ module internal IlDotNetBackendTyping =
                                             | ("==" | "!="), IlNamed(leftIdentity, []), IlNamed(rightIdentity, [])
                                                 when TypeIdentity.hasTopLevelName preludeModuleIdentity Stdlib.KnownTypeNames.Bool leftIdentity
                                                      && TypeIdentity.hasTopLevelName preludeModuleIdentity Stdlib.KnownTypeNames.Bool rightIdentity ->
+                                                ensureExpected (IlPrimitive IlBool)
+                                            | ("==" | "!="), leftEnumType, rightEnumType
+                                                when leftEnumType = rightEnumType && isClrEnumIlType rawModules leftEnumType ->
                                                 ensureExpected (IlPrimitive IlBool)
                                             | ("==" | "!="), IlPrimitive IlString, IlPrimitive IlString ->
                                                 ensureExpected (IlPrimitive IlBool)

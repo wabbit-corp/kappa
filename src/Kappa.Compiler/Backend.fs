@@ -237,7 +237,6 @@ internal static class Program
                 return! Result.Error DotNetDeployment.unsupportedForDotNetMessage
 
             let! moduleName, bindingName = resolveClrEntryPoint workspace entryPoint
-            let usesEffectRuntime = ClrAssemblyIR.modulesUseEffectRuntime workspace.ClrAssemblyIR
 
             let! clrAssembly =
                 ClrDotNetBackend.emitAssemblyArtifactForEntryPoint workspace moduleName bindingName outputDirectory
@@ -265,17 +264,14 @@ internal static class Program
                     |> List.map copySupportFile
                     |> List.map fst
 
-                if usesEffectRuntime then
-                    let runtimeAssemblyPath = typeof<KappaRuntime>.Assembly.Location
+                let runtimeAssemblyPath = typeof<KappaRuntime>.Assembly.Location
 
-                    if String.IsNullOrWhiteSpace(runtimeAssemblyPath) then
-                        Result.Error
-                            "The CLR-backed dotnet profile could not locate Kappa.Runtime.dll for effectful lowering."
-                    else
-                        let runtimeAssemblyFileName, _ = copySupportFile runtimeAssemblyPath
-                        Result.Ok([ generatedAssemblyFileName; runtimeAssemblyFileName ] @ hostSupportFileNames)
+                if String.IsNullOrWhiteSpace(runtimeAssemblyPath) then
+                    Result.Error
+                        "The CLR-backed dotnet profile could not locate Kappa.Runtime.dll for managed lowering."
                 else
-                    Result.Ok(generatedAssemblyFileName :: hostSupportFileNames)
+                    let runtimeAssemblyFileName, _ = copySupportFile runtimeAssemblyPath
+                    Result.Ok([ generatedAssemblyFileName; runtimeAssemblyFileName ] @ hostSupportFileNames)
 
             let projectFilePath = Path.Combine(projectDirectory, "Kappa.Generated.Runner.csproj")
             let programFilePath = Path.Combine(projectDirectory, "Program.cs")

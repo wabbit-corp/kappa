@@ -138,6 +138,39 @@ module BackendTestsShard0 =
 module BackendTestsShard1 =
 
     [<Fact>]
+    let ``dotnet backend preserves Bool results in parameterized bindings`` () =
+        let workspace =
+            compileInMemoryWorkspaceWithBackend
+                "memory-dotnet-bool-binding-root"
+                "dotnet"
+                [
+                    "main.kp",
+                    [
+                        "module main"
+                        "alwaysTrue : Int -> Bool"
+                        "let alwaysTrue _ = True"
+                        "let result = if alwaysTrue 0 then 1 else 0"
+                    ]
+                    |> String.concat "\n"
+                ]
+
+        Assert.False(workspace.HasErrors, sprintf "Expected no diagnostics, got %A" workspace.Diagnostics)
+
+        let outputDirectory = createScratchDirectory "dotnet-bool-binding-backend"
+
+        let artifact =
+            match Backend.emitDotNetArtifact workspace "main.result" outputDirectory DotNetDeployment.Managed with
+            | Result.Ok artifact -> artifact
+            | Result.Error message -> failwith message
+
+        let runResult =
+            runProcess outputDirectory "dotnet" $"run --project \"{artifact.ProjectFilePath}\" -c Release"
+
+        Assert.Equal(0, runResult.ExitCode)
+        Assert.Equal("1", runResult.StandardOutput.Trim())
+        Assert.True(String.IsNullOrWhiteSpace(runResult.StandardError), runResult.StandardError)
+
+    [<Fact>]
     let ``dotnet backend runs bundled inequality helper via builtin Eq evidence`` () =
         let workspace =
             compileInMemoryWorkspaceWithBackend
@@ -155,6 +188,78 @@ module BackendTestsShard1 =
         Assert.False(workspace.HasErrors, sprintf "Expected no diagnostics, got %A" workspace.Diagnostics)
 
         let outputDirectory = createScratchDirectory "dotnet-neq-backend"
+
+        let artifact =
+            match Backend.emitDotNetArtifact workspace "main.result" outputDirectory DotNetDeployment.Managed with
+            | Result.Ok artifact -> artifact
+            | Result.Error message -> failwith message
+
+        let runResult =
+            runProcess outputDirectory "dotnet" $"run --project \"{artifact.ProjectFilePath}\" -c Release"
+
+        Assert.Equal(0, runResult.ExitCode)
+        Assert.Equal("1", runResult.StandardOutput.Trim())
+        Assert.True(String.IsNullOrWhiteSpace(runResult.StandardError), runResult.StandardError)
+
+    [<Fact>]
+    let ``dotnet backend emits enum-like data types as CLR enums`` () =
+        let workspace =
+            compileInMemoryWorkspaceWithBackend
+                "memory-dotnet-enum-like-data-root"
+                "dotnet"
+                [
+                    "main.kp",
+                    [
+                        "module main"
+                        "data Color : Type ="
+                        "    Red"
+                        "    Green"
+                        "    Blue"
+                        "let result : Color = Blue"
+                    ]
+                    |> String.concat "\n"
+                ]
+
+        Assert.False(workspace.HasErrors, sprintf "Expected no diagnostics, got %A" workspace.Diagnostics)
+
+        let outputDirectory = createScratchDirectory "dotnet-enum-like-data-backend"
+
+        let artifact =
+            match Backend.emitDotNetArtifact workspace "main.result" outputDirectory DotNetDeployment.Managed with
+            | Result.Ok artifact -> artifact
+            | Result.Error message -> failwith message
+
+        let generatedAssembly = Assembly.LoadFrom(artifact.GeneratedFilePath)
+        let colorType = generatedAssembly.GetType("Kappa.Generated.main.Color", throwOnError = true, ignoreCase = false)
+
+        Assert.True(colorType.IsEnum, $"Expected generated type '{colorType.FullName}' to be a CLR enum.")
+
+        let caseNames =
+            colorType.GetFields(BindingFlags.Public ||| BindingFlags.Static)
+            |> Array.map _.Name
+            |> Array.sort
+
+        Assert.Equal<string>([| "Blue"; "Green"; "Red" |], caseNames)
+        Assert.Null(generatedAssembly.GetType("Kappa.Generated.main.Red", throwOnError = false, ignoreCase = false))
+
+    [<Fact>]
+    let ``dotnet backend runs builtin compare through CLR Ordering enum`` () =
+        let workspace =
+            compileInMemoryWorkspaceWithBackend
+                "memory-dotnet-ordering-enum-root"
+                "dotnet"
+                [
+                    "main.kp",
+                    [
+                        "module main"
+                        "let result = if compare 1 2 == LT then 1 else 0"
+                    ]
+                    |> String.concat "\n"
+                ]
+
+        Assert.False(workspace.HasErrors, sprintf "Expected no diagnostics, got %A" workspace.Diagnostics)
+
+        let outputDirectory = createScratchDirectory "dotnet-ordering-enum-backend"
 
         let artifact =
             match Backend.emitDotNetArtifact workspace "main.result" outputDirectory DotNetDeployment.Managed with
