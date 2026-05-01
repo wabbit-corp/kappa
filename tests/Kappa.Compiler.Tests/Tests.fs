@@ -3745,7 +3745,9 @@ module SmokeTestsShard4 =
         bag.AddError(DiagnosticFact.coreExpressionParsing ExpectedHandlerWith)
         bag.AddError(DiagnosticFact.coreExpressionParsing (ExpectedImplicitParameterAfterAt TopLevelFunctionHeader))
         bag.AddError(DiagnosticFact.coreExpressionParsing (ExpectedImplicitParameterAfterAt LocalFunctionHeader))
-        bag.AddError(DiagnosticFact.coreExpressionParsing ExpectedNameAfterEffectLabel)
+        bag.AddError(DiagnosticFact.coreExpressionParsing (ExpectedCoreKeyword "if"))
+        bag.AddError(DiagnosticFact.coreExpressionParsing ExpectedQualifiedNameSegment)
+        bag.AddError(DiagnosticFact.coreExpressionParsing (ExpectedNameAfterSelector "effect-label"))
         bag.AddError(DiagnosticFact.coreExpressionParsing ExpectedExplicitMemberProjectionName)
         bag.AddError(DiagnosticFact.coreExpressionParsing ExpectedSafeNavigationMemberAccess)
         bag.AddError(DiagnosticFact.coreExpressionParsing UnexpectedTrailingExpressionTokens)
@@ -3776,6 +3778,7 @@ module SmokeTestsShard4 =
         bag.AddError(DiagnosticFact.coreExpressionParsing ExpectedRecordPatchItem)
         bag.AddError(DiagnosticFact.coreExpressionParsing ExpectedProjectionThen)
         bag.AddError(DiagnosticFact.coreExpressionParsing ExpectedProjectionElse)
+        bag.AddError(DiagnosticFact.coreExpressionParsing ExpectedProjectionAccessorClause)
         bag.AddError(DiagnosticFact.coreExpressionParsing ExpectedProjectionAccessorClauseArrow)
         bag.AddError(DiagnosticFact.coreExpressionParsing ExpectedProjectionSetAccessor)
         bag.AddError(DiagnosticFact.coreExpressionParsing ProjectionSetAccessorRequiresTypedParameter)
@@ -3846,6 +3849,14 @@ module SmokeTestsShard4 =
         let localFunctionHeaderDiagnostic =
             diagnostics
             |> List.find (fun item -> item.Message = "Expected an implicit parameter after '@' in the local function header.")
+
+        let expectedKeywordDiagnostic =
+            diagnostics
+            |> List.find (fun item -> item.Message = "Expected 'if'.")
+
+        let qualifiedNameDiagnostic =
+            diagnostics
+            |> List.find (fun item -> item.Message = "Expected a name.")
 
         let effectLabelDiagnostic =
             diagnostics
@@ -3970,6 +3981,10 @@ module SmokeTestsShard4 =
         let projectionElseDiagnostic =
             diagnostics
             |> List.find (fun item -> item.Message = "Expected 'else' in the projection body.")
+
+        let projectionAccessorClauseDiagnostic =
+            diagnostics
+            |> List.find (fun item -> item.Message = "Expected a projection accessor clause.")
 
         let projectionAccessorArrowDiagnostic =
             diagnostics
@@ -4128,10 +4143,34 @@ module SmokeTestsShard4 =
                 && field.Value = DiagnosticPayloadText "local-function-header"
         )
         Assert.Contains(
+            expectedKeywordDiagnostic.Payload.Fields,
+            fun field ->
+                field.Name = "reason"
+                && field.Value = DiagnosticPayloadText "expected-core-keyword"
+        )
+        Assert.Contains(
+            expectedKeywordDiagnostic.Payload.Fields,
+            fun field ->
+                field.Name = "keyword-text"
+                && field.Value = DiagnosticPayloadText "if"
+        )
+        Assert.Contains(
+            qualifiedNameDiagnostic.Payload.Fields,
+            fun field ->
+                field.Name = "reason"
+                && field.Value = DiagnosticPayloadText "expected-qualified-name-segment"
+        )
+        Assert.Contains(
             effectLabelDiagnostic.Payload.Fields,
             fun field ->
                 field.Name = "reason"
-                && field.Value = DiagnosticPayloadText "expected-name-after-effect-label"
+                && field.Value = DiagnosticPayloadText "expected-name-after-selector"
+        )
+        Assert.Contains(
+            effectLabelDiagnostic.Payload.Fields,
+            fun field ->
+                field.Name = "selector-description"
+                && field.Value = DiagnosticPayloadText "effect-label"
         )
         Assert.Contains(
             explicitProjectionDiagnostic.Payload.Fields,
@@ -4312,6 +4351,12 @@ module SmokeTestsShard4 =
             fun field ->
                 field.Name = "reason"
                 && field.Value = DiagnosticPayloadText "expected-projection-else"
+        )
+        Assert.Contains(
+            projectionAccessorClauseDiagnostic.Payload.Fields,
+            fun field ->
+                field.Name = "reason"
+                && field.Value = DiagnosticPayloadText "expected-projection-accessor-clause"
         )
         Assert.Contains(
             projectionAccessorArrowDiagnostic.Payload.Fields,
@@ -4869,7 +4914,9 @@ module SmokeTestsShard4 =
 
         let effectDiagnostic =
             parsed.Diagnostics
-            |> List.find (fun diagnostic -> tryFindPayloadText "reason" diagnostic = Some "expected-name-after-effect-label")
+            |> List.find (fun diagnostic ->
+                tryFindPayloadText "reason" diagnostic = Some "expected-name-after-selector"
+                && tryFindPayloadText "selector-description" diagnostic = Some "effect-label")
 
         let safeDiagnostic =
             parsed.Diagnostics
@@ -5079,6 +5126,8 @@ module SmokeTestsShard4 =
         let sourceText =
             [
                 "module main"
+                "projection badClause (place this : Int) : Int ="
+                "    get value -> this"
                 "projection badArrow (place this : Int) : Int ="
                 "    get this"
                 "projection badSetAccessor (place this : Int) : Int ="
@@ -5096,6 +5145,11 @@ module SmokeTestsShard4 =
                 sourceText
 
         Assert.Empty(lexed.Diagnostics)
+
+        let accessorClauseDiagnostic =
+            parsed.Diagnostics
+            |> List.find (fun diagnostic ->
+                tryFindPayloadText "reason" diagnostic = Some "expected-projection-accessor-clause")
 
         let arrowDiagnostic =
             parsed.Diagnostics
@@ -5117,6 +5171,7 @@ module SmokeTestsShard4 =
             |> List.find (fun diagnostic ->
                 tryFindPayloadText "reason" diagnostic = Some "projection-set-accessor-uses-ordinary-parameter")
 
+        Assert.Equal("core-expression-parsing", accessorClauseDiagnostic.Payload.Kind)
         Assert.Equal("core-expression-parsing", arrowDiagnostic.Payload.Kind)
         Assert.Equal("core-expression-parsing", setAccessorDiagnostic.Payload.Kind)
         Assert.Equal("core-expression-parsing", typedParameterDiagnostic.Payload.Kind)

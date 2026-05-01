@@ -866,7 +866,9 @@ type CoreExpressionParsingEvidence =
     | UnsupportedImplicitParameterSyntax of CoreHeaderContext
     | UnterminatedParameterBinderInHeader of CoreHeaderContext
     | UnsupportedHeaderSyntax of CoreHeaderContext
-    | ExpectedNameAfterEffectLabel
+    | ExpectedCoreKeyword of keywordText: string
+    | ExpectedQualifiedNameSegment
+    | ExpectedNameAfterSelector of selectorDescription: string
     | ExpectedConstructorNameAfterIs
     | ExpectedRecordUpdateClose
     | ExpectedExplicitMemberProjectionName
@@ -900,6 +902,7 @@ type CoreExpressionParsingEvidence =
     | ExpectedRecordPatchItem
     | ExpectedProjectionThen
     | ExpectedProjectionElse
+    | ExpectedProjectionAccessorClause
     | ExpectedProjectionAccessorClauseArrow
     | ExpectedProjectionSetAccessor
     | ProjectionSetAccessorRequiresTypedParameter
@@ -2602,9 +2605,21 @@ module DiagnosticFact =
                         "core-expression-parsing"
                         [ field "reason" (DiagnosticPayloadText "unsupported-header-syntax")
                           field "header-context" (DiagnosticPayloadText(coreHeaderContextPayloadText context)) ])
-            | ExpectedNameAfterEffectLabel ->
-                descriptor DiagnosticCode.ExpectedSyntaxToken None "Expected a name after 'effect-label'."
-                    (payload "core-expression-parsing" [ field "reason" (DiagnosticPayloadText "expected-name-after-effect-label") ])
+            | ExpectedCoreKeyword keywordText ->
+                descriptor DiagnosticCode.ExpectedSyntaxToken None $"Expected '{keywordText}'."
+                    (payload
+                        "core-expression-parsing"
+                        [ field "reason" (DiagnosticPayloadText "expected-core-keyword")
+                          field "keyword-text" (DiagnosticPayloadText keywordText) ])
+            | ExpectedQualifiedNameSegment ->
+                descriptor DiagnosticCode.ExpectedSyntaxToken None "Expected a name."
+                    (payload "core-expression-parsing" [ field "reason" (DiagnosticPayloadText "expected-qualified-name-segment") ])
+            | ExpectedNameAfterSelector selectorDescription ->
+                descriptor DiagnosticCode.ExpectedSyntaxToken None $"Expected a name after '{selectorDescription}'."
+                    (payload
+                        "core-expression-parsing"
+                        [ field "reason" (DiagnosticPayloadText "expected-name-after-selector")
+                          field "selector-description" (DiagnosticPayloadText selectorDescription) ])
             | ExpectedConstructorNameAfterIs ->
                 descriptor DiagnosticCode.ExpectedSyntaxToken None "Expected a constructor name after 'is'."
                     (payload "core-expression-parsing" [ field "reason" (DiagnosticPayloadText "expected-constructor-name-after-is") ])
@@ -2729,6 +2744,14 @@ module DiagnosticFact =
                     None
                     "Expected 'else' in the projection body."
                     (payload "core-expression-parsing" [ field "reason" (DiagnosticPayloadText "expected-projection-else") ])
+            | ExpectedProjectionAccessorClause ->
+                descriptor
+                    DiagnosticCode.ExpectedSyntaxToken
+                    None
+                    "Expected a projection accessor clause."
+                    (payload
+                        "core-expression-parsing"
+                        [ field "reason" (DiagnosticPayloadText "expected-projection-accessor-clause") ])
             | ExpectedProjectionAccessorClauseArrow ->
                 descriptor
                     DiagnosticCode.ExpectedSyntaxToken

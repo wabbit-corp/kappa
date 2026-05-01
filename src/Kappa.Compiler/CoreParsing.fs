@@ -1495,14 +1495,17 @@ type private ExpressionParser
             | Some _ -> ExplicitImplicitArgument(TypeSyntaxTokens tokens)
             | None -> ExplicitImplicitArgument(this.ParseNestedExpression(tokens, false, false))
 
-    member private this.ExpectKeyword(keyword: Keyword, message: string) =
+    member private this.ExpectKeyword(keyword: Keyword) =
         this.SkipLayout()
 
         if Token.isKeyword keyword this.Current then
             this.Advance() |> ignore
             true
         else
-            diagnostics.AddError(DiagnosticFact.simple SimpleDiagnosticKind.ExpectedSyntaxToken message, source.GetLocation(this.Current.Span))
+            diagnostics.AddError(
+                DiagnosticFact.coreExpressionParsing (ExpectedCoreKeyword(Keyword.toText keyword)),
+                source.GetLocation(this.Current.Span)
+            )
             false
 
     member private this.IsNameToken(token: Token) =
@@ -3825,7 +3828,7 @@ type private ExpressionParser
                 this.Advance() |> ignore
                 segments.Add(SyntaxFacts.trimIdentifierQuotes (this.Advance().Text))
         else
-            diagnostics.AddError(DiagnosticFact.simple SimpleDiagnosticKind.ExpectedSyntaxToken "Expected a name.", source.GetLocation(this.Current.Span))
+            diagnostics.AddError(DiagnosticFact.coreExpressionParsing ExpectedQualifiedNameSegment, source.GetLocation(this.Current.Span))
 
         List.ofSeq segments
 
@@ -3916,7 +3919,7 @@ type private ExpressionParser
         List.ofSeq parameters
 
     member private this.ParseIfExpression() =
-        this.ExpectKeyword(Keyword.If, "Expected 'if'.") |> ignore
+        this.ExpectKeyword(Keyword.If) |> ignore
         let condition = this.ParseExpression(0)
         this.SkipLayout()
 
@@ -4058,7 +4061,7 @@ type private ExpressionParser
         List.ofSeq tokens
 
     member private this.ParseMatchExpression() =
-        this.ExpectKeyword(Keyword.Match, "Expected 'match'.") |> ignore
+        this.ExpectKeyword(Keyword.Match) |> ignore
         let scrutineeTokens = ResizeArray<Token>()
 
         while this.Current.Kind <> Newline && this.Current.Kind <> EndOfFile do
@@ -4591,7 +4594,7 @@ type private ExpressionParser
                 DoExpression(this.ParseStandaloneExpression(lineTokens))
 
     member private this.ParseDoExpression() =
-        this.ExpectKeyword(Keyword.Do, "Expected 'do'.") |> ignore
+        this.ExpectKeyword(Keyword.Do) |> ignore
 
         let statements =
             this.CollectIndentedLines()
@@ -4805,7 +4808,7 @@ type private ExpressionParser
         PrefixedString(prefix, List.ofSeq parts)
 
     member private this.ParseSealExpression() =
-        this.ExpectKeyword(Keyword.Seal, "Expected 'seal'.") |> ignore
+        this.ExpectKeyword(Keyword.Seal) |> ignore
 
         let valueTokens = ResizeArray<Token>()
         let mutable depth = 0
@@ -5202,7 +5205,7 @@ type private ExpressionParser
         if this.IsNameToken(this.Current) then
             KindQualifiedName(selector, this.ParseQualifiedName())
         else
-            diagnostics.AddError(DiagnosticFact.simple SimpleDiagnosticKind.ExpectedSyntaxToken $"Expected a name after '{selectorDescription}'.",
+            diagnostics.AddError(DiagnosticFact.coreExpressionParsing (ExpectedNameAfterSelector selectorDescription),
                 source.GetLocation(this.Current.Span)
             )
 
@@ -5235,7 +5238,7 @@ type private ExpressionParser
             KindQualifiedName(EffectLabelKind, this.ParseQualifiedName())
         else
             diagnostics.AddError(
-                DiagnosticFact.coreExpressionParsing ExpectedNameAfterEffectLabel,
+                DiagnosticFact.coreExpressionParsing (ExpectedNameAfterSelector "effect-label"),
                 source.GetLocation(this.Current.Span)
             )
 
@@ -5680,7 +5683,7 @@ type private ExpressionParser
 
             binding, value
 
-        this.ExpectKeyword(Keyword.Let, "Expected 'let'.") |> ignore
+        this.ExpectKeyword(Keyword.Let) |> ignore
 
         let bindingAndValueTokens = ResizeArray<Token>()
         let mutable bracketDepth = 0
@@ -6945,10 +6948,10 @@ module CoreParsing =
                 | setToken :: _ when isNamedAccessor "set" setToken ->
                     parseSetClauseHeader setToken.Span headerTokens bodyTokens
                 | token :: _ ->
-                    diagnostics.AddError(DiagnosticFact.simple SimpleDiagnosticKind.ExpectedSyntaxToken "Expected a projection accessor clause.", source.GetLocation(token.Span))
+                    diagnostics.AddError(DiagnosticFact.coreExpressionParsing ExpectedProjectionAccessorClause, source.GetLocation(token.Span))
                     None
                 | [] ->
-                    diagnostics.AddError(DiagnosticFact.simple SimpleDiagnosticKind.ExpectedSyntaxToken "Expected a projection accessor clause.", source.GetLocation(TextSpan.FromBounds(source.Length, source.Length)))
+                    diagnostics.AddError(DiagnosticFact.coreExpressionParsing ExpectedProjectionAccessorClause, source.GetLocation(TextSpan.FromBounds(source.Length, source.Length)))
                     None
             | None ->
                 match clauseTokens with
