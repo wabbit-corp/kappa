@@ -3898,9 +3898,25 @@ type private ExpressionParser
     member private this.ParseIfExpression() =
         this.ExpectKeyword(Keyword.If, "Expected 'if'.") |> ignore
         let condition = this.ParseExpression(0)
-        this.ExpectKeyword(Keyword.Then, "Expected 'then' in the if expression.") |> ignore
+        this.SkipLayout()
+
+        if Token.isKeyword Keyword.Then this.Current then
+            this.Advance() |> ignore
+        else
+            diagnostics.AddError(
+                DiagnosticFact.coreExpressionParsing ExpectedIfThen,
+                source.GetLocation(this.Current.Span)
+            )
         let whenTrue = this.ParseExpression(0)
-        this.ExpectKeyword(Keyword.Else, "Expected 'else' in the if expression.") |> ignore
+        this.SkipLayout()
+
+        if Token.isKeyword Keyword.Else this.Current then
+            this.Advance() |> ignore
+        else
+            diagnostics.AddError(
+                DiagnosticFact.coreExpressionParsing ExpectedIfElse,
+                source.GetLocation(this.Current.Span)
+            )
         let whenFalse = this.ParseExpression(0)
         IfThenElse(condition, whenTrue, whenFalse)
 

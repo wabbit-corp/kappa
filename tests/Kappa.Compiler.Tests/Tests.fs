@@ -3766,6 +3766,8 @@ module SmokeTestsShard4 =
         bag.AddError(DiagnosticFact.coreExpressionParsing ExpectedInterpolationEndBeforeStringResumes)
         bag.AddError(DiagnosticFact.coreExpressionParsing ExpectedInterpolatedStringContent)
         bag.AddError(DiagnosticFact.coreExpressionParsing UnterminatedInterpolatedString)
+        bag.AddError(DiagnosticFact.coreExpressionParsing ExpectedIfThen)
+        bag.AddError(DiagnosticFact.coreExpressionParsing ExpectedIfElse)
         bag.AddError(DiagnosticFact.coreExpressionParsing DuplicateHandlerReturnClause)
         bag.AddError(DiagnosticFact.coreExpressionParsing MissingHandlerReturnClause)
         bag.AddError(DiagnosticFact.coreExpressionParsing (HandlerReturnClauseArityMismatch 2))
@@ -3917,6 +3919,14 @@ module SmokeTestsShard4 =
         let unterminatedInterpolatedStringDiagnostic =
             diagnostics
             |> List.find (fun item -> item.Message = "Unterminated interpolated string.")
+
+        let ifThenDiagnostic =
+            diagnostics
+            |> List.find (fun item -> item.Message = "Expected 'then' in the if expression.")
+
+        let ifElseDiagnostic =
+            diagnostics
+            |> List.find (fun item -> item.Message = "Expected 'else' in the if expression.")
 
         let duplicateHandlerReturnDiagnostic =
             diagnostics
@@ -4187,6 +4197,18 @@ module SmokeTestsShard4 =
             fun field ->
                 field.Name = "reason"
                 && field.Value = DiagnosticPayloadText "unterminated-interpolated-string"
+        )
+        Assert.Contains(
+            ifThenDiagnostic.Payload.Fields,
+            fun field ->
+                field.Name = "reason"
+                && field.Value = DiagnosticPayloadText "expected-if-then"
+        )
+        Assert.Contains(
+            ifElseDiagnostic.Payload.Fields,
+            fun field ->
+                field.Name = "reason"
+                && field.Value = DiagnosticPayloadText "expected-if-else"
         )
         Assert.Contains(
             duplicateHandlerReturnDiagnostic.Payload.Fields,
@@ -4982,6 +5004,36 @@ module SmokeTestsShard4 =
 
         Assert.Equal("qtt-using-explicit-quantity", diagnostic.Payload.Kind)
         Assert.Equal(Some "using-binds-borrowed-pattern", tryFindPayloadText "reason" diagnostic)
+
+    [<Fact>]
+    let ``parser reports structured if keyword diagnostics`` () =
+        let sourceText =
+            [
+                "module main"
+                "let missingThen = if 1 else 2"
+                "let missingElse = if 1 then 2"
+            ]
+            |> String.concat "\n"
+
+        let _, lexed, parsed =
+            lexAndParse
+                "main.kp"
+                sourceText
+
+        Assert.Empty(lexed.Diagnostics)
+
+        let thenDiagnostic =
+            parsed.Diagnostics
+            |> List.find (fun diagnostic ->
+                tryFindPayloadText "reason" diagnostic = Some "expected-if-then")
+
+        let elseDiagnostic =
+            parsed.Diagnostics
+            |> List.find (fun diagnostic ->
+                tryFindPayloadText "reason" diagnostic = Some "expected-if-else")
+
+        Assert.Equal("core-expression-parsing", thenDiagnostic.Payload.Kind)
+        Assert.Equal("core-expression-parsing", elseDiagnostic.Payload.Kind)
 
     [<Fact>]
     let ``parser reports structured interpolated string recovery diagnostics`` () =

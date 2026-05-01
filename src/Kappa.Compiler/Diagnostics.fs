@@ -888,6 +888,8 @@ type CoreExpressionParsingEvidence =
     | ExpectedInterpolationEndBeforeStringResumes
     | ExpectedInterpolatedStringContent
     | UnterminatedInterpolatedString
+    | ExpectedIfThen
+    | ExpectedIfElse
     | DuplicateHandlerReturnClause
     | MissingHandlerReturnClause
     | HandlerReturnClauseArityMismatch of argumentCount: int
@@ -2617,6 +2619,12 @@ module DiagnosticFact =
             | UnterminatedInterpolatedString ->
                 descriptor DiagnosticCode.ExpectedSyntaxToken None "Unterminated interpolated string."
                     (payload "core-expression-parsing" [ field "reason" (DiagnosticPayloadText "unterminated-interpolated-string") ])
+            | ExpectedIfThen ->
+                descriptor DiagnosticCode.ExpectedSyntaxToken None "Expected 'then' in the if expression."
+                    (payload "core-expression-parsing" [ field "reason" (DiagnosticPayloadText "expected-if-then") ])
+            | ExpectedIfElse ->
+                descriptor DiagnosticCode.ExpectedSyntaxToken None "Expected 'else' in the if expression."
+                    (payload "core-expression-parsing" [ field "reason" (DiagnosticPayloadText "expected-if-else") ])
             | DuplicateHandlerReturnClause ->
                 descriptor DiagnosticCode.HandlerClauseDuplicate None "A handler must not define more than one return clause."
                     (payload "core-expression-parsing" [ field "reason" (DiagnosticPayloadText "duplicate-handler-return-clause") ])
