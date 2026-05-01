@@ -101,8 +101,8 @@ Current M4 status note: started, not complete. The compiler now has a real effec
 - [ ] Remove the remaining string escape hatches from `Diagnostics.fs`, especially `SimpleDiagnosticEvidence.Detail` and `CodeDetailEvidence.Detail`, so compiler phases cannot smuggle raw prose into emitted diagnostics.
 - [x] Finish `Parser.fs` diagnostics conversion by replacing the remaining dynamic raw-string parse failures, especially string-literal decoding and URL module-specifier parsing.
 - [x] Finish `CoreParsing.fs` diagnostics conversion for the remaining dynamic literal and Unicode decode failures after string-literal decode: character/grapheme/byte decode failures.
-- [ ] Finish `CoreParsing.fs` diagnostics conversion for the remaining record literal / named field structural paths.
-  Named application field diagnostics now route through `CoreExpressionParsingEvidence`, but record literal field-label and malformed-field diagnostics still use raw `ExpectedSyntaxToken` detail strings.
+- [ ] Finish `CoreParsing.fs` diagnostics conversion for the remaining record and patch structural paths.
+  Named application and record-literal field diagnostics now route through `CoreExpressionParsingEvidence`, but record-patch item validation still uses raw simple diagnostics.
 - [ ] Finish `CoreParsing.fs` diagnostics conversion for the remaining primary-expression recovery paths.
   Local `let ... in ...` recovery, missing `)` recovery, and the generic “expected expression” path now route through `CoreExpressionParsingEvidence`, but interpolated-string recovery and a few selector/name recovery helpers still use raw detail strings.
 - [ ] Finish `CoreParsing.fs` diagnostics conversion for projection headers, accessor clauses, and projection-specific binder validation.

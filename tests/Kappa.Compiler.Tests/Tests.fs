@@ -3731,6 +3731,8 @@ module SmokeTestsShard4 =
         bag.AddError(DiagnosticFact.coreExpressionParsing UnexpectedTrailingExpressionTokens)
         bag.AddError(DiagnosticFact.coreExpressionParsing ExpectedNamedApplicationFieldLabel)
         bag.AddError(DiagnosticFact.coreExpressionParsing ExpectedNamedApplicationField)
+        bag.AddError(DiagnosticFact.coreExpressionParsing ExpectedRecordFieldLabel)
+        bag.AddError(DiagnosticFact.coreExpressionParsing ExpectedRecordField)
         bag.AddError(DiagnosticFact.coreExpressionParsing ExpectedSealAs)
         bag.AddError(DiagnosticFact.coreExpressionParsing ExpectedSealValue)
         bag.AddError(DiagnosticFact.coreExpressionParsing ExpectedProjectionBodyHead)
@@ -3814,6 +3816,14 @@ module SmokeTestsShard4 =
         let namedApplicationFieldDiagnostic =
             diagnostics
             |> List.find (fun item -> item.Message = "Expected a named application field of the form 'name = expr' or a punned field name.")
+
+        let recordFieldLabelDiagnostic =
+            diagnostics
+            |> List.find (fun item -> item.Message = "Expected a record field label.")
+
+        let recordFieldDiagnostic =
+            diagnostics
+            |> List.find (fun item -> item.Message = "Expected a record field of the form 'name = expr' or a punned field name.")
 
         let sealAsDiagnostic =
             diagnostics
@@ -3962,6 +3972,18 @@ module SmokeTestsShard4 =
             fun field ->
                 field.Name = "reason"
                 && field.Value = DiagnosticPayloadText "expected-named-application-field"
+        )
+        Assert.Contains(
+            recordFieldLabelDiagnostic.Payload.Fields,
+            fun field ->
+                field.Name = "reason"
+                && field.Value = DiagnosticPayloadText "expected-record-field-label"
+        )
+        Assert.Contains(
+            recordFieldDiagnostic.Payload.Fields,
+            fun field ->
+                field.Name = "reason"
+                && field.Value = DiagnosticPayloadText "expected-record-field"
         )
         Assert.Contains(
             sealAsDiagnostic.Payload.Fields,
@@ -4349,6 +4371,34 @@ module SmokeTestsShard4 =
         Assert.Equal("core-expression-parsing", namedFieldDiagnostic.Payload.Kind)
         Assert.Equal("core-expression-parsing", sealAsDiagnostic.Payload.Kind)
         Assert.Equal("core-expression-parsing", sealValueDiagnostic.Payload.Kind)
+
+    [<Fact>]
+    let ``parser reports structured record field diagnostics`` () =
+        let sourceText =
+            [
+                "module main"
+                "let badRecordLabel = (1 = x)"
+                "let badRecordForm = (1 = x, @x)"
+            ]
+            |> String.concat "\n"
+
+        let _, lexed, parsed =
+            lexAndParse
+                "main.kp"
+                sourceText
+
+        Assert.Empty(lexed.Diagnostics)
+
+        let recordLabelDiagnostic =
+            parsed.Diagnostics
+            |> List.find (fun diagnostic -> tryFindPayloadText "reason" diagnostic = Some "expected-record-field-label")
+
+        let recordFieldDiagnostic =
+            parsed.Diagnostics
+            |> List.find (fun diagnostic -> tryFindPayloadText "reason" diagnostic = Some "expected-record-field")
+
+        Assert.Equal("core-expression-parsing", recordLabelDiagnostic.Payload.Kind)
+        Assert.Equal("core-expression-parsing", recordFieldDiagnostic.Payload.Kind)
 
     [<Fact>]
     let ``parser reports structured projection body diagnostics`` () =

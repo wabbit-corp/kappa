@@ -4943,12 +4943,18 @@ type private ExpressionParser
                           IsImplicit = isImplicit
                           Value = this.ParseStandaloneExpression(valueTokens) }
                     | labelToken :: _ ->
-                        diagnostics.AddError(DiagnosticFact.simple SimpleDiagnosticKind.ExpectedSyntaxToken "Expected a record field label.", source.GetLocation(labelToken.Span))
+                        diagnostics.AddError(
+                            DiagnosticFact.coreExpressionParsing ExpectedRecordFieldLabel,
+                            source.GetLocation(labelToken.Span)
+                        )
                         { Name = "<missing>"
                           IsImplicit = isImplicit
                           Value = Literal LiteralValue.Unit }
                     | [] ->
-                        diagnostics.AddError(DiagnosticFact.simple SimpleDiagnosticKind.ExpectedSyntaxToken "Expected a record field label.", source.GetLocation(eofSpan))
+                        diagnostics.AddError(
+                            DiagnosticFact.coreExpressionParsing ExpectedRecordFieldLabel,
+                            source.GetLocation(eofSpan)
+                        )
                         { Name = "<missing>"
                           IsImplicit = isImplicit
                           Value = Literal LiteralValue.Unit }
@@ -4961,7 +4967,8 @@ type private ExpressionParser
                           IsImplicit = false
                           Value = Name [ fieldName ] }
                     | token :: _ ->
-                        diagnostics.AddError(DiagnosticFact.simple SimpleDiagnosticKind.ExpectedSyntaxToken "Expected a record field of the form 'name = expr' or a punned field name.",
+                        diagnostics.AddError(
+                            DiagnosticFact.coreExpressionParsing ExpectedRecordField,
                             source.GetLocation(token.Span)
                         )
 
@@ -4969,7 +4976,8 @@ type private ExpressionParser
                           IsImplicit = isImplicit
                           Value = Literal LiteralValue.Unit }
                     | [] ->
-                        diagnostics.AddError(DiagnosticFact.simple SimpleDiagnosticKind.ExpectedSyntaxToken "Expected a record field of the form 'name = expr' or a punned field name.",
+                        diagnostics.AddError(
+                            DiagnosticFact.coreExpressionParsing ExpectedRecordField,
                             source.GetLocation(eofSpan)
                         )
 

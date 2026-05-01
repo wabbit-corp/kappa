@@ -873,6 +873,8 @@ type CoreExpressionParsingEvidence =
     | UnexpectedTrailingExpressionTokens
     | ExpectedNamedApplicationFieldLabel
     | ExpectedNamedApplicationField
+    | ExpectedRecordFieldLabel
+    | ExpectedRecordField
     | ExpectedSealAs
     | ExpectedSealValue
     | ExpectedProjectionBodyHead
@@ -2542,6 +2544,12 @@ module DiagnosticFact =
             | ExpectedNamedApplicationField ->
                 descriptor DiagnosticCode.ExpectedSyntaxToken None "Expected a named application field of the form 'name = expr' or a punned field name."
                     (payload "core-expression-parsing" [ field "reason" (DiagnosticPayloadText "expected-named-application-field") ])
+            | ExpectedRecordFieldLabel ->
+                descriptor DiagnosticCode.ExpectedSyntaxToken None "Expected a record field label."
+                    (payload "core-expression-parsing" [ field "reason" (DiagnosticPayloadText "expected-record-field-label") ])
+            | ExpectedRecordField ->
+                descriptor DiagnosticCode.ExpectedSyntaxToken None "Expected a record field of the form 'name = expr' or a punned field name."
+                    (payload "core-expression-parsing" [ field "reason" (DiagnosticPayloadText "expected-record-field") ])
             | ExpectedSealAs ->
                 descriptor DiagnosticCode.ExpectedSyntaxToken None "Expected 'as' in the seal expression."
                     (payload "core-expression-parsing" [ field "reason" (DiagnosticPayloadText "expected-seal-as") ])
