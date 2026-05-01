@@ -818,12 +818,21 @@ type SurfaceRecordDiagnosticEvidence =
     | ProjectionSectionUpdateTargetUnsupported
 
 type SurfaceElaborationDiagnosticEvidence =
+    | ProjectionDefinitionRequiresPlaceBinder
+    | SelectorProjectionYieldInvalid of reason: ProjectionYieldInvalidReason
+    | ExpandedAccessorProjectionRequiresExactlyOnePlaceBinder
+    | ProjectionAccessorClauseDeclaredMoreThanOnce of clauseKind: string
     | StaticConstructorRequiresPreservedStaticObjectIdentity of memberName: string
     | PatternHeadResolvedToOrdinaryTerm of headName: string
     | ActivePatternLinearlyConsumesScrutineeInRefutableContext of patternName: string * context: string
     | MatchReturningActivePatternNotPermittedInPlainLetQuestion of patternName: string
     | ActivePatternDeclarationRequiresExplicitScrutineeBinder
     | ActivePatternDeclarationResultMustNotBeMonadic
+
+and ProjectionYieldInvalidReason =
+    | ProjectionYieldMustDenoteStablePlaceNotAccessorBundle
+    | ProjectionYieldMustDenoteStablePlace
+    | ProjectionYieldMustBeRootedInPlaceBinder
 
 type CorePatternParsingEvidence =
     | UnsupportedParameterBinderSyntax
@@ -2140,6 +2149,52 @@ module DiagnosticFact =
                         [ field "reason" (DiagnosticPayloadText "projection-section-update-target-unsupported") ])
         | SurfaceElaborationDiagnostic evidence ->
             match evidence with
+            | ProjectionDefinitionRequiresPlaceBinder ->
+                descriptor
+                    DiagnosticCode.ProjectionMissingPlaceBinder
+                    None
+                    "A projection definition must declare at least one place binder."
+                    (payload
+                        "surface-elaboration-diagnostic"
+                        [ field "reason" (DiagnosticPayloadText "projection-definition-requires-place-binder") ])
+            | SelectorProjectionYieldInvalid reason ->
+                let reasonText, message =
+                    match reason with
+                    | ProjectionYieldMustDenoteStablePlaceNotAccessorBundle ->
+                        "selector-projection-yield-must-denote-stable-place-not-accessor-bundle",
+                        "A selector projection yield must denote a stable place, not an accessor bundle."
+                    | ProjectionYieldMustDenoteStablePlace ->
+                        "selector-projection-yield-must-denote-stable-place",
+                        "A selector projection yield must denote a stable place."
+                    | ProjectionYieldMustBeRootedInPlaceBinder ->
+                        "selector-projection-yield-must-be-rooted-in-place-binder",
+                        "A selector projection yield must denote a stable place rooted in a place binder."
+
+                descriptor
+                    DiagnosticCode.ProjectionYieldInvalid
+                    None
+                    message
+                    (payload
+                        "surface-elaboration-diagnostic"
+                        [ field "category" (DiagnosticPayloadText "projection-yield-invalid")
+                          field "reason" (DiagnosticPayloadText reasonText) ])
+            | ExpandedAccessorProjectionRequiresExactlyOnePlaceBinder ->
+                descriptor
+                    DiagnosticCode.ProjectionExpandedAccessorPlaceBinderMismatch
+                    None
+                    "An expanded accessor projection must declare exactly one place binder."
+                    (payload
+                        "surface-elaboration-diagnostic"
+                        [ field "reason" (DiagnosticPayloadText "expanded-accessor-projection-requires-exactly-one-place-binder") ])
+            | ProjectionAccessorClauseDeclaredMoreThanOnce clauseKind ->
+                descriptor
+                    DiagnosticCode.ProjectionAccessorClauseDuplicate
+                    None
+                    $"Projection accessor clause '{clauseKind}' is declared more than once."
+                    (payload
+                        "surface-elaboration-diagnostic"
+                        [ field "reason" (DiagnosticPayloadText "projection-accessor-clause-declared-more-than-once")
+                          field "clause-kind" (DiagnosticPayloadText clauseKind) ])
             | StaticConstructorRequiresPreservedStaticObjectIdentity memberName ->
                 descriptor
                     DiagnosticCode.StaticObjectUnresolved

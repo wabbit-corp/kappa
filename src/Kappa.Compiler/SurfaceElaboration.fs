@@ -20920,7 +20920,14 @@ module SurfaceElaboration =
 
                     let missingPlaceDiagnostics =
                         if List.isEmpty placeBinders then
-                            [ makeDiagnostic SimpleDiagnosticKind.ProjectionMissingPlaceBinder "A projection definition must declare at least one place binder." ]
+                            [
+                                Diagnostics.errorFact
+                                    "KFrontIR"
+                                    (Some(KFrontIRPhase.phaseName CORE_LOWERING))
+                                    None
+                                    []
+                                    (DiagnosticFact.surfaceElaboration ProjectionDefinitionRequiresPlaceBinder)
+                            ]
                         else
                             []
 
@@ -20933,13 +20940,37 @@ module SurfaceElaboration =
                             | Some nestedProjection ->
                                 match nestedProjection.Body with
                                 | Some(ProjectionAccessors _) ->
-                                    [ makeDiagnostic SimpleDiagnosticKind.ProjectionYieldInvalid "A selector projection yield must denote a stable place, not an accessor bundle." ]
+                                    [
+                                        Diagnostics.errorFact
+                                            "KFrontIR"
+                                            (Some(KFrontIRPhase.phaseName CORE_LOWERING))
+                                            None
+                                            []
+                                            (DiagnosticFact.surfaceElaboration
+                                                (SelectorProjectionYieldInvalid ProjectionYieldMustDenoteStablePlaceNotAccessorBundle))
+                                    ]
                                 | _ ->
                                     []
                             | None ->
-                                [ makeDiagnostic SimpleDiagnosticKind.ProjectionYieldInvalid "A selector projection yield must denote a stable place." ]
+                                [
+                                    Diagnostics.errorFact
+                                        "KFrontIR"
+                                        (Some(KFrontIRPhase.phaseName CORE_LOWERING))
+                                        None
+                                        []
+                                        (DiagnosticFact.surfaceElaboration
+                                            (SelectorProjectionYieldInvalid ProjectionYieldMustDenoteStablePlace))
+                                ]
                         | ProjectionYield _ ->
-                            [ makeDiagnostic SimpleDiagnosticKind.ProjectionYieldInvalid "A selector projection yield must denote a stable place rooted in a place binder." ]
+                            [
+                                Diagnostics.errorFact
+                                    "KFrontIR"
+                                    (Some(KFrontIRPhase.phaseName CORE_LOWERING))
+                                    None
+                                    []
+                                    (DiagnosticFact.surfaceElaboration
+                                        (SelectorProjectionYieldInvalid ProjectionYieldMustBeRootedInPlaceBinder))
+                            ]
                         | ProjectionIfThenElse(_, whenTrue, whenFalse) ->
                             selectorYieldDiagnostics whenTrue @ selectorYieldDiagnostics whenFalse
                         | ProjectionMatch(_, cases) ->
@@ -20957,7 +20988,15 @@ module SurfaceElaboration =
                                     if List.length placeBinders = 1 then
                                         []
                                     else
-                                        [ makeDiagnostic SimpleDiagnosticKind.ProjectionExpandedAccessorPlaceBinderMismatch "An expanded accessor projection must declare exactly one place binder." ]
+                                        [
+                                            Diagnostics.errorFact
+                                                "KFrontIR"
+                                                (Some(KFrontIRPhase.phaseName CORE_LOWERING))
+                                                None
+                                                []
+                                                (DiagnosticFact.surfaceElaboration
+                                                    ExpandedAccessorProjectionRequiresExactlyOnePlaceBinder)
+                                        ]
 
                                 let duplicateDiagnostics =
                                     clauses
@@ -20969,7 +21008,15 @@ module SurfaceElaboration =
                                     |> List.countBy id
                                     |> List.choose (fun (kind, count) ->
                                         if count > 1 then
-                                            Some(makeDiagnostic SimpleDiagnosticKind.ProjectionAccessorClauseDuplicate $"Projection accessor clause '{kind}' is declared more than once.")
+                                            Some(
+                                                Diagnostics.errorFact
+                                                    "KFrontIR"
+                                                    (Some(KFrontIRPhase.phaseName CORE_LOWERING))
+                                                    None
+                                                    []
+                                                    (DiagnosticFact.surfaceElaboration
+                                                        (ProjectionAccessorClauseDeclaredMoreThanOnce kind))
+                                            )
                                         else
                                             None)
 

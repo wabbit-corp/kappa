@@ -3747,6 +3747,12 @@ module SmokeTestsShard4 =
         bag.AddError(DiagnosticFact.surfaceElaboration (MatchReturningActivePatternNotPermittedInPlainLetQuestion "TakePositive"))
         bag.AddError(DiagnosticFact.surfaceElaboration ActivePatternDeclarationRequiresExplicitScrutineeBinder)
         bag.AddError(DiagnosticFact.surfaceElaboration ActivePatternDeclarationResultMustNotBeMonadic)
+        bag.AddError(DiagnosticFact.surfaceElaboration ProjectionDefinitionRequiresPlaceBinder)
+        bag.AddError(DiagnosticFact.surfaceElaboration (SelectorProjectionYieldInvalid ProjectionYieldMustDenoteStablePlaceNotAccessorBundle))
+        bag.AddError(DiagnosticFact.surfaceElaboration (SelectorProjectionYieldInvalid ProjectionYieldMustDenoteStablePlace))
+        bag.AddError(DiagnosticFact.surfaceElaboration (SelectorProjectionYieldInvalid ProjectionYieldMustBeRootedInPlaceBinder))
+        bag.AddError(DiagnosticFact.surfaceElaboration ExpandedAccessorProjectionRequiresExactlyOnePlaceBinder)
+        bag.AddError(DiagnosticFact.surfaceElaboration (ProjectionAccessorClauseDeclaredMoreThanOnce "get"))
 
         let diagnostics = bag.Items
         let staticObjectDiagnostic = diagnostics |> List.find (fun item -> item.Code = DiagnosticCode.StaticObjectUnresolved)
@@ -3766,6 +3772,33 @@ module SmokeTestsShard4 =
 
         let missingBinderDiagnostic = diagnostics |> List.find (fun item -> item.Code = DiagnosticCode.ActivePatternMissingScrutineeBinder)
         let monadicResultDiagnostic = diagnostics |> List.find (fun item -> item.Code = DiagnosticCode.ActivePatternMonadicResult)
+        let missingPlaceBinderDiagnostic = diagnostics |> List.find (fun item -> item.Code = DiagnosticCode.ProjectionMissingPlaceBinder)
+
+        let accessorBundleYieldDiagnostic =
+            diagnostics
+            |> List.find (fun item ->
+                item.Code = DiagnosticCode.ProjectionYieldInvalid
+                && tryFindPayloadText "reason" item = Some "selector-projection-yield-must-denote-stable-place-not-accessor-bundle")
+
+        let stablePlaceYieldDiagnostic =
+            diagnostics
+            |> List.find (fun item ->
+                item.Code = DiagnosticCode.ProjectionYieldInvalid
+                && tryFindPayloadText "reason" item = Some "selector-projection-yield-must-denote-stable-place")
+
+        let rootedYieldDiagnostic =
+            diagnostics
+            |> List.find (fun item ->
+                item.Code = DiagnosticCode.ProjectionYieldInvalid
+                && tryFindPayloadText "reason" item = Some "selector-projection-yield-must-be-rooted-in-place-binder")
+
+        let accessorPlaceBinderDiagnostic =
+            diagnostics
+            |> List.find (fun item -> item.Code = DiagnosticCode.ProjectionExpandedAccessorPlaceBinderMismatch)
+
+        let accessorDuplicateDiagnostic =
+            diagnostics
+            |> List.find (fun item -> item.Code = DiagnosticCode.ProjectionAccessorClauseDuplicate)
 
         Assert.Equal("surface-elaboration-diagnostic", staticObjectDiagnostic.Payload.Kind)
         Assert.Equal(Some "Some", tryFindPayloadText "member-name" staticObjectDiagnostic)
@@ -3775,6 +3808,12 @@ module SmokeTestsShard4 =
         Assert.Equal(Some "match-returning-active-pattern-not-permitted-in-plain-let-question", tryFindPayloadText "reason" matchResultDiagnostic)
         Assert.Equal(Some "active-pattern-declaration-requires-explicit-scrutinee-binder", tryFindPayloadText "reason" missingBinderDiagnostic)
         Assert.Equal(Some "active-pattern-declaration-result-must-not-be-monadic", tryFindPayloadText "reason" monadicResultDiagnostic)
+        Assert.Equal(Some "projection-definition-requires-place-binder", tryFindPayloadText "reason" missingPlaceBinderDiagnostic)
+        Assert.Equal(Some "projection-yield-invalid", tryFindPayloadText "category" accessorBundleYieldDiagnostic)
+        Assert.Equal(Some "projection-yield-invalid", tryFindPayloadText "category" stablePlaceYieldDiagnostic)
+        Assert.Equal(Some "projection-yield-invalid", tryFindPayloadText "category" rootedYieldDiagnostic)
+        Assert.Equal(Some "expanded-accessor-projection-requires-exactly-one-place-binder", tryFindPayloadText "reason" accessorPlaceBinderDiagnostic)
+        Assert.Equal(Some "get", tryFindPayloadText "clause-kind" accessorDuplicateDiagnostic)
 
     [<Fact>]
     let ``parser syntax diagnostics render from typed evidence`` () =
@@ -7456,6 +7495,60 @@ module SmokeTestsShard6 =
 
         Assert.Equal("surface-elaboration-diagnostic", diagnostic.Payload.Kind)
         Assert.Equal(Some "Some", tryFindPayloadText "member-name" diagnostic)
+
+    [<Fact>]
+    let ``source compilation reports structured projection definition diagnostics`` () =
+        let workspace =
+            compileInMemoryWorkspace
+                "memory-projection-definition-diagnostics-root"
+                [
+                    "main.kp",
+                    [
+                        "@PrivateByDefault module main"
+                        ""
+                        "projection missingPlace : Int ="
+                        "    yield 1"
+                        ""
+                        "projection wrongYield (place this : Int) : Int ="
+                        "    yield 1"
+                        ""
+                        "projection tooManyPlaces (place left : Int) (place right : Int) : Int ="
+                        "    get -> left"
+                        ""
+                        "projection duplicateAccessor (place this : Int) : Int ="
+                        "    get -> this"
+                        "    get -> this"
+                    ]
+                    |> String.concat "\n"
+                ]
+
+        Assert.True(workspace.HasErrors, "Expected malformed projection definitions to be rejected.")
+
+        let missingPlaceDiagnostic =
+            workspace.Diagnostics
+            |> List.find (fun item -> item.Code = DiagnosticCode.ProjectionMissingPlaceBinder)
+
+        let wrongYieldDiagnostic =
+            workspace.Diagnostics
+            |> List.find (fun item ->
+                item.Code = DiagnosticCode.ProjectionYieldInvalid
+                && tryFindPayloadText "reason" item = Some "selector-projection-yield-must-be-rooted-in-place-binder")
+
+        let tooManyPlacesDiagnostic =
+            workspace.Diagnostics
+            |> List.find (fun item -> item.Code = DiagnosticCode.ProjectionExpandedAccessorPlaceBinderMismatch)
+
+        let duplicateAccessorDiagnostic =
+            workspace.Diagnostics
+            |> List.find (fun item ->
+                item.Code = DiagnosticCode.ProjectionAccessorClauseDuplicate
+                && tryFindPayloadText "clause-kind" item = Some "get")
+
+        Assert.Equal("surface-elaboration-diagnostic", missingPlaceDiagnostic.Payload.Kind)
+        Assert.Equal(Some "projection-definition-requires-place-binder", tryFindPayloadText "reason" missingPlaceDiagnostic)
+        Assert.Equal(Some "selector-projection-yield-must-be-rooted-in-place-binder", tryFindPayloadText "reason" wrongYieldDiagnostic)
+        Assert.Equal(Some "expanded-accessor-projection-requires-exactly-one-place-binder", tryFindPayloadText "reason" tooManyPlacesDiagnostic)
+        Assert.Equal(Some "get", tryFindPayloadText "clause-kind" duplicateAccessorDiagnostic)
 
 
     [<Fact>]
