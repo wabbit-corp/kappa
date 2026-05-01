@@ -3727,7 +3727,10 @@ type private ExpressionParser
                 innerTokens.Add(this.Advance())
 
         if depth > 0 then
-            diagnostics.AddError(DiagnosticFact.simple SimpleDiagnosticKind.ExpectedSyntaxToken "Expected ')' to close the expression.", source.GetLocation(start.Span))
+            diagnostics.AddError(
+                DiagnosticFact.coreExpressionParsing ExpectedExpressionCloseParenthesis,
+                source.GetLocation(start.Span)
+            )
 
         List.ofSeq innerTokens
 
@@ -5666,7 +5669,8 @@ type private ExpressionParser
                     bindingAndValueTokens.Add(this.Advance())
 
         if this.Current.Kind = EndOfFile then
-            diagnostics.AddError(DiagnosticFact.simple SimpleDiagnosticKind.ExpectedSyntaxToken "Expected 'in' after the local let binding.",
+            diagnostics.AddError(
+                DiagnosticFact.coreExpressionParsing ExpectedLocalLetIn,
                 source.GetLocation(eofSpan)
             )
 
@@ -5703,7 +5707,8 @@ type private ExpressionParser
                 let body = this.ParseExpression(0)
                 LocalLet(binding, value, body)
             | None ->
-                diagnostics.AddError(DiagnosticFact.simple SimpleDiagnosticKind.ExpectedSyntaxToken "Expected '=' in the local let binding.",
+                diagnostics.AddError(
+                    DiagnosticFact.coreExpressionParsing ExpectedLocalLetEquals,
                     source.GetLocation(eofSpan)
                 )
 
@@ -5926,7 +5931,10 @@ type private ExpressionParser
                                     | Some expression ->
                                         expression
                                     | None ->
-                                        diagnostics.AddError(DiagnosticFact.simple SimpleDiagnosticKind.ExpectedSyntaxToken "Expected an expression inside parentheses.", source.GetLocation(this.Current.Span))
+                                        diagnostics.AddError(
+                                            DiagnosticFact.coreExpressionParsing ExpectedExpression,
+                                            source.GetLocation(this.Current.Span)
+                                        )
                                         Literal Unit
         | LeftBracket ->
             let innerTokens = this.CollectBracketedTokens("Expected ']' to close the list expression.")
@@ -5941,7 +5949,10 @@ type private ExpressionParser
             let segments = this.ParseQualifiedName()
             Name segments
         | _ ->
-            diagnostics.AddError(DiagnosticFact.simple SimpleDiagnosticKind.ExpectedSyntaxToken "Expected an expression.", source.GetLocation(this.Current.Span))
+            diagnostics.AddError(
+                DiagnosticFact.coreExpressionParsing ExpectedExpression,
+                source.GetLocation(this.Current.Span)
+            )
             Literal Unit
 
     member private this.ParsePrefixExpression() =

@@ -879,6 +879,10 @@ type CoreExpressionParsingEvidence =
     | ExpectedProjectionMatchCaseBlock
     | ExpectedProjectionMatchCaseClause
     | ExpectedProjectionCaseClauseArrow
+    | ExpectedLocalLetIn
+    | ExpectedLocalLetEquals
+    | ExpectedExpressionCloseParenthesis
+    | ExpectedExpression
 
 and CoreHeaderContext =
     | TopLevelFunctionHeader
@@ -2556,6 +2560,18 @@ module DiagnosticFact =
             | ExpectedProjectionCaseClauseArrow ->
                 descriptor DiagnosticCode.ExpectedSyntaxToken None "Expected '->' in the projection case clause."
                     (payload "core-expression-parsing" [ field "reason" (DiagnosticPayloadText "expected-projection-case-clause-arrow") ])
+            | ExpectedLocalLetIn ->
+                descriptor DiagnosticCode.ExpectedSyntaxToken None "Expected 'in' after the local let binding."
+                    (payload "core-expression-parsing" [ field "reason" (DiagnosticPayloadText "expected-local-let-in") ])
+            | ExpectedLocalLetEquals ->
+                descriptor DiagnosticCode.ExpectedSyntaxToken None "Expected '=' in the local let binding."
+                    (payload "core-expression-parsing" [ field "reason" (DiagnosticPayloadText "expected-local-let-equals") ])
+            | ExpectedExpressionCloseParenthesis ->
+                descriptor DiagnosticCode.ExpectedSyntaxToken None "Expected ')' to close the expression."
+                    (payload "core-expression-parsing" [ field "reason" (DiagnosticPayloadText "expected-expression-close-parenthesis") ])
+            | ExpectedExpression ->
+                descriptor DiagnosticCode.ExpectedSyntaxToken None "Expected an expression."
+                    (payload "core-expression-parsing" [ field "reason" (DiagnosticPayloadText "expected-expression") ])
         | UnicodeScalarLiteralDiagnostic evidence ->
             match evidence with
             | UnicodeScalarInvalidLiteralForm ->

@@ -3737,6 +3737,10 @@ module SmokeTestsShard4 =
         bag.AddError(DiagnosticFact.coreExpressionParsing ExpectedProjectionMatchCaseBlock)
         bag.AddError(DiagnosticFact.coreExpressionParsing ExpectedProjectionMatchCaseClause)
         bag.AddError(DiagnosticFact.coreExpressionParsing ExpectedProjectionCaseClauseArrow)
+        bag.AddError(DiagnosticFact.coreExpressionParsing ExpectedLocalLetIn)
+        bag.AddError(DiagnosticFact.coreExpressionParsing ExpectedLocalLetEquals)
+        bag.AddError(DiagnosticFact.coreExpressionParsing ExpectedExpressionCloseParenthesis)
+        bag.AddError(DiagnosticFact.coreExpressionParsing ExpectedExpression)
 
         let diagnostics = bag.Items
         let usingDiagnostic =
@@ -3834,6 +3838,22 @@ module SmokeTestsShard4 =
         let projectionCaseClauseArrowDiagnostic =
             diagnostics
             |> List.find (fun item -> item.Message = "Expected '->' in the projection case clause.")
+
+        let localLetInDiagnostic =
+            diagnostics
+            |> List.find (fun item -> item.Message = "Expected 'in' after the local let binding.")
+
+        let localLetEqualsDiagnostic =
+            diagnostics
+            |> List.find (fun item -> item.Message = "Expected '=' in the local let binding.")
+
+        let expressionCloseParenthesisDiagnostic =
+            diagnostics
+            |> List.find (fun item -> item.Message = "Expected ')' to close the expression.")
+
+        let expressionDiagnostic =
+            diagnostics
+            |> List.find (fun item -> item.Message = "Expected an expression.")
 
         Assert.Equal("core-expression-parsing", usingDiagnostic.Payload.Kind)
         Assert.Contains(
@@ -3978,6 +3998,30 @@ module SmokeTestsShard4 =
             fun field ->
                 field.Name = "reason"
                 && field.Value = DiagnosticPayloadText "expected-projection-case-clause-arrow"
+        )
+        Assert.Contains(
+            localLetInDiagnostic.Payload.Fields,
+            fun field ->
+                field.Name = "reason"
+                && field.Value = DiagnosticPayloadText "expected-local-let-in"
+        )
+        Assert.Contains(
+            localLetEqualsDiagnostic.Payload.Fields,
+            fun field ->
+                field.Name = "reason"
+                && field.Value = DiagnosticPayloadText "expected-local-let-equals"
+        )
+        Assert.Contains(
+            expressionCloseParenthesisDiagnostic.Payload.Fields,
+            fun field ->
+                field.Name = "reason"
+                && field.Value = DiagnosticPayloadText "expected-expression-close-parenthesis"
+        )
+        Assert.Contains(
+            expressionDiagnostic.Payload.Fields,
+            fun field ->
+                field.Name = "reason"
+                && field.Value = DiagnosticPayloadText "expected-expression"
         )
 
     [<Fact>]
@@ -4349,6 +4393,46 @@ module SmokeTestsShard4 =
         Assert.Equal("core-expression-parsing", blockDiagnostic.Payload.Kind)
         Assert.Equal("core-expression-parsing", clauseDiagnostic.Payload.Kind)
         Assert.Equal("core-expression-parsing", arrowDiagnostic.Payload.Kind)
+
+    [<Fact>]
+    let ``parser reports structured local let and expression recovery diagnostics`` () =
+        let sourceText =
+            [
+                "module main"
+                "let missingIn = let x = 1"
+                "let missingEquals = let x in missingIn"
+                "let missingClose = ("
+                "let missingExpr = ,"
+            ]
+            |> String.concat "\n"
+
+        let _, lexed, parsed =
+            lexAndParse
+                "main.kp"
+                sourceText
+
+        Assert.Empty(lexed.Diagnostics)
+
+        let localLetInDiagnostic =
+            parsed.Diagnostics
+            |> List.find (fun diagnostic -> tryFindPayloadText "reason" diagnostic = Some "expected-local-let-in")
+
+        let localLetEqualsDiagnostic =
+            parsed.Diagnostics
+            |> List.find (fun diagnostic -> tryFindPayloadText "reason" diagnostic = Some "expected-local-let-equals")
+
+        let expressionCloseParenthesisDiagnostic =
+            parsed.Diagnostics
+            |> List.find (fun diagnostic -> tryFindPayloadText "reason" diagnostic = Some "expected-expression-close-parenthesis")
+
+        let expressionDiagnostic =
+            parsed.Diagnostics
+            |> List.find (fun diagnostic -> tryFindPayloadText "reason" diagnostic = Some "expected-expression")
+
+        Assert.Equal("core-expression-parsing", localLetInDiagnostic.Payload.Kind)
+        Assert.Equal("core-expression-parsing", localLetEqualsDiagnostic.Payload.Kind)
+        Assert.Equal("core-expression-parsing", expressionCloseParenthesisDiagnostic.Payload.Kind)
+        Assert.Equal("core-expression-parsing", expressionDiagnostic.Payload.Kind)
 
 
     [<Fact>]

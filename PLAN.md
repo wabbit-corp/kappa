@@ -101,9 +101,15 @@ Current M4 status note: started, not complete. The compiler now has a real effec
 - [ ] Remove the remaining string escape hatches from `Diagnostics.fs`, especially `SimpleDiagnosticEvidence.Detail` and `CodeDetailEvidence.Detail`, so compiler phases cannot smuggle raw prose into emitted diagnostics.
 - [x] Finish `Parser.fs` diagnostics conversion by replacing the remaining dynamic raw-string parse failures, especially string-literal decoding and URL module-specifier parsing.
 - [x] Finish `CoreParsing.fs` diagnostics conversion for the remaining dynamic literal and Unicode decode failures after string-literal decode: character/grapheme/byte decode failures.
-- [ ] Finish `CoreParsing.fs` diagnostics conversion for the remaining structural frontend paths: projection headers/accessor clauses, record literal/application field forms, and a few remaining selector/primary-expression recovery cases.
+- [ ] Finish `CoreParsing.fs` diagnostics conversion for the remaining record literal / named field structural paths.
+  Named application field diagnostics now route through `CoreExpressionParsingEvidence`, but record literal field-label and malformed-field diagnostics still use raw `ExpectedSyntaxToken` detail strings.
+- [ ] Finish `CoreParsing.fs` diagnostics conversion for the remaining primary-expression recovery paths.
+  Local `let ... in ...` recovery, missing `)` recovery, and the generic “expected expression” path now route through `CoreExpressionParsingEvidence`, but interpolated-string recovery and a few selector/name recovery helpers still use raw detail strings.
+- [ ] Finish `CoreParsing.fs` diagnostics conversion for projection headers, accessor clauses, and projection-specific binder validation.
+  Projection-body diagnostics now route through `CoreExpressionParsingEvidence`, but projection place-binder, accessor-clause, and header/result-type diagnostics still use raw detail strings.
+- [ ] Finish `CoreParsing.fs` diagnostics conversion for remaining handler/record-patch validation diagnostics.
+  Handler-expression syntax diagnostics now route through `CoreExpressionParsingEvidence`, but duplicate/missing/arity return-clause checks and record-patch item validation still use raw simple diagnostics.
   Query/comprehension diagnostics now route through `CoreExpressionParsingEvidence`, including generator/group/join/left-join/conflict-clause errors, unordered `skip` / `take`, unsupported comprehension clauses, and missing trailing `yield`.
-  Handler-expression diagnostics now route through `CoreExpressionParsingEvidence`, including missing `with`, malformed clause heads, missing clause arrows, and missing resumption binders.
   Function and local-function header diagnostics now route through `CoreExpressionParsingEvidence`, and both sites share the same header-parameter parser loop with only the header context varying.
   Expression-tail diagnostics now route through `CoreExpressionParsingEvidence` for missing effect-label names, missing constructor names after `is`, safe-navigation member access failures, chained tag tests, explicit member projection failures, unexpected trailing tokens, and record-update close failures.
   Named-application block field diagnostics and `seal` diagnostics now also route through `CoreExpressionParsingEvidence`; record literal field diagnostics and the remaining generic kind-selector / selector recovery cases are still stringly.
