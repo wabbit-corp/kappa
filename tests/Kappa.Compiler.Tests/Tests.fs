@@ -3774,6 +3774,10 @@ module SmokeTestsShard4 =
         bag.AddError(DiagnosticFact.surfaceElaboration (ConstructorDeclarationStartsWithDeclarationKeyword("Tree", "let")))
         bag.AddError(DiagnosticFact.surfaceElaboration (ConstructorExposesRuntimeFieldMetadataOfType "Wrap"))
         bag.AddError(DiagnosticFact.surfaceElaboration (ConstructorDeclarationMalformedInDataType("Tree", "Broken")))
+        bag.AddError(DiagnosticFact.surfaceElaboration (RecordProjectionFieldMissing "secret"))
+        bag.AddError(DiagnosticFact.surfaceElaboration (SealProjectionWouldExposeOpaqueDependentMember("box", "value")))
+        bag.AddError(DiagnosticFact.surfaceElaboration RecordLiteralCannotBeCheckedDirectlyAgainstSignatureType)
+        bag.AddError(DiagnosticFact.surfaceElaboration SealAscriptionMustBeClosedRecordType)
 
         let diagnostics = bag.Items
         let staticObjectDiagnostic = diagnostics |> List.find (fun item -> item.Code = DiagnosticCode.StaticObjectUnresolved)
@@ -3856,6 +3860,11 @@ module SmokeTestsShard4 =
                 item.Code = DiagnosticCode.MalformedConstructorDeclaration
                 && tryFindPayloadText "reason" item = Some "constructor-declaration-malformed-in-data-type")
 
+        let recordProjectionDiagnostic = diagnostics |> List.find (fun item -> item.Code = DiagnosticCode.RecordProjectionMissingField)
+        let opaqueUnfoldingDiagnostic = diagnostics |> List.find (fun item -> item.Code = DiagnosticCode.SealOpaqueUnfolding)
+        let directLiteralDiagnostic = diagnostics |> List.find (fun item -> item.Code = DiagnosticCode.SealDirectLiteralForSignature)
+        let openRecordSealDiagnostic = diagnostics |> List.find (fun item -> item.Code = DiagnosticCode.SealOpenRecordAscription)
+
         Assert.Equal("surface-elaboration-diagnostic", staticObjectDiagnostic.Payload.Kind)
         Assert.Equal(Some "Some", tryFindPayloadText "member-name" staticObjectDiagnostic)
         Assert.Equal(Some "Bad", tryFindPayloadText "head-name" patternHeadDiagnostic)
@@ -3882,6 +3891,11 @@ module SmokeTestsShard4 =
         Assert.Equal(Some "Wrap", tryFindPayloadText "constructor-name" constructorTypeFieldDiagnostic)
         Assert.Equal(Some "Tree", tryFindPayloadText "data-type-name" malformedConstructorDiagnostic)
         Assert.Equal(Some "Broken", tryFindPayloadText "constructor-name" malformedConstructorDiagnostic)
+        Assert.Equal(Some "secret", tryFindPayloadText "field-name" recordProjectionDiagnostic)
+        Assert.Equal(Some "box", tryFindPayloadText "root-name" opaqueUnfoldingDiagnostic)
+        Assert.Equal(Some "value", tryFindPayloadText "member-name" opaqueUnfoldingDiagnostic)
+        Assert.Equal(Some "record-literal-cannot-be-checked-directly-against-signature-type", tryFindPayloadText "reason" directLiteralDiagnostic)
+        Assert.Equal(Some "seal-ascription-must-be-closed-record-type", tryFindPayloadText "reason" openRecordSealDiagnostic)
 
     [<Fact>]
     let ``parser syntax diagnostics render from typed evidence`` () =
@@ -7641,6 +7655,100 @@ module SmokeTestsShard6 =
 
         Assert.Equal("surface-elaboration-diagnostic", diagnostic.Payload.Kind)
         Assert.Equal(Some "Wrap", tryFindPayloadText "constructor-name" diagnostic)
+
+    [<Fact>]
+    let ``source compilation reports structured seal and record projection diagnostics`` () =
+        let directLiteralWorkspace =
+            compileInMemoryWorkspace
+                "memory-seal-direct-literal-root"
+                [
+                    "main.kp",
+                    [
+                        "@PrivateByDefault module main"
+                        ""
+                        "type OpaqueBox : Type = (opaque T : Type, value : this.T)"
+                        ""
+                        "bad : OpaqueBox"
+                        "let bad : OpaqueBox = (T = Int, value = 1)"
+                    ]
+                    |> String.concat "\n"
+                ]
+
+        let openRecordWorkspace =
+            compileInMemoryWorkspace
+                "memory-seal-open-record-root"
+                [
+                    "main.kp",
+                    [
+                        "@PrivateByDefault module main"
+                        ""
+                        "bad : forall (r : RecRow). (name : String | r) -> (name : String | r)"
+                        "let bad (@0 r : RecRow) (rec : (name : String | r)) : (name : String | r) ="
+                        "    seal rec as (name : String | r)"
+                    ]
+                    |> String.concat "\n"
+                ]
+
+        let opaqueUnfoldingWorkspace =
+            compileInMemoryWorkspace
+                "memory-seal-opaque-unfolding-root"
+                [
+                    "main.kp",
+                    [
+                        "@PrivateByDefault module main"
+                        ""
+                        "type OpaqueBox : Type = (opaque T : Type, value : this.T)"
+                        ""
+                        "box : OpaqueBox"
+                        "let box : OpaqueBox = seal (T = Int, value = 1) as OpaqueBox"
+                        ""
+                        "bad : Int"
+                        "let bad : Int = box.value"
+                    ]
+                    |> String.concat "\n"
+                ]
+
+        let hiddenFieldWorkspace =
+            compileInMemoryWorkspace
+                "memory-record-projection-hidden-field-root"
+                [
+                    "main.kp",
+                    [
+                        "@PrivateByDefault module main"
+                        ""
+                        "type Public : Type = (x : Int,)"
+                        ""
+                        "p : Public"
+                        "let p : Public = seal (x = 1, secret = \"nope\") as Public"
+                        ""
+                        "bad : String"
+                        "let bad : String = p.secret"
+                    ]
+                    |> String.concat "\n"
+                ]
+
+        let directLiteralDiagnostic =
+            directLiteralWorkspace.Diagnostics
+            |> List.find (fun item -> item.Code = DiagnosticCode.SealDirectLiteralForSignature)
+
+        let openRecordDiagnostic =
+            openRecordWorkspace.Diagnostics
+            |> List.find (fun item -> item.Code = DiagnosticCode.SealOpenRecordAscription)
+
+        let opaqueUnfoldingDiagnostic =
+            opaqueUnfoldingWorkspace.Diagnostics
+            |> List.find (fun item -> item.Code = DiagnosticCode.SealOpaqueUnfolding)
+
+        let hiddenFieldDiagnostic =
+            hiddenFieldWorkspace.Diagnostics
+            |> List.find (fun item -> item.Code = DiagnosticCode.RecordProjectionMissingField)
+
+        Assert.Equal("surface-elaboration-diagnostic", directLiteralDiagnostic.Payload.Kind)
+        Assert.Equal(Some "record-literal-cannot-be-checked-directly-against-signature-type", tryFindPayloadText "reason" directLiteralDiagnostic)
+        Assert.Equal(Some "seal-ascription-must-be-closed-record-type", tryFindPayloadText "reason" openRecordDiagnostic)
+        Assert.Equal(Some "box", tryFindPayloadText "root-name" opaqueUnfoldingDiagnostic)
+        Assert.Equal(Some "value", tryFindPayloadText "member-name" opaqueUnfoldingDiagnostic)
+        Assert.Equal(Some "secret", tryFindPayloadText "field-name" hiddenFieldDiagnostic)
 
     [<Fact>]
     let ``source compilation reports structured projection definition diagnostics`` () =

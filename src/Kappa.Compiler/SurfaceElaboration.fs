@@ -13467,7 +13467,14 @@ module SurfaceElaboration =
                 then
                     []
                 else
-                    [ makeDiagnostic SimpleDiagnosticKind.RecordProjectionMissingField $"Record type has no field named '{fieldName}'." ]
+                    [
+                        Diagnostics.errorFact
+                            "KFrontIR"
+                            (Some(KFrontIRPhase.phaseName CORE_LOWERING))
+                            None
+                            []
+                            (DiagnosticFact.surfaceElaboration (RecordProjectionFieldMissing fieldName))
+                    ]
             | None ->
                 match possibleConstructorsForRoot aliases constructorFacts locals root with
                 | Some [] ->
@@ -14393,7 +14400,15 @@ module SurfaceElaboration =
                             if opaqueNames |> List.exists (fun opaqueName -> expectedText.Contains(opaqueName, StringComparison.Ordinal)) then
                                 None
                             else
-                                Some(makeDiagnostic SimpleDiagnosticKind.SealOpaqueUnfolding $"Projection '{root}.{memberName}' would expose a member whose type depends on an opaque package member.")
+                                Some(
+                                    Diagnostics.errorFact
+                                        "KFrontIR"
+                                        (Some(KFrontIRPhase.phaseName CORE_LOWERING))
+                                        None
+                                        []
+                                        (DiagnosticFact.surfaceElaboration
+                                            (SealProjectionWouldExposeOpaqueDependentMember(root, memberName)))
+                                )
                         else
                             None))
 
@@ -14501,7 +14516,14 @@ module SurfaceElaboration =
             let directSignatureLiteralDiagnostic =
                 match body, definition.ReturnTypeTokens |> Option.bind tryRecordInfoFromTypeTokens with
                 | RecordLiteral _, Some recordInfo when recordInfoHasOpaqueMembers recordInfo ->
-                    [ makeDiagnostic SimpleDiagnosticKind.SealDirectLiteralForSignature "A record literal cannot be checked directly against a signature type; use 'seal ... as ...'." ]
+                    [
+                        Diagnostics.errorFact
+                            "KFrontIR"
+                            (Some(KFrontIRPhase.phaseName CORE_LOWERING))
+                            None
+                            []
+                            (DiagnosticFact.surfaceElaboration RecordLiteralCannotBeCheckedDirectlyAgainstSignatureType)
+                    ]
                 | _ ->
                     []
 
@@ -14513,7 +14535,13 @@ module SurfaceElaboration =
 
                         match tryParseRecordSurfaceInfo ascriptionTokens with
                         | Some recordInfo when recordInfo.RowTail.IsSome ->
-                            makeDiagnostic SimpleDiagnosticKind.SealOpenRecordAscription "The ascribed type of 'seal' must be a closed record type." :: nested
+                            Diagnostics.errorFact
+                                "KFrontIR"
+                                (Some(KFrontIRPhase.phaseName CORE_LOWERING))
+                                None
+                                []
+                                (DiagnosticFact.surfaceElaboration SealAscriptionMustBeClosedRecordType)
+                            :: nested
                         | _ ->
                             nested
                     | LocalLet(_, value, nestedBody) -> loop value @ loop nestedBody
@@ -17583,7 +17611,14 @@ module SurfaceElaboration =
                                 when recordInfo.Fields
                                      |> List.exists (fun (field: RecordSurfaceFieldInfo) -> String.Equals(field.Name, fieldName, StringComparison.Ordinal))
                                      |> not ->
-                                [ makeDiagnostic SimpleDiagnosticKind.RecordProjectionMissingField $"Record type has no field named '{fieldName}'." ]
+                                [
+                                    Diagnostics.errorFact
+                                        "KFrontIR"
+                                        (Some(KFrontIRPhase.phaseName CORE_LOWERING))
+                                        None
+                                        []
+                                        (DiagnosticFact.surfaceElaboration (RecordProjectionFieldMissing fieldName))
+                                ]
                             | _ ->
                                 constructorProjectionDiagnostics aliases constructorFacts locals root fieldName
                 let staticMemberDiagnostics =

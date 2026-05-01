@@ -831,6 +831,10 @@ type SurfaceElaborationDiagnosticEvidence =
     | ConstructorDeclarationStartsWithDeclarationKeyword of dataTypeName: string * constructorName: string
     | ConstructorExposesRuntimeFieldMetadataOfType of constructorName: string
     | ConstructorDeclarationMalformedInDataType of dataTypeName: string * constructorName: string
+    | RecordProjectionFieldMissing of fieldName: string
+    | SealProjectionWouldExposeOpaqueDependentMember of rootName: string * memberName: string
+    | RecordLiteralCannotBeCheckedDirectlyAgainstSignatureType
+    | SealAscriptionMustBeClosedRecordType
     | StaticConstructorRequiresPreservedStaticObjectIdentity of memberName: string
     | PatternHeadResolvedToOrdinaryTerm of headName: string
     | ActivePatternLinearlyConsumesScrutineeInRefutableContext of patternName: string * context: string
@@ -2291,6 +2295,41 @@ module DiagnosticFact =
                         [ field "reason" (DiagnosticPayloadText "constructor-declaration-malformed-in-data-type")
                           field "data-type-name" (DiagnosticPayloadText dataTypeName)
                           field "constructor-name" (DiagnosticPayloadText constructorName) ])
+            | RecordProjectionFieldMissing fieldName ->
+                descriptor
+                    DiagnosticCode.RecordProjectionMissingField
+                    None
+                    $"Record type has no field named '{fieldName}'."
+                    (payload
+                        "surface-elaboration-diagnostic"
+                        [ field "reason" (DiagnosticPayloadText "record-projection-field-missing")
+                          field "field-name" (DiagnosticPayloadText fieldName) ])
+            | SealProjectionWouldExposeOpaqueDependentMember(rootName, memberName) ->
+                descriptor
+                    DiagnosticCode.SealOpaqueUnfolding
+                    None
+                    $"Projection '{rootName}.{memberName}' would expose a member whose type depends on an opaque package member."
+                    (payload
+                        "surface-elaboration-diagnostic"
+                        [ field "reason" (DiagnosticPayloadText "seal-projection-would-expose-opaque-dependent-member")
+                          field "root-name" (DiagnosticPayloadText rootName)
+                          field "member-name" (DiagnosticPayloadText memberName) ])
+            | RecordLiteralCannotBeCheckedDirectlyAgainstSignatureType ->
+                descriptor
+                    DiagnosticCode.SealDirectLiteralForSignature
+                    None
+                    "A record literal cannot be checked directly against a signature type; use 'seal ... as ...'."
+                    (payload
+                        "surface-elaboration-diagnostic"
+                        [ field "reason" (DiagnosticPayloadText "record-literal-cannot-be-checked-directly-against-signature-type") ])
+            | SealAscriptionMustBeClosedRecordType ->
+                descriptor
+                    DiagnosticCode.SealOpenRecordAscription
+                    None
+                    "The ascribed type of 'seal' must be a closed record type."
+                    (payload
+                        "surface-elaboration-diagnostic"
+                        [ field "reason" (DiagnosticPayloadText "seal-ascription-must-be-closed-record-type") ])
             | StaticConstructorRequiresPreservedStaticObjectIdentity memberName ->
                 descriptor
                     DiagnosticCode.StaticObjectUnresolved
