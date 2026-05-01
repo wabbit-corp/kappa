@@ -2994,6 +2994,33 @@ module SmokeTestsShard3 =
         Assert.Equal(Some "application-expression-not-callable", tryFindPayloadText "reason" diagnostic)
         Assert.Equal(Some "String", tryFindPayloadText "callee-type-text" diagnostic)
 
+    [<Fact>]
+    let ``source compilation reports arithmetic numeric payloads`` () =
+        let workspace =
+            compileInMemoryWorkspace
+                "memory-arithmetic-nonnumeric-root"
+                [
+                    "main.kp",
+                    [
+                        "module main"
+                        "value : Int"
+                        "let value = \"hi\" + False"
+                    ]
+                    |> String.concat "\n"
+                ]
+
+        Assert.True(workspace.HasErrors, "Expected non-numeric arithmetic operands to be rejected.")
+
+        let diagnostic =
+            workspace.Diagnostics
+            |> List.find (fun item ->
+                item.Code = DiagnosticCode.TypeEqualityMismatch
+                && tryFindPayloadText "reason" item = Some "arithmetic-operands-must-be-numeric")
+
+        Assert.Equal("surface-elaboration-diagnostic", diagnostic.Payload.Kind)
+        Assert.Equal(Some "String", tryFindPayloadText "left-type-text" diagnostic)
+        Assert.Equal(Some "Bool", tryFindPayloadText "right-type-text" diagnostic)
+
 
     [<Fact>]
     let ``lexer reports malformed prefixed numeric literals directly`` () =
@@ -4005,6 +4032,16 @@ module SmokeTestsShard4 =
         bag.AddError(DiagnosticFact.surfaceElaboration (SafeNavigationRequiresKnownResultType "value.name"))
         bag.AddError(DiagnosticFact.surfaceElaboration SafeNavigationReceiverMustBeOption)
         bag.AddError(DiagnosticFact.surfaceElaboration ElvisReceiverMustBeOption)
+        bag.AddError(DiagnosticFact.surfaceElaboration QueryCarrierCannotDiscardMapMetadata)
+        bag.AddError(DiagnosticFact.surfaceElaboration QueryCarrierCannotDiscardSetMetadata)
+        bag.AddError(DiagnosticFact.surfaceElaboration (QueryCarrierUseMismatch("many", "once")))
+        bag.AddError(DiagnosticFact.surfaceElaboration (QueryCarrierCardinalityMismatch("optional", "many")))
+        bag.AddError(DiagnosticFact.surfaceElaboration (QueryCarrierItemQuantityMismatch("&", "1")))
+        bag.AddError(DiagnosticFact.surfaceElaboration (ComprehensionSinkItemTypeMismatch("Int", "String")))
+        bag.AddError(DiagnosticFact.surfaceElaboration (ArithmeticOperandResolvesToCallableBinding("left-hand side", "f")))
+        bag.AddError(DiagnosticFact.surfaceElaboration (ArithmeticOperandsMustBeNumeric("String", "Bool")))
+        bag.AddError(DiagnosticFact.surfaceElaboration (ShortCircuitOperandMustBeSuspendedBool("right-hand side", "Int")))
+        bag.AddError(DiagnosticFact.surfaceElaboration (ObjectPhaseValueCannotBePassedDirectlyToElaboration "runtimeValue"))
         bag.AddError(DiagnosticFact.surfaceElaboration (TraitConstraintUnresolved "Eq Int"))
         bag.AddError(DiagnosticFact.surfaceElaboration (ImplicitTraitConstraintUnresolved "Show Int"))
         bag.AddError(DiagnosticFact.surfaceElaboration (TraitConstraintAmbiguous("Score Int", [ "left.ScoreInt"; "right.ScoreInt" ])))
@@ -4196,6 +4233,66 @@ module SmokeTestsShard4 =
                 item.Code = DiagnosticCode.ElvisReceiverNotOption
                 && tryFindPayloadText "reason" item = Some "elvis-receiver-must-be-option")
 
+        let queryCarrierMapDiagnostic =
+            diagnostics
+            |> List.find (fun item ->
+                item.Code = DiagnosticCode.TypeEqualityMismatch
+                && tryFindPayloadText "reason" item = Some "query-carrier-cannot-discard-map-metadata")
+
+        let queryCarrierSetDiagnostic =
+            diagnostics
+            |> List.find (fun item ->
+                item.Code = DiagnosticCode.TypeEqualityMismatch
+                && tryFindPayloadText "reason" item = Some "query-carrier-cannot-discard-set-metadata")
+
+        let queryUseDiagnostic =
+            diagnostics
+            |> List.find (fun item ->
+                item.Code = DiagnosticCode.TypeEqualityMismatch
+                && tryFindPayloadText "reason" item = Some "query-carrier-use-mismatch")
+
+        let queryCardDiagnostic =
+            diagnostics
+            |> List.find (fun item ->
+                item.Code = DiagnosticCode.TypeEqualityMismatch
+                && tryFindPayloadText "reason" item = Some "query-carrier-cardinality-mismatch")
+
+        let queryQuantityDiagnostic =
+            diagnostics
+            |> List.find (fun item ->
+                item.Code = DiagnosticCode.TypeEqualityMismatch
+                && tryFindPayloadText "reason" item = Some "query-carrier-item-quantity-mismatch")
+
+        let sinkItemDiagnostic =
+            diagnostics
+            |> List.find (fun item ->
+                item.Code = DiagnosticCode.TypeEqualityMismatch
+                && tryFindPayloadText "reason" item = Some "comprehension-sink-item-type-mismatch")
+
+        let arithmeticCallableDiagnostic =
+            diagnostics
+            |> List.find (fun item ->
+                item.Code = DiagnosticCode.TypeEqualityMismatch
+                && tryFindPayloadText "reason" item = Some "arithmetic-operand-resolves-to-callable-binding")
+
+        let arithmeticNumericDiagnostic =
+            diagnostics
+            |> List.find (fun item ->
+                item.Code = DiagnosticCode.TypeEqualityMismatch
+                && tryFindPayloadText "reason" item = Some "arithmetic-operands-must-be-numeric")
+
+        let shortCircuitDiagnostic =
+            diagnostics
+            |> List.find (fun item ->
+                item.Code = DiagnosticCode.TypeEqualityMismatch
+                && tryFindPayloadText "reason" item = Some "short-circuit-operand-must-be-suspended-bool")
+
+        let objectPhaseDiagnostic =
+            diagnostics
+            |> List.find (fun item ->
+                item.Code = DiagnosticCode.TypeEqualityMismatch
+                && tryFindPayloadText "reason" item = Some "object-phase-value-cannot-be-passed-directly-to-elaboration")
+
         let unresolvedConstraintDiagnostic =
             diagnostics
             |> List.find (fun item ->
@@ -4327,6 +4424,29 @@ module SmokeTestsShard4 =
             "Elvis `?:` requires its left-hand side to have type `Option T` for some `T`.",
             elvisReceiverDiagnostic.Message
         )
+        Assert.Equal(
+            "Query carrier is ill-formed for a map comprehension; Query cannot silently discard map metadata.",
+            queryCarrierMapDiagnostic.Message
+        )
+        Assert.Equal(
+            "Query carrier is ill-formed for a set comprehension; Query cannot silently discard set metadata.",
+            queryCarrierSetDiagnostic.Message
+        )
+        Assert.Equal(Some "many", tryFindPayloadText "expected-use" queryUseDiagnostic)
+        Assert.Equal(Some "once", tryFindPayloadText "inferred-use" queryUseDiagnostic)
+        Assert.Equal(Some "optional", tryFindPayloadText "inferred-cardinality" queryCardDiagnostic)
+        Assert.Equal(Some "many", tryFindPayloadText "expected-cardinality" queryCardDiagnostic)
+        Assert.Equal(Some "&", tryFindPayloadText "inferred-quantity" queryQuantityDiagnostic)
+        Assert.Equal(Some "1", tryFindPayloadText "expected-quantity" queryQuantityDiagnostic)
+        Assert.Equal(Some "Int", tryFindPayloadText "expected-item-type-text" sinkItemDiagnostic)
+        Assert.Equal(Some "String", tryFindPayloadText "actual-item-type-text" sinkItemDiagnostic)
+        Assert.Equal(Some "left-hand side", tryFindPayloadText "operand-label" arithmeticCallableDiagnostic)
+        Assert.Equal(Some "f", tryFindPayloadText "binding-name" arithmeticCallableDiagnostic)
+        Assert.Equal(Some "String", tryFindPayloadText "left-type-text" arithmeticNumericDiagnostic)
+        Assert.Equal(Some "Bool", tryFindPayloadText "right-type-text" arithmeticNumericDiagnostic)
+        Assert.Equal(Some "right-hand side", tryFindPayloadText "operand-label" shortCircuitDiagnostic)
+        Assert.Equal(Some "Int", tryFindPayloadText "operand-type-text" shortCircuitDiagnostic)
+        Assert.Equal(Some "runtimeValue", tryFindPayloadText "name" objectPhaseDiagnostic)
         Assert.Equal("Trait constraint 'Eq Int' could not be resolved.", unresolvedConstraintDiagnostic.Message)
         Assert.Equal("Implicit trait constraint 'Show Int' could not be resolved.", unresolvedImplicitConstraintDiagnostic.Message)
         Assert.Equal(Some "Score Int", tryFindPayloadText "constraint-text" ambiguousConstraintDiagnostic)

@@ -15845,11 +15845,11 @@ module SurfaceElaboration =
                              || typeIsCallableLikeForValidation rightType ->
                         []
                     | Some leftType, Some rightType ->
-                        [
-                            makeDiagnostic
-                                SimpleDiagnosticKind.TypeEqualityMismatch
-                                $"Arithmetic operator operands must both be numeric, but found '{TypeSignatures.toText (normalize leftType)}' and '{TypeSignatures.toText (normalize rightType)}'."
-                        ]
+                        [ makeSurfaceElaborationDiagnostic
+                            (ArithmeticOperandsMustBeNumeric(
+                                TypeSignatures.toText (normalize leftType),
+                                TypeSignatures.toText (normalize rightType)
+                            )) ]
                     | _ ->
                         []
 
@@ -17133,9 +17133,8 @@ module SurfaceElaboration =
 
             let topLevelSpliceElabPhaseDiagnostics inner =
                 let objectPhaseEscapeDiagnostic name =
-                    makeDiagnostic
-                        SimpleDiagnosticKind.TypeEqualityMismatch
-                        $"Object-phase/runtime value '{name}' cannot be passed directly to elaboration. Quote it as Syntax or rebind it inside Elab."
+                    makeSurfaceElaborationDiagnostic
+                        (ObjectPhaseValueCannotBePassedDirectlyToElaboration name)
 
                 let localIsCompileTimeOnly name =
                     locals
@@ -18375,17 +18374,9 @@ module SurfaceElaboration =
                         | ListCollection ->
                             []
                         | MapCollection ->
-                            [
-                                makeDiagnostic
-                                    SimpleDiagnosticKind.TypeEqualityMismatch
-                                    "Query carrier is ill-formed for a map comprehension; Query cannot silently discard map metadata."
-                            ]
+                            [ makeSurfaceElaborationDiagnostic QueryCarrierCannotDiscardMapMetadata ]
                         | SetCollection ->
-                            [
-                                makeDiagnostic
-                                    SimpleDiagnosticKind.TypeEqualityMismatch
-                                    "Query carrier is ill-formed for a set comprehension; Query cannot silently discard set metadata."
-                            ]
+                            [ makeSurfaceElaborationDiagnostic QueryCarrierCannotDiscardSetMetadata ]
 
                     let compatibilityDiagnostics =
                         match
@@ -18398,17 +18389,23 @@ module SurfaceElaboration =
                                 carrier.Comprehension
                         with
                         | Some plan when not (QuerySemantics.canCheckUse plan.InferredMode.Use carrier.ExpectedMode.Use) ->
-                            [ makeDiagnostic
-                                SimpleDiagnosticKind.TypeEqualityMismatch
-                                $"Query carrier expects a {queryUseText carrier.ExpectedMode.Use} query, but the comprehension infers {queryUseText plan.InferredMode.Use}; use OnceQuery or an explicitly one-shot QueryCore carrier." ]
+                            [ makeSurfaceElaborationDiagnostic
+                                (QueryCarrierUseMismatch(
+                                    queryUseText carrier.ExpectedMode.Use,
+                                    queryUseText plan.InferredMode.Use
+                                )) ]
                         | Some plan when not (QuerySemantics.canCheckCard plan.InferredMode.Card carrier.ExpectedMode.Card) ->
-                            [ makeDiagnostic
-                                SimpleDiagnosticKind.TypeEqualityMismatch
-                                $"Query cardinality mismatch: inferred {queryCardText plan.InferredMode.Card} cannot be checked as {queryCardText carrier.ExpectedMode.Card}." ]
+                            [ makeSurfaceElaborationDiagnostic
+                                (QueryCarrierCardinalityMismatch(
+                                    queryCardText plan.InferredMode.Card,
+                                    queryCardText carrier.ExpectedMode.Card
+                                )) ]
                         | Some plan when not (QuerySemantics.canCheckItemQuantity plan.InferredItemQuantity carrier.ExpectedItemQuantity) ->
-                            [ makeDiagnostic
-                                SimpleDiagnosticKind.TypeEqualityMismatch
-                                $"Query item quantity mismatch: inferred item quantity '{ResourceQuantity.toSurfaceText plan.InferredItemQuantity}' cannot be checked as '{ResourceQuantity.toSurfaceText carrier.ExpectedItemQuantity}'." ]
+                            [ makeSurfaceElaborationDiagnostic
+                                (QueryCarrierItemQuantityMismatch(
+                                    ResourceQuantity.toSurfaceText plan.InferredItemQuantity,
+                                    ResourceQuantity.toSurfaceText carrier.ExpectedItemQuantity
+                                )) ]
                         | _ ->
                             []
 
@@ -18448,11 +18445,11 @@ module SurfaceElaboration =
                                     if comprehensionSinkItemTypesEqual expectedItemType actualItemType then
                                         []
                                     else
-                                        [
-                                            makeDiagnostic
-                                                SimpleDiagnosticKind.TypeEqualityMismatch
-                                                $"Selected comprehension sink expects Item '{TypeSignatures.toText expectedItemType}', but the yielded item type is '{TypeSignatures.toText actualItemType}'."
-                                        ])
+                                        [ makeSurfaceElaborationDiagnostic
+                                            (ComprehensionSinkItemTypeMismatch(
+                                                TypeSignatures.toText expectedItemType,
+                                                TypeSignatures.toText actualItemType
+                                            )) ])
                                 |> Option.defaultValue []
                             | _ ->
                                 []
@@ -19436,11 +19433,11 @@ module SurfaceElaboration =
                     let operandDiagnostics operandLabel operand =
                         match inferValidationExpressionType environment freshCounter locals operand with
                         | Some operandType when not (expectedTypeAccepts locals refinements boolType operandType) ->
-                            [
-                                makeDiagnostic
-                                    SimpleDiagnosticKind.TypeEqualityMismatch
-                                    $"Short-circuit operator {operandLabel} must match the expected suspended Bool operand type, but found '{TypeSignatures.toText operandType}'."
-                            ]
+                            [ makeSurfaceElaborationDiagnostic
+                                (ShortCircuitOperandMustBeSuspendedBool(
+                                    operandLabel,
+                                    TypeSignatures.toText operandType
+                                )) ]
                         | _ ->
                             []
 
@@ -19542,19 +19539,13 @@ module SurfaceElaboration =
 
                             match inferredOperandType with
                             | Some operandType when typeIsCallableLikeForValidation operandType ->
-                                    [
-                                        makeDiagnostic
-                                            SimpleDiagnosticKind.TypeEqualityMismatch
-                                            $"Arithmetic operator {operandLabel} must be a numeric value, but '{name}' resolves to a callable binding."
-                                    ]
+                                    [ makeSurfaceElaborationDiagnostic
+                                        (ArithmeticOperandResolvesToCallableBinding(operandLabel, name)) ]
                             | _ ->
                                 match topLevelDefinitionsByName |> Map.tryFind name with
                                 | Some bindingInfo when not (List.isEmpty bindingInfo.Parameters) ->
-                                    [
-                                        makeDiagnostic
-                                            SimpleDiagnosticKind.TypeEqualityMismatch
-                                            $"Arithmetic operator {operandLabel} must be a numeric value, but '{name}' resolves to a callable binding."
-                                    ]
+                                    [ makeSurfaceElaborationDiagnostic
+                                        (ArithmeticOperandResolvesToCallableBinding(operandLabel, name)) ]
                                 | None ->
                                     []
                                 | Some _ ->
@@ -19588,21 +19579,21 @@ module SurfaceElaboration =
                             | _ when
                                 isCompileTimeArgumentType environment.VisibleTypeAliases normalizedLeftType
                                 || isCompileTimeArgumentType environment.VisibleTypeAliases normalizedRightType ->
-                                [
-                                    makeDiagnostic
-                                        SimpleDiagnosticKind.TypeEqualityMismatch
-                                        $"Arithmetic operator operands must both be numeric, but found '{TypeSignatures.toText leftType}' and '{TypeSignatures.toText rightType}'."
-                                ]
+                                [ makeSurfaceElaborationDiagnostic
+                                    (ArithmeticOperandsMustBeNumeric(
+                                        TypeSignatures.toText leftType,
+                                        TypeSignatures.toText rightType
+                                    )) ]
                             | _ when isSupportedArithmeticType normalizedLeftType && isSupportedArithmeticType normalizedRightType ->
                                 []
                             | _ when not (canCompareInferredValidationTypes locals leftType rightType) ->
                                 []
                             | _ ->
-                                [
-                                    makeDiagnostic
-                                        SimpleDiagnosticKind.TypeEqualityMismatch
-                                        $"Arithmetic operator operands must both be numeric, but found '{TypeSignatures.toText leftType}' and '{TypeSignatures.toText rightType}'."
-                                ]
+                                [ makeSurfaceElaborationDiagnostic
+                                    (ArithmeticOperandsMustBeNumeric(
+                                        TypeSignatures.toText leftType,
+                                        TypeSignatures.toText rightType
+                                    )) ]
                         | _ ->
                             []
 

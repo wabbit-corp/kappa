@@ -889,6 +889,16 @@ type SurfaceElaborationDiagnosticEvidence =
     | SafeNavigationRequiresKnownResultType of memberText: string
     | SafeNavigationReceiverMustBeOption
     | ElvisReceiverMustBeOption
+    | QueryCarrierCannotDiscardMapMetadata
+    | QueryCarrierCannotDiscardSetMetadata
+    | QueryCarrierUseMismatch of expectedUse: string * inferredUse: string
+    | QueryCarrierCardinalityMismatch of inferredCardinality: string * expectedCardinality: string
+    | QueryCarrierItemQuantityMismatch of inferredQuantity: string * expectedQuantity: string
+    | ComprehensionSinkItemTypeMismatch of expectedItemTypeText: string * actualItemTypeText: string
+    | ArithmeticOperandResolvesToCallableBinding of operandLabel: string * bindingName: string
+    | ArithmeticOperandsMustBeNumeric of leftTypeText: string * rightTypeText: string
+    | ShortCircuitOperandMustBeSuspendedBool of operandLabel: string * operandTypeText: string
+    | ObjectPhaseValueCannotBePassedDirectlyToElaboration of name: string
     | TraitConstraintUnresolved of constraintText: string
     | ImplicitTraitConstraintUnresolved of constraintText: string
     | TraitConstraintAmbiguous of constraintText: string * candidateTexts: string list
@@ -2691,6 +2701,101 @@ module DiagnosticFact =
                     (payload
                         "surface-elaboration-diagnostic"
                         [ field "reason" (DiagnosticPayloadText "elvis-receiver-must-be-option") ])
+            | QueryCarrierCannotDiscardMapMetadata ->
+                descriptor
+                    DiagnosticCode.TypeEqualityMismatch
+                    None
+                    "Query carrier is ill-formed for a map comprehension; Query cannot silently discard map metadata."
+                    (payload
+                        "surface-elaboration-diagnostic"
+                        [ field "reason" (DiagnosticPayloadText "query-carrier-cannot-discard-map-metadata") ])
+            | QueryCarrierCannotDiscardSetMetadata ->
+                descriptor
+                    DiagnosticCode.TypeEqualityMismatch
+                    None
+                    "Query carrier is ill-formed for a set comprehension; Query cannot silently discard set metadata."
+                    (payload
+                        "surface-elaboration-diagnostic"
+                        [ field "reason" (DiagnosticPayloadText "query-carrier-cannot-discard-set-metadata") ])
+            | QueryCarrierUseMismatch(expectedUse, inferredUse) ->
+                descriptor
+                    DiagnosticCode.TypeEqualityMismatch
+                    None
+                    $"Query carrier expects a {expectedUse} query, but the comprehension infers {inferredUse}; use OnceQuery or an explicitly one-shot QueryCore carrier."
+                    (payload
+                        "surface-elaboration-diagnostic"
+                        [ field "reason" (DiagnosticPayloadText "query-carrier-use-mismatch")
+                          field "expected-use" (DiagnosticPayloadText expectedUse)
+                          field "inferred-use" (DiagnosticPayloadText inferredUse) ])
+            | QueryCarrierCardinalityMismatch(inferredCardinality, expectedCardinality) ->
+                descriptor
+                    DiagnosticCode.TypeEqualityMismatch
+                    None
+                    $"Query cardinality mismatch: inferred {inferredCardinality} cannot be checked as {expectedCardinality}."
+                    (payload
+                        "surface-elaboration-diagnostic"
+                        [ field "reason" (DiagnosticPayloadText "query-carrier-cardinality-mismatch")
+                          field "inferred-cardinality" (DiagnosticPayloadText inferredCardinality)
+                          field "expected-cardinality" (DiagnosticPayloadText expectedCardinality) ])
+            | QueryCarrierItemQuantityMismatch(inferredQuantity, expectedQuantity) ->
+                descriptor
+                    DiagnosticCode.TypeEqualityMismatch
+                    None
+                    $"Query item quantity mismatch: inferred item quantity '{inferredQuantity}' cannot be checked as '{expectedQuantity}'."
+                    (payload
+                        "surface-elaboration-diagnostic"
+                        [ field "reason" (DiagnosticPayloadText "query-carrier-item-quantity-mismatch")
+                          field "inferred-quantity" (DiagnosticPayloadText inferredQuantity)
+                          field "expected-quantity" (DiagnosticPayloadText expectedQuantity) ])
+            | ComprehensionSinkItemTypeMismatch(expectedItemTypeText, actualItemTypeText) ->
+                descriptor
+                    DiagnosticCode.TypeEqualityMismatch
+                    None
+                    $"Selected comprehension sink expects Item '{expectedItemTypeText}', but the yielded item type is '{actualItemTypeText}'."
+                    (payload
+                        "surface-elaboration-diagnostic"
+                        [ field "reason" (DiagnosticPayloadText "comprehension-sink-item-type-mismatch")
+                          field "expected-item-type-text" (DiagnosticPayloadText expectedItemTypeText)
+                          field "actual-item-type-text" (DiagnosticPayloadText actualItemTypeText) ])
+            | ArithmeticOperandResolvesToCallableBinding(operandLabel, bindingName) ->
+                descriptor
+                    DiagnosticCode.TypeEqualityMismatch
+                    None
+                    $"Arithmetic operator {operandLabel} must be a numeric value, but '{bindingName}' resolves to a callable binding."
+                    (payload
+                        "surface-elaboration-diagnostic"
+                        [ field "reason" (DiagnosticPayloadText "arithmetic-operand-resolves-to-callable-binding")
+                          field "operand-label" (DiagnosticPayloadText operandLabel)
+                          field "binding-name" (DiagnosticPayloadText bindingName) ])
+            | ArithmeticOperandsMustBeNumeric(leftTypeText, rightTypeText) ->
+                descriptor
+                    DiagnosticCode.TypeEqualityMismatch
+                    None
+                    $"Arithmetic operator operands must both be numeric, but found '{leftTypeText}' and '{rightTypeText}'."
+                    (payload
+                        "surface-elaboration-diagnostic"
+                        [ field "reason" (DiagnosticPayloadText "arithmetic-operands-must-be-numeric")
+                          field "left-type-text" (DiagnosticPayloadText leftTypeText)
+                          field "right-type-text" (DiagnosticPayloadText rightTypeText) ])
+            | ShortCircuitOperandMustBeSuspendedBool(operandLabel, operandTypeText) ->
+                descriptor
+                    DiagnosticCode.TypeEqualityMismatch
+                    None
+                    $"Short-circuit operator {operandLabel} must match the expected suspended Bool operand type, but found '{operandTypeText}'."
+                    (payload
+                        "surface-elaboration-diagnostic"
+                        [ field "reason" (DiagnosticPayloadText "short-circuit-operand-must-be-suspended-bool")
+                          field "operand-label" (DiagnosticPayloadText operandLabel)
+                          field "operand-type-text" (DiagnosticPayloadText operandTypeText) ])
+            | ObjectPhaseValueCannotBePassedDirectlyToElaboration name ->
+                descriptor
+                    DiagnosticCode.TypeEqualityMismatch
+                    None
+                    $"Object-phase/runtime value '{name}' cannot be passed directly to elaboration. Quote it as Syntax or rebind it inside Elab."
+                    (payload
+                        "surface-elaboration-diagnostic"
+                        [ field "reason" (DiagnosticPayloadText "object-phase-value-cannot-be-passed-directly-to-elaboration")
+                          field "name" (DiagnosticPayloadText name) ])
             | TraitConstraintUnresolved constraintText ->
                 descriptor
                     DiagnosticCode.TypeEqualityMismatch
