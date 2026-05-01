@@ -563,6 +563,38 @@ module BackendTestsShard3 =
 module BackendTestsShard4 =
 
     [<Fact>]
+    let ``dotnet backend reports structured closure support failures`` () =
+        let workspace =
+            compileInMemoryWorkspaceWithBackend
+                "memory-dotnet-closure-unsupported-root"
+                "dotnet"
+                [
+                    "main.kp",
+                    [
+                        "module main"
+                        "mk : Int -> Int"
+                        "let mk value ="
+                        "    let add = \\x -> x + value"
+                        "    add 2"
+                        "let result = mk 1"
+                    ]
+                    |> String.concat "\n"
+                ]
+
+        Assert.False(workspace.HasErrors, sprintf "Expected no frontend diagnostics, got %A" workspace.Diagnostics)
+
+        let outputDirectory = createScratchDirectory "dotnet-closure-unsupported"
+
+        match Backend.emitDotNetArtifact workspace "main.result" outputDirectory DotNetDeployment.Managed with
+        | Result.Ok artifact ->
+            failwithf "Expected dotnet artifact emission to reject runtime closures, but emitted '%s'." artifact.GeneratedFilePath
+        | Result.Error message ->
+            Assert.Equal(
+                "The CLR-backed dotnet profile could not lower 'main.result': The CLR dotnet backend does not yet support runtime closures.",
+                message
+            )
+
+    [<Fact>]
     let ``clr assembly ir carries durable host dotnet binding metadata`` () =
         let workspace =
             compileInMemoryWorkspaceWithBackend

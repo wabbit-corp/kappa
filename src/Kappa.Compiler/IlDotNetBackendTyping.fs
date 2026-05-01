@@ -237,7 +237,10 @@ module internal IlDotNetBackendTyping =
                     | true, cached ->
                         Result.Ok cached
                     | _ when Set.contains cacheKey active ->
-                        Result.Error $"IL backend recursive type inference is not implemented yet for '{currentModule}.{bindingName}'."
+                        Result.Error(
+                            DiagnosticFact.ClrBackendEmitterError.message
+                                (RecursiveTypeInferenceUnsupported(currentModule, bindingName))
+                        )
                     | _ ->
                         match rawModules |> Map.tryFind currentModule |> Option.bind (fun moduleInfo -> moduleInfo.Bindings |> Map.tryFind bindingName) with
                         | None ->
@@ -502,7 +505,10 @@ module internal IlDotNetBackendTyping =
                                 inferBindingInfo targetModule bindingInfo.Name active
                                 |> Result.bind (fun resolvedBinding -> ensureExpected resolvedBinding.ReturnType)
                             | Some(targetModule, bindingInfo) ->
-                                Result.Error $"IL backend does not support function-valued name '{targetModule}.{bindingInfo.Name}' yet."
+                                Result.Error(
+                                    DiagnosticFact.ClrBackendEmitterError.message
+                                        (FunctionValuedNameUnsupported(targetModule, bindingInfo.Name))
+                                )
                             | None ->
                                 match tryResolveConstructor rawModules currentModule segments with
                                 | Some(_, constructorInfo) when List.isEmpty constructorInfo.FieldTypes ->
@@ -516,8 +522,13 @@ module internal IlDotNetBackendTyping =
                                         []
                                         constructorInfo
                                 | Some(targetModule, constructorInfo) ->
-                                    Result.Error
-                                        $"IL backend does not support constructor-valued name '{targetModule}.{DeclarationIdentity.name constructorInfo.Identity}' yet."
+                                    Result.Error(
+                                        DiagnosticFact.ClrBackendEmitterError.message
+                                            (ConstructorValuedNameUnsupported(
+                                                targetModule,
+                                                DeclarationIdentity.name constructorInfo.Identity
+                                            ))
+                                    )
                                 | None ->
                                     let localsText =
                                         localTypes |> Map.toList |> List.map fst |> String.concat ", "
@@ -556,11 +567,13 @@ module internal IlDotNetBackendTyping =
                                     | Some(_, resultType) ->
                                         ensureExpected resultType
                                     | None ->
-                                        let argumentText =
-                                            argumentTypes |> List.map formatIlType |> String.concat ", "
-
-                                        Result.Error
-                                            $"IL backend does not support intrinsic '{name}' for argument types [{argumentText}].")
+                                        Result.Error(
+                                            DiagnosticFact.ClrBackendEmitterError.message
+                                                (IntrinsicArgumentTypesUnsupported(
+                                                    name,
+                                                    argumentTypes |> List.map formatIlType
+                                                ))
+                                        ))
 
                     let inferTraitCall traitName memberName dictionary arguments =
                         let traitReference = traitReferenceOfRuntimeName traitName
@@ -658,7 +671,7 @@ module internal IlDotNetBackendTyping =
                     | KRuntimeEffectLabel _
                     | KRuntimeEffectOperation _
                     | KRuntimeHandle _ ->
-                        Result.Error "IL backend does not support effect handlers yet."
+                        Result.Error(DiagnosticFact.ClrBackendEmitterError.message EffectHandlersUnsupported)
                     | KRuntimeName [ "True" ]
                     | KRuntimeName [ "False" ] ->
                         ensureExpected (IlPrimitive IlBool)
@@ -669,9 +682,15 @@ module internal IlDotNetBackendTyping =
                         |> Result.bind (function
                             | IlPrimitive IlInt64 -> ensureExpected (IlPrimitive IlInt64)
                             | IlPrimitive IlFloat64 -> ensureExpected (IlPrimitive IlFloat64)
-                            | other -> Result.Error $"Unary '-' is not supported for {formatIlType other}.")
+                            | other ->
+                                Result.Error(
+                                    DiagnosticFact.ClrBackendEmitterError.message
+                                        (UnaryOperatorOperandTypeUnsupported("-", formatIlType other))
+                                ))
                     | KRuntimeUnary(operatorName, _) ->
-                        Result.Error $"IL backend does not support unary operator '{operatorName}' yet."
+                        Result.Error(
+                            DiagnosticFact.ClrBackendEmitterError.message (UnaryOperatorUnsupported operatorName)
+                        )
                     | KRuntimeBinary(left, operatorName, right) ->
                         if KnownPreludeSemantics.isBuiltinBinaryOperator operatorName then
                             let builtinResult =
@@ -729,8 +748,14 @@ module internal IlDotNetBackendTyping =
                                                      && TypeIdentity.hasTopLevelName preludeModuleIdentity Stdlib.KnownTypeNames.Bool rightIdentity ->
                                                 ensureExpected (IlPrimitive IlBool)
                                             | _ ->
-                                                Result.Error
-                                                    $"IL backend does not support '{operatorName}' for {formatIlType leftType} and {formatIlType rightType}."
+                                                Result.Error(
+                                                    DiagnosticFact.ClrBackendEmitterError.message
+                                                        (BinaryOperatorUnsupported(
+                                                            operatorName,
+                                                            formatIlType leftType,
+                                                            formatIlType rightType
+                                                        ))
+                                                )
                                 }
 
                             builtinResult
@@ -895,9 +920,9 @@ module internal IlDotNetBackendTyping =
                     | KRuntimeApply _ ->
                         Result.Error "IL backend currently supports application only when the callee is a named binding."
                     | KRuntimeClosure _ ->
-                        Result.Error "IL backend does not support closures yet."
+                        Result.Error(DiagnosticFact.ClrBackendEmitterError.message RuntimeClosuresUnsupported)
                     | KRuntimePrefixedString _ ->
-                        Result.Error "IL backend does not support prefixed strings yet."
+                        Result.Error(DiagnosticFact.ClrBackendEmitterError.message PrefixedStringsUnsupported)
 
                 rawModules
                 |> Map.toList

@@ -436,14 +436,16 @@ module internal IlDotNetBackendEmit =
                                         "IL backend intrinsic 'openFile' requires a File data type in the current module when no expected type is available."
                             | _ ->
                                 match intrinsicParameterTypes name argumentTypes with
-                                | Some(_, resultType) ->
-                                    ensureExpected resultType
-                                | None ->
-                                    let argumentText =
-                                        argumentTypes |> List.map formatIlType |> String.concat ", "
-
-                                    Result.Error
-                                        $"IL backend does not support intrinsic '{name}' for argument types [{argumentText}].")
+                                    | Some(_, resultType) ->
+                                        ensureExpected resultType
+                                    | None ->
+                                        Result.Error(
+                                            DiagnosticFact.ClrBackendEmitterError.message
+                                                (IntrinsicArgumentTypesUnsupported(
+                                                    name,
+                                                    argumentTypes |> List.map formatIlType
+                                                ))
+                                        ))
 
                 let inferTraitCall traitName memberName dictionary arguments =
                     result {
@@ -523,7 +525,7 @@ module internal IlDotNetBackendEmit =
                 | KRuntimeEffectLabel _
                 | KRuntimeEffectOperation _
                 | KRuntimeHandle _ ->
-                    Result.Error "IL backend does not support effect handlers yet."
+                    Result.Error(DiagnosticFact.ClrBackendEmitterError.message EffectHandlersUnsupported)
                 | KRuntimeName [ "True" ]
                 | KRuntimeName [ "False" ] ->
                     ensureExpected (IlPrimitive IlBool)
@@ -536,8 +538,10 @@ module internal IlDotNetBackendEmit =
                     | Some(_, bindingInfo) when List.isEmpty bindingInfo.ParameterTypes ->
                         ensureExpected bindingInfo.ReturnType
                     | Some(targetModule, bindingInfo) ->
-                        Result.Error
-                            $"IL backend does not support function-valued name '{targetModule}.{bindingInfo.Binding.Name}' yet."
+                        Result.Error(
+                            DiagnosticFact.ClrBackendEmitterError.message
+                                (FunctionValuedNameUnsupported(targetModule, bindingInfo.Binding.Name))
+                        )
                     | None ->
                         match tryResolveConstructor modules currentModule segments with
                         | Some(_, constructorInfo) when List.isEmpty constructorInfo.FieldTypes ->
@@ -552,8 +556,10 @@ module internal IlDotNetBackendEmit =
                                 []
                                 constructorInfo
                         | Some(targetModule, constructorInfo) ->
-                            Result.Error
-                                $"IL backend does not support constructor-valued name '{targetModule}.{constructorInfo.Name}' yet."
+                            Result.Error(
+                                DiagnosticFact.ClrBackendEmitterError.message
+                                    (ConstructorValuedNameUnsupported(targetModule, constructorInfo.Name))
+                            )
                         | None ->
                             let localsText =
                                 localTypes |> Map.toList |> List.map fst |> String.concat ", "
@@ -565,9 +571,15 @@ module internal IlDotNetBackendEmit =
                     |> Result.bind (function
                         | IlPrimitive IlInt64 -> ensureExpected (IlPrimitive IlInt64)
                         | IlPrimitive IlFloat64 -> ensureExpected (IlPrimitive IlFloat64)
-                        | other -> Result.Error $"Unary '-' is not supported for {formatIlType other}.")
+                        | other ->
+                            Result.Error(
+                                DiagnosticFact.ClrBackendEmitterError.message
+                                    (UnaryOperatorOperandTypeUnsupported("-", formatIlType other))
+                            ))
                 | KRuntimeUnary(operatorName, _) ->
-                    Result.Error $"IL backend does not support unary operator '{operatorName}' yet."
+                    Result.Error(
+                        DiagnosticFact.ClrBackendEmitterError.message (UnaryOperatorUnsupported operatorName)
+                    )
                 | KRuntimeBinary(left, operatorName, right) ->
                     if KnownPreludeSemantics.isBuiltinBinaryOperator operatorName then
                         let builtinResult =
@@ -624,8 +636,14 @@ module internal IlDotNetBackendEmit =
                                                  && TypeIdentity.hasTopLevelName preludeModuleIdentity Stdlib.KnownTypeNames.Bool rightIdentity ->
                                             ensureExpected (IlPrimitive IlBool)
                                         | _ ->
-                                            Result.Error
-                                                $"IL backend does not support '{operatorName}' for {formatIlType leftType} and {formatIlType rightType}."
+                                            Result.Error(
+                                                DiagnosticFact.ClrBackendEmitterError.message
+                                                    (BinaryOperatorUnsupported(
+                                                        operatorName,
+                                                        formatIlType leftType,
+                                                        formatIlType rightType
+                                                    ))
+                                            )
                             }
 
                         builtinResult
@@ -755,9 +773,9 @@ module internal IlDotNetBackendEmit =
                 | KRuntimeApply _ ->
                     Result.Error "IL backend currently supports application only when the callee is a named binding."
                 | KRuntimeClosure _ ->
-                    Result.Error "IL backend does not support closures yet."
+                    Result.Error(DiagnosticFact.ClrBackendEmitterError.message RuntimeClosuresUnsupported)
                 | KRuntimePrefixedString _ ->
-                    Result.Error "IL backend does not support prefixed strings yet."
+                    Result.Error(DiagnosticFact.ClrBackendEmitterError.message PrefixedStringsUnsupported)
 
             and inferBody bodyLocals expectedType bodyExpression =
                 inferExpressionType currentModule bodyLocals expectedType bodyExpression
@@ -953,7 +971,15 @@ module internal IlDotNetBackendEmit =
                         il.Emit(OpCodes.Ldc_I4_0)
                         il.Emit(OpCodes.Ceq)
                     | _ ->
-                        return! Result.Error $"IL backend does not support '{operatorName}' for {formatIlType leftType} and {formatIlType rightType}."
+                        return!
+                            Result.Error(
+                                DiagnosticFact.ClrBackendEmitterError.message
+                                    (BinaryOperatorUnsupported(
+                                        operatorName,
+                                        formatIlType leftType,
+                                        formatIlType rightType
+                                    ))
+                            )
             }
 
         let rec emitSyntheticFileHandle resultType =
@@ -1032,12 +1058,14 @@ module internal IlDotNetBackendEmit =
                     if not (knownIntrinsicNames.Contains name) then
                         return! Result.Error $"IL backend could not resolve callee '{name}'."
                     else
-                        let argumentText =
-                            argumentTypes |> List.map formatIlType |> String.concat ", "
-
                         return!
-                            Result.Error
-                                $"IL backend does not support intrinsic '{name}' for argument types [{argumentText}]."
+                            Result.Error(
+                                DiagnosticFact.ClrBackendEmitterError.message
+                                    (IntrinsicArgumentTypesUnsupported(
+                                        name,
+                                        argumentTypes |> List.map formatIlType
+                                    ))
+                            )
                 | Some(parameterTypes, resultType) ->
                     let usesCustomArgumentEmission =
                         String.Equals(name, KnownPreludeSemantics.BuiltinPreludeShowHelperName, StringComparison.Ordinal)
@@ -1543,7 +1571,7 @@ module internal IlDotNetBackendEmit =
         | KRuntimeEffectLabel _
         | KRuntimeEffectOperation _
         | KRuntimeHandle _ ->
-            Result.Error "IL backend does not support effect handlers yet."
+            Result.Error(DiagnosticFact.ClrBackendEmitterError.message EffectHandlersUnsupported)
         | KRuntimeName [ "True" ] ->
             il.Emit(OpCodes.Ldc_I4_1)
             Result.Ok()
@@ -1563,13 +1591,19 @@ module internal IlDotNetBackendEmit =
                     il.Emit(OpCodes.Call, targetMethod)
                 }
             | Some(targetModule, bindingInfo) ->
-                Result.Error $"IL backend does not support function-valued name '{targetModule}.{bindingInfo.Binding.Name}' yet."
+                Result.Error(
+                    DiagnosticFact.ClrBackendEmitterError.message
+                        (FunctionValuedNameUnsupported(targetModule, bindingInfo.Binding.Name))
+                )
             | None ->
                 match tryResolveConstructor state.Environment.Modules currentModule segments with
                 | Some(_, constructorInfo) when List.isEmpty constructorInfo.FieldTypes ->
                     emitConstructorApplication constructorInfo [] expectedType
                 | Some(targetModule, constructorInfo) ->
-                    Result.Error $"IL backend does not support constructor-valued name '{targetModule}.{constructorInfo.Name}' yet."
+                    Result.Error(
+                        DiagnosticFact.ClrBackendEmitterError.message
+                            (ConstructorValuedNameUnsupported(targetModule, constructorInfo.Name))
+                    )
                 | None ->
                     let localsText =
                         localValues |> Map.toList |> List.map fst |> String.concat ", "
@@ -1588,7 +1622,9 @@ module internal IlDotNetBackendEmit =
                     return! Result.Error $"Unary '-' is not supported for {formatIlType other}."
             }
         | KRuntimeUnary(operatorName, _) ->
-            Result.Error $"IL backend does not support unary operator '{operatorName}' yet."
+            Result.Error(
+                DiagnosticFact.ClrBackendEmitterError.message (UnaryOperatorUnsupported operatorName)
+            )
         | KRuntimeBinary(left, "&&", right) ->
             let falseLabel = il.DefineLabel()
             let endLabel = il.DefineLabel()
@@ -1767,9 +1803,9 @@ module internal IlDotNetBackendEmit =
         | KRuntimeApply _ ->
             Result.Error "IL backend currently supports application only when the callee is a named binding."
         | KRuntimeClosure _ ->
-            Result.Error "IL backend does not support closures yet."
+            Result.Error(DiagnosticFact.ClrBackendEmitterError.message RuntimeClosuresUnsupported)
         | KRuntimePrefixedString _ ->
-            Result.Error "IL backend does not support prefixed strings yet."
+            Result.Error(DiagnosticFact.ClrBackendEmitterError.message PrefixedStringsUnsupported)
 
     let internal emitMethodBody (state: EmissionState) (moduleInfo: ModuleInfo) (bindingInfo: BindingInfo) =
         result {

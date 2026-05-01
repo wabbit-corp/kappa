@@ -857,6 +857,18 @@ type BackendLoweringErrorEvidence =
     | RuntimeIntrinsicArityMismatch of intrinsicName: string * expectedArity: int * actualArity: int
     | RuntimeTagTestRequiresConstructorName
 
+type ClrBackendEmitterErrorEvidence =
+    | RuntimeClosuresUnsupported
+    | EffectHandlersUnsupported
+    | PrefixedStringsUnsupported
+    | FunctionValuedNameUnsupported of targetModuleName: string * bindingName: string
+    | ConstructorValuedNameUnsupported of targetModuleName: string * constructorName: string
+    | UnaryOperatorUnsupported of operatorName: string
+    | UnaryOperatorOperandTypeUnsupported of operatorName: string * operandTypeText: string
+    | BinaryOperatorUnsupported of operatorName: string * leftTypeText: string * rightTypeText: string
+    | IntrinsicArgumentTypesUnsupported of intrinsicName: string * argumentTypeTexts: string list
+    | RecursiveTypeInferenceUnsupported of moduleName: string * bindingName: string
+
 type BackendDiagnosticEvidence =
     | EffectRuntimeUnsupportedBackend of backendProfile: string * declarationName: string * effectUse: BackendRuntimeEffectUseEvidence
     | KBackendLoweringFailed of moduleName: string * error: BackendLoweringErrorEvidence
@@ -1716,6 +1728,31 @@ module DiagnosticFact =
 
     let corePatternParsing evidence =
         CorePatternParsingDiagnostic evidence
+
+    module internal ClrBackendEmitterError =
+        let message evidence =
+            match evidence with
+            | RuntimeClosuresUnsupported ->
+                "The CLR dotnet backend does not yet support runtime closures."
+            | EffectHandlersUnsupported ->
+                "The CLR dotnet backend does not yet support effect handlers in this lowering lane."
+            | PrefixedStringsUnsupported ->
+                "The CLR dotnet backend does not yet support prefixed strings in this lowering lane."
+            | FunctionValuedNameUnsupported(targetModuleName, bindingName) ->
+                $"The CLR dotnet backend does not yet support function-valued name '{targetModuleName}.{bindingName}'."
+            | ConstructorValuedNameUnsupported(targetModuleName, constructorName) ->
+                $"The CLR dotnet backend does not yet support constructor-valued name '{targetModuleName}.{constructorName}'."
+            | UnaryOperatorUnsupported operatorName ->
+                $"The CLR dotnet backend does not yet support unary operator '{operatorName}'."
+            | UnaryOperatorOperandTypeUnsupported(operatorName, operandTypeText) ->
+                $"The CLR dotnet backend does not support unary operator '{operatorName}' for {operandTypeText}."
+            | BinaryOperatorUnsupported(operatorName, leftTypeText, rightTypeText) ->
+                $"The CLR dotnet backend does not support '{operatorName}' for {leftTypeText} and {rightTypeText}."
+            | IntrinsicArgumentTypesUnsupported(intrinsicName, argumentTypeTexts) ->
+                let argumentText = String.concat ", " argumentTypeTexts
+                $"The CLR dotnet backend does not support intrinsic '{intrinsicName}' for argument types [{argumentText}]."
+            | RecursiveTypeInferenceUnsupported(moduleName, bindingName) ->
+                $"The CLR dotnet backend does not yet support recursive type inference for '{moduleName}.{bindingName}'."
 
     let private expectedActualMismatchKindText mismatchKind =
         match mismatchKind with
