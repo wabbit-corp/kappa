@@ -16698,17 +16698,10 @@ module SurfaceElaboration =
                             |> Option.bind (tryUnwrapSyntaxType environment.VisibleTypeAliases)
                         with
                         | Some _ ->
-                            [
-                                makeDiagnostic
-                                    SimpleDiagnosticKind.TypeEqualityMismatch
-                                    "Quote splice `${...}` requires `Syntax t`; `Elab (Syntax t)` is not run implicitly inside a quote."
-                            ]
+                            [ makeSurfaceElaborationDiagnostic QuoteSpliceRequiresSyntaxNotElabSyntax ]
                         | None ->
-                            [
-                                makeDiagnostic
-                                    SimpleDiagnosticKind.TypeEqualityMismatch
-                                    $"Quote splice `${{...}}` requires `Syntax t`, but found '{TypeSignatures.toText actualType}'."
-                            ]
+                            [ makeSurfaceElaborationDiagnostic
+                                (QuoteSpliceRequiresSyntax(TypeSignatures.toText actualType)) ]
                 | None ->
                     []
 
@@ -16719,11 +16712,8 @@ module SurfaceElaboration =
                 | None ->
                     match tryInferMacroAwareValidationType locals inner with
                     | Some actualType ->
-                        [
-                            makeDiagnostic
-                                SimpleDiagnosticKind.TypeEqualityMismatch
-                                $"Top-level splice `$(...)` requires `Syntax t` or `Elab (Syntax t)`, but found '{TypeSignatures.toText actualType}'."
-                        ]
+                        [ makeSurfaceElaborationDiagnostic
+                            (TopLevelSpliceRequiresSyntaxOrElabSyntax(TypeSignatures.toText actualType)) ]
                     | None ->
                         []
 

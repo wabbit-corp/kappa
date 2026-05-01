@@ -899,6 +899,9 @@ type SurfaceElaborationDiagnosticEvidence =
     | ArithmeticOperandsMustBeNumeric of leftTypeText: string * rightTypeText: string
     | ShortCircuitOperandMustBeSuspendedBool of operandLabel: string * operandTypeText: string
     | ObjectPhaseValueCannotBePassedDirectlyToElaboration of name: string
+    | QuoteSpliceRequiresSyntax of actualTypeText: string
+    | QuoteSpliceRequiresSyntaxNotElabSyntax
+    | TopLevelSpliceRequiresSyntaxOrElabSyntax of actualTypeText: string
     | TraitConstraintUnresolved of constraintText: string
     | ImplicitTraitConstraintUnresolved of constraintText: string
     | TraitConstraintAmbiguous of constraintText: string * candidateTexts: string list
@@ -2796,6 +2799,32 @@ module DiagnosticFact =
                         "surface-elaboration-diagnostic"
                         [ field "reason" (DiagnosticPayloadText "object-phase-value-cannot-be-passed-directly-to-elaboration")
                           field "name" (DiagnosticPayloadText name) ])
+            | QuoteSpliceRequiresSyntax actualTypeText ->
+                descriptor
+                    DiagnosticCode.TypeEqualityMismatch
+                    None
+                    $"Quote splice `${{...}}` requires `Syntax t`, but found '{actualTypeText}'."
+                    (payload
+                        "surface-elaboration-diagnostic"
+                        [ field "reason" (DiagnosticPayloadText "quote-splice-requires-syntax")
+                          field "actual-type-text" (DiagnosticPayloadText actualTypeText) ])
+            | QuoteSpliceRequiresSyntaxNotElabSyntax ->
+                descriptor
+                    DiagnosticCode.TypeEqualityMismatch
+                    None
+                    "Quote splice `${...}` requires `Syntax t`; `Elab (Syntax t)` is not run implicitly inside a quote."
+                    (payload
+                        "surface-elaboration-diagnostic"
+                        [ field "reason" (DiagnosticPayloadText "quote-splice-requires-syntax-not-elab-syntax") ])
+            | TopLevelSpliceRequiresSyntaxOrElabSyntax actualTypeText ->
+                descriptor
+                    DiagnosticCode.TypeEqualityMismatch
+                    None
+                    $"Top-level splice `$(...)` requires `Syntax t` or `Elab (Syntax t)`, but found '{actualTypeText}'."
+                    (payload
+                        "surface-elaboration-diagnostic"
+                        [ field "reason" (DiagnosticPayloadText "top-level-splice-requires-syntax-or-elab-syntax")
+                          field "actual-type-text" (DiagnosticPayloadText actualTypeText) ])
             | TraitConstraintUnresolved constraintText ->
                 descriptor
                     DiagnosticCode.TypeEqualityMismatch

@@ -3021,6 +3021,58 @@ module SmokeTestsShard3 =
         Assert.Equal(Some "String", tryFindPayloadText "left-type-text" diagnostic)
         Assert.Equal(Some "Bool", tryFindPayloadText "right-type-text" diagnostic)
 
+    [<Fact>]
+    let ``source compilation reports quote splice syntax payloads`` () =
+        let workspace =
+            compileInMemoryWorkspace
+                "memory-quote-splice-root"
+                [
+                    "main.kp",
+                    [
+                        "module main"
+                        "value : Syntax Int"
+                        "let value = '{ ${1} }"
+                    ]
+                    |> String.concat "\n"
+                ]
+
+        Assert.True(workspace.HasErrors, "Expected quote splice operands without Syntax type to be rejected.")
+
+        let diagnostic =
+            workspace.Diagnostics
+            |> List.find (fun item ->
+                item.Code = DiagnosticCode.TypeEqualityMismatch
+                && tryFindPayloadText "reason" item = Some "quote-splice-requires-syntax")
+
+        Assert.Equal("surface-elaboration-diagnostic", diagnostic.Payload.Kind)
+        Assert.Equal(Some "Int", tryFindPayloadText "actual-type-text" diagnostic)
+
+    [<Fact>]
+    let ``source compilation reports top level splice syntax payloads`` () =
+        let workspace =
+            compileInMemoryWorkspace
+                "memory-top-level-splice-root"
+                [
+                    "main.kp",
+                    [
+                        "module main"
+                        "value : Int"
+                        "let value = $(1)"
+                    ]
+                    |> String.concat "\n"
+                ]
+
+        Assert.True(workspace.HasErrors, "Expected top-level splices without Syntax carriers to be rejected.")
+
+        let diagnostic =
+            workspace.Diagnostics
+            |> List.find (fun item ->
+                item.Code = DiagnosticCode.TypeEqualityMismatch
+                && tryFindPayloadText "reason" item = Some "top-level-splice-requires-syntax-or-elab-syntax")
+
+        Assert.Equal("surface-elaboration-diagnostic", diagnostic.Payload.Kind)
+        Assert.Equal(Some "Int", tryFindPayloadText "actual-type-text" diagnostic)
+
 
     [<Fact>]
     let ``lexer reports malformed prefixed numeric literals directly`` () =
@@ -4042,6 +4094,9 @@ module SmokeTestsShard4 =
         bag.AddError(DiagnosticFact.surfaceElaboration (ArithmeticOperandsMustBeNumeric("String", "Bool")))
         bag.AddError(DiagnosticFact.surfaceElaboration (ShortCircuitOperandMustBeSuspendedBool("right-hand side", "Int")))
         bag.AddError(DiagnosticFact.surfaceElaboration (ObjectPhaseValueCannotBePassedDirectlyToElaboration "runtimeValue"))
+        bag.AddError(DiagnosticFact.surfaceElaboration (QuoteSpliceRequiresSyntax "Int"))
+        bag.AddError(DiagnosticFact.surfaceElaboration QuoteSpliceRequiresSyntaxNotElabSyntax)
+        bag.AddError(DiagnosticFact.surfaceElaboration (TopLevelSpliceRequiresSyntaxOrElabSyntax "Int"))
         bag.AddError(DiagnosticFact.surfaceElaboration (TraitConstraintUnresolved "Eq Int"))
         bag.AddError(DiagnosticFact.surfaceElaboration (ImplicitTraitConstraintUnresolved "Show Int"))
         bag.AddError(DiagnosticFact.surfaceElaboration (TraitConstraintAmbiguous("Score Int", [ "left.ScoreInt"; "right.ScoreInt" ])))
@@ -4293,6 +4348,24 @@ module SmokeTestsShard4 =
                 item.Code = DiagnosticCode.TypeEqualityMismatch
                 && tryFindPayloadText "reason" item = Some "object-phase-value-cannot-be-passed-directly-to-elaboration")
 
+        let quoteSpliceDiagnostic =
+            diagnostics
+            |> List.find (fun item ->
+                item.Code = DiagnosticCode.TypeEqualityMismatch
+                && tryFindPayloadText "reason" item = Some "quote-splice-requires-syntax")
+
+        let quoteSpliceElabSyntaxDiagnostic =
+            diagnostics
+            |> List.find (fun item ->
+                item.Code = DiagnosticCode.TypeEqualityMismatch
+                && tryFindPayloadText "reason" item = Some "quote-splice-requires-syntax-not-elab-syntax")
+
+        let topLevelSpliceDiagnostic =
+            diagnostics
+            |> List.find (fun item ->
+                item.Code = DiagnosticCode.TypeEqualityMismatch
+                && tryFindPayloadText "reason" item = Some "top-level-splice-requires-syntax-or-elab-syntax")
+
         let unresolvedConstraintDiagnostic =
             diagnostics
             |> List.find (fun item ->
@@ -4447,6 +4520,12 @@ module SmokeTestsShard4 =
         Assert.Equal(Some "right-hand side", tryFindPayloadText "operand-label" shortCircuitDiagnostic)
         Assert.Equal(Some "Int", tryFindPayloadText "operand-type-text" shortCircuitDiagnostic)
         Assert.Equal(Some "runtimeValue", tryFindPayloadText "name" objectPhaseDiagnostic)
+        Assert.Equal(Some "Int", tryFindPayloadText "actual-type-text" quoteSpliceDiagnostic)
+        Assert.Equal(
+            "Quote splice `${...}` requires `Syntax t`; `Elab (Syntax t)` is not run implicitly inside a quote.",
+            quoteSpliceElabSyntaxDiagnostic.Message
+        )
+        Assert.Equal(Some "Int", tryFindPayloadText "actual-type-text" topLevelSpliceDiagnostic)
         Assert.Equal("Trait constraint 'Eq Int' could not be resolved.", unresolvedConstraintDiagnostic.Message)
         Assert.Equal("Implicit trait constraint 'Show Int' could not be resolved.", unresolvedImplicitConstraintDiagnostic.Message)
         Assert.Equal(Some "Score Int", tryFindPayloadText "constraint-text" ambiguousConstraintDiagnostic)
