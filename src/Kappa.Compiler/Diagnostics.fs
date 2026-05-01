@@ -888,6 +888,9 @@ type CoreExpressionParsingEvidence =
     | ExpectedInterpolationEndBeforeStringResumes
     | ExpectedInterpolatedStringContent
     | UnterminatedInterpolatedString
+    | DuplicateHandlerReturnClause
+    | MissingHandlerReturnClause
+    | HandlerReturnClauseArityMismatch of argumentCount: int
 
 and CoreHeaderContext =
     | TopLevelFunctionHeader
@@ -2594,6 +2597,21 @@ module DiagnosticFact =
             | UnterminatedInterpolatedString ->
                 descriptor DiagnosticCode.ExpectedSyntaxToken None "Unterminated interpolated string."
                     (payload "core-expression-parsing" [ field "reason" (DiagnosticPayloadText "unterminated-interpolated-string") ])
+            | DuplicateHandlerReturnClause ->
+                descriptor DiagnosticCode.HandlerClauseDuplicate None "A handler must not define more than one return clause."
+                    (payload "core-expression-parsing" [ field "reason" (DiagnosticPayloadText "duplicate-handler-return-clause") ])
+            | MissingHandlerReturnClause ->
+                descriptor DiagnosticCode.HandlerClauseMissing None "A handler must define exactly one return clause of the form 'case return x -> ...'."
+                    (payload "core-expression-parsing" [ field "reason" (DiagnosticPayloadText "missing-handler-return-clause") ])
+            | HandlerReturnClauseArityMismatch argumentCount ->
+                descriptor
+                    DiagnosticCode.HandlerClauseArityMismatch
+                    None
+                    $"A handler return clause must bind exactly one payload argument, but binds {argumentCount}."
+                    (payload
+                        "core-expression-parsing"
+                        [ field "reason" (DiagnosticPayloadText "handler-return-clause-arity-mismatch")
+                          field "argument-count" (DiagnosticPayloadText(string argumentCount)) ])
         | UnicodeScalarLiteralDiagnostic evidence ->
             match evidence with
             | UnicodeScalarInvalidLiteralForm ->

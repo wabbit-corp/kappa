@@ -108,7 +108,7 @@ Current M4 status note: started, not complete. The compiler now has a real effec
 - [ ] Finish `CoreParsing.fs` diagnostics conversion for projection headers, accessor clauses, and projection-specific binder validation.
   Projection-body diagnostics now route through `CoreExpressionParsingEvidence`, but projection place-binder, accessor-clause, and header/result-type diagnostics still use raw detail strings.
 - [ ] Finish `CoreParsing.fs` diagnostics conversion for remaining handler/record-patch validation diagnostics.
-  Handler-expression syntax diagnostics now route through `CoreExpressionParsingEvidence`, but duplicate/missing/arity return-clause checks and record-patch item validation still use raw simple diagnostics.
+  Handler-expression syntax and return-clause validation diagnostics now route through `CoreExpressionParsingEvidence`, but record-patch item validation still uses raw simple diagnostics.
   Query/comprehension diagnostics now route through `CoreExpressionParsingEvidence`, including generator/group/join/left-join/conflict-clause errors, unordered `skip` / `take`, unsupported comprehension clauses, and missing trailing `yield`.
   Function and local-function header diagnostics now route through `CoreExpressionParsingEvidence`, and both sites share the same header-parameter parser loop with only the header context varying.
   Expression-tail diagnostics now route through `CoreExpressionParsingEvidence` for missing effect-label names, missing constructor names after `is`, safe-navigation member access failures, chained tag tests, explicit member projection failures, unexpected trailing tokens, and record-update close failures.

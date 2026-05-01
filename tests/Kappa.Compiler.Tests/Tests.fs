@@ -3746,6 +3746,9 @@ module SmokeTestsShard4 =
         bag.AddError(DiagnosticFact.coreExpressionParsing ExpectedInterpolationEndBeforeStringResumes)
         bag.AddError(DiagnosticFact.coreExpressionParsing ExpectedInterpolatedStringContent)
         bag.AddError(DiagnosticFact.coreExpressionParsing UnterminatedInterpolatedString)
+        bag.AddError(DiagnosticFact.coreExpressionParsing DuplicateHandlerReturnClause)
+        bag.AddError(DiagnosticFact.coreExpressionParsing MissingHandlerReturnClause)
+        bag.AddError(DiagnosticFact.coreExpressionParsing (HandlerReturnClauseArityMismatch 2))
 
         let diagnostics = bag.Items
         let usingDiagnostic =
@@ -3879,6 +3882,18 @@ module SmokeTestsShard4 =
         let unterminatedInterpolatedStringDiagnostic =
             diagnostics
             |> List.find (fun item -> item.Message = "Unterminated interpolated string.")
+
+        let duplicateHandlerReturnDiagnostic =
+            diagnostics
+            |> List.find (fun item -> item.Message = "A handler must not define more than one return clause.")
+
+        let missingHandlerReturnDiagnostic =
+            diagnostics
+            |> List.find (fun item -> item.Message = "A handler must define exactly one return clause of the form 'case return x -> ...'.")
+
+        let handlerReturnArityDiagnostic =
+            diagnostics
+            |> List.find (fun item -> item.Message = "A handler return clause must bind exactly one payload argument, but binds 2.")
 
         Assert.Equal("core-expression-parsing", usingDiagnostic.Payload.Kind)
         Assert.Contains(
@@ -4077,6 +4092,24 @@ module SmokeTestsShard4 =
             fun field ->
                 field.Name = "reason"
                 && field.Value = DiagnosticPayloadText "unterminated-interpolated-string"
+        )
+        Assert.Contains(
+            duplicateHandlerReturnDiagnostic.Payload.Fields,
+            fun field ->
+                field.Name = "reason"
+                && field.Value = DiagnosticPayloadText "duplicate-handler-return-clause"
+        )
+        Assert.Contains(
+            missingHandlerReturnDiagnostic.Payload.Fields,
+            fun field ->
+                field.Name = "reason"
+                && field.Value = DiagnosticPayloadText "missing-handler-return-clause"
+        )
+        Assert.Contains(
+            handlerReturnArityDiagnostic.Payload.Fields,
+            fun field ->
+                field.Name = "argument-count"
+                && field.Value = DiagnosticPayloadText "2"
         )
 
     [<Fact>]
@@ -4277,6 +4310,57 @@ module SmokeTestsShard4 =
         Assert.Equal(Some "expected-handler-clause-starting-with-case", tryFindPayloadText "reason" caseDiagnostic)
         Assert.Equal("core-expression-parsing", arrowDiagnostic.Payload.Kind)
         Assert.Equal(Some "expected-handler-clause-arrow", tryFindPayloadText "reason" arrowDiagnostic)
+
+    [<Fact>]
+    let ``parser reports structured handler return clause validation diagnostics`` () =
+        let sourceText =
+            [
+                "module main"
+                "let duplicateReturn ="
+                "    handle Ask comp with"
+                "        case return x -> pure x"
+                "        case return y -> pure y"
+                "let missingReturn ="
+                "    handle Ask comp with"
+                "        case ask _ k -> k ()"
+                "let badReturnArity ="
+                "    handle Ask comp with"
+                "        case return x y -> pure x"
+            ]
+            |> String.concat "\n"
+
+        let _, lexed, parsed =
+            lexAndParse
+                "main.kp"
+                sourceText
+
+        Assert.Empty(lexed.Diagnostics)
+
+        let duplicateDiagnostic =
+            parsed.Diagnostics
+            |> List.find (fun diagnostic ->
+                tryFindPayloadText "reason" diagnostic = Some "duplicate-handler-return-clause")
+
+        let missingDiagnostic =
+            parsed.Diagnostics
+            |> List.find (fun diagnostic ->
+                tryFindPayloadText "reason" diagnostic = Some "missing-handler-return-clause")
+
+        let arityDiagnostic =
+            parsed.Diagnostics
+            |> List.find (fun diagnostic ->
+                tryFindPayloadText "reason" diagnostic = Some "handler-return-clause-arity-mismatch"
+                && tryFindPayloadText "argument-count" diagnostic = Some "2")
+
+        Assert.Equal("core-expression-parsing", duplicateDiagnostic.Payload.Kind)
+        Assert.Equal("core-expression-parsing", missingDiagnostic.Payload.Kind)
+        Assert.Equal("core-expression-parsing", arityDiagnostic.Payload.Kind)
+        Assert.Contains(
+            arityDiagnostic.Payload.Fields,
+            fun field ->
+                field.Name = "argument-count"
+                && field.Value = DiagnosticPayloadText "2"
+        )
 
     [<Fact>]
     let ``parser reports structured function header diagnostics`` () =

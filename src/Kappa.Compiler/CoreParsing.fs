@@ -5472,7 +5472,8 @@ type private ExpressionParser
         let operationClauses = clauses |> List.filter (fun clause -> not (String.Equals(clause.OperationName, "return", StringComparison.Ordinal)))
 
         if List.length returnClauses > 1 then
-            diagnostics.AddError(DiagnosticFact.simple SimpleDiagnosticKind.HandlerClauseDuplicate "A handler must not define more than one return clause.",
+            diagnostics.AddError(
+                DiagnosticFact.coreExpressionParsing DuplicateHandlerReturnClause,
                 source.GetLocation(this.Current.Span)
             )
 
@@ -5480,7 +5481,8 @@ type private ExpressionParser
             match returnClauses with
             | clause :: _ -> clause
             | [] ->
-                diagnostics.AddError(DiagnosticFact.simple SimpleDiagnosticKind.HandlerClauseMissing "A handler must define exactly one return clause of the form 'case return x -> ...'.",
+                diagnostics.AddError(
+                    DiagnosticFact.coreExpressionParsing MissingHandlerReturnClause,
                     source.GetLocation(this.Current.Span)
                 )
                 { OperationName = "return"
@@ -5489,7 +5491,8 @@ type private ExpressionParser
                   Body = Literal LiteralValue.Unit }
 
         if List.length returnClause.ArgumentTokens <> 1 then
-            diagnostics.AddError(DiagnosticFact.simple SimpleDiagnosticKind.HandlerClauseArityMismatch $"A handler return clause must bind exactly one payload argument, but binds {List.length returnClause.ArgumentTokens}.",
+            diagnostics.AddError(
+                DiagnosticFact.coreExpressionParsing (HandlerReturnClauseArityMismatch(List.length returnClause.ArgumentTokens)),
                 source.GetLocation(this.Current.Span)
             )
 
