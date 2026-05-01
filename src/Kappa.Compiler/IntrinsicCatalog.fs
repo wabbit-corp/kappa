@@ -25,7 +25,7 @@ module internal IntrinsicCatalog =
         |> String.concat Environment.NewLine
 
     let private parseBundledPreludeDeclarations () =
-        let source = SourceText.From(BundledPrelude.virtualPath, BundledPrelude.loadText ())
+        let source = SourceText.From(StandardLibraryCatalog.preludeVirtualPath, StandardLibraryCatalog.loadPreludeText ())
         let lexed = Lexer.tokenize source
 
         if not (List.isEmpty lexed.Diagnostics) then

@@ -75,3 +75,53 @@ let ``TypeSignatures known type helpers construct and match symbolic heads`` () 
     let arguments = TypeSignatures.tryKnownTypeArguments CompilerKnownSymbols.OptionType optionType
 
     Assert.Equal(Some [ payload ], arguments)
+
+[<Fact>]
+let ``DeclarationIdentity keeps module, scope, name, and kind structured`` () =
+    let moduleIdentity = ModuleIdentity.ofSegments [ "std"; "prelude" ]
+    let identity =
+        DeclarationIdentity.create moduleIdentity [ "Outer"; "Inner" ] "map" TermDeclaration
+
+    Assert.Equal(moduleIdentity, DeclarationIdentity.moduleIdentity identity)
+    Assert.Equal<string list>([ "Outer"; "Inner" ], DeclarationIdentity.scopePath identity)
+    Assert.Equal("map", DeclarationIdentity.name identity)
+    Assert.Equal(TermDeclaration, DeclarationIdentity.kind identity)
+
+[<Fact>]
+let ``SemanticObjectIdentity layers reified facets over declaration identity without flattening`` () =
+    let declarationIdentity =
+        DeclarationIdentity.topLevel (ModuleIdentity.ofSegments [ "std"; "prelude" ]) "Bool" TypeFacetDeclaration
+
+    let semanticIdentity = SemanticObjectIdentity.create declarationIdentity TypeObject
+
+    Assert.Equal(declarationIdentity, SemanticObjectIdentity.declarationIdentity semanticIdentity)
+    Assert.Equal(TypeObject, SemanticObjectIdentity.kind semanticIdentity)
+
+[<Fact>]
+let ``Effect semantics preserve declaration identity and reified object identities`` () =
+    let declarationIdentity =
+        DeclarationIdentity.topLevel (ModuleIdentity.ofSegments [ "Example" ]) "State" EffectDeclaration
+
+    let declaration =
+        { EffectInterfaceId = Some "effect-interface:test"
+          EffectLabelId = Some "effect-label:test"
+          Visibility = None
+          Name = "State"
+          HeaderTokens = []
+          Operations =
+            [ { OperationId = Some "effect-op:get"
+                Name = "get"
+                ResumptionQuantity = None
+                SignatureTokens = [] } ] }
+
+    let semanticDeclaration = EffectSemantics.toSemantic (Some declarationIdentity) declaration
+
+    Assert.Equal(Some declarationIdentity, semanticDeclaration.Identity)
+    Assert.Equal(
+        Some(SemanticObjectIdentity.create declarationIdentity TypeObject),
+        semanticDeclaration.InterfaceObjectIdentity
+    )
+    Assert.Equal(
+        Some(SemanticObjectIdentity.create declarationIdentity EffectLabelObject),
+        semanticDeclaration.LabelObjectIdentity
+    )

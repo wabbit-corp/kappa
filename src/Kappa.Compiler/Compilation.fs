@@ -219,8 +219,9 @@ module Compilation =
 
         let withBundledStdlibDocuments =
             let bundledByModuleName =
-                BundledStandardModules.all
-                |> List.map (fun moduleInfo -> moduleInfo.ModuleName, moduleInfo)
+                StandardLibraryCatalog.sourceBackedModules
+                |> List.filter (fun moduleInfo -> moduleInfo.Surface.ModuleIdentity <> Stdlib.PreludeModuleIdentity)
+                |> List.map (fun moduleInfo -> ModuleIdentity.segments moduleInfo.Surface.ModuleIdentity, moduleInfo)
                 |> Map.ofList
 
             let rec loadRequiredBundledModules documents loadedModules =
@@ -249,7 +250,9 @@ module Compilation =
 
                     let nextLoadedModules =
                         modulesToLoad
-                        |> List.fold (fun state moduleInfo -> Set.add moduleInfo.ModuleName state) loadedModules
+                        |> List.fold
+                            (fun state moduleInfo -> Set.add (ModuleIdentity.segments moduleInfo.Surface.ModuleIdentity) state)
+                            loadedModules
 
                     loadRequiredBundledModules (documents @ parsedBundledDocuments) nextLoadedModules
 
@@ -335,7 +338,7 @@ module Compilation =
             |> fun loweredModules ->
                 loweredModules
                 @ (hostBindingModules |> Map.values |> Seq.map HostBindings.toRuntimeModule |> Seq.toList)
-                @ (StandardModules.all |> List.map StandardModules.toRuntimeModule)
+                @ (StandardLibraryCatalog.syntheticModules |> List.map StandardLibraryCatalog.toRuntimeModule)
             |> List.sortBy (fun moduleDump -> moduleDump.SourceFile)
 
         let runtimeCapabilityDiagnostics =

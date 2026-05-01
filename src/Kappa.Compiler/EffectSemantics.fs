@@ -12,11 +12,16 @@ type EffectSemanticOperation =
       ParameterArity: int }
 
 type EffectSemanticDeclaration =
-    { VisibleName: string
+    { Identity: DeclarationIdentity option
+      VisibleName: string
       InterfaceId: string
       LabelId: string
       HeaderTokens: Token list
       Operations: EffectSemanticOperation list }
+    member this.InterfaceObjectIdentity =
+        this.Identity |> Option.map (fun declarationIdentity -> SemanticObjectIdentity.create declarationIdentity TypeObject)
+    member this.LabelObjectIdentity =
+        this.Identity |> Option.map (fun declarationIdentity -> SemanticObjectIdentity.create declarationIdentity EffectLabelObject)
 
 module internal EffectSemantics =
     type ResolvedEffectLabel =
@@ -118,7 +123,7 @@ module internal EffectSemantics =
             EffectLabelId = Some labelId
             Operations = operations }
 
-    let toSemantic (declaration: EffectDeclaration) =
+    let toSemantic declarationIdentity (declaration: EffectDeclaration) =
         let interfaceId =
             declaration.EffectInterfaceId
             |> Option.defaultWith (fun () ->
@@ -129,7 +134,8 @@ module internal EffectSemantics =
             |> Option.defaultWith (fun () ->
                 invalidOp $"Effect declaration '{declaration.Name}' is missing a label identity.")
 
-        { VisibleName = declaration.Name
+        { Identity = declarationIdentity
+          VisibleName = declaration.Name
           InterfaceId = interfaceId
           LabelId = labelId
           HeaderTokens = declaration.HeaderTokens

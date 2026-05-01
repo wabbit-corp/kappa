@@ -1,5 +1,5 @@
 // Covers the first M4 slice: effect operations, one-shot deep handlers, and multishot capture safety.
-module MilestoneFourTests
+module MilestoneFourTestSupport
 
 open System
 open System.IO
@@ -274,2372 +274,2440 @@ let rec private containsRecursiveShallowCoreDriver expression =
     | KCoreEffectLabel _ ->
         false
 
-[<Fact>]
-let ``interpreter executes a one shot deep handler over a scoped effect`` () =
-    let mainSource =
-        [
-            "module main"
-            ""
-            "result : Int"
-            "let result : Int ="
-            "    block"
-            "        scoped effect Ask ="
-            "            ask : Unit -> Bool"
-            ""
-            "        let comp : Eff <[Ask : Ask]> Int ="
-            "            do"
-            "                let b <- Ask.ask ()"
-            "                if b then 1 else 0"
-            ""
-            "        let handled : Eff <[ ]> Int ="
-            "            deep handle Ask comp with"
-            "                case return x -> pure x"
-            "                case ask () k -> k True"
-            ""
-            "        runPure handled"
-        ]
-        |> String.concat "\n"
-
-    let workspace, result =
-        evaluateInMemoryBinding
-            "memory-m4-deep-state-root"
-            "main.result"
-            [ "main.kp", mainSource ]
-
-    Assert.False(workspace.HasErrors, sprintf "Expected no diagnostics, got:%s%s" Environment.NewLine (diagnosticsText workspace.Diagnostics))
-
-    match result with
-    | Result.Ok value ->
-        Assert.Equal("1", RuntimeValue.format value)
-    | Result.Error issue ->
-        failwithf "Expected deep handler evaluation to succeed, got %s" issue.Message
-
-[<Fact>]
-let ``interpreter executes a one shot deep handler over a parameterized scoped effect`` () =
-    let mainSource =
-        [
-            "module main"
-            ""
-            "result : Int"
-            "let result : Int ="
-            "    block"
-            "        scoped effect State (s : Type) ="
-            "            get : Unit -> s"
-            ""
-            "        let comp : Eff <[State : State Int]> Int ="
-            "            do"
-            "                let n <- State.get ()"
-            "                n"
-            ""
-            "        let handled : Eff <[ ]> Int ="
-            "            deep handle State comp with"
-            "                case return x -> pure x"
-            "                case get () k -> k 0"
-            ""
-            "        runPure handled"
-        ]
-        |> String.concat "\n"
-
-    let workspace, result =
-        evaluateInMemoryBinding
-            "memory-m4-parameterized-local-effect-root"
-            "main.result"
-            [ "main.kp", mainSource ]
-
-    Assert.False(workspace.HasErrors, sprintf "Expected no diagnostics, got:%s%s" Environment.NewLine (diagnosticsText workspace.Diagnostics))
-
-    match result with
-    | Result.Ok value ->
-        Assert.Equal("0", RuntimeValue.format value)
-    | Result.Error issue ->
-        failwithf "Expected parameterized local effect evaluation to succeed, got %s" issue.Message
-
-[<Fact>]
-let ``interpreter rejects repeated use of a consumed one shot resumption`` () =
-    let mainSource =
-        [
-            "module main"
-            ""
-            "result : Int"
-            "let result : Int ="
-            "    block"
-            "        scoped effect Ask ="
-            "            1 ask : Unit -> Bool"
-            ""
-            "        let comp : Eff <[Ask : Ask]> Int ="
-            "            do"
-            "                let b <- Ask.ask ()"
-            "                if b then 1 else 0"
-            ""
-            "        let handled : Eff <[ ]> Int ="
-            "            deep handle Ask comp with"
-            "                case return x -> pure x"
-            "                case ask () k -> k True"
-            ""
-            "        runPure handled"
-        ]
-        |> String.concat "\n"
-
-    let workspace =
-        compileInMemoryWorkspace
-            "memory-m4-runtime-oneshot-failsafe-root"
-            [ "main.kp", mainSource ]
-
-    Assert.False(workspace.HasErrors, sprintf "Expected source workspace to compile cleanly, got:%s%s" Environment.NewLine (diagnosticsText workspace.Diagnostics))
-
-    let malformedWorkspace =
-        { workspace with
-            KRuntimeIR =
-                workspace.KRuntimeIR
-                |> List.map (fun runtimeModule ->
-                    if runtimeModule.Name = "main" then
-                        { runtimeModule with
-                            Bindings =
-                                runtimeModule.Bindings
-                                |> List.map (fun binding ->
-                                    if binding.Name = "result" then
-                                        { binding with Body = binding.Body |> Option.map duplicateFirstResumptionUse }
-                                    else
-                                        binding) }
-                    else
-                        runtimeModule) }
-
-    match Interpreter.evaluateBinding malformedWorkspace "main.result" with
-    | Result.Ok value ->
-        failwithf "Expected duplicated one-shot resumption to fail at runtime, but interpreter returned %s" (RuntimeValue.format value)
-    | Result.Error issue ->
-        Assert.Contains("one-shot resumption", issue.Message, StringComparison.Ordinal)
-
-[<Fact>]
-let ``deep handlers elaborate to a recursive shallow driver before KCore and KRuntimeIR`` () =
-    let mainSource =
-        [
-            "@PrivateByDefault module main"
-            ""
-            "handled : Eff <[ ]> Int"
-            "let handled : Eff <[ ]> Int ="
-            "    block"
-            "        scoped effect Ask ="
-            "            ask : Unit -> Bool"
-            ""
-            "        let comp : Eff <[Ask : Ask]> Int ="
-            "            do"
-            "                let b <- Ask.ask ()"
-            "                if b then 1 else 0"
-            ""
-            "        deep handle Ask comp with"
-            "            case return x -> pure x"
-            "            case ask () k -> k True"
-        ]
-        |> String.concat "\n"
-
-    let workspace =
-        compileInMemoryWorkspace
-            "memory-m4-deep-driver-root"
-            [ "main.kp", mainSource ]
-
-    Assert.False(workspace.HasErrors, sprintf "Expected no diagnostics, got:%s%s" Environment.NewLine (diagnosticsText workspace.Diagnostics))
-
-    let coreModule =
-        workspace.KCore
-        |> List.find (fun moduleDump -> moduleDump.Name = "main")
-
-    let coreBinding =
-        coreModule.Declarations
-        |> List.pick (fun declaration ->
-            match declaration.Binding with
-            | Some binding when binding.Name = Some "handled" -> Some binding
-            | _ -> None)
-
-    match coreBinding.Body with
-    | Some body ->
-        Assert.False(containsDeepCoreHandle body, "Expected KCore lowering to remove direct deep-handle nodes.")
-        Assert.True(containsRecursiveShallowCoreDriver body, "Expected KCore lowering to synthesize a recursive shallow-handler driver.")
-    | None ->
-        failwith "Expected handled binding to have a KCore body."
-
-    let runtimeModule =
-        workspace.KRuntimeIR
-        |> List.find (fun moduleDump -> moduleDump.Name = "main")
-
-    let runtimeBinding =
-        runtimeModule.Bindings
-        |> List.find (fun binding -> binding.Name = "handled")
-
-    match runtimeBinding.Body with
-    | Some body ->
-        Assert.False(containsDeepRuntimeHandle body, "Expected KRuntimeIR lowering to remove direct deep-handle nodes.")
-    | None ->
-        failwith "Expected handled binding to have a KRuntimeIR body."
-
-[<Fact>]
-let ``shallow handler resumptions remain in the unhandled effect carrier`` () =
-    let mainSource =
-        [
-            "module main"
-            ""
-            "result : Int"
-            "let result : Int ="
-            "    block"
-            "        scoped effect Ask ="
-            "            ask : Unit -> Bool"
-            ""
-            "        let comp : Eff <[Ask : Ask]> Int ="
-            "            do"
-            "                let b <- Ask.ask ()"
-            "                if b then 1 else 0"
-            ""
-            "        let rehandle : (1 k : ((1 x : Bool) -> Eff <[Ask : Ask]> Int)) -> Eff <[ ]> Int ="
-            "            \\(1 k : ((1 x : Bool) -> Eff <[Ask : Ask]> Int)) ->"
-            "                handle Ask (k True) with"
-            "                    case return y -> pure y"
-            "                    case ask () k2 -> k2 False"
-            ""
-            "        let handled : Eff <[ ]> Int ="
-            "            handle Ask comp with"
-            "                case return y -> pure y"
-            "                case ask () k -> rehandle k"
-            ""
-            "        runPure handled"
-        ]
-        |> String.concat "\n"
-
-    let workspace, result =
-        evaluateInMemoryBinding
-            "memory-m4-shallow-rehandle-root"
-            "main.result"
-            [ "main.kp", mainSource ]
-
-    Assert.False(workspace.HasErrors, sprintf "Expected no diagnostics, got:%s%s" Environment.NewLine (diagnosticsText workspace.Diagnostics))
-
-    match result with
-    | Result.Ok value ->
-        Assert.Equal("1", RuntimeValue.format value)
-    | Result.Error issue ->
-        failwithf "Expected shallow handler rehandle evaluation to succeed, got %s" issue.Message
-
-[<Fact>]
-let ``handlers reject missing operation clauses for the handled effect`` () =
-    let mainSource =
-        [
-            "@PrivateByDefault module main"
-            ""
-            "bad : Eff <[ ]> Int"
-            "let bad : Eff <[ ]> Int ="
-            "    block"
-            "        scoped effect State ="
-            "            get : Unit -> Int"
-            "            put : Int -> Unit"
-            ""
-            "        let comp : Eff <[State : State]> Int ="
-            "            do"
-            "                let n <- State.get ()"
-            "                State.put (n + 1)"
-            "                n"
-            ""
-            "        handle State comp with"
-            "            case return x -> pure x"
-            "            case get () k -> k 0"
-        ]
-        |> String.concat "\n"
-
-    let workspace =
-        compileInMemoryWorkspace
-            "memory-m4-missing-handler-clause-root"
-            [ "main.kp", mainSource ]
-
-    Assert.True(workspace.HasErrors, "Expected handlers with missing operation clauses to be rejected.")
-    Assert.Contains(workspace.Diagnostics, fun diagnostic -> diagnostic.Code = DiagnosticCode.HandlerClauseMissing)
-
-[<Fact>]
-let ``handlers reject a missing return clause`` () =
-    let mainSource =
-        [
-            "@PrivateByDefault module main"
-            ""
-            "bad : Eff <[ ]> Int"
-            "let bad : Eff <[ ]> Int ="
-            "    block"
-            "        scoped effect Ask ="
-            "            ask : Unit -> Bool"
-            ""
-            "        let comp : Eff <[Ask : Ask]> Int ="
-            "            do"
-            "                let b <- Ask.ask ()"
-            "                if b then 1 else 0"
-            ""
-            "        handle Ask comp with"
-            "            case ask () k -> k True"
-        ]
-        |> String.concat "\n"
-
-    let workspace =
-        compileInMemoryWorkspace
-            "memory-m4-missing-return-clause-root"
-            [ "main.kp", mainSource ]
-
-    Assert.True(workspace.HasErrors, "Expected handlers without a return clause to be rejected.")
-    Assert.Contains(workspace.Diagnostics, fun diagnostic -> diagnostic.Code = DiagnosticCode.HandlerClauseMissing)
-
-[<Fact>]
-let ``handlers reject duplicate return clauses`` () =
-    let mainSource =
-        [
-            "@PrivateByDefault module main"
-            ""
-            "bad : Eff <[ ]> Int"
-            "let bad : Eff <[ ]> Int ="
-            "    block"
-            "        scoped effect Ask ="
-            "            ask : Unit -> Bool"
-            ""
-            "        let comp : Eff <[Ask : Ask]> Int ="
-            "            do"
-            "                let b <- Ask.ask ()"
-            "                if b then 1 else 0"
-            ""
-            "        handle Ask comp with"
-            "            case return x -> pure x"
-            "            case return y -> pure y"
-            "            case ask () k -> k True"
-        ]
-        |> String.concat "\n"
-
-    let workspace =
-        compileInMemoryWorkspace
-            "memory-m4-duplicate-return-clause-root"
-            [ "main.kp", mainSource ]
-
-    Assert.True(workspace.HasErrors, "Expected handlers with duplicate return clauses to be rejected.")
-    Assert.Contains(workspace.Diagnostics, fun diagnostic -> diagnostic.Code = DiagnosticCode.HandlerClauseDuplicate)
-
-[<Fact>]
-let ``handler return clauses must bind exactly one payload`` () =
-    let noPayloadSource =
-        [
-            "@PrivateByDefault module main"
-            ""
-            "bad : Eff <[ ]> Int"
-            "let bad : Eff <[ ]> Int ="
-            "    block"
-            "        scoped effect Ask ="
-            "            ask : Unit -> Bool"
-            ""
-            "        let comp : Eff <[Ask : Ask]> Int ="
-            "            do"
-            "                let b <- Ask.ask ()"
-            "                if b then 1 else 0"
-            ""
-            "        handle Ask comp with"
-            "            case return -> pure 0"
-            "            case ask () k -> k True"
-        ]
-        |> String.concat "\n"
-
-    let extraPayloadSource =
-        [
-            "@PrivateByDefault module main"
-            ""
-            "bad : Eff <[ ]> Int"
-            "let bad : Eff <[ ]> Int ="
-            "    block"
-            "        scoped effect Ask ="
-            "            ask : Unit -> Bool"
-            ""
-            "        let comp : Eff <[Ask : Ask]> Int ="
-            "            do"
-            "                let b <- Ask.ask ()"
-            "                if b then 1 else 0"
-            ""
-            "        handle Ask comp with"
-            "            case return x y -> pure x"
-            "            case ask () k -> k True"
-        ]
-        |> String.concat "\n"
-
-    let noPayloadWorkspace =
-        compileInMemoryWorkspace
-            "memory-m4-return-clause-arity-zero-root"
-            [ "main.kp", noPayloadSource ]
-
-    let extraPayloadWorkspace =
-        compileInMemoryWorkspace
-            "memory-m4-return-clause-arity-two-root"
-            [ "main.kp", extraPayloadSource ]
-
-    Assert.True(noPayloadWorkspace.HasErrors, "Expected return clauses without a payload binder to be rejected.")
-    Assert.True(extraPayloadWorkspace.HasErrors, "Expected return clauses with multiple payload binders to be rejected.")
-    Assert.Contains(noPayloadWorkspace.Diagnostics, fun diagnostic -> diagnostic.Code = DiagnosticCode.HandlerClauseArityMismatch)
-    Assert.Contains(extraPayloadWorkspace.Diagnostics, fun diagnostic -> diagnostic.Code = DiagnosticCode.HandlerClauseArityMismatch)
-
-[<Fact>]
-let ``handlers reject unexpected and duplicate operation clauses`` () =
-    let mainSource =
-        [
-            "@PrivateByDefault module main"
-            ""
-            "bad : Eff <[ ]> Int"
-            "let bad : Eff <[ ]> Int ="
-            "    block"
-            "        scoped effect Ask ="
-            "            ask : Unit -> Bool"
-            ""
-            "        let comp : Eff <[Ask : Ask]> Int ="
-            "            do"
-            "                let b <- Ask.ask ()"
-            "                if b then 1 else 0"
-            ""
-            "        handle Ask comp with"
-            "            case return x -> pure x"
-            "            case ask () k -> k True"
-            "            case ask () k -> k False"
-            "            case nope () k -> k 0"
-        ]
-        |> String.concat "\n"
-
-    let workspace =
-        compileInMemoryWorkspace
-            "memory-m4-unexpected-handler-clause-root"
-            [ "main.kp", mainSource ]
-
-    Assert.True(workspace.HasErrors, "Expected handlers with duplicate and unexpected clauses to be rejected.")
-    Assert.Contains(workspace.Diagnostics, fun diagnostic -> diagnostic.Code = DiagnosticCode.HandlerClauseDuplicate)
-    Assert.Contains(workspace.Diagnostics, fun diagnostic -> diagnostic.Code = DiagnosticCode.HandlerClauseUnexpected)
-
-[<Fact>]
-let ``handlers reject operation clauses with mismatched parameter arity`` () =
-    let mainSource =
-        [
-            "@PrivateByDefault module main"
-            ""
-            "bad : Eff <[ ]> Int"
-            "let bad : Eff <[ ]> Int ="
-            "    block"
-            "        scoped effect Pairing ="
-            "            pair : Int -> Bool -> String"
-            ""
-            "        let comp : Eff <[Pairing : Pairing]> Int ="
-            "            do"
-            "                let _ <- Pairing.pair 1 True"
-            "                0"
-            ""
-            "        handle Pairing comp with"
-            "            case return x -> pure x"
-            "            case pair x k -> pure 0"
-            "            case pair x y z k -> pure 0"
-        ]
-        |> String.concat "\n"
-
-    let workspace =
-        compileInMemoryWorkspace
-            "memory-m4-handler-arity-root"
-            [ "main.kp", mainSource ]
-
-    Assert.True(workspace.HasErrors, "Expected handler clauses with wrong parameter arity to be rejected.")
-    Assert.Contains(workspace.Diagnostics, fun diagnostic -> diagnostic.Code = DiagnosticCode.HandlerClauseArityMismatch)
-
-[<Fact>]
-let ``handler operation clauses require an explicit resumption binder`` () =
-    let mainSource =
-        [
-            "@PrivateByDefault module main"
-            ""
-            "bad : Eff <[ ]> Int"
-            "let bad : Eff <[ ]> Int ="
-            "    block"
-            "        scoped effect Ask ="
-            "            ask : Unit -> Bool"
-            ""
-            "        let comp : Eff <[Ask : Ask]> Int ="
-            "            do"
-            "                let b <- Ask.ask ()"
-            "                if b then 1 else 0"
-            ""
-            "        handle Ask comp with"
-            "            case return x -> pure x"
-            "            case ask () -> pure 0"
-        ]
-        |> String.concat "\n"
-
-    let workspace =
-        compileInMemoryWorkspace
-            "memory-m4-handler-missing-resumption-root"
-            [ "main.kp", mainSource ]
-
-    Assert.True(workspace.HasErrors, "Expected handler clauses without a resumption binder to be rejected.")
-    Assert.Contains(workspace.Diagnostics, fun diagnostic -> diagnostic.Code = DiagnosticCode.ExpectedSyntaxToken)
-
-[<Fact>]
-let ``top level effect declarations reject borrowed resumption quantities`` () =
-    let mainSource =
-        [
-            "module main"
-            ""
-            "effect Ask ="
-            "    & ask : Unit -> Bool"
-            ""
-            "result : Int"
-            "let result = 0"
-        ]
-        |> String.concat "\n"
-
-    let workspace =
-        compileInMemoryWorkspace
-            "memory-m4-borrowed-top-level-resumption-root"
-            [ "main.kp", mainSource ]
-
-    Assert.True(workspace.HasErrors, "Expected borrowed effect resumption quantities to be rejected.")
-    Assert.Contains(workspace.Diagnostics, fun diagnostic -> diagnostic.Code = DiagnosticCode.EffectResumptionQuantityBorrowed)
-
-[<Fact>]
-let ``local scoped effects reject borrowed resumption quantities`` () =
-    let mainSource =
-        [
-            "@PrivateByDefault module main"
-            ""
-            "result : Int"
-            "let result : Int ="
-            "    block"
-            "        scoped effect Ask ="
-            "            &[r] ask : Unit -> Bool"
-            ""
-            "        0"
-        ]
-        |> String.concat "\n"
-
-    let workspace =
-        compileInMemoryWorkspace
-            "memory-m4-borrowed-local-resumption-root"
-            [ "main.kp", mainSource ]
-
-    Assert.True(workspace.HasErrors, "Expected local scoped effects with borrowed resumption quantities to be rejected.")
-    Assert.Contains(workspace.Diagnostics, fun diagnostic -> diagnostic.Code = DiagnosticCode.EffectResumptionQuantityBorrowed)
-
-[<Fact>]
-let ``shallow handler clauses must agree on a single target carrier`` () =
-    let mainSource =
-        [
-            "@PrivateByDefault module main"
-            ""
-            "bad : Eff <[ ]> Int"
-            "let bad : Eff <[ ]> Int ="
-            "    block"
-            "        scoped effect Ask ="
-            "            ask : Unit -> Bool"
-            ""
-            "        let comp : Eff <[Ask : Ask]> Int ="
-            "            do"
-            "                let b <- Ask.ask ()"
-            "                if b then 1 else 0"
-            ""
-            "        handle Ask comp with"
-            "            case return x -> pure x"
-            "            case ask () k -> 0"
-        ]
-        |> String.concat "\n"
-
-    let workspace =
-        compileInMemoryWorkspace
-            "memory-m4-shallow-handler-carrier-root"
-            [ "main.kp", mainSource ]
-
-    Assert.True(workspace.HasErrors, "Expected mismatched shallow handler clause carriers to be rejected.")
-    Assert.Contains(workspace.Diagnostics, fun diagnostic -> diagnostic.Code = DiagnosticCode.TypeEqualityMismatch)
-
-[<Fact>]
-let ``deep handler clauses must agree on a single target carrier`` () =
-    let mainSource =
-        [
-            "@PrivateByDefault module main"
-            ""
-            "bad : Int"
-            "let bad : Int ="
-            "    block"
-            "        scoped effect Ask ="
-            "            ask : Unit -> Bool"
-            ""
-            "        let comp : Eff <[Ask : Ask]> Int ="
-            "            do"
-            "                let b <- Ask.ask ()"
-            "                if b then 1 else 0"
-            ""
-            "        deep handle Ask comp with"
-            "            case return x -> x"
-            "            case ask () k -> k True"
-        ]
-        |> String.concat "\n"
-
-    let workspace =
-        compileInMemoryWorkspace
-            "memory-m4-deep-handler-carrier-root"
-            [ "main.kp", mainSource ]
-
-    Assert.True(workspace.HasErrors, "Expected mismatched deep handler clause carriers to be rejected.")
-    Assert.Contains(workspace.Diagnostics, fun diagnostic -> diagnostic.Code = DiagnosticCode.TypeEqualityMismatch)
-
-[<Fact>]
-let ``handlers reject computations whose closed effect row lacks the handled label`` () =
-    let mainSource =
-        [
-            "@PrivateByDefault module main"
-            ""
-            "bad : Eff <[ ]> Int"
-            "let bad : Eff <[ ]> Int ="
-            "    block"
-            "        scoped effect Ask ="
-            "            ask : Unit -> Bool"
-            ""
-            "        let comp : Eff <[ ]> Int = pure 0"
-            ""
-            "        handle Ask comp with"
-            "            case return x -> pure x"
-            "            case ask () k -> k True"
-        ]
-        |> String.concat "\n"
-
-    let workspace =
-        compileInMemoryWorkspace
-            "memory-m4-handler-row-mismatch-root"
-            [ "main.kp", mainSource ]
-
-    Assert.True(workspace.HasErrors, "Expected handlers to reject computations whose closed effect row lacks the handled label.")
-    Assert.Contains(workspace.Diagnostics, fun diagnostic -> diagnostic.Code = DiagnosticCode.HandlerEffectRowMismatch)
-
-[<Fact>]
-let ``handlers reject computations whose handled row entry names a different effect interface`` () =
-    let mainSource =
-        [
-            "@PrivateByDefault module main"
-            ""
-            "bad : Eff <[ ]> Int"
-            "let bad : Eff <[ ]> Int ="
-            "    block"
-            "        scoped effect Ask ="
-            "            ask : Unit -> Bool"
-            ""
-            "        scoped effect Other ="
-            "            other : Unit -> Int"
-            ""
-            "        let comp : Eff <[Ask : Other]> Int = pure 0"
-            ""
-            "        handle Ask comp with"
-            "            case return x -> pure x"
-            "            case ask () k -> k True"
-        ]
-        |> String.concat "\n"
-
-    let workspace =
-        compileInMemoryWorkspace
-            "memory-m4-handler-row-interface-mismatch-root"
-            [ "main.kp", mainSource ]
-
-    Assert.True(workspace.HasErrors, "Expected handlers to reject rows whose handled label is paired with the wrong effect interface.")
-    Assert.Contains(workspace.Diagnostics, fun diagnostic -> diagnostic.Code = DiagnosticCode.HandlerEffectRowMismatch)
-
-[<Fact>]
-let ``deep handlers can eliminate one label from a closed multi effect row`` () =
-    let mainSource =
-        [
-            "@PrivateByDefault module main"
-            ""
-            "ok : Eff <[Other : Other]> Int"
-            "let ok : Eff <[Other : Other]> Int ="
-            "    block"
-            "        scoped effect Ask ="
-            "            ask : Unit -> Bool"
-            ""
-            "        scoped effect Other ="
-            "            other : Unit -> Int"
-            ""
-            "        let comp : Eff <[Ask : Ask, Other : Other]> Int ="
-            "            do"
-            "                let b <- Ask.ask ()"
-            "                if b then 1 else 0"
-            ""
-            "        deep handle Ask comp with"
-            "            case return x -> pure x"
-            "            case ask () k -> k True"
-        ]
-        |> String.concat "\n"
-
-    let workspace =
-        compileInMemoryWorkspace
-            "memory-m4-handler-row-remainder-root"
-            [ "main.kp", mainSource ]
-
-    Assert.False(workspace.HasErrors, sprintf "Expected deep handler over a closed multi-effect row to typecheck, got:%s%s" Environment.NewLine (diagnosticsText workspace.Diagnostics))
-
-[<Fact>]
-let ``deep handlers accept a lexically rebound effect label`` () =
-    let mainSource =
-        [
-            "@PrivateByDefault module main"
-            ""
-            "ok : Int"
-            "let ok : Int ="
-            "    block"
-            "        scoped effect Ask ="
-            "            ask : Unit -> Bool"
-            ""
-            "        let l = Ask"
-            ""
-            "        let comp : Eff <[Ask : Ask]> Int ="
-            "            do"
-            "                let b <- Ask.ask ()"
-            "                if b then 1 else 0"
-            ""
-            "        let handled : Eff <[ ]> Int ="
-            "            deep handle l comp with"
-            "                case return x -> pure x"
-            "                case ask () k -> k True"
-            ""
-            "        runPure handled"
-        ]
-        |> String.concat "\n"
-
-    let workspace, result =
-        evaluateInMemoryBinding
-            "memory-m4-handler-label-alias-root"
-            "main.ok"
-            [ "main.kp", mainSource ]
-
-    Assert.False(workspace.HasErrors, sprintf "Expected deep handler with a rebound effect label to typecheck, got:%s%s" Environment.NewLine (diagnosticsText workspace.Diagnostics))
-
-    match result with
-    | Result.Ok value ->
-        Assert.Equal("1", RuntimeValue.format value)
-    | Result.Error issue ->
-        failwithf "Expected rebound-label deep handler evaluation to succeed, got %s" issue.Message
-
-[<Fact>]
-let ``effect operation selection accepts a lexically rebound effect label`` () =
-    let mainSource =
-        [
-            "@PrivateByDefault module main"
-            ""
-            "ok : Int"
-            "let ok : Int ="
-            "    block"
-            "        scoped effect Ask ="
-            "            ask : Unit -> Bool"
-            ""
-            "        let l = Ask"
-            ""
-            "        let comp : Eff <[Ask : Ask]> Int ="
-            "            do"
-            "                let b <- l.ask ()"
-            "                if b then 1 else 0"
-            ""
-            "        let handled : Eff <[ ]> Int ="
-            "            deep handle Ask comp with"
-            "                case return x -> pure x"
-            "                case ask () k -> k True"
-            ""
-            "        runPure handled"
-        ]
-        |> String.concat "\n"
-
-    let workspace, result =
-        evaluateInMemoryBinding
-            "memory-m4-op-label-alias-root"
-            "main.ok"
-            [ "main.kp", mainSource ]
-
-    Assert.False(workspace.HasErrors, sprintf "Expected aliased effect operation selection to typecheck, got:%s%s" Environment.NewLine (diagnosticsText workspace.Diagnostics))
-
-    match result with
-    | Result.Ok value ->
-        Assert.Equal("1", RuntimeValue.format value)
-    | Result.Error issue ->
-        failwithf "Expected aliased effect operation selection to succeed, got %s" issue.Message
-
-[<Fact>]
-let ``deep handlers accept an effect label carried in a record field`` () =
-    let mainSource =
-        [
-            "@PrivateByDefault module main"
-            ""
-            "ok : Int"
-            "let ok : Int ="
-            "    block"
-            "        scoped effect Ask ="
-            "            ask : Unit -> Bool"
-            ""
-            "        let pkg = (label = Ask)"
-            ""
-            "        let comp : Eff <[Ask : Ask]> Int ="
-            "            do"
-            "                let b <- Ask.ask ()"
-            "                if b then 1 else 0"
-            ""
-            "        let handled : Eff <[ ]> Int ="
-            "            deep handle pkg.label comp with"
-            "                case return x -> pure x"
-            "                case ask () k -> k True"
-            ""
-            "        runPure handled"
-        ]
-        |> String.concat "\n"
-
-    let workspace, result =
-        evaluateInMemoryBinding
-            "memory-m4-handler-record-label-root"
-            "main.ok"
-            [ "main.kp", mainSource ]
-
-    Assert.False(workspace.HasErrors, sprintf "Expected record-carried effect label handling to typecheck, got:%s%s" Environment.NewLine (diagnosticsText workspace.Diagnostics))
-
-    match result with
-    | Result.Ok value ->
-        Assert.Equal("1", RuntimeValue.format value)
-    | Result.Error issue ->
-        failwithf "Expected record-carried effect label handling to succeed, got %s" issue.Message
-
-[<Fact>]
-let ``effect operation selection accepts an effect label carried in a record field`` () =
-    let mainSource =
-        [
-            "@PrivateByDefault module main"
-            ""
-            "ok : Int"
-            "let ok : Int ="
-            "    block"
-            "        scoped effect Ask ="
-            "            ask : Unit -> Bool"
-            ""
-            "        let pkg = (label = Ask)"
-            ""
-            "        let comp : Eff <[Ask : Ask]> Int ="
-            "            do"
-            "                let b <- pkg.label.ask ()"
-            "                if b then 1 else 0"
-            ""
-            "        let handled : Eff <[ ]> Int ="
-            "            deep handle Ask comp with"
-            "                case return x -> pure x"
-            "                case ask () k -> k True"
-            ""
-            "        runPure handled"
-        ]
-        |> String.concat "\n"
-
-    let workspace, result =
-        evaluateInMemoryBinding
-            "memory-m4-op-record-label-root"
-            "main.ok"
-            [ "main.kp", mainSource ]
-
-    Assert.False(workspace.HasErrors, sprintf "Expected record-carried effect operation selection to typecheck, got:%s%s" Environment.NewLine (diagnosticsText workspace.Diagnostics))
-
-    match result with
-    | Result.Ok value ->
-        Assert.Equal("1", RuntimeValue.format value)
-    | Result.Error issue ->
-        failwithf "Expected record-carried effect operation selection to succeed, got %s" issue.Message
-
-[<Fact>]
-let ``multishot scoped effect invocation rejects captured linear suffix at the operation site`` () =
-    let fixturePath =
-        Path.Combine(
-            __SOURCE_DIRECTORY__,
-            "Fixtures",
-            "borrow_qtt.100_interactions.handler_reject_multishot_resumption_captures_linear_suffix",
-            "main.kp"
+
+module MilestoneFourTestsShard0 =
+
+    [<Fact>]
+    let ``interpreter executes a one shot deep handler over a scoped effect`` () =
+        let mainSource =
+            [
+                "module main"
+                ""
+                "result : Int"
+                "let result : Int ="
+                "    block"
+                "        scoped effect Ask ="
+                "            ask : Unit -> Bool"
+                ""
+                "        let comp : Eff <[Ask : Ask]> Int ="
+                "            do"
+                "                let b <- Ask.ask ()"
+                "                if b then 1 else 0"
+                ""
+                "        let handled : Eff <[ ]> Int ="
+                "            deep handle Ask comp with"
+                "                case return x -> pure x"
+                "                case ask () k -> k True"
+                ""
+                "        runPure handled"
+            ]
+            |> String.concat "\n"
+
+        let workspace, result =
+            evaluateInMemoryBinding
+                "memory-m4-deep-state-root"
+                "main.result"
+                [ "main.kp", mainSource ]
+
+        Assert.False(workspace.HasErrors, sprintf "Expected no diagnostics, got:%s%s" Environment.NewLine (diagnosticsText workspace.Diagnostics))
+
+        match result with
+        | Result.Ok value ->
+            Assert.Equal("1", RuntimeValue.format value)
+        | Result.Error issue ->
+            failwithf "Expected deep handler evaluation to succeed, got %s" issue.Message
+
+
+    [<Fact>]
+    let ``shallow handler resumptions remain in the unhandled effect carrier`` () =
+        let mainSource =
+            [
+                "module main"
+                ""
+                "result : Int"
+                "let result : Int ="
+                "    block"
+                "        scoped effect Ask ="
+                "            ask : Unit -> Bool"
+                ""
+                "        let comp : Eff <[Ask : Ask]> Int ="
+                "            do"
+                "                let b <- Ask.ask ()"
+                "                if b then 1 else 0"
+                ""
+                "        let rehandle : (1 k : ((1 x : Bool) -> Eff <[Ask : Ask]> Int)) -> Eff <[ ]> Int ="
+                "            \\(1 k : ((1 x : Bool) -> Eff <[Ask : Ask]> Int)) ->"
+                "                handle Ask (k True) with"
+                "                    case return y -> pure y"
+                "                    case ask () k2 -> k2 False"
+                ""
+                "        let handled : Eff <[ ]> Int ="
+                "            handle Ask comp with"
+                "                case return y -> pure y"
+                "                case ask () k -> rehandle k"
+                ""
+                "        runPure handled"
+            ]
+            |> String.concat "\n"
+
+        let workspace, result =
+            evaluateInMemoryBinding
+                "memory-m4-shallow-rehandle-root"
+                "main.result"
+                [ "main.kp", mainSource ]
+
+        Assert.False(workspace.HasErrors, sprintf "Expected no diagnostics, got:%s%s" Environment.NewLine (diagnosticsText workspace.Diagnostics))
+
+        match result with
+        | Result.Ok value ->
+            Assert.Equal("1", RuntimeValue.format value)
+        | Result.Error issue ->
+            failwithf "Expected shallow handler rehandle evaluation to succeed, got %s" issue.Message
+
+
+    [<Fact>]
+    let ``handler return clauses must bind exactly one payload`` () =
+        let noPayloadSource =
+            [
+                "@PrivateByDefault module main"
+                ""
+                "bad : Eff <[ ]> Int"
+                "let bad : Eff <[ ]> Int ="
+                "    block"
+                "        scoped effect Ask ="
+                "            ask : Unit -> Bool"
+                ""
+                "        let comp : Eff <[Ask : Ask]> Int ="
+                "            do"
+                "                let b <- Ask.ask ()"
+                "                if b then 1 else 0"
+                ""
+                "        handle Ask comp with"
+                "            case return -> pure 0"
+                "            case ask () k -> k True"
+            ]
+            |> String.concat "\n"
+
+        let extraPayloadSource =
+            [
+                "@PrivateByDefault module main"
+                ""
+                "bad : Eff <[ ]> Int"
+                "let bad : Eff <[ ]> Int ="
+                "    block"
+                "        scoped effect Ask ="
+                "            ask : Unit -> Bool"
+                ""
+                "        let comp : Eff <[Ask : Ask]> Int ="
+                "            do"
+                "                let b <- Ask.ask ()"
+                "                if b then 1 else 0"
+                ""
+                "        handle Ask comp with"
+                "            case return x y -> pure x"
+                "            case ask () k -> k True"
+            ]
+            |> String.concat "\n"
+
+        let noPayloadWorkspace =
+            compileInMemoryWorkspace
+                "memory-m4-return-clause-arity-zero-root"
+                [ "main.kp", noPayloadSource ]
+
+        let extraPayloadWorkspace =
+            compileInMemoryWorkspace
+                "memory-m4-return-clause-arity-two-root"
+                [ "main.kp", extraPayloadSource ]
+
+        Assert.True(noPayloadWorkspace.HasErrors, "Expected return clauses without a payload binder to be rejected.")
+        Assert.True(extraPayloadWorkspace.HasErrors, "Expected return clauses with multiple payload binders to be rejected.")
+        Assert.Contains(noPayloadWorkspace.Diagnostics, fun diagnostic -> diagnostic.Code = DiagnosticCode.HandlerClauseArityMismatch)
+        Assert.Contains(extraPayloadWorkspace.Diagnostics, fun diagnostic -> diagnostic.Code = DiagnosticCode.HandlerClauseArityMismatch)
+
+
+    [<Fact>]
+    let ``top level effect declarations reject borrowed resumption quantities`` () =
+        let mainSource =
+            [
+                "module main"
+                ""
+                "effect Ask ="
+                "    & ask : Unit -> Bool"
+                ""
+                "result : Int"
+                "let result = 0"
+            ]
+            |> String.concat "\n"
+
+        let workspace =
+            compileInMemoryWorkspace
+                "memory-m4-borrowed-top-level-resumption-root"
+                [ "main.kp", mainSource ]
+
+        Assert.True(workspace.HasErrors, "Expected borrowed effect resumption quantities to be rejected.")
+        Assert.Contains(workspace.Diagnostics, fun diagnostic -> diagnostic.Code = DiagnosticCode.EffectResumptionQuantityBorrowed)
+
+
+    [<Fact>]
+    let ``handlers reject computations whose closed effect row lacks the handled label`` () =
+        let mainSource =
+            [
+                "@PrivateByDefault module main"
+                ""
+                "bad : Eff <[ ]> Int"
+                "let bad : Eff <[ ]> Int ="
+                "    block"
+                "        scoped effect Ask ="
+                "            ask : Unit -> Bool"
+                ""
+                "        let comp : Eff <[ ]> Int = pure 0"
+                ""
+                "        handle Ask comp with"
+                "            case return x -> pure x"
+                "            case ask () k -> k True"
+            ]
+            |> String.concat "\n"
+
+        let workspace =
+            compileInMemoryWorkspace
+                "memory-m4-handler-row-mismatch-root"
+                [ "main.kp", mainSource ]
+
+        Assert.True(workspace.HasErrors, "Expected handlers to reject computations whose closed effect row lacks the handled label.")
+        Assert.Contains(workspace.Diagnostics, fun diagnostic -> diagnostic.Code = DiagnosticCode.HandlerEffectRowMismatch)
+
+
+    [<Fact>]
+    let ``effect operation selection accepts a lexically rebound effect label`` () =
+        let mainSource =
+            [
+                "@PrivateByDefault module main"
+                ""
+                "ok : Int"
+                "let ok : Int ="
+                "    block"
+                "        scoped effect Ask ="
+                "            ask : Unit -> Bool"
+                ""
+                "        let l = Ask"
+                ""
+                "        let comp : Eff <[Ask : Ask]> Int ="
+                "            do"
+                "                let b <- l.ask ()"
+                "                if b then 1 else 0"
+                ""
+                "        let handled : Eff <[ ]> Int ="
+                "            deep handle Ask comp with"
+                "                case return x -> pure x"
+                "                case ask () k -> k True"
+                ""
+                "        runPure handled"
+            ]
+            |> String.concat "\n"
+
+        let workspace, result =
+            evaluateInMemoryBinding
+                "memory-m4-op-label-alias-root"
+                "main.ok"
+                [ "main.kp", mainSource ]
+
+        Assert.False(workspace.HasErrors, sprintf "Expected aliased effect operation selection to typecheck, got:%s%s" Environment.NewLine (diagnosticsText workspace.Diagnostics))
+
+        match result with
+        | Result.Ok value ->
+            Assert.Equal("1", RuntimeValue.format value)
+        | Result.Error issue ->
+            failwithf "Expected aliased effect operation selection to succeed, got %s" issue.Message
+
+
+    [<Fact>]
+    let ``multishot aliased effect labels still trigger capture and backend capability checks`` () =
+        let mainSource =
+            [
+                "@PrivateByDefault module main"
+                ""
+                "bad : (1 x : Int) -> Int"
+                "let bad (1 x : Int) : Int ="
+                "    block"
+                "        scoped effect Choice ="
+                "            ω choose : Unit -> Bool"
+                ""
+                "        let c = Choice"
+                ""
+                "        let comp : Eff <[Choice : Choice]> Int ="
+                "            do"
+                "                let b <- c.choose ()"
+                "                if b then x else x"
+                ""
+                "        let handled ="
+                "            deep handle Choice comp with"
+                "                case return y -> pure y"
+                "                case choose _ k ->"
+                "                    do"
+                "                        let a <- k True"
+                "                        let _ <- k False"
+                "                        pure a"
+                ""
+                "        runPure handled"
+            ]
+            |> String.concat "\n"
+
+        let workspace =
+            compileInMemoryWorkspace
+                "memory-m4-multishot-alias-root"
+                [ "main.kp", mainSource ]
+
+        Assert.True(workspace.HasErrors, "Expected aliased multishot invocations to be rejected.")
+        Assert.Contains(workspace.Diagnostics, fun diagnostic -> diagnostic.Code = DiagnosticCode.QttContinuationCapture)
+
+
+    [<Fact>]
+    let ``multishot named nested computations still trigger capture checks`` () =
+        let mainSource =
+            [
+                "@PrivateByDefault module main"
+                ""
+                "bad : (1 x : Int) -> Int"
+                "let bad (1 x : Int) : Int ="
+                "    block"
+                "        scoped effect Choice ="
+                "            ω choose : Unit -> Bool"
+                ""
+                "        let nested : Eff <[Choice : Choice]> Int ="
+                "            do"
+                "                let b <- Choice.choose ()"
+                "                if b then 1 else 0"
+                ""
+                "        let comp : Eff <[Choice : Choice]> Int ="
+                "            do"
+                "                let y <- nested"
+                "                if y == 0 then x else x"
+                ""
+                "        let handled ="
+                "            deep handle Choice comp with"
+                "                case return y -> pure y"
+                "                case choose _ k ->"
+                "                    do"
+                "                        let a <- k True"
+                "                        let _ <- k False"
+                "                        pure a"
+                ""
+                "        runPure handled"
+            ]
+            |> String.concat "\n"
+
+        let workspace =
+            compileInMemoryWorkspace
+                "memory-m4-multishot-nested-computation-root"
+                [ "main.kp", mainSource ]
+
+        Assert.True(workspace.HasErrors, "Expected named nested multishot computations to be rejected.")
+        Assert.Contains(workspace.Diagnostics, fun diagnostic -> diagnostic.Code = DiagnosticCode.QttContinuationCapture)
+
+
+    [<Fact>]
+    let ``dotnet backend runs one shot handled programs`` () =
+        let mainSource =
+            [
+                "@PrivateByDefault module main"
+                ""
+                "result : Int"
+                "let result ="
+                "    block"
+                "        scoped effect Ask ="
+                "            ask : Unit -> Bool"
+                ""
+                "        let comp : Eff <[Ask : Ask]> Int ="
+                "            do"
+                "                let b <- Ask.ask ()"
+                "                if b then 1 else 0"
+                ""
+                "        let handled : Eff <[ ]> Int ="
+                "            deep handle Ask comp with"
+                "                case return x -> pure x"
+                "                case ask () k -> k True"
+                ""
+                "        runPure handled"
+            ]
+            |> String.concat "\n"
+
+        let workspace =
+            compileInMemoryWorkspaceWithBackend
+                "memory-m4-dotnet-one-shot-effect-root"
+                "dotnet"
+                [ "main.kp", mainSource ]
+
+        Assert.False(workspace.HasErrors, diagnosticsText workspace.Diagnostics)
+        Assert.DoesNotContain(workspace.Diagnostics, fun diagnostic -> diagnostic.Code = DiagnosticCode.EffectRuntimeUnsupportedBackend)
+
+        let outputDirectory = createScratchDirectory "dotnet-m4-one-shot-effects"
+
+        let artifact =
+            match Backend.emitDotNetArtifact workspace "main.result" outputDirectory DotNetDeployment.Managed with
+            | Result.Ok artifact -> artifact
+            | Result.Error message -> failwith message
+
+        let runResult =
+            runProcess outputDirectory "dotnet" $"run --project \"{artifact.ProjectFilePath}\" -c Release"
+
+        Assert.Equal(0, runResult.ExitCode)
+        Assert.Equal("1", runResult.StandardOutput.Trim())
+        Assert.True(String.IsNullOrWhiteSpace(runResult.StandardError), runResult.StandardError)
+
+
+    [<Fact>]
+    let ``annotated local computations reject shadowed carried effect label mismatches`` () =
+        let mainSource =
+            [
+                "@PrivateByDefault module main"
+                ""
+                "result : Int"
+                "let result ="
+                "    block"
+                "        scoped effect Choice ="
+                "            ω choose : Unit -> Int"
+                "        let outer = Choice"
+                "        block"
+                "            scoped effect Choice ="
+                "                ω choose : Unit -> Int"
+                "            let comp : Eff <[Choice : Choice]> Int ="
+                "                outer.choose ()"
+                "            runPure comp"
+            ]
+            |> String.concat "\n"
+
+        let workspace =
+            compileInMemoryWorkspace
+                "memory-m4-shadowed-carried-label-annotation-root"
+                [ "main.kp", mainSource ]
+
+        Assert.True(workspace.HasErrors, "Expected the shadowed carried-label annotation mismatch to be rejected.")
+        Assert.Contains(
+            workspace.Diagnostics,
+            fun diagnostic ->
+                diagnostic.Code = DiagnosticCode.TypeEqualityMismatch
+                && diagnostic.Message.Contains("Eff", StringComparison.Ordinal)
         )
 
-    let mainSource = File.ReadAllText fixturePath
-
-    let workspace =
-        compileInMemoryWorkspace
-            "memory-m4-multishot-linear-root"
-            [ "main.kp", mainSource ]
-
-    Assert.True(workspace.HasErrors, "Expected the multishot capture rule to reject the operation site.")
-    Assert.Contains(workspace.Diagnostics, fun diagnostic -> diagnostic.Code = DiagnosticCode.QttContinuationCapture)
-
-[<Fact>]
-let ``multishot aliased effect labels still trigger capture and backend capability checks`` () =
-    let mainSource =
-        [
-            "@PrivateByDefault module main"
-            ""
-            "bad : (1 x : Int) -> Int"
-            "let bad (1 x : Int) : Int ="
-            "    block"
-            "        scoped effect Choice ="
-            "            ω choose : Unit -> Bool"
-            ""
-            "        let c = Choice"
-            ""
-            "        let comp : Eff <[Choice : Choice]> Int ="
-            "            do"
-            "                let b <- c.choose ()"
-            "                if b then x else x"
-            ""
-            "        let handled ="
-            "            deep handle Choice comp with"
-            "                case return y -> pure y"
-            "                case choose _ k ->"
-            "                    do"
-            "                        let a <- k True"
-            "                        let _ <- k False"
-            "                        pure a"
-            ""
-            "        runPure handled"
-        ]
-        |> String.concat "\n"
-
-    let workspace =
-        compileInMemoryWorkspace
-            "memory-m4-multishot-alias-root"
-            [ "main.kp", mainSource ]
-
-    Assert.True(workspace.HasErrors, "Expected aliased multishot invocations to be rejected.")
-    Assert.Contains(workspace.Diagnostics, fun diagnostic -> diagnostic.Code = DiagnosticCode.QttContinuationCapture)
-
-[<Fact>]
-let ``multishot rebound operation values still trigger capture checks`` () =
-    let mainSource =
-        [
-            "@PrivateByDefault module main"
-            ""
-            "bad : (1 x : Int) -> Int"
-            "let bad (1 x : Int) : Int ="
-            "    block"
-            "        scoped effect Choice ="
-            "            ω choose : Unit -> Bool"
-            ""
-            "        let choose = Choice.choose"
-            ""
-            "        let comp : Eff <[Choice : Choice]> Int ="
-            "            do"
-            "                let b <- choose ()"
-            "                if b then x else x"
-            ""
-            "        let handled ="
-            "            deep handle Choice comp with"
-            "                case return y -> pure y"
-            "                case choose _ k ->"
-            "                    do"
-            "                        let a <- k True"
-            "                        let _ <- k False"
-            "                        pure a"
-            ""
-            "        runPure handled"
-        ]
-        |> String.concat "\n"
-
-    let workspace =
-        compileInMemoryWorkspace
-            "memory-m4-multishot-operation-alias-root"
-            [ "main.kp", mainSource ]
-
-    Assert.True(workspace.HasErrors, "Expected rebound multishot operation values to be rejected.")
-    Assert.Contains(workspace.Diagnostics, fun diagnostic -> diagnostic.Code = DiagnosticCode.QttContinuationCapture)
-
-[<Fact>]
-let ``multishot record carried operation values still trigger capture checks`` () =
-    let mainSource =
-        [
-            "@PrivateByDefault module main"
-            ""
-            "bad : (1 x : Int) -> Int"
-            "let bad (1 x : Int) : Int ="
-            "    block"
-            "        scoped effect Choice ="
-            "            ω choose : Unit -> Bool"
-            ""
-            "        let ops = (choose = Choice.choose)"
-            ""
-            "        let comp : Eff <[Choice : Choice]> Int ="
-            "            do"
-            "                let b <- ops.choose ()"
-            "                if b then x else x"
-            ""
-            "        let handled ="
-            "            deep handle Choice comp with"
-            "                case return y -> pure y"
-            "                case choose _ k ->"
-            "                    do"
-            "                        let a <- k True"
-            "                        let _ <- k False"
-            "                        pure a"
-            ""
-            "        runPure handled"
-        ]
-        |> String.concat "\n"
-
-    let workspace =
-        compileInMemoryWorkspace
-            "memory-m4-multishot-operation-record-root"
-            [ "main.kp", mainSource ]
-
-    Assert.True(workspace.HasErrors, "Expected record-carried multishot operation values to be rejected.")
-    Assert.Contains(workspace.Diagnostics, fun diagnostic -> diagnostic.Code = DiagnosticCode.QttContinuationCapture)
-
-[<Fact>]
-let ``multishot operations nested inside ordinary application still trigger capture checks`` () =
-    let mainSource =
-        [
-            "@PrivateByDefault module main"
-            ""
-            "bad : (1 x : Int) -> Int"
-            "let bad (1 x : Int) : Int ="
-            "    block"
-            "        scoped effect Choice ="
-            "            ω choose : Unit -> Bool"
-            ""
-            "        let id m = m"
-            ""
-            "        let comp : Eff <[Choice : Choice]> Int ="
-            "            do"
-            "                let b <- id (Choice.choose ())"
-            "                if b then x else x"
-            ""
-            "        let handled ="
-            "            deep handle Choice comp with"
-            "                case return y -> pure y"
-            "                case choose _ k ->"
-            "                    do"
-            "                        let a <- k True"
-            "                        let _ <- k False"
-            "                        pure a"
-            ""
-            "        runPure handled"
-        ]
-        |> String.concat "\n"
-
-    let workspace =
-        compileInMemoryWorkspace
-            "memory-m4-multishot-nested-application-root"
-            [ "main.kp", mainSource ]
-
-    Assert.True(workspace.HasErrors, "Expected multishot operations nested inside ordinary application to be rejected.")
-    Assert.Contains(workspace.Diagnostics, fun diagnostic -> diagnostic.Code = DiagnosticCode.QttContinuationCapture)
-
-[<Fact>]
-let ``multishot named nested computations still trigger capture checks`` () =
-    let mainSource =
-        [
-            "@PrivateByDefault module main"
-            ""
-            "bad : (1 x : Int) -> Int"
-            "let bad (1 x : Int) : Int ="
-            "    block"
-            "        scoped effect Choice ="
-            "            ω choose : Unit -> Bool"
-            ""
-            "        let nested : Eff <[Choice : Choice]> Int ="
-            "            do"
-            "                let b <- Choice.choose ()"
-            "                if b then 1 else 0"
-            ""
-            "        let comp : Eff <[Choice : Choice]> Int ="
-            "            do"
-            "                let y <- nested"
-            "                if y == 0 then x else x"
-            ""
-            "        let handled ="
-            "            deep handle Choice comp with"
-            "                case return y -> pure y"
-            "                case choose _ k ->"
-            "                    do"
-            "                        let a <- k True"
-            "                        let _ <- k False"
-            "                        pure a"
-            ""
-            "        runPure handled"
-        ]
-        |> String.concat "\n"
-
-    let workspace =
-        compileInMemoryWorkspace
-            "memory-m4-multishot-nested-computation-root"
-            [ "main.kp", mainSource ]
-
-    Assert.True(workspace.HasErrors, "Expected named nested multishot computations to be rejected.")
-    Assert.Contains(workspace.Diagnostics, fun diagnostic -> diagnostic.Code = DiagnosticCode.QttContinuationCapture)
-
-[<Fact>]
-let ``shadowed same spelling effects do not widen rebound one shot operation values`` () =
-    let mainSource =
-        [
-            "@PrivateByDefault module main"
-            ""
-            "ok : (1 x : Int) -> Int"
-            "let ok (1 x : Int) : Int ="
-            "    block"
-            "        scoped effect Ask ="
-            "            1 ask : Unit -> Bool"
-            ""
-            "        let l = Ask"
-            "        let ask = Ask.ask"
-            ""
-            "        let comp : Eff <[Ask : Ask]> Int ="
-            "            do"
-            "                let b <- ask ()"
-            "                if b then x else x"
-            ""
-            "        block"
-            "            scoped effect Ask ="
-            "                ω ask : Unit -> Bool"
-            ""
-            "            let handled ="
-            "                deep handle l comp with"
-            "                    case return y -> pure y"
-            "                    case ask () k -> k True"
-            ""
-            "            runPure handled"
-            ""
-            "result : Int"
-            "let result = ok 1"
-        ]
-        |> String.concat "\n"
-
-    let workspace, result =
-        evaluateInMemoryBinding
-            "memory-m4-shadowed-rebound-operation-root"
-            "main.result"
-            [ "main.kp", mainSource ]
-
-    Assert.False(workspace.HasErrors, sprintf "Expected rebound one-shot operation values to keep their original semantics under same-spelling shadowing, got:%s%s" Environment.NewLine (diagnosticsText workspace.Diagnostics))
-    Assert.DoesNotContain(workspace.Diagnostics, fun diagnostic -> diagnostic.Code = DiagnosticCode.QttContinuationCapture)
-
-    match result with
-    | Result.Ok value ->
-        Assert.Equal("1", RuntimeValue.format value)
-    | Result.Error issue ->
-        failwithf "Expected rebound one-shot operation value to evaluate successfully, got %s" issue.Message
-
-[<Fact>]
-let ``zig backend runs one shot handled programs`` () =
-    let mainSource =
-        [
-            "@PrivateByDefault module main"
-            ""
-            "result : Int"
-            "let result ="
-            "    block"
-            "        scoped effect Ask ="
-            "            ask : Unit -> Bool"
-            ""
-            "        let comp : Eff <[Ask : Ask]> Int ="
-            "            do"
-            "                let b <- Ask.ask ()"
-            "                if b then 1 else 0"
-            ""
-            "        let handled : Eff <[ ]> Int ="
-            "            deep handle Ask comp with"
-            "                case return x -> pure x"
-            "                case ask () k -> k True"
-            ""
-            "        runPure handled"
-        ]
-        |> String.concat "\n"
-
-    let workspace =
-        compileInMemoryWorkspaceWithBackend
-            "memory-m4-zig-one-shot-effect-root"
-            "zig"
-            [ "main.kp", mainSource ]
-
-    Assert.False(workspace.HasErrors, diagnosticsText workspace.Diagnostics)
-    Assert.DoesNotContain(workspace.Diagnostics, fun diagnostic -> diagnostic.Code = DiagnosticCode.EffectRuntimeUnsupportedBackend)
-
-    let outputDirectory = createScratchDirectory "zig-m4-one-shot-effects"
-
-    let artifact =
-        match Backend.emitZigArtifact workspace "main.result" outputDirectory with
-        | Result.Ok artifact -> artifact
-        | Result.Error message -> failwith message
-
-    let compileResult =
-        runProcess
-            outputDirectory
-            (ensureRepoZigExecutablePath ())
-            $"cc -std=c11 -O0 -o \"{artifact.ExecutableFilePath}\" \"{artifact.SourceFilePath}\""
-
-    Assert.Equal(0, compileResult.ExitCode)
-    Assert.True(String.IsNullOrWhiteSpace(compileResult.StandardError), compileResult.StandardError)
-
-    let runResult = runProcess outputDirectory artifact.ExecutableFilePath ""
-    Assert.Equal(0, runResult.ExitCode)
-    Assert.Equal("1", runResult.StandardOutput.Trim())
-    Assert.True(String.IsNullOrWhiteSpace(runResult.StandardError), runResult.StandardError)
-
-[<Fact>]
-let ``zig backend runs multishot handled programs`` () =
-    let mainSource =
-        [
-            "@PrivateByDefault module main"
-            ""
-            "result : Int"
-            "let result ="
-            "    block"
-            "        scoped effect Choice ="
-            "            ω choose : Unit -> Bool"
-            ""
-            "        let comp : Eff <[Choice : Choice]> Int ="
-            "            do"
-            "                let b <- Choice.choose ()"
-            "                if b then 1 else 2"
-            ""
-            "        let handled : Eff <[ ]> Int ="
-            "            deep handle Choice comp with"
-            "                case return x -> pure x"
-            "                case choose () k ->"
-            "                    do"
-            "                        let a <- k True"
-            "                        let b <- k False"
-            "                        pure (a + b)"
-            ""
-            "        runPure handled"
-        ]
-        |> String.concat "\n"
-
-    let workspace =
-        compileInMemoryWorkspaceWithBackend
-            "memory-m4-zig-multishot-effect-root"
-            "zig"
-            [ "main.kp", mainSource ]
-
-    Assert.False(workspace.HasErrors, diagnosticsText workspace.Diagnostics)
-    Assert.DoesNotContain(workspace.Diagnostics, fun diagnostic -> diagnostic.Code = DiagnosticCode.EffectRuntimeUnsupportedBackend)
-    Assert.DoesNotContain(workspace.Diagnostics, fun diagnostic -> diagnostic.Code = DiagnosticCode.MultishotEffectUnsupportedBackend)
-
-    let outputDirectory = createScratchDirectory "zig-m4-multishot-effects"
-
-    let artifact =
-        match Backend.emitZigArtifact workspace "main.result" outputDirectory with
-        | Result.Ok artifact -> artifact
-        | Result.Error message -> failwith message
-
-    let compileResult =
-        runProcess
-            outputDirectory
-            (ensureRepoZigExecutablePath ())
-            $"cc -std=c11 -O0 -o \"{artifact.ExecutableFilePath}\" \"{artifact.SourceFilePath}\""
-
-    Assert.Equal(0, compileResult.ExitCode)
-    Assert.True(String.IsNullOrWhiteSpace(compileResult.StandardError), compileResult.StandardError)
-
-    let runResult = runProcess outputDirectory artifact.ExecutableFilePath ""
-    Assert.Equal(0, runResult.ExitCode)
-    Assert.Equal("3", runResult.StandardOutput.Trim())
-    Assert.True(String.IsNullOrWhiteSpace(runResult.StandardError), runResult.StandardError)
-
-[<Fact>]
-let ``dotnet backend runs one shot handled programs`` () =
-    let mainSource =
-        [
-            "@PrivateByDefault module main"
-            ""
-            "result : Int"
-            "let result ="
-            "    block"
-            "        scoped effect Ask ="
-            "            ask : Unit -> Bool"
-            ""
-            "        let comp : Eff <[Ask : Ask]> Int ="
-            "            do"
-            "                let b <- Ask.ask ()"
-            "                if b then 1 else 0"
-            ""
-            "        let handled : Eff <[ ]> Int ="
-            "            deep handle Ask comp with"
-            "                case return x -> pure x"
-            "                case ask () k -> k True"
-            ""
-            "        runPure handled"
-        ]
-        |> String.concat "\n"
-
-    let workspace =
-        compileInMemoryWorkspaceWithBackend
-            "memory-m4-dotnet-one-shot-effect-root"
-            "dotnet"
-            [ "main.kp", mainSource ]
-
-    Assert.False(workspace.HasErrors, diagnosticsText workspace.Diagnostics)
-    Assert.DoesNotContain(workspace.Diagnostics, fun diagnostic -> diagnostic.Code = DiagnosticCode.EffectRuntimeUnsupportedBackend)
-
-    let outputDirectory = createScratchDirectory "dotnet-m4-one-shot-effects"
-
-    let artifact =
-        match Backend.emitDotNetArtifact workspace "main.result" outputDirectory DotNetDeployment.Managed with
-        | Result.Ok artifact -> artifact
-        | Result.Error message -> failwith message
-
-    let runResult =
-        runProcess outputDirectory "dotnet" $"run --project \"{artifact.ProjectFilePath}\" -c Release"
-
-    Assert.Equal(0, runResult.ExitCode)
-    Assert.Equal("1", runResult.StandardOutput.Trim())
-    Assert.True(String.IsNullOrWhiteSpace(runResult.StandardError), runResult.StandardError)
-
-[<Fact>]
-let ``interpreter executes multishot handled programs`` () =
-    let mainSource =
-        [
-            "@PrivateByDefault module main"
-            ""
-            "result : Int"
-            "let result ="
-            "    block"
-            "        scoped effect Choice ="
-            "            ω choose : Unit -> Bool"
-            ""
-            "        let comp : Eff <[Choice : Choice]> Int ="
-            "            do"
-            "                let b <- Choice.choose ()"
-            "                if b then 1 else 2"
-            ""
-            "        let handled : Eff <[ ]> Int ="
-            "            deep handle Choice comp with"
-            "                case return x -> pure x"
-            "                case choose () k ->"
-            "                    do"
-            "                        let a <- k True"
-            "                        let b <- k False"
-            "                        pure (a + b)"
-            ""
-            "        runPure handled"
-        ]
-        |> String.concat "\n"
-
-    let workspace, result =
-        evaluateInMemoryBinding
-            "memory-m4-interpreter-multishot-root"
-            "main.result"
-            [ "main.kp", mainSource ]
-
-    Assert.False(workspace.HasErrors, diagnosticsText workspace.Diagnostics)
-
-    match result with
-    | Result.Ok value ->
-        Assert.Equal("3", RuntimeValue.format value)
-    | Result.Error issue ->
-        failwithf "Expected multishot interpreter evaluation to succeed, got %s" issue.Message
-
-[<Fact>]
-let ``dotnet backend runs multishot handled programs`` () =
-    let mainSource =
-        [
-            "@PrivateByDefault module main"
-            ""
-            "result : Int"
-            "let result ="
-            "    block"
-            "        scoped effect Choice ="
-            "            ω choose : Unit -> Bool"
-            ""
-            "        let comp : Eff <[Choice : Choice]> Int ="
-            "            do"
-            "                let b <- Choice.choose ()"
-            "                if b then 1 else 2"
-            ""
-            "        let handled : Eff <[ ]> Int ="
-            "            deep handle Choice comp with"
-            "                case return x -> pure x"
-            "                case choose () k ->"
-            "                    do"
-            "                        let a <- k True"
-            "                        let b <- k False"
-            "                        pure (a + b)"
-            ""
-            "        runPure handled"
-        ]
-        |> String.concat "\n"
-
-    let workspace =
-        compileInMemoryWorkspaceWithBackend
-            "memory-m4-dotnet-multishot-effect-root"
-            "dotnet"
-            [ "main.kp", mainSource ]
-
-    Assert.False(workspace.HasErrors, diagnosticsText workspace.Diagnostics)
-    Assert.DoesNotContain(workspace.Diagnostics, fun diagnostic -> diagnostic.Code = DiagnosticCode.EffectRuntimeUnsupportedBackend)
-    Assert.DoesNotContain(workspace.Diagnostics, fun diagnostic -> diagnostic.Code = DiagnosticCode.MultishotEffectUnsupportedBackend)
-
-    let outputDirectory = createScratchDirectory "dotnet-m4-multishot-effects"
-
-    let artifact =
-        match Backend.emitDotNetArtifact workspace "main.result" outputDirectory DotNetDeployment.Managed with
-        | Result.Ok artifact -> artifact
-        | Result.Error message -> failwith message
-
-    let runResult =
-        runProcess outputDirectory "dotnet" $"run --project \"{artifact.ProjectFilePath}\" -c Release"
-
-    Assert.Equal(0, runResult.ExitCode)
-    Assert.Equal("3", runResult.StandardOutput.Trim())
-    Assert.True(String.IsNullOrWhiteSpace(runResult.StandardError), runResult.StandardError)
-
-[<Fact>]
-let ``carried outer scoped effect labels are not captured by inner same spelling handlers`` () =
-    let mainSource =
-        [
-            "@PrivateByDefault module main"
-            ""
-            "result : Int"
-            "let result ="
-            "    block"
-            "        scoped effect Choice ="
-            "            ω choose : Unit -> Int"
-            "        let outer = Choice"
-            "        block"
-            "            scoped effect Choice ="
-            "                ω choose : Unit -> Int"
-            "            let inner = Choice"
-            "            let comp = outer.choose ()"
-            "            let handled : Eff <[ ]> Int ="
-            "                deep handle inner comp with"
-            "                    case return x -> pure x"
-            "                    case choose () k ->"
-            "                        do"
-            "                            let _ <- k 0"
-            "                            pure 0"
-            "            runPure handled"
-        ]
-        |> String.concat "\n"
-
-    let workspace =
-        compileInMemoryWorkspace
-            "memory-m4-shadowed-carried-label-root"
-            [ "main.kp", mainSource ]
-
-    Assert.True(workspace.HasErrors, "Expected the inner handler to reject the outer carried label statically.")
-    Assert.Contains(
-        workspace.Diagnostics,
-        fun diagnostic ->
-            diagnostic.Code = DiagnosticCode.HandlerEffectRowMismatch
-            && diagnostic.Message.Contains("expects the handled computation to carry label", StringComparison.Ordinal)
-    )
-
-[<Fact>]
-let ``annotated local computations reject shadowed carried effect label mismatches`` () =
-    let mainSource =
-        [
-            "@PrivateByDefault module main"
-            ""
-            "result : Int"
-            "let result ="
-            "    block"
-            "        scoped effect Choice ="
-            "            ω choose : Unit -> Int"
-            "        let outer = Choice"
-            "        block"
-            "            scoped effect Choice ="
-            "                ω choose : Unit -> Int"
-            "            let comp : Eff <[Choice : Choice]> Int ="
-            "                outer.choose ()"
-            "            runPure comp"
-        ]
-        |> String.concat "\n"
-
-    let workspace =
-        compileInMemoryWorkspace
-            "memory-m4-shadowed-carried-label-annotation-root"
-            [ "main.kp", mainSource ]
-
-    Assert.True(workspace.HasErrors, "Expected the shadowed carried-label annotation mismatch to be rejected.")
-    Assert.Contains(
-        workspace.Diagnostics,
-        fun diagnostic ->
-            diagnostic.Code = DiagnosticCode.TypeEqualityMismatch
-            && diagnostic.Message.Contains("Eff", StringComparison.Ordinal)
-    )
-
-[<Fact>]
-let ``shallow handler resumptions do not collapse into the handled carrier`` () =
-    let mainSource =
-        [
-            "@PrivateByDefault module main"
-            ""
-            "bad : Eff <[ ]> Int"
-            "let bad : Eff <[ ]> Int ="
-            "    block"
-            "        scoped effect Ask ="
-            "            ask : Unit -> Bool"
-            ""
-            "        let comp : Eff <[Ask : Ask]> Int ="
-            "            do"
-            "                let b <- Ask.ask ()"
-            "                if b then 1 else 0"
-            ""
-            "        let acceptHandled : (1 k : ((1 x : Bool) -> Eff <[ ]> Int)) -> Eff <[ ]> Int ="
-            "            \\(1 k : ((1 x : Bool) -> Eff <[ ]> Int)) -> k True"
-            ""
-            "        handle Ask comp with"
-            "            case return y -> pure y"
-            "            case ask () k ->"
-            "                acceptHandled k"
-        ]
-        |> String.concat "\n"
-
-    let workspace =
-        compileInMemoryWorkspace
-            "memory-m4-shallow-carrier-root"
-            [ "main.kp", mainSource ]
-
-    Assert.True(workspace.HasErrors, "Expected shallow handler resumptions with the handled carrier to be rejected.")
-    Assert.Contains(workspace.Diagnostics, fun diagnostic -> diagnostic.Code = DiagnosticCode.TypeEqualityMismatch)
-
-[<Fact>]
-let ``one shot resumptions cannot be resumed twice`` () =
-    let fixturePath =
-        Path.Combine(
-            __SOURCE_DIRECTORY__,
-            "Fixtures",
-            "borrow_qtt.100_interactions.handler_reject_oneshot_resumption_overuse",
-            "main.kp"
+
+    [<Fact>]
+    let ``one shot resumptions remain one shot under a record carried handled label`` () =
+        let mainSource =
+            [
+                "@PrivateByDefault module main"
+                ""
+                "bad : Int"
+                "let bad : Int ="
+                "    block"
+                "        scoped effect Ask ="
+                "            ask : Unit -> Bool"
+                ""
+                "        let pkg = (label = Ask)"
+                ""
+                "        let comp : Eff <[Ask : Ask]> Int ="
+                "            do"
+                "                let _ <- pkg.label.ask ()"
+                "                pure 1"
+                ""
+                "        let handled ="
+                "            deep handle pkg.label comp with"
+                "                case return y -> pure y"
+                "                case ask _ k ->"
+                "                    do"
+                "                        let a <- k True"
+                "                        let _ <- k False"
+                "                        pure a"
+                ""
+                "        runPure handled"
+            ]
+            |> String.concat "\n"
+
+        let workspace =
+            compileInMemoryWorkspace
+                "memory-m4-oneshot-record-label-overuse-root"
+                [ "main.kp", mainSource ]
+
+        Assert.True(workspace.HasErrors, "Expected one-shot resumption overuse under a record-carried handled label to be rejected.")
+        Assert.Contains(workspace.Diagnostics, fun diagnostic -> diagnostic.Code = DiagnosticCode.QttLinearOveruse)
+
+
+    [<Fact>]
+    let ``top level effect declarations introduce in-scope effect labels`` () =
+        let mainSource =
+            [
+                "@PrivateByDefault module main"
+                ""
+                "effect Ask ="
+                "    1 ask : Unit -> Bool"
+                ""
+                "ok : Int"
+                "let ok : Int ="
+                "    block"
+                "        let comp : Eff <[Ask : Ask]> Int ="
+                "            do"
+                "                let b <- Ask.ask ()"
+                "                if b then 1 else 0"
+                ""
+                "        let handled : Eff <[ ]> Int ="
+                "            deep handle Ask comp with"
+                "                case return x -> pure x"
+                "                case ask () k -> k True"
+                ""
+                "        runPure handled"
+            ]
+            |> String.concat "\n"
+
+        let workspace, result =
+            evaluateInMemoryBinding
+                "memory-m4-top-level-effect-label-root"
+                "main.ok"
+                [ "main.kp", mainSource ]
+
+        Assert.False(workspace.HasErrors, sprintf "Expected top-level effect labels to be in scope, got:%s%s" Environment.NewLine (diagnosticsText workspace.Diagnostics))
+
+        match result with
+        | Result.Ok value ->
+            Assert.Equal("1", RuntimeValue.format value)
+        | Result.Error issue ->
+            failwithf "Expected top-level effect label evaluation to succeed, got %s" issue.Message
+
+
+    [<Fact>]
+    let ``aliased imported effect labels remain usable across modules`` () =
+        let libSource =
+            [
+                "module lib"
+                ""
+                "effect Ask ="
+                "    1 ask : Unit -> Bool"
+            ]
+            |> String.concat "\n"
+
+        let mainSource =
+            [
+                "@PrivateByDefault module main"
+                "import lib.(Ask as Query)"
+                ""
+                "ok : Int"
+                "let ok : Int ="
+                "    block"
+                "        let comp : Eff <[Query : Query]> Int ="
+                "            do"
+                "                let b <- Query.ask ()"
+                "                if b then 1 else 0"
+                ""
+                "        let handled : Eff <[ ]> Int ="
+                "            deep handle Query comp with"
+                "                case return x -> pure x"
+                "                case ask () k -> k True"
+                ""
+                "        runPure handled"
+            ]
+            |> String.concat "\n"
+
+        let workspace, result =
+            evaluateInMemoryBinding
+                "memory-m4-aliased-imported-effect-label-root"
+                "main.ok"
+                [ "lib.kp", libSource
+                  "main.kp", mainSource ]
+
+        Assert.False(workspace.HasErrors, sprintf "Expected aliased imported effect labels to resolve, got:%s%s" Environment.NewLine (diagnosticsText workspace.Diagnostics))
+
+        match result with
+        | Result.Ok value ->
+            Assert.Equal("1", RuntimeValue.format value)
+        | Result.Error issue ->
+            failwithf "Expected aliased imported effect label evaluation to succeed, got %s" issue.Message
+
+
+    [<Fact>]
+    let ``deep handlers can split a handled label out of a normalized tail alias`` () =
+        let mainSource =
+            [
+                "@PrivateByDefault module main"
+                ""
+                "effect Ask ="
+                "    1 ask : Unit -> Bool"
+                ""
+                "effect Other ="
+                "    other : Unit -> Int"
+                ""
+                "type AskTail (r : EffRow) = <[Ask : Ask | r]>"
+                ""
+                "probe : Int"
+                "let probe : Int ="
+                "    block"
+                "        let handleAsk : forall (r : EffRow). Eff <[Other : Other | AskTail r]> Int -> Eff <[Other : Other | r]> Int ="
+                "            \\(comp : Eff <[Other : Other | AskTail r]> Int) ->"
+                "                deep handle Ask comp with"
+                "                    case return y -> pure y"
+                "                    case ask () k -> k True"
+                ""
+                "        0"
+            ]
+            |> String.concat "\n"
+
+        let workspace =
+            compileInMemoryWorkspace
+                "memory-m4-deep-open-row-tail-alias-root"
+                [ "main.kp", mainSource ]
+
+        Assert.False(workspace.HasErrors, sprintf "Expected deep handler typing to split handled labels from normalized tail aliases, got:%s%s" Environment.NewLine (diagnosticsText workspace.Diagnostics))
+
+
+    [<Fact>]
+    let ``deep handlers reject local normalized tail aliases whose handled label names a different interface`` () =
+        let mainSource =
+            [
+                "@PrivateByDefault module main"
+                ""
+                "probe : Int"
+                "let probe : Int ="
+                "    block"
+                "        scoped effect Ask ="
+                "            1 ask : Unit -> Bool"
+                ""
+                "        scoped effect Other ="
+                "            other : Unit -> Int"
+                ""
+                "        type WrongAskTail (r : EffRow) = <[Ask : Other | r]>"
+                ""
+                "        let badHandle : forall (r : EffRow). Eff <[Other : Other | WrongAskTail r]> Int -> Eff <[Other : Other | r]> Int ="
+                "            \\(comp : Eff <[Other : Other | WrongAskTail r]> Int) ->"
+                "                deep handle Ask comp with"
+                "                    case return y -> pure y"
+                "                    case ask () k -> k True"
+                ""
+                "        0"
+            ]
+            |> String.concat "\n"
+
+        let workspace =
+            compileInMemoryWorkspace
+                "memory-m4-local-deep-open-row-tail-alias-mismatch-root"
+                [ "main.kp", mainSource ]
+
+        Assert.True(workspace.HasErrors, "Expected deep handlers to reject local normalized tail aliases with mismatched handled interfaces.")
+        Assert.Contains(workspace.Diagnostics, fun diagnostic -> diagnostic.Code = DiagnosticCode.HandlerEffectRowMismatch)
+
+
+module MilestoneFourTestsShard1 =
+
+    [<Fact>]
+    let ``interpreter executes a one shot deep handler over a parameterized scoped effect`` () =
+        let mainSource =
+            [
+                "module main"
+                ""
+                "result : Int"
+                "let result : Int ="
+                "    block"
+                "        scoped effect State (s : Type) ="
+                "            get : Unit -> s"
+                ""
+                "        let comp : Eff <[State : State Int]> Int ="
+                "            do"
+                "                let n <- State.get ()"
+                "                n"
+                ""
+                "        let handled : Eff <[ ]> Int ="
+                "            deep handle State comp with"
+                "                case return x -> pure x"
+                "                case get () k -> k 0"
+                ""
+                "        runPure handled"
+            ]
+            |> String.concat "\n"
+
+        let workspace, result =
+            evaluateInMemoryBinding
+                "memory-m4-parameterized-local-effect-root"
+                "main.result"
+                [ "main.kp", mainSource ]
+
+        Assert.False(workspace.HasErrors, sprintf "Expected no diagnostics, got:%s%s" Environment.NewLine (diagnosticsText workspace.Diagnostics))
+
+        match result with
+        | Result.Ok value ->
+            Assert.Equal("0", RuntimeValue.format value)
+        | Result.Error issue ->
+            failwithf "Expected parameterized local effect evaluation to succeed, got %s" issue.Message
+
+
+    [<Fact>]
+    let ``handlers reject missing operation clauses for the handled effect`` () =
+        let mainSource =
+            [
+                "@PrivateByDefault module main"
+                ""
+                "bad : Eff <[ ]> Int"
+                "let bad : Eff <[ ]> Int ="
+                "    block"
+                "        scoped effect State ="
+                "            get : Unit -> Int"
+                "            put : Int -> Unit"
+                ""
+                "        let comp : Eff <[State : State]> Int ="
+                "            do"
+                "                let n <- State.get ()"
+                "                State.put (n + 1)"
+                "                n"
+                ""
+                "        handle State comp with"
+                "            case return x -> pure x"
+                "            case get () k -> k 0"
+            ]
+            |> String.concat "\n"
+
+        let workspace =
+            compileInMemoryWorkspace
+                "memory-m4-missing-handler-clause-root"
+                [ "main.kp", mainSource ]
+
+        Assert.True(workspace.HasErrors, "Expected handlers with missing operation clauses to be rejected.")
+        Assert.Contains(workspace.Diagnostics, fun diagnostic -> diagnostic.Code = DiagnosticCode.HandlerClauseMissing)
+
+
+    [<Fact>]
+    let ``handlers reject unexpected and duplicate operation clauses`` () =
+        let mainSource =
+            [
+                "@PrivateByDefault module main"
+                ""
+                "bad : Eff <[ ]> Int"
+                "let bad : Eff <[ ]> Int ="
+                "    block"
+                "        scoped effect Ask ="
+                "            ask : Unit -> Bool"
+                ""
+                "        let comp : Eff <[Ask : Ask]> Int ="
+                "            do"
+                "                let b <- Ask.ask ()"
+                "                if b then 1 else 0"
+                ""
+                "        handle Ask comp with"
+                "            case return x -> pure x"
+                "            case ask () k -> k True"
+                "            case ask () k -> k False"
+                "            case nope () k -> k 0"
+            ]
+            |> String.concat "\n"
+
+        let workspace =
+            compileInMemoryWorkspace
+                "memory-m4-unexpected-handler-clause-root"
+                [ "main.kp", mainSource ]
+
+        Assert.True(workspace.HasErrors, "Expected handlers with duplicate and unexpected clauses to be rejected.")
+        Assert.Contains(workspace.Diagnostics, fun diagnostic -> diagnostic.Code = DiagnosticCode.HandlerClauseDuplicate)
+        Assert.Contains(workspace.Diagnostics, fun diagnostic -> diagnostic.Code = DiagnosticCode.HandlerClauseUnexpected)
+
+
+    [<Fact>]
+    let ``local scoped effects reject borrowed resumption quantities`` () =
+        let mainSource =
+            [
+                "@PrivateByDefault module main"
+                ""
+                "result : Int"
+                "let result : Int ="
+                "    block"
+                "        scoped effect Ask ="
+                "            &[r] ask : Unit -> Bool"
+                ""
+                "        0"
+            ]
+            |> String.concat "\n"
+
+        let workspace =
+            compileInMemoryWorkspace
+                "memory-m4-borrowed-local-resumption-root"
+                [ "main.kp", mainSource ]
+
+        Assert.True(workspace.HasErrors, "Expected local scoped effects with borrowed resumption quantities to be rejected.")
+        Assert.Contains(workspace.Diagnostics, fun diagnostic -> diagnostic.Code = DiagnosticCode.EffectResumptionQuantityBorrowed)
+
+
+    [<Fact>]
+    let ``handlers reject computations whose handled row entry names a different effect interface`` () =
+        let mainSource =
+            [
+                "@PrivateByDefault module main"
+                ""
+                "bad : Eff <[ ]> Int"
+                "let bad : Eff <[ ]> Int ="
+                "    block"
+                "        scoped effect Ask ="
+                "            ask : Unit -> Bool"
+                ""
+                "        scoped effect Other ="
+                "            other : Unit -> Int"
+                ""
+                "        let comp : Eff <[Ask : Other]> Int = pure 0"
+                ""
+                "        handle Ask comp with"
+                "            case return x -> pure x"
+                "            case ask () k -> k True"
+            ]
+            |> String.concat "\n"
+
+        let workspace =
+            compileInMemoryWorkspace
+                "memory-m4-handler-row-interface-mismatch-root"
+                [ "main.kp", mainSource ]
+
+        Assert.True(workspace.HasErrors, "Expected handlers to reject rows whose handled label is paired with the wrong effect interface.")
+        Assert.Contains(workspace.Diagnostics, fun diagnostic -> diagnostic.Code = DiagnosticCode.HandlerEffectRowMismatch)
+
+
+    [<Fact>]
+    let ``deep handlers accept an effect label carried in a record field`` () =
+        let mainSource =
+            [
+                "@PrivateByDefault module main"
+                ""
+                "ok : Int"
+                "let ok : Int ="
+                "    block"
+                "        scoped effect Ask ="
+                "            ask : Unit -> Bool"
+                ""
+                "        let pkg = (label = Ask)"
+                ""
+                "        let comp : Eff <[Ask : Ask]> Int ="
+                "            do"
+                "                let b <- Ask.ask ()"
+                "                if b then 1 else 0"
+                ""
+                "        let handled : Eff <[ ]> Int ="
+                "            deep handle pkg.label comp with"
+                "                case return x -> pure x"
+                "                case ask () k -> k True"
+                ""
+                "        runPure handled"
+            ]
+            |> String.concat "\n"
+
+        let workspace, result =
+            evaluateInMemoryBinding
+                "memory-m4-handler-record-label-root"
+                "main.ok"
+                [ "main.kp", mainSource ]
+
+        Assert.False(workspace.HasErrors, sprintf "Expected record-carried effect label handling to typecheck, got:%s%s" Environment.NewLine (diagnosticsText workspace.Diagnostics))
+
+        match result with
+        | Result.Ok value ->
+            Assert.Equal("1", RuntimeValue.format value)
+        | Result.Error issue ->
+            failwithf "Expected record-carried effect label handling to succeed, got %s" issue.Message
+
+
+    [<Fact>]
+    let ``multishot rebound operation values still trigger capture checks`` () =
+        let mainSource =
+            [
+                "@PrivateByDefault module main"
+                ""
+                "bad : (1 x : Int) -> Int"
+                "let bad (1 x : Int) : Int ="
+                "    block"
+                "        scoped effect Choice ="
+                "            ω choose : Unit -> Bool"
+                ""
+                "        let choose = Choice.choose"
+                ""
+                "        let comp : Eff <[Choice : Choice]> Int ="
+                "            do"
+                "                let b <- choose ()"
+                "                if b then x else x"
+                ""
+                "        let handled ="
+                "            deep handle Choice comp with"
+                "                case return y -> pure y"
+                "                case choose _ k ->"
+                "                    do"
+                "                        let a <- k True"
+                "                        let _ <- k False"
+                "                        pure a"
+                ""
+                "        runPure handled"
+            ]
+            |> String.concat "\n"
+
+        let workspace =
+            compileInMemoryWorkspace
+                "memory-m4-multishot-operation-alias-root"
+                [ "main.kp", mainSource ]
+
+        Assert.True(workspace.HasErrors, "Expected rebound multishot operation values to be rejected.")
+        Assert.Contains(workspace.Diagnostics, fun diagnostic -> diagnostic.Code = DiagnosticCode.QttContinuationCapture)
+
+
+    [<Fact>]
+    let ``shadowed same spelling effects do not widen rebound one shot operation values`` () =
+        let mainSource =
+            [
+                "@PrivateByDefault module main"
+                ""
+                "ok : (1 x : Int) -> Int"
+                "let ok (1 x : Int) : Int ="
+                "    block"
+                "        scoped effect Ask ="
+                "            1 ask : Unit -> Bool"
+                ""
+                "        let l = Ask"
+                "        let ask = Ask.ask"
+                ""
+                "        let comp : Eff <[Ask : Ask]> Int ="
+                "            do"
+                "                let b <- ask ()"
+                "                if b then x else x"
+                ""
+                "        block"
+                "            scoped effect Ask ="
+                "                ω ask : Unit -> Bool"
+                ""
+                "            let handled ="
+                "                deep handle l comp with"
+                "                    case return y -> pure y"
+                "                    case ask () k -> k True"
+                ""
+                "            runPure handled"
+                ""
+                "result : Int"
+                "let result = ok 1"
+            ]
+            |> String.concat "\n"
+
+        let workspace, result =
+            evaluateInMemoryBinding
+                "memory-m4-shadowed-rebound-operation-root"
+                "main.result"
+                [ "main.kp", mainSource ]
+
+        Assert.False(workspace.HasErrors, sprintf "Expected rebound one-shot operation values to keep their original semantics under same-spelling shadowing, got:%s%s" Environment.NewLine (diagnosticsText workspace.Diagnostics))
+        Assert.DoesNotContain(workspace.Diagnostics, fun diagnostic -> diagnostic.Code = DiagnosticCode.QttContinuationCapture)
+
+        match result with
+        | Result.Ok value ->
+            Assert.Equal("1", RuntimeValue.format value)
+        | Result.Error issue ->
+            failwithf "Expected rebound one-shot operation value to evaluate successfully, got %s" issue.Message
+
+
+    [<Fact>]
+    let ``interpreter executes multishot handled programs`` () =
+        let mainSource =
+            [
+                "@PrivateByDefault module main"
+                ""
+                "result : Int"
+                "let result ="
+                "    block"
+                "        scoped effect Choice ="
+                "            ω choose : Unit -> Bool"
+                ""
+                "        let comp : Eff <[Choice : Choice]> Int ="
+                "            do"
+                "                let b <- Choice.choose ()"
+                "                if b then 1 else 2"
+                ""
+                "        let handled : Eff <[ ]> Int ="
+                "            deep handle Choice comp with"
+                "                case return x -> pure x"
+                "                case choose () k ->"
+                "                    do"
+                "                        let a <- k True"
+                "                        let b <- k False"
+                "                        pure (a + b)"
+                ""
+                "        runPure handled"
+            ]
+            |> String.concat "\n"
+
+        let workspace, result =
+            evaluateInMemoryBinding
+                "memory-m4-interpreter-multishot-root"
+                "main.result"
+                [ "main.kp", mainSource ]
+
+        Assert.False(workspace.HasErrors, diagnosticsText workspace.Diagnostics)
+
+        match result with
+        | Result.Ok value ->
+            Assert.Equal("3", RuntimeValue.format value)
+        | Result.Error issue ->
+            failwithf "Expected multishot interpreter evaluation to succeed, got %s" issue.Message
+
+
+    [<Fact>]
+    let ``shallow handler resumptions do not collapse into the handled carrier`` () =
+        let mainSource =
+            [
+                "@PrivateByDefault module main"
+                ""
+                "bad : Eff <[ ]> Int"
+                "let bad : Eff <[ ]> Int ="
+                "    block"
+                "        scoped effect Ask ="
+                "            ask : Unit -> Bool"
+                ""
+                "        let comp : Eff <[Ask : Ask]> Int ="
+                "            do"
+                "                let b <- Ask.ask ()"
+                "                if b then 1 else 0"
+                ""
+                "        let acceptHandled : (1 k : ((1 x : Bool) -> Eff <[ ]> Int)) -> Eff <[ ]> Int ="
+                "            \\(1 k : ((1 x : Bool) -> Eff <[ ]> Int)) -> k True"
+                ""
+                "        handle Ask comp with"
+                "            case return y -> pure y"
+                "            case ask () k ->"
+                "                acceptHandled k"
+            ]
+            |> String.concat "\n"
+
+        let workspace =
+            compileInMemoryWorkspace
+                "memory-m4-shallow-carrier-root"
+                [ "main.kp", mainSource ]
+
+        Assert.True(workspace.HasErrors, "Expected shallow handler resumptions with the handled carrier to be rejected.")
+        Assert.Contains(workspace.Diagnostics, fun diagnostic -> diagnostic.Code = DiagnosticCode.TypeEqualityMismatch)
+
+
+    [<Fact>]
+    let ``one shot resumptions remain one shot under a qualified imported handled label`` () =
+        let libSource =
+            [
+                "module lib"
+                ""
+                "effect Ask ="
+                "    1 ask : Unit -> Bool"
+            ]
+            |> String.concat "\n"
+
+        let mainSource =
+            [
+                "@PrivateByDefault module main"
+                "import lib"
+                ""
+                "bad : Int"
+                "let bad : Int ="
+                "    block"
+                "        let comp : Eff <[lib.Ask : lib.Ask]> Int ="
+                "            do"
+                "                let _ <- lib.Ask.ask ()"
+                "                pure 1"
+                ""
+                "        let handled ="
+                "            deep handle lib.Ask comp with"
+                "                case return y -> pure y"
+                "                case ask _ k ->"
+                "                    do"
+                "                        let a <- k True"
+                "                        let _ <- k False"
+                "                        pure a"
+                ""
+                "        runPure handled"
+            ]
+            |> String.concat "\n"
+
+        let workspace =
+            compileInMemoryWorkspace
+                "memory-m4-oneshot-imported-label-overuse-root"
+                [ "lib.kp", libSource
+                  "main.kp", mainSource ]
+
+        Assert.True(workspace.HasErrors, "Expected one-shot resumption overuse under a qualified imported handled label to be rejected.")
+        Assert.Contains(workspace.Diagnostics, fun diagnostic -> diagnostic.Code = DiagnosticCode.QttLinearOveruse)
+
+
+    [<Fact>]
+    let ``qualified imported effect labels remain usable across modules`` () =
+        let libSource =
+            [
+                "module lib"
+                ""
+                "effect Ask ="
+                "    1 ask : Unit -> Bool"
+            ]
+            |> String.concat "\n"
+
+        let mainSource =
+            [
+                "@PrivateByDefault module main"
+                "import lib"
+                ""
+                "ok : Int"
+                "let ok : Int ="
+                "    block"
+                "        let comp : Eff <[lib.Ask : lib.Ask]> Int ="
+                "            do"
+                "                let b <- lib.Ask.ask ()"
+                "                if b then 1 else 0"
+                ""
+                "        let handled : Eff <[ ]> Int ="
+                "            deep handle lib.Ask comp with"
+                "                case return x -> pure x"
+                "                case ask () k -> k True"
+                ""
+                "        runPure handled"
+            ]
+            |> String.concat "\n"
+
+        let workspace, result =
+            evaluateInMemoryBinding
+                "memory-m4-imported-effect-label-root"
+                "main.ok"
+                [ "lib.kp", libSource
+                  "main.kp", mainSource ]
+
+        Assert.False(workspace.HasErrors, sprintf "Expected qualified imported effect labels to resolve, got:%s%s" Environment.NewLine (diagnosticsText workspace.Diagnostics))
+
+        match result with
+        | Result.Ok value ->
+            Assert.Equal("1", RuntimeValue.format value)
+        | Result.Error issue ->
+            failwithf "Expected imported effect label evaluation to succeed, got %s" issue.Message
+
+
+    [<Fact>]
+    let ``private top level effects do not leak through qualified imports`` () =
+        let libSource =
+            [
+                "@PrivateByDefault module lib"
+                ""
+                "effect Ask ="
+                "    1 ask : Unit -> Bool"
+            ]
+            |> String.concat "\n"
+
+        let mainSource =
+            [
+                "@PrivateByDefault module main"
+                "import lib"
+                ""
+                "ok : Int"
+                "let ok : Int ="
+                "    block"
+                "        let comp : Eff <[lib.Ask : lib.Ask]> Int ="
+                "            do"
+                "                let b <- lib.Ask.ask ()"
+                "                if b then 1 else 0"
+                ""
+                "        let handled : Eff <[ ]> Int ="
+                "            deep handle lib.Ask comp with"
+                "                case return x -> pure x"
+                "                case ask () k -> k True"
+                ""
+                "        runPure handled"
+            ]
+            |> String.concat "\n"
+
+        let workspace =
+            compileInMemoryWorkspace
+                "memory-m4-private-imported-effect-label-root"
+                [ "lib.kp", libSource
+                  "main.kp", mainSource ]
+
+        Assert.True(workspace.HasErrors, "Expected private top-level effects not to leak through qualified imports.")
+
+
+    [<Fact>]
+    let ``handlers reject normalized tail aliases whose handled label names a different interface`` () =
+        let mainSource =
+            [
+                "@PrivateByDefault module main"
+                ""
+                "effect Ask ="
+                "    1 ask : Unit -> Bool"
+                ""
+                "effect Other ="
+                "    other : Unit -> Int"
+                ""
+                "type WrongAskTail (r : EffRow) = <[Ask : Other | r]>"
+                ""
+                "probe : Int"
+                "let probe : Int ="
+                "    block"
+                "        let badHandle : forall (r : EffRow). Eff <[Other : Other | WrongAskTail r]> Int -> Eff <[Other : Other | r]> Int ="
+                "            \\(comp : Eff <[Other : Other | WrongAskTail r]> Int) ->"
+                "                handle Ask comp with"
+                "                    case return y -> pure y"
+                "                    case ask () k -> k True"
+                ""
+                "        0"
+            ]
+            |> String.concat "\n"
+
+        let workspace =
+            compileInMemoryWorkspace
+                "memory-m4-open-row-tail-alias-mismatch-root"
+                [ "main.kp", mainSource ]
+
+        Assert.True(workspace.HasErrors, "Expected normalized tail aliases with mismatched handled interfaces to be rejected.")
+        Assert.Contains(workspace.Diagnostics, fun diagnostic -> diagnostic.Code = DiagnosticCode.HandlerEffectRowMismatch)
+
+
+    [<Fact>]
+    let ``rebound local effect operation values remain effectful in do bind`` () =
+        let mainSource =
+            [
+                "module main"
+                ""
+                "result : Int"
+                "let result : Int ="
+                "    block"
+                "        scoped effect Ask ="
+                "            ask : Unit -> Bool"
+                ""
+                "        let ask = Ask.ask"
+                ""
+                "        let comp : Eff <[Ask : Ask]> Int ="
+                "            do"
+                "                let b <- ask ()"
+                "                if b then 1 else 0"
+                ""
+                "        let handled : Eff <[ ]> Int ="
+                "            deep handle Ask comp with"
+                "                case return x -> pure x"
+                "                case ask () k -> k True"
+                ""
+                "        runPure handled"
+            ]
+            |> String.concat "\n"
+
+        let workspace, result =
+            evaluateInMemoryBinding
+                "memory-m4-rebound-operation-local-alias-root"
+                "main.result"
+                [ "main.kp", mainSource ]
+
+        Assert.False(workspace.HasErrors, sprintf "Expected rebound local operation values to typecheck and run, got:%s%s" Environment.NewLine (diagnosticsText workspace.Diagnostics))
+
+        match result with
+        | Result.Ok value ->
+            Assert.Equal("1", RuntimeValue.format value)
+        | Result.Error issue ->
+            failwithf "Expected rebound local operation values to evaluate successfully, got %s" issue.Message
+
+
+module MilestoneFourTestsShard2 =
+
+    [<Fact>]
+    let ``interpreter rejects repeated use of a consumed one shot resumption`` () =
+        let mainSource =
+            [
+                "module main"
+                ""
+                "result : Int"
+                "let result : Int ="
+                "    block"
+                "        scoped effect Ask ="
+                "            1 ask : Unit -> Bool"
+                ""
+                "        let comp : Eff <[Ask : Ask]> Int ="
+                "            do"
+                "                let b <- Ask.ask ()"
+                "                if b then 1 else 0"
+                ""
+                "        let handled : Eff <[ ]> Int ="
+                "            deep handle Ask comp with"
+                "                case return x -> pure x"
+                "                case ask () k -> k True"
+                ""
+                "        runPure handled"
+            ]
+            |> String.concat "\n"
+
+        let workspace =
+            compileInMemoryWorkspace
+                "memory-m4-runtime-oneshot-failsafe-root"
+                [ "main.kp", mainSource ]
+
+        Assert.False(workspace.HasErrors, sprintf "Expected source workspace to compile cleanly, got:%s%s" Environment.NewLine (diagnosticsText workspace.Diagnostics))
+
+        let malformedWorkspace =
+            { workspace with
+                KRuntimeIR =
+                    workspace.KRuntimeIR
+                    |> List.map (fun runtimeModule ->
+                        if runtimeModule.Name = "main" then
+                            { runtimeModule with
+                                Bindings =
+                                    runtimeModule.Bindings
+                                    |> List.map (fun binding ->
+                                        if binding.Name = "result" then
+                                            { binding with Body = binding.Body |> Option.map duplicateFirstResumptionUse }
+                                        else
+                                            binding) }
+                        else
+                            runtimeModule) }
+
+        match Interpreter.evaluateBinding malformedWorkspace "main.result" with
+        | Result.Ok value ->
+            failwithf "Expected duplicated one-shot resumption to fail at runtime, but interpreter returned %s" (RuntimeValue.format value)
+        | Result.Error issue ->
+            Assert.Contains("one-shot resumption", issue.Message, StringComparison.Ordinal)
+
+
+    [<Fact>]
+    let ``handlers reject a missing return clause`` () =
+        let mainSource =
+            [
+                "@PrivateByDefault module main"
+                ""
+                "bad : Eff <[ ]> Int"
+                "let bad : Eff <[ ]> Int ="
+                "    block"
+                "        scoped effect Ask ="
+                "            ask : Unit -> Bool"
+                ""
+                "        let comp : Eff <[Ask : Ask]> Int ="
+                "            do"
+                "                let b <- Ask.ask ()"
+                "                if b then 1 else 0"
+                ""
+                "        handle Ask comp with"
+                "            case ask () k -> k True"
+            ]
+            |> String.concat "\n"
+
+        let workspace =
+            compileInMemoryWorkspace
+                "memory-m4-missing-return-clause-root"
+                [ "main.kp", mainSource ]
+
+        Assert.True(workspace.HasErrors, "Expected handlers without a return clause to be rejected.")
+        Assert.Contains(workspace.Diagnostics, fun diagnostic -> diagnostic.Code = DiagnosticCode.HandlerClauseMissing)
+
+
+    [<Fact>]
+    let ``handlers reject operation clauses with mismatched parameter arity`` () =
+        let mainSource =
+            [
+                "@PrivateByDefault module main"
+                ""
+                "bad : Eff <[ ]> Int"
+                "let bad : Eff <[ ]> Int ="
+                "    block"
+                "        scoped effect Pairing ="
+                "            pair : Int -> Bool -> String"
+                ""
+                "        let comp : Eff <[Pairing : Pairing]> Int ="
+                "            do"
+                "                let _ <- Pairing.pair 1 True"
+                "                0"
+                ""
+                "        handle Pairing comp with"
+                "            case return x -> pure x"
+                "            case pair x k -> pure 0"
+                "            case pair x y z k -> pure 0"
+            ]
+            |> String.concat "\n"
+
+        let workspace =
+            compileInMemoryWorkspace
+                "memory-m4-handler-arity-root"
+                [ "main.kp", mainSource ]
+
+        Assert.True(workspace.HasErrors, "Expected handler clauses with wrong parameter arity to be rejected.")
+        Assert.Contains(workspace.Diagnostics, fun diagnostic -> diagnostic.Code = DiagnosticCode.HandlerClauseArityMismatch)
+
+
+    [<Fact>]
+    let ``shallow handler clauses must agree on a single target carrier`` () =
+        let mainSource =
+            [
+                "@PrivateByDefault module main"
+                ""
+                "bad : Eff <[ ]> Int"
+                "let bad : Eff <[ ]> Int ="
+                "    block"
+                "        scoped effect Ask ="
+                "            ask : Unit -> Bool"
+                ""
+                "        let comp : Eff <[Ask : Ask]> Int ="
+                "            do"
+                "                let b <- Ask.ask ()"
+                "                if b then 1 else 0"
+                ""
+                "        handle Ask comp with"
+                "            case return x -> pure x"
+                "            case ask () k -> 0"
+            ]
+            |> String.concat "\n"
+
+        let workspace =
+            compileInMemoryWorkspace
+                "memory-m4-shallow-handler-carrier-root"
+                [ "main.kp", mainSource ]
+
+        Assert.True(workspace.HasErrors, "Expected mismatched shallow handler clause carriers to be rejected.")
+        Assert.Contains(workspace.Diagnostics, fun diagnostic -> diagnostic.Code = DiagnosticCode.TypeEqualityMismatch)
+
+
+    [<Fact>]
+    let ``deep handlers can eliminate one label from a closed multi effect row`` () =
+        let mainSource =
+            [
+                "@PrivateByDefault module main"
+                ""
+                "ok : Eff <[Other : Other]> Int"
+                "let ok : Eff <[Other : Other]> Int ="
+                "    block"
+                "        scoped effect Ask ="
+                "            ask : Unit -> Bool"
+                ""
+                "        scoped effect Other ="
+                "            other : Unit -> Int"
+                ""
+                "        let comp : Eff <[Ask : Ask, Other : Other]> Int ="
+                "            do"
+                "                let b <- Ask.ask ()"
+                "                if b then 1 else 0"
+                ""
+                "        deep handle Ask comp with"
+                "            case return x -> pure x"
+                "            case ask () k -> k True"
+            ]
+            |> String.concat "\n"
+
+        let workspace =
+            compileInMemoryWorkspace
+                "memory-m4-handler-row-remainder-root"
+                [ "main.kp", mainSource ]
+
+        Assert.False(workspace.HasErrors, sprintf "Expected deep handler over a closed multi-effect row to typecheck, got:%s%s" Environment.NewLine (diagnosticsText workspace.Diagnostics))
+
+
+    [<Fact>]
+    let ``effect operation selection accepts an effect label carried in a record field`` () =
+        let mainSource =
+            [
+                "@PrivateByDefault module main"
+                ""
+                "ok : Int"
+                "let ok : Int ="
+                "    block"
+                "        scoped effect Ask ="
+                "            ask : Unit -> Bool"
+                ""
+                "        let pkg = (label = Ask)"
+                ""
+                "        let comp : Eff <[Ask : Ask]> Int ="
+                "            do"
+                "                let b <- pkg.label.ask ()"
+                "                if b then 1 else 0"
+                ""
+                "        let handled : Eff <[ ]> Int ="
+                "            deep handle Ask comp with"
+                "                case return x -> pure x"
+                "                case ask () k -> k True"
+                ""
+                "        runPure handled"
+            ]
+            |> String.concat "\n"
+
+        let workspace, result =
+            evaluateInMemoryBinding
+                "memory-m4-op-record-label-root"
+                "main.ok"
+                [ "main.kp", mainSource ]
+
+        Assert.False(workspace.HasErrors, sprintf "Expected record-carried effect operation selection to typecheck, got:%s%s" Environment.NewLine (diagnosticsText workspace.Diagnostics))
+
+        match result with
+        | Result.Ok value ->
+            Assert.Equal("1", RuntimeValue.format value)
+        | Result.Error issue ->
+            failwithf "Expected record-carried effect operation selection to succeed, got %s" issue.Message
+
+
+    [<Fact>]
+    let ``multishot record carried operation values still trigger capture checks`` () =
+        let mainSource =
+            [
+                "@PrivateByDefault module main"
+                ""
+                "bad : (1 x : Int) -> Int"
+                "let bad (1 x : Int) : Int ="
+                "    block"
+                "        scoped effect Choice ="
+                "            ω choose : Unit -> Bool"
+                ""
+                "        let ops = (choose = Choice.choose)"
+                ""
+                "        let comp : Eff <[Choice : Choice]> Int ="
+                "            do"
+                "                let b <- ops.choose ()"
+                "                if b then x else x"
+                ""
+                "        let handled ="
+                "            deep handle Choice comp with"
+                "                case return y -> pure y"
+                "                case choose _ k ->"
+                "                    do"
+                "                        let a <- k True"
+                "                        let _ <- k False"
+                "                        pure a"
+                ""
+                "        runPure handled"
+            ]
+            |> String.concat "\n"
+
+        let workspace =
+            compileInMemoryWorkspace
+                "memory-m4-multishot-operation-record-root"
+                [ "main.kp", mainSource ]
+
+        Assert.True(workspace.HasErrors, "Expected record-carried multishot operation values to be rejected.")
+        Assert.Contains(workspace.Diagnostics, fun diagnostic -> diagnostic.Code = DiagnosticCode.QttContinuationCapture)
+
+
+    [<Fact>]
+    let ``zig backend runs one shot handled programs`` () =
+        let mainSource =
+            [
+                "@PrivateByDefault module main"
+                ""
+                "result : Int"
+                "let result ="
+                "    block"
+                "        scoped effect Ask ="
+                "            ask : Unit -> Bool"
+                ""
+                "        let comp : Eff <[Ask : Ask]> Int ="
+                "            do"
+                "                let b <- Ask.ask ()"
+                "                if b then 1 else 0"
+                ""
+                "        let handled : Eff <[ ]> Int ="
+                "            deep handle Ask comp with"
+                "                case return x -> pure x"
+                "                case ask () k -> k True"
+                ""
+                "        runPure handled"
+            ]
+            |> String.concat "\n"
+
+        let workspace =
+            compileInMemoryWorkspaceWithBackend
+                "memory-m4-zig-one-shot-effect-root"
+                "zig"
+                [ "main.kp", mainSource ]
+
+        Assert.False(workspace.HasErrors, diagnosticsText workspace.Diagnostics)
+        Assert.DoesNotContain(workspace.Diagnostics, fun diagnostic -> diagnostic.Code = DiagnosticCode.EffectRuntimeUnsupportedBackend)
+
+        let outputDirectory = createScratchDirectory "zig-m4-one-shot-effects"
+
+        let artifact =
+            match Backend.emitZigArtifact workspace "main.result" outputDirectory with
+            | Result.Ok artifact -> artifact
+            | Result.Error message -> failwith message
+
+        let compileResult =
+            runProcess
+                outputDirectory
+                (ensureRepoZigExecutablePath ())
+                $"cc -std=c11 -O0 -o \"{artifact.ExecutableFilePath}\" \"{artifact.SourceFilePath}\""
+
+        Assert.Equal(0, compileResult.ExitCode)
+        Assert.True(String.IsNullOrWhiteSpace(compileResult.StandardError), compileResult.StandardError)
+
+        let runResult = runProcess outputDirectory artifact.ExecutableFilePath ""
+        Assert.Equal(0, runResult.ExitCode)
+        Assert.Equal("1", runResult.StandardOutput.Trim())
+        Assert.True(String.IsNullOrWhiteSpace(runResult.StandardError), runResult.StandardError)
+
+
+    [<Fact>]
+    let ``dotnet backend runs multishot handled programs`` () =
+        let mainSource =
+            [
+                "@PrivateByDefault module main"
+                ""
+                "result : Int"
+                "let result ="
+                "    block"
+                "        scoped effect Choice ="
+                "            ω choose : Unit -> Bool"
+                ""
+                "        let comp : Eff <[Choice : Choice]> Int ="
+                "            do"
+                "                let b <- Choice.choose ()"
+                "                if b then 1 else 2"
+                ""
+                "        let handled : Eff <[ ]> Int ="
+                "            deep handle Choice comp with"
+                "                case return x -> pure x"
+                "                case choose () k ->"
+                "                    do"
+                "                        let a <- k True"
+                "                        let b <- k False"
+                "                        pure (a + b)"
+                ""
+                "        runPure handled"
+            ]
+            |> String.concat "\n"
+
+        let workspace =
+            compileInMemoryWorkspaceWithBackend
+                "memory-m4-dotnet-multishot-effect-root"
+                "dotnet"
+                [ "main.kp", mainSource ]
+
+        Assert.False(workspace.HasErrors, diagnosticsText workspace.Diagnostics)
+        Assert.DoesNotContain(workspace.Diagnostics, fun diagnostic -> diagnostic.Code = DiagnosticCode.EffectRuntimeUnsupportedBackend)
+        Assert.DoesNotContain(workspace.Diagnostics, fun diagnostic -> diagnostic.Code = DiagnosticCode.MultishotEffectUnsupportedBackend)
+
+        let outputDirectory = createScratchDirectory "dotnet-m4-multishot-effects"
+
+        let artifact =
+            match Backend.emitDotNetArtifact workspace "main.result" outputDirectory DotNetDeployment.Managed with
+            | Result.Ok artifact -> artifact
+            | Result.Error message -> failwith message
+
+        let runResult =
+            runProcess outputDirectory "dotnet" $"run --project \"{artifact.ProjectFilePath}\" -c Release"
+
+        Assert.Equal(0, runResult.ExitCode)
+        Assert.Equal("3", runResult.StandardOutput.Trim())
+        Assert.True(String.IsNullOrWhiteSpace(runResult.StandardError), runResult.StandardError)
+
+
+    [<Fact>]
+    let ``one shot resumptions cannot be resumed twice`` () =
+        let fixturePath =
+            Path.Combine(
+                __SOURCE_DIRECTORY__,
+                "Fixtures",
+                "borrow_qtt.100_interactions.handler_reject_oneshot_resumption_overuse",
+                "main.kp"
+            )
+
+        let mainSource = File.ReadAllText fixturePath
+
+        let workspace =
+            compileInMemoryWorkspace
+                "memory-m4-oneshot-overuse-root"
+                [ "main.kp", mainSource ]
+
+        Assert.True(workspace.HasErrors, "Expected one-shot resumption overuse to be rejected.")
+        Assert.Contains(workspace.Diagnostics, fun diagnostic -> diagnostic.Code = DiagnosticCode.QttLinearOveruse)
+
+
+    [<Fact>]
+    let ``shadowed same spelling effects do not widen rebound one shot resumptions`` () =
+        let mainSource =
+            [
+                "@PrivateByDefault module main"
+                ""
+                "bad : Int"
+                "let bad : Int ="
+                "    block"
+                "        scoped effect Ask ="
+                "            1 ask : Unit -> Bool"
+                ""
+                "        let l = Ask"
+                ""
+                "        let comp : Eff <[Ask : Ask]> Int ="
+                "            do"
+                "                let _ <- l.ask ()"
+                "                pure 1"
+                ""
+                "        block"
+                "            scoped effect Ask ="
+                "                ω ask : Unit -> Bool"
+                ""
+                "            let handled ="
+                "                deep handle l comp with"
+                "                    case return y -> pure y"
+                "                    case ask () k ->"
+                "                        do"
+                "                            let a <- k True"
+                "                            let _ <- k False"
+                "                            pure a"
+                ""
+                "            runPure handled"
+            ]
+            |> String.concat "\n"
+
+        let workspace =
+            compileInMemoryWorkspace
+                "memory-m4-shadowed-rebound-oneshot-root"
+                [ "main.kp", mainSource ]
+
+        Assert.True(workspace.HasErrors, "Expected one-shot resumption overuse to stay rejected under same-spelling shadowing.")
+        Assert.Contains(workspace.Diagnostics, fun diagnostic -> diagnostic.Code = DiagnosticCode.QttLinearOveruse)
+
+
+    [<Fact>]
+    let ``selectively imported effect labels remain usable across modules`` () =
+        let libSource =
+            [
+                "module lib"
+                ""
+                "effect Ask ="
+                "    1 ask : Unit -> Bool"
+            ]
+            |> String.concat "\n"
+
+        let mainSource =
+            [
+                "@PrivateByDefault module main"
+                "import lib.(Ask)"
+                ""
+                "ok : Int"
+                "let ok : Int ="
+                "    block"
+                "        let comp : Eff <[Ask : Ask]> Int ="
+                "            do"
+                "                let b <- Ask.ask ()"
+                "                if b then 1 else 0"
+                ""
+                "        let handled : Eff <[ ]> Int ="
+                "            deep handle Ask comp with"
+                "                case return x -> pure x"
+                "                case ask () k -> k True"
+                ""
+                "        runPure handled"
+            ]
+            |> String.concat "\n"
+
+        let workspace, result =
+            evaluateInMemoryBinding
+                "memory-m4-selective-imported-effect-label-root"
+                "main.ok"
+                [ "lib.kp", libSource
+                  "main.kp", mainSource ]
+
+        Assert.False(workspace.HasErrors, sprintf "Expected selectively imported effect labels to resolve, got:%s%s" Environment.NewLine (diagnosticsText workspace.Diagnostics))
+
+        match result with
+        | Result.Ok value ->
+            Assert.Equal("1", RuntimeValue.format value)
+        | Result.Error issue ->
+            failwithf "Expected selectively imported effect label evaluation to succeed, got %s" issue.Message
+
+
+    [<Fact>]
+    let ``handlers reject open rows whose declared remainder does not account for the handled label`` () =
+        let mainSource =
+            [
+                "@PrivateByDefault module main"
+                ""
+                "probe : Int"
+                "let probe : Int ="
+                "    block"
+                "        scoped effect Ask ="
+                "            1 ask : Unit -> Bool"
+                ""
+                "        scoped effect Other ="
+                "            other : Unit -> Int"
+                ""
+                "        let badHandle : forall (r : EffRow). Eff <[Other : Other | r]> Int -> Eff r Int ="
+                "            \\(comp : Eff <[Other : Other | r]> Int) ->"
+                "                handle Ask comp with"
+                "                    case return y -> pure y"
+                "                    case ask () k -> k True"
+                ""
+                "        0"
+            ]
+            |> String.concat "\n"
+
+        let workspace =
+            compileInMemoryWorkspace
+                "memory-m4-open-row-mismatch-root"
+                [ "main.kp", mainSource ]
+
+        Assert.True(workspace.HasErrors, "Expected handler typing to reject open rows whose declared remainder cannot account for the handled label.")
+        Assert.Contains(workspace.Diagnostics, fun diagnostic -> diagnostic.Code = DiagnosticCode.HandlerEffectRowMismatch || diagnostic.Code = DiagnosticCode.TypeEqualityMismatch)
+
+
+    [<Fact>]
+    let ``handlers can split a handled label out of a local normalized tail alias`` () =
+        let mainSource =
+            [
+                "@PrivateByDefault module main"
+                ""
+                "probe : Int"
+                "let probe : Int ="
+                "    block"
+                "        scoped effect Ask ="
+                "            1 ask : Unit -> Bool"
+                ""
+                "        scoped effect Other ="
+                "            other : Unit -> Int"
+                ""
+                "        type AskTail (r : EffRow) = <[Ask : Ask | r]>"
+                ""
+                "        let handleAsk : forall (r : EffRow). Eff <[Other : Other | AskTail r]> Int -> Eff <[Other : Other | r]> Int ="
+                "            \\(comp : Eff <[Other : Other | AskTail r]> Int) ->"
+                "                handle Ask comp with"
+                "                    case return y -> pure y"
+                "                    case ask () k -> k True"
+                ""
+                "        0"
+            ]
+            |> String.concat "\n"
+
+        let workspace =
+            compileInMemoryWorkspace
+                "memory-m4-local-open-row-tail-alias-root"
+                [ "main.kp", mainSource ]
+
+        Assert.False(workspace.HasErrors, sprintf "Expected handlers to split handled labels from local normalized tail aliases, got:%s%s" Environment.NewLine (diagnosticsText workspace.Diagnostics))
+
+
+    [<Fact>]
+    let ``rebound multi argument effect operation values preserve declared arity`` () =
+        let mainSource =
+            [
+                "module main"
+                ""
+                "result : Int"
+                "let result : Int ="
+                "    block"
+                "        scoped effect Pairing ="
+                "            pair : Int -> Bool -> Int"
+                ""
+                "        let pair = Pairing.pair"
+                ""
+                "        let comp : Eff <[Pairing : Pairing]> Int ="
+                "            do"
+                "                let pairWith41 = pair 41"
+                "                let n <- pairWith41 True"
+                "                n"
+                ""
+                "        let handled : Eff <[ ]> Int ="
+                "            deep handle Pairing comp with"
+                "                case return x -> pure x"
+                "                case pair x y k ->"
+                "                    if y then k (x + 1) else k x"
+                ""
+                "        runPure handled"
+            ]
+            |> String.concat "\n"
+
+        let workspace, result =
+            evaluateInMemoryBinding
+                "memory-m4-rebound-operation-arity-root"
+                "main.result"
+                [ "main.kp", mainSource ]
+
+        Assert.False(workspace.HasErrors, sprintf "Expected rebound multi-argument operation values to typecheck and run, got:%s%s" Environment.NewLine (diagnosticsText workspace.Diagnostics))
+
+        match result with
+        | Result.Ok value ->
+            Assert.Equal("42", RuntimeValue.format value)
+        | Result.Error issue ->
+            failwithf "Expected rebound multi-argument operation values to evaluate successfully, got %s" issue.Message
+
+
+module MilestoneFourTestsShard3 =
+
+    [<Fact>]
+    let ``deep handlers elaborate to a recursive shallow driver before KCore and KRuntimeIR`` () =
+        let mainSource =
+            [
+                "@PrivateByDefault module main"
+                ""
+                "handled : Eff <[ ]> Int"
+                "let handled : Eff <[ ]> Int ="
+                "    block"
+                "        scoped effect Ask ="
+                "            ask : Unit -> Bool"
+                ""
+                "        let comp : Eff <[Ask : Ask]> Int ="
+                "            do"
+                "                let b <- Ask.ask ()"
+                "                if b then 1 else 0"
+                ""
+                "        deep handle Ask comp with"
+                "            case return x -> pure x"
+                "            case ask () k -> k True"
+            ]
+            |> String.concat "\n"
+
+        let workspace =
+            compileInMemoryWorkspace
+                "memory-m4-deep-driver-root"
+                [ "main.kp", mainSource ]
+
+        Assert.False(workspace.HasErrors, sprintf "Expected no diagnostics, got:%s%s" Environment.NewLine (diagnosticsText workspace.Diagnostics))
+
+        let coreModule =
+            workspace.KCore
+            |> List.find (fun moduleDump -> moduleDump.Name = "main")
+
+        let coreBinding =
+            coreModule.Declarations
+            |> List.pick (fun declaration ->
+                match declaration.Binding with
+                | Some binding when binding.Name = Some "handled" -> Some binding
+                | _ -> None)
+
+        match coreBinding.Body with
+        | Some body ->
+            Assert.False(containsDeepCoreHandle body, "Expected KCore lowering to remove direct deep-handle nodes.")
+            Assert.True(containsRecursiveShallowCoreDriver body, "Expected KCore lowering to synthesize a recursive shallow-handler driver.")
+        | None ->
+            failwith "Expected handled binding to have a KCore body."
+
+        let runtimeModule =
+            workspace.KRuntimeIR
+            |> List.find (fun moduleDump -> moduleDump.Name = "main")
+
+        let runtimeBinding =
+            runtimeModule.Bindings
+            |> List.find (fun binding -> binding.Name = "handled")
+
+        match runtimeBinding.Body with
+        | Some body ->
+            Assert.False(containsDeepRuntimeHandle body, "Expected KRuntimeIR lowering to remove direct deep-handle nodes.")
+        | None ->
+            failwith "Expected handled binding to have a KRuntimeIR body."
+
+
+    [<Fact>]
+    let ``handlers reject duplicate return clauses`` () =
+        let mainSource =
+            [
+                "@PrivateByDefault module main"
+                ""
+                "bad : Eff <[ ]> Int"
+                "let bad : Eff <[ ]> Int ="
+                "    block"
+                "        scoped effect Ask ="
+                "            ask : Unit -> Bool"
+                ""
+                "        let comp : Eff <[Ask : Ask]> Int ="
+                "            do"
+                "                let b <- Ask.ask ()"
+                "                if b then 1 else 0"
+                ""
+                "        handle Ask comp with"
+                "            case return x -> pure x"
+                "            case return y -> pure y"
+                "            case ask () k -> k True"
+            ]
+            |> String.concat "\n"
+
+        let workspace =
+            compileInMemoryWorkspace
+                "memory-m4-duplicate-return-clause-root"
+                [ "main.kp", mainSource ]
+
+        Assert.True(workspace.HasErrors, "Expected handlers with duplicate return clauses to be rejected.")
+        Assert.Contains(workspace.Diagnostics, fun diagnostic -> diagnostic.Code = DiagnosticCode.HandlerClauseDuplicate)
+
+
+    [<Fact>]
+    let ``handler operation clauses require an explicit resumption binder`` () =
+        let mainSource =
+            [
+                "@PrivateByDefault module main"
+                ""
+                "bad : Eff <[ ]> Int"
+                "let bad : Eff <[ ]> Int ="
+                "    block"
+                "        scoped effect Ask ="
+                "            ask : Unit -> Bool"
+                ""
+                "        let comp : Eff <[Ask : Ask]> Int ="
+                "            do"
+                "                let b <- Ask.ask ()"
+                "                if b then 1 else 0"
+                ""
+                "        handle Ask comp with"
+                "            case return x -> pure x"
+                "            case ask () -> pure 0"
+            ]
+            |> String.concat "\n"
+
+        let workspace =
+            compileInMemoryWorkspace
+                "memory-m4-handler-missing-resumption-root"
+                [ "main.kp", mainSource ]
+
+        Assert.True(workspace.HasErrors, "Expected handler clauses without a resumption binder to be rejected.")
+        Assert.Contains(workspace.Diagnostics, fun diagnostic -> diagnostic.Code = DiagnosticCode.ExpectedSyntaxToken)
+
+
+    [<Fact>]
+    let ``deep handler clauses must agree on a single target carrier`` () =
+        let mainSource =
+            [
+                "@PrivateByDefault module main"
+                ""
+                "bad : Int"
+                "let bad : Int ="
+                "    block"
+                "        scoped effect Ask ="
+                "            ask : Unit -> Bool"
+                ""
+                "        let comp : Eff <[Ask : Ask]> Int ="
+                "            do"
+                "                let b <- Ask.ask ()"
+                "                if b then 1 else 0"
+                ""
+                "        deep handle Ask comp with"
+                "            case return x -> x"
+                "            case ask () k -> k True"
+            ]
+            |> String.concat "\n"
+
+        let workspace =
+            compileInMemoryWorkspace
+                "memory-m4-deep-handler-carrier-root"
+                [ "main.kp", mainSource ]
+
+        Assert.True(workspace.HasErrors, "Expected mismatched deep handler clause carriers to be rejected.")
+        Assert.Contains(workspace.Diagnostics, fun diagnostic -> diagnostic.Code = DiagnosticCode.TypeEqualityMismatch)
+
+
+    [<Fact>]
+    let ``deep handlers accept a lexically rebound effect label`` () =
+        let mainSource =
+            [
+                "@PrivateByDefault module main"
+                ""
+                "ok : Int"
+                "let ok : Int ="
+                "    block"
+                "        scoped effect Ask ="
+                "            ask : Unit -> Bool"
+                ""
+                "        let l = Ask"
+                ""
+                "        let comp : Eff <[Ask : Ask]> Int ="
+                "            do"
+                "                let b <- Ask.ask ()"
+                "                if b then 1 else 0"
+                ""
+                "        let handled : Eff <[ ]> Int ="
+                "            deep handle l comp with"
+                "                case return x -> pure x"
+                "                case ask () k -> k True"
+                ""
+                "        runPure handled"
+            ]
+            |> String.concat "\n"
+
+        let workspace, result =
+            evaluateInMemoryBinding
+                "memory-m4-handler-label-alias-root"
+                "main.ok"
+                [ "main.kp", mainSource ]
+
+        Assert.False(workspace.HasErrors, sprintf "Expected deep handler with a rebound effect label to typecheck, got:%s%s" Environment.NewLine (diagnosticsText workspace.Diagnostics))
+
+        match result with
+        | Result.Ok value ->
+            Assert.Equal("1", RuntimeValue.format value)
+        | Result.Error issue ->
+            failwithf "Expected rebound-label deep handler evaluation to succeed, got %s" issue.Message
+
+
+    [<Fact>]
+    let ``multishot scoped effect invocation rejects captured linear suffix at the operation site`` () =
+        let fixturePath =
+            Path.Combine(
+                __SOURCE_DIRECTORY__,
+                "Fixtures",
+                "borrow_qtt.100_interactions.handler_reject_multishot_resumption_captures_linear_suffix",
+                "main.kp"
+            )
+
+        let mainSource = File.ReadAllText fixturePath
+
+        let workspace =
+            compileInMemoryWorkspace
+                "memory-m4-multishot-linear-root"
+                [ "main.kp", mainSource ]
+
+        Assert.True(workspace.HasErrors, "Expected the multishot capture rule to reject the operation site.")
+        Assert.Contains(workspace.Diagnostics, fun diagnostic -> diagnostic.Code = DiagnosticCode.QttContinuationCapture)
+
+
+    [<Fact>]
+    let ``multishot operations nested inside ordinary application still trigger capture checks`` () =
+        let mainSource =
+            [
+                "@PrivateByDefault module main"
+                ""
+                "bad : (1 x : Int) -> Int"
+                "let bad (1 x : Int) : Int ="
+                "    block"
+                "        scoped effect Choice ="
+                "            ω choose : Unit -> Bool"
+                ""
+                "        let id m = m"
+                ""
+                "        let comp : Eff <[Choice : Choice]> Int ="
+                "            do"
+                "                let b <- id (Choice.choose ())"
+                "                if b then x else x"
+                ""
+                "        let handled ="
+                "            deep handle Choice comp with"
+                "                case return y -> pure y"
+                "                case choose _ k ->"
+                "                    do"
+                "                        let a <- k True"
+                "                        let _ <- k False"
+                "                        pure a"
+                ""
+                "        runPure handled"
+            ]
+            |> String.concat "\n"
+
+        let workspace =
+            compileInMemoryWorkspace
+                "memory-m4-multishot-nested-application-root"
+                [ "main.kp", mainSource ]
+
+        Assert.True(workspace.HasErrors, "Expected multishot operations nested inside ordinary application to be rejected.")
+        Assert.Contains(workspace.Diagnostics, fun diagnostic -> diagnostic.Code = DiagnosticCode.QttContinuationCapture)
+
+
+    [<Fact>]
+    let ``zig backend runs multishot handled programs`` () =
+        let mainSource =
+            [
+                "@PrivateByDefault module main"
+                ""
+                "result : Int"
+                "let result ="
+                "    block"
+                "        scoped effect Choice ="
+                "            ω choose : Unit -> Bool"
+                ""
+                "        let comp : Eff <[Choice : Choice]> Int ="
+                "            do"
+                "                let b <- Choice.choose ()"
+                "                if b then 1 else 2"
+                ""
+                "        let handled : Eff <[ ]> Int ="
+                "            deep handle Choice comp with"
+                "                case return x -> pure x"
+                "                case choose () k ->"
+                "                    do"
+                "                        let a <- k True"
+                "                        let b <- k False"
+                "                        pure (a + b)"
+                ""
+                "        runPure handled"
+            ]
+            |> String.concat "\n"
+
+        let workspace =
+            compileInMemoryWorkspaceWithBackend
+                "memory-m4-zig-multishot-effect-root"
+                "zig"
+                [ "main.kp", mainSource ]
+
+        Assert.False(workspace.HasErrors, diagnosticsText workspace.Diagnostics)
+        Assert.DoesNotContain(workspace.Diagnostics, fun diagnostic -> diagnostic.Code = DiagnosticCode.EffectRuntimeUnsupportedBackend)
+        Assert.DoesNotContain(workspace.Diagnostics, fun diagnostic -> diagnostic.Code = DiagnosticCode.MultishotEffectUnsupportedBackend)
+
+        let outputDirectory = createScratchDirectory "zig-m4-multishot-effects"
+
+        let artifact =
+            match Backend.emitZigArtifact workspace "main.result" outputDirectory with
+            | Result.Ok artifact -> artifact
+            | Result.Error message -> failwith message
+
+        let compileResult =
+            runProcess
+                outputDirectory
+                (ensureRepoZigExecutablePath ())
+                $"cc -std=c11 -O0 -o \"{artifact.ExecutableFilePath}\" \"{artifact.SourceFilePath}\""
+
+        Assert.Equal(0, compileResult.ExitCode)
+        Assert.True(String.IsNullOrWhiteSpace(compileResult.StandardError), compileResult.StandardError)
+
+        let runResult = runProcess outputDirectory artifact.ExecutableFilePath ""
+        Assert.Equal(0, runResult.ExitCode)
+        Assert.Equal("3", runResult.StandardOutput.Trim())
+        Assert.True(String.IsNullOrWhiteSpace(runResult.StandardError), runResult.StandardError)
+
+
+    [<Fact>]
+    let ``carried outer scoped effect labels are not captured by inner same spelling handlers`` () =
+        let mainSource =
+            [
+                "@PrivateByDefault module main"
+                ""
+                "result : Int"
+                "let result ="
+                "    block"
+                "        scoped effect Choice ="
+                "            ω choose : Unit -> Int"
+                "        let outer = Choice"
+                "        block"
+                "            scoped effect Choice ="
+                "                ω choose : Unit -> Int"
+                "            let inner = Choice"
+                "            let comp = outer.choose ()"
+                "            let handled : Eff <[ ]> Int ="
+                "                deep handle inner comp with"
+                "                    case return x -> pure x"
+                "                    case choose () k ->"
+                "                        do"
+                "                            let _ <- k 0"
+                "                            pure 0"
+                "            runPure handled"
+            ]
+            |> String.concat "\n"
+
+        let workspace =
+            compileInMemoryWorkspace
+                "memory-m4-shadowed-carried-label-root"
+                [ "main.kp", mainSource ]
+
+        Assert.True(workspace.HasErrors, "Expected the inner handler to reject the outer carried label statically.")
+        Assert.Contains(
+            workspace.Diagnostics,
+            fun diagnostic ->
+                diagnostic.Code = DiagnosticCode.HandlerEffectRowMismatch
+                && diagnostic.Message.Contains("expects the handled computation to carry label", StringComparison.Ordinal)
         )
 
-    let mainSource = File.ReadAllText fixturePath
 
-    let workspace =
-        compileInMemoryWorkspace
-            "memory-m4-oneshot-overuse-root"
-            [ "main.kp", mainSource ]
-
-    Assert.True(workspace.HasErrors, "Expected one-shot resumption overuse to be rejected.")
-    Assert.Contains(workspace.Diagnostics, fun diagnostic -> diagnostic.Code = DiagnosticCode.QttLinearOveruse)
-
-[<Fact>]
-let ``one shot resumptions remain one shot under a rebound handled label`` () =
-    let mainSource =
-        [
-            "@PrivateByDefault module main"
-            ""
-            "bad : Int"
-            "let bad : Int ="
-            "    block"
-            "        scoped effect Ask ="
-            "            ask : Unit -> Bool"
-            ""
-            "        let l = Ask"
-            ""
-            "        let comp : Eff <[Ask : Ask]> Int ="
-            "            do"
-            "                let _ <- l.ask ()"
-            "                pure 1"
-            ""
-            "        let handled ="
-            "            deep handle l comp with"
-            "                case return y -> pure y"
-            "                case ask _ k ->"
-            "                    do"
-            "                        let a <- k True"
-            "                        let _ <- k False"
-            "                        pure a"
-            ""
-            "        runPure handled"
-        ]
-        |> String.concat "\n"
-
-    let workspace =
-        compileInMemoryWorkspace
-            "memory-m4-oneshot-rebound-label-overuse-root"
-            [ "main.kp", mainSource ]
-
-    Assert.True(workspace.HasErrors, "Expected one-shot resumption overuse under a rebound handled label to be rejected.")
-    Assert.Contains(workspace.Diagnostics, fun diagnostic -> diagnostic.Code = DiagnosticCode.QttLinearOveruse)
-
-[<Fact>]
-let ``one shot resumptions remain one shot under a record carried handled label`` () =
-    let mainSource =
-        [
-            "@PrivateByDefault module main"
-            ""
-            "bad : Int"
-            "let bad : Int ="
-            "    block"
-            "        scoped effect Ask ="
-            "            ask : Unit -> Bool"
-            ""
-            "        let pkg = (label = Ask)"
-            ""
-            "        let comp : Eff <[Ask : Ask]> Int ="
-            "            do"
-            "                let _ <- pkg.label.ask ()"
-            "                pure 1"
-            ""
-            "        let handled ="
-            "            deep handle pkg.label comp with"
-            "                case return y -> pure y"
-            "                case ask _ k ->"
-            "                    do"
-            "                        let a <- k True"
-            "                        let _ <- k False"
-            "                        pure a"
-            ""
-            "        runPure handled"
-        ]
-        |> String.concat "\n"
-
-    let workspace =
-        compileInMemoryWorkspace
-            "memory-m4-oneshot-record-label-overuse-root"
-            [ "main.kp", mainSource ]
-
-    Assert.True(workspace.HasErrors, "Expected one-shot resumption overuse under a record-carried handled label to be rejected.")
-    Assert.Contains(workspace.Diagnostics, fun diagnostic -> diagnostic.Code = DiagnosticCode.QttLinearOveruse)
-
-[<Fact>]
-let ``one shot resumptions remain one shot under a qualified imported handled label`` () =
-    let libSource =
-        [
-            "module lib"
-            ""
-            "effect Ask ="
-            "    1 ask : Unit -> Bool"
-        ]
-        |> String.concat "\n"
-
-    let mainSource =
-        [
-            "@PrivateByDefault module main"
-            "import lib"
-            ""
-            "bad : Int"
-            "let bad : Int ="
-            "    block"
-            "        let comp : Eff <[lib.Ask : lib.Ask]> Int ="
-            "            do"
-            "                let _ <- lib.Ask.ask ()"
-            "                pure 1"
-            ""
-            "        let handled ="
-            "            deep handle lib.Ask comp with"
-            "                case return y -> pure y"
-            "                case ask _ k ->"
-            "                    do"
-            "                        let a <- k True"
-            "                        let _ <- k False"
-            "                        pure a"
-            ""
-            "        runPure handled"
-        ]
-        |> String.concat "\n"
-
-    let workspace =
-        compileInMemoryWorkspace
-            "memory-m4-oneshot-imported-label-overuse-root"
-            [ "lib.kp", libSource
-              "main.kp", mainSource ]
-
-    Assert.True(workspace.HasErrors, "Expected one-shot resumption overuse under a qualified imported handled label to be rejected.")
-    Assert.Contains(workspace.Diagnostics, fun diagnostic -> diagnostic.Code = DiagnosticCode.QttLinearOveruse)
-
-[<Fact>]
-let ``shadowed same spelling effects do not widen rebound one shot resumptions`` () =
-    let mainSource =
-        [
-            "@PrivateByDefault module main"
-            ""
-            "bad : Int"
-            "let bad : Int ="
-            "    block"
-            "        scoped effect Ask ="
-            "            1 ask : Unit -> Bool"
-            ""
-            "        let l = Ask"
-            ""
-            "        let comp : Eff <[Ask : Ask]> Int ="
-            "            do"
-            "                let _ <- l.ask ()"
-            "                pure 1"
-            ""
-            "        block"
-            "            scoped effect Ask ="
-            "                ω ask : Unit -> Bool"
-            ""
-            "            let handled ="
-            "                deep handle l comp with"
-            "                    case return y -> pure y"
-            "                    case ask () k ->"
-            "                        do"
-            "                            let a <- k True"
-            "                            let _ <- k False"
-            "                            pure a"
-            ""
-            "            runPure handled"
-        ]
-        |> String.concat "\n"
-
-    let workspace =
-        compileInMemoryWorkspace
-            "memory-m4-shadowed-rebound-oneshot-root"
-            [ "main.kp", mainSource ]
-
-    Assert.True(workspace.HasErrors, "Expected one-shot resumption overuse to stay rejected under same-spelling shadowing.")
-    Assert.Contains(workspace.Diagnostics, fun diagnostic -> diagnostic.Code = DiagnosticCode.QttLinearOveruse)
-
-[<Fact>]
-let ``shallow handlers type resumptions against the remainder row`` () =
-    let mainSource =
-        [
-            "@PrivateByDefault module main"
-            ""
-            "probe : Int"
-            "let probe : Int ="
-            "    block"
-            "        scoped effect Ask ="
-            "            1 ask : Unit -> Bool"
-            ""
-            "        let handleAsk : forall (r : EffRow). Eff <[Ask : Ask | r]> Int -> Eff r Int ="
-            "            \\(comp : Eff <[Ask : Ask | r]> Int) ->"
-            "                handle Ask comp with"
-            "                    case return y -> pure y"
-            "                    case ask () k -> k True"
-            ""
-            "        0"
-        ]
-        |> String.concat "\n"
-
-    let workspace =
-        compileInMemoryWorkspace
-            "memory-m4-remainder-row-root"
-            [ "main.kp", mainSource ]
-
-    Assert.False(workspace.HasErrors, sprintf "Expected shallow handler remainder-row typing to succeed, got:%s%s" Environment.NewLine (diagnosticsText workspace.Diagnostics))
-
-[<Fact>]
-let ``top level effect declarations introduce in-scope effect labels`` () =
-    let mainSource =
-        [
-            "@PrivateByDefault module main"
-            ""
-            "effect Ask ="
-            "    1 ask : Unit -> Bool"
-            ""
-            "ok : Int"
-            "let ok : Int ="
-            "    block"
-            "        let comp : Eff <[Ask : Ask]> Int ="
-            "            do"
-            "                let b <- Ask.ask ()"
-            "                if b then 1 else 0"
-            ""
-            "        let handled : Eff <[ ]> Int ="
-            "            deep handle Ask comp with"
-            "                case return x -> pure x"
-            "                case ask () k -> k True"
-            ""
-            "        runPure handled"
-        ]
-        |> String.concat "\n"
-
-    let workspace, result =
-        evaluateInMemoryBinding
-            "memory-m4-top-level-effect-label-root"
-            "main.ok"
-            [ "main.kp", mainSource ]
-
-    Assert.False(workspace.HasErrors, sprintf "Expected top-level effect labels to be in scope, got:%s%s" Environment.NewLine (diagnosticsText workspace.Diagnostics))
-
-    match result with
-    | Result.Ok value ->
-        Assert.Equal("1", RuntimeValue.format value)
-    | Result.Error issue ->
-        failwithf "Expected top-level effect label evaluation to succeed, got %s" issue.Message
-
-[<Fact>]
-let ``qualified imported effect labels remain usable across modules`` () =
-    let libSource =
-        [
-            "module lib"
-            ""
-            "effect Ask ="
-            "    1 ask : Unit -> Bool"
-        ]
-        |> String.concat "\n"
-
-    let mainSource =
-        [
-            "@PrivateByDefault module main"
-            "import lib"
-            ""
-            "ok : Int"
-            "let ok : Int ="
-            "    block"
-            "        let comp : Eff <[lib.Ask : lib.Ask]> Int ="
-            "            do"
-            "                let b <- lib.Ask.ask ()"
-            "                if b then 1 else 0"
-            ""
-            "        let handled : Eff <[ ]> Int ="
-            "            deep handle lib.Ask comp with"
-            "                case return x -> pure x"
-            "                case ask () k -> k True"
-            ""
-            "        runPure handled"
-        ]
-        |> String.concat "\n"
-
-    let workspace, result =
-        evaluateInMemoryBinding
-            "memory-m4-imported-effect-label-root"
-            "main.ok"
-            [ "lib.kp", libSource
-              "main.kp", mainSource ]
-
-    Assert.False(workspace.HasErrors, sprintf "Expected qualified imported effect labels to resolve, got:%s%s" Environment.NewLine (diagnosticsText workspace.Diagnostics))
-
-    match result with
-    | Result.Ok value ->
-        Assert.Equal("1", RuntimeValue.format value)
-    | Result.Error issue ->
-        failwithf "Expected imported effect label evaluation to succeed, got %s" issue.Message
-
-[<Fact>]
-let ``selectively imported effect labels remain usable across modules`` () =
-    let libSource =
-        [
-            "module lib"
-            ""
-            "effect Ask ="
-            "    1 ask : Unit -> Bool"
-        ]
-        |> String.concat "\n"
-
-    let mainSource =
-        [
-            "@PrivateByDefault module main"
-            "import lib.(Ask)"
-            ""
-            "ok : Int"
-            "let ok : Int ="
-            "    block"
-            "        let comp : Eff <[Ask : Ask]> Int ="
-            "            do"
-            "                let b <- Ask.ask ()"
-            "                if b then 1 else 0"
-            ""
-            "        let handled : Eff <[ ]> Int ="
-            "            deep handle Ask comp with"
-            "                case return x -> pure x"
-            "                case ask () k -> k True"
-            ""
-            "        runPure handled"
-        ]
-        |> String.concat "\n"
-
-    let workspace, result =
-        evaluateInMemoryBinding
-            "memory-m4-selective-imported-effect-label-root"
-            "main.ok"
-            [ "lib.kp", libSource
-              "main.kp", mainSource ]
-
-    Assert.False(workspace.HasErrors, sprintf "Expected selectively imported effect labels to resolve, got:%s%s" Environment.NewLine (diagnosticsText workspace.Diagnostics))
-
-    match result with
-    | Result.Ok value ->
-        Assert.Equal("1", RuntimeValue.format value)
-    | Result.Error issue ->
-        failwithf "Expected selectively imported effect label evaluation to succeed, got %s" issue.Message
-
-[<Fact>]
-let ``wildcard imported effect labels remain usable across modules`` () =
-    let libSource =
-        [
-            "module lib"
-            ""
-            "effect Ask ="
-            "    1 ask : Unit -> Bool"
-        ]
-        |> String.concat "\n"
-
-    let mainSource =
-        [
-            "@PrivateByDefault module main"
-            "import lib.*"
-            ""
-            "ok : Int"
-            "let ok : Int ="
-            "    block"
-            "        let comp : Eff <[Ask : Ask]> Int ="
-            "            do"
-            "                let b <- Ask.ask ()"
-            "                if b then 1 else 0"
-            ""
-            "        let handled : Eff <[ ]> Int ="
-            "            deep handle Ask comp with"
-            "                case return x -> pure x"
-            "                case ask () k -> k True"
-            ""
-            "        runPure handled"
-        ]
-        |> String.concat "\n"
-
-    let workspace, result =
-        evaluateInMemoryBinding
-            "memory-m4-wildcard-imported-effect-label-root"
-            "main.ok"
-            [ "lib.kp", libSource
-              "main.kp", mainSource ]
-
-    Assert.False(workspace.HasErrors, sprintf "Expected wildcard imported effect labels to resolve, got:%s%s" Environment.NewLine (diagnosticsText workspace.Diagnostics))
-
-    match result with
-    | Result.Ok value ->
-        Assert.Equal("1", RuntimeValue.format value)
-    | Result.Error issue ->
-        failwithf "Expected wildcard imported effect label evaluation to succeed, got %s" issue.Message
-
-[<Fact>]
-let ``aliased imported effect labels remain usable across modules`` () =
-    let libSource =
-        [
-            "module lib"
-            ""
-            "effect Ask ="
-            "    1 ask : Unit -> Bool"
-        ]
-        |> String.concat "\n"
-
-    let mainSource =
-        [
-            "@PrivateByDefault module main"
-            "import lib.(Ask as Query)"
-            ""
-            "ok : Int"
-            "let ok : Int ="
-            "    block"
-            "        let comp : Eff <[Query : Query]> Int ="
-            "            do"
-            "                let b <- Query.ask ()"
-            "                if b then 1 else 0"
-            ""
-            "        let handled : Eff <[ ]> Int ="
-            "            deep handle Query comp with"
-            "                case return x -> pure x"
-            "                case ask () k -> k True"
-            ""
-            "        runPure handled"
-        ]
-        |> String.concat "\n"
-
-    let workspace, result =
-        evaluateInMemoryBinding
-            "memory-m4-aliased-imported-effect-label-root"
-            "main.ok"
-            [ "lib.kp", libSource
-              "main.kp", mainSource ]
-
-    Assert.False(workspace.HasErrors, sprintf "Expected aliased imported effect labels to resolve, got:%s%s" Environment.NewLine (diagnosticsText workspace.Diagnostics))
-
-    match result with
-    | Result.Ok value ->
-        Assert.Equal("1", RuntimeValue.format value)
-    | Result.Error issue ->
-        failwithf "Expected aliased imported effect label evaluation to succeed, got %s" issue.Message
-
-[<Fact>]
-let ``private top level effects do not leak through qualified imports`` () =
-    let libSource =
-        [
-            "@PrivateByDefault module lib"
-            ""
-            "effect Ask ="
-            "    1 ask : Unit -> Bool"
-        ]
-        |> String.concat "\n"
-
-    let mainSource =
-        [
-            "@PrivateByDefault module main"
-            "import lib"
-            ""
-            "ok : Int"
-            "let ok : Int ="
-            "    block"
-            "        let comp : Eff <[lib.Ask : lib.Ask]> Int ="
-            "            do"
-            "                let b <- lib.Ask.ask ()"
-            "                if b then 1 else 0"
-            ""
-            "        let handled : Eff <[ ]> Int ="
-            "            deep handle lib.Ask comp with"
-            "                case return x -> pure x"
-            "                case ask () k -> k True"
-            ""
-            "        runPure handled"
-        ]
-        |> String.concat "\n"
-
-    let workspace =
-        compileInMemoryWorkspace
-            "memory-m4-private-imported-effect-label-root"
-            [ "lib.kp", libSource
-              "main.kp", mainSource ]
-
-    Assert.True(workspace.HasErrors, "Expected private top-level effects not to leak through qualified imports.")
-
-[<Fact>]
-let ``handlers reject open rows whose declared remainder does not account for the handled label`` () =
-    let mainSource =
-        [
-            "@PrivateByDefault module main"
-            ""
-            "probe : Int"
-            "let probe : Int ="
-            "    block"
-            "        scoped effect Ask ="
-            "            1 ask : Unit -> Bool"
-            ""
-            "        scoped effect Other ="
-            "            other : Unit -> Int"
-            ""
-            "        let badHandle : forall (r : EffRow). Eff <[Other : Other | r]> Int -> Eff r Int ="
-            "            \\(comp : Eff <[Other : Other | r]> Int) ->"
-            "                handle Ask comp with"
-            "                    case return y -> pure y"
-            "                    case ask () k -> k True"
-            ""
-            "        0"
-        ]
-        |> String.concat "\n"
-
-    let workspace =
-        compileInMemoryWorkspace
-            "memory-m4-open-row-mismatch-root"
-            [ "main.kp", mainSource ]
-
-    Assert.True(workspace.HasErrors, "Expected handler typing to reject open rows whose declared remainder cannot account for the handled label.")
-    Assert.Contains(workspace.Diagnostics, fun diagnostic -> diagnostic.Code = DiagnosticCode.HandlerEffectRowMismatch || diagnostic.Code = DiagnosticCode.TypeEqualityMismatch)
-
-[<Fact>]
-let ``handlers can split a handled label out of a normalized tail alias`` () =
-    let mainSource =
-        [
-            "@PrivateByDefault module main"
-            ""
-            "effect Ask ="
-            "    1 ask : Unit -> Bool"
-            ""
-            "effect Other ="
-            "    other : Unit -> Int"
-            ""
-            "type AskTail (r : EffRow) = <[Ask : Ask | r]>"
-            ""
-            "probe : Int"
-            "let probe : Int ="
-            "    block"
-            "        let handleAsk : forall (r : EffRow). Eff <[Other : Other | AskTail r]> Int -> Eff <[Other : Other | r]> Int ="
-            "            \\(comp : Eff <[Other : Other | AskTail r]> Int) ->"
-            "                handle Ask comp with"
-            "                    case return y -> pure y"
-            "                    case ask () k -> k True"
-            ""
-            "        0"
-        ]
-        |> String.concat "\n"
-
-    let workspace =
-        compileInMemoryWorkspace
-            "memory-m4-open-row-tail-alias-root"
-            [ "main.kp", mainSource ]
-
-    Assert.False(workspace.HasErrors, sprintf "Expected handler typing to split handled labels from normalized tail aliases, got:%s%s" Environment.NewLine (diagnosticsText workspace.Diagnostics))
-
-[<Fact>]
-let ``deep handlers can split a handled label out of a normalized tail alias`` () =
-    let mainSource =
-        [
-            "@PrivateByDefault module main"
-            ""
-            "effect Ask ="
-            "    1 ask : Unit -> Bool"
-            ""
-            "effect Other ="
-            "    other : Unit -> Int"
-            ""
-            "type AskTail (r : EffRow) = <[Ask : Ask | r]>"
-            ""
-            "probe : Int"
-            "let probe : Int ="
-            "    block"
-            "        let handleAsk : forall (r : EffRow). Eff <[Other : Other | AskTail r]> Int -> Eff <[Other : Other | r]> Int ="
-            "            \\(comp : Eff <[Other : Other | AskTail r]> Int) ->"
-            "                deep handle Ask comp with"
-            "                    case return y -> pure y"
-            "                    case ask () k -> k True"
-            ""
-            "        0"
-        ]
-        |> String.concat "\n"
-
-    let workspace =
-        compileInMemoryWorkspace
-            "memory-m4-deep-open-row-tail-alias-root"
-            [ "main.kp", mainSource ]
-
-    Assert.False(workspace.HasErrors, sprintf "Expected deep handler typing to split handled labels from normalized tail aliases, got:%s%s" Environment.NewLine (diagnosticsText workspace.Diagnostics))
-
-[<Fact>]
-let ``handlers reject normalized tail aliases whose handled label names a different interface`` () =
-    let mainSource =
-        [
-            "@PrivateByDefault module main"
-            ""
-            "effect Ask ="
-            "    1 ask : Unit -> Bool"
-            ""
-            "effect Other ="
-            "    other : Unit -> Int"
-            ""
-            "type WrongAskTail (r : EffRow) = <[Ask : Other | r]>"
-            ""
-            "probe : Int"
-            "let probe : Int ="
-            "    block"
-            "        let badHandle : forall (r : EffRow). Eff <[Other : Other | WrongAskTail r]> Int -> Eff <[Other : Other | r]> Int ="
-            "            \\(comp : Eff <[Other : Other | WrongAskTail r]> Int) ->"
-            "                handle Ask comp with"
-            "                    case return y -> pure y"
-            "                    case ask () k -> k True"
-            ""
-            "        0"
-        ]
-        |> String.concat "\n"
-
-    let workspace =
-        compileInMemoryWorkspace
-            "memory-m4-open-row-tail-alias-mismatch-root"
-            [ "main.kp", mainSource ]
-
-    Assert.True(workspace.HasErrors, "Expected normalized tail aliases with mismatched handled interfaces to be rejected.")
-    Assert.Contains(workspace.Diagnostics, fun diagnostic -> diagnostic.Code = DiagnosticCode.HandlerEffectRowMismatch)
-
-[<Fact>]
-let ``handlers can split a handled label out of a local normalized tail alias`` () =
-    let mainSource =
-        [
-            "@PrivateByDefault module main"
-            ""
-            "probe : Int"
-            "let probe : Int ="
-            "    block"
-            "        scoped effect Ask ="
-            "            1 ask : Unit -> Bool"
-            ""
-            "        scoped effect Other ="
-            "            other : Unit -> Int"
-            ""
-            "        type AskTail (r : EffRow) = <[Ask : Ask | r]>"
-            ""
-            "        let handleAsk : forall (r : EffRow). Eff <[Other : Other | AskTail r]> Int -> Eff <[Other : Other | r]> Int ="
-            "            \\(comp : Eff <[Other : Other | AskTail r]> Int) ->"
-            "                handle Ask comp with"
-            "                    case return y -> pure y"
-            "                    case ask () k -> k True"
-            ""
-            "        0"
-        ]
-        |> String.concat "\n"
-
-    let workspace =
-        compileInMemoryWorkspace
-            "memory-m4-local-open-row-tail-alias-root"
-            [ "main.kp", mainSource ]
-
-    Assert.False(workspace.HasErrors, sprintf "Expected handlers to split handled labels from local normalized tail aliases, got:%s%s" Environment.NewLine (diagnosticsText workspace.Diagnostics))
-
-[<Fact>]
-let ``deep handlers can split a handled label out of a local normalized tail alias`` () =
-    let mainSource =
-        [
-            "@PrivateByDefault module main"
-            ""
-            "probe : Int"
-            "let probe : Int ="
-            "    block"
-            "        scoped effect Ask ="
-            "            1 ask : Unit -> Bool"
-            ""
-            "        scoped effect Other ="
-            "            other : Unit -> Int"
-            ""
-            "        type AskTail (r : EffRow) = <[Ask : Ask | r]>"
-            ""
-            "        let handleAsk : forall (r : EffRow). Eff <[Other : Other | AskTail r]> Int -> Eff <[Other : Other | r]> Int ="
-            "            \\(comp : Eff <[Other : Other | AskTail r]> Int) ->"
-            "                deep handle Ask comp with"
-            "                    case return y -> pure y"
-            "                    case ask () k -> k True"
-            ""
-            "        0"
-        ]
-        |> String.concat "\n"
-
-    let workspace =
-        compileInMemoryWorkspace
-            "memory-m4-local-deep-open-row-tail-alias-root"
-            [ "main.kp", mainSource ]
-
-    Assert.False(workspace.HasErrors, sprintf "Expected deep handlers to split handled labels from local normalized tail aliases, got:%s%s" Environment.NewLine (diagnosticsText workspace.Diagnostics))
-
-[<Fact>]
-let ``deep handlers reject local normalized tail aliases whose handled label names a different interface`` () =
-    let mainSource =
-        [
-            "@PrivateByDefault module main"
-            ""
-            "probe : Int"
-            "let probe : Int ="
-            "    block"
-            "        scoped effect Ask ="
-            "            1 ask : Unit -> Bool"
-            ""
-            "        scoped effect Other ="
-            "            other : Unit -> Int"
-            ""
-            "        type WrongAskTail (r : EffRow) = <[Ask : Other | r]>"
-            ""
-            "        let badHandle : forall (r : EffRow). Eff <[Other : Other | WrongAskTail r]> Int -> Eff <[Other : Other | r]> Int ="
-            "            \\(comp : Eff <[Other : Other | WrongAskTail r]> Int) ->"
-            "                deep handle Ask comp with"
-            "                    case return y -> pure y"
-            "                    case ask () k -> k True"
-            ""
-            "        0"
-        ]
-        |> String.concat "\n"
-
-    let workspace =
-        compileInMemoryWorkspace
-            "memory-m4-local-deep-open-row-tail-alias-mismatch-root"
-            [ "main.kp", mainSource ]
-
-    Assert.True(workspace.HasErrors, "Expected deep handlers to reject local normalized tail aliases with mismatched handled interfaces.")
-    Assert.Contains(workspace.Diagnostics, fun diagnostic -> diagnostic.Code = DiagnosticCode.HandlerEffectRowMismatch)
-
-[<Fact>]
-let ``rebound local effect operation values remain effectful in do bind`` () =
-    let mainSource =
-        [
-            "module main"
-            ""
-            "result : Int"
-            "let result : Int ="
-            "    block"
-            "        scoped effect Ask ="
-            "            ask : Unit -> Bool"
-            ""
-            "        let ask = Ask.ask"
-            ""
-            "        let comp : Eff <[Ask : Ask]> Int ="
-            "            do"
-            "                let b <- ask ()"
-            "                if b then 1 else 0"
-            ""
-            "        let handled : Eff <[ ]> Int ="
-            "            deep handle Ask comp with"
-            "                case return x -> pure x"
-            "                case ask () k -> k True"
-            ""
-            "        runPure handled"
-        ]
-        |> String.concat "\n"
-
-    let workspace, result =
-        evaluateInMemoryBinding
-            "memory-m4-rebound-operation-local-alias-root"
-            "main.result"
-            [ "main.kp", mainSource ]
-
-    Assert.False(workspace.HasErrors, sprintf "Expected rebound local operation values to typecheck and run, got:%s%s" Environment.NewLine (diagnosticsText workspace.Diagnostics))
-
-    match result with
-    | Result.Ok value ->
-        Assert.Equal("1", RuntimeValue.format value)
-    | Result.Error issue ->
-        failwithf "Expected rebound local operation values to evaluate successfully, got %s" issue.Message
-
-[<Fact>]
-let ``rebound multi argument effect operation values preserve declared arity`` () =
-    let mainSource =
-        [
-            "module main"
-            ""
-            "result : Int"
-            "let result : Int ="
-            "    block"
-            "        scoped effect Pairing ="
-            "            pair : Int -> Bool -> Int"
-            ""
-            "        let pair = Pairing.pair"
-            ""
-            "        let comp : Eff <[Pairing : Pairing]> Int ="
-            "            do"
-            "                let pairWith41 = pair 41"
-            "                let n <- pairWith41 True"
-            "                n"
-            ""
-            "        let handled : Eff <[ ]> Int ="
-            "            deep handle Pairing comp with"
-            "                case return x -> pure x"
-            "                case pair x y k ->"
-            "                    if y then k (x + 1) else k x"
-            ""
-            "        runPure handled"
-        ]
-        |> String.concat "\n"
-
-    let workspace, result =
-        evaluateInMemoryBinding
-            "memory-m4-rebound-operation-arity-root"
-            "main.result"
-            [ "main.kp", mainSource ]
-
-    Assert.False(workspace.HasErrors, sprintf "Expected rebound multi-argument operation values to typecheck and run, got:%s%s" Environment.NewLine (diagnosticsText workspace.Diagnostics))
-
-    match result with
-    | Result.Ok value ->
-        Assert.Equal("42", RuntimeValue.format value)
-    | Result.Error issue ->
-        failwithf "Expected rebound multi-argument operation values to evaluate successfully, got %s" issue.Message
-
-[<Fact>]
-let ``record carried effect operation values preserve effectful application semantics`` () =
-    let mainSource =
-        [
-            "module main"
-            ""
-            "result : Int"
-            "let result : Int ="
-            "    block"
-            "        scoped effect Ask ="
-            "            ask : Unit -> Bool"
-            ""
-            "        let ops = (ask = Ask.ask)"
-            ""
-            "        let comp : Eff <[Ask : Ask]> Int ="
-            "            do"
-            "                let b <- ops.ask ()"
-            "                if b then 1 else 0"
-            ""
-            "        let handled : Eff <[ ]> Int ="
-            "            deep handle Ask comp with"
-            "                case return x -> pure x"
-            "                case ask () k -> k True"
-            ""
-            "        runPure handled"
-        ]
-        |> String.concat "\n"
-
-    let workspace, result =
-        evaluateInMemoryBinding
-            "memory-m4-rebound-operation-record-root"
-            "main.result"
-            [ "main.kp", mainSource ]
-
-    Assert.False(workspace.HasErrors, sprintf "Expected record-carried effect operation values to typecheck and run, got:%s%s" Environment.NewLine (diagnosticsText workspace.Diagnostics))
-
-    match result with
-    | Result.Ok value ->
-        Assert.Equal("1", RuntimeValue.format value)
-    | Result.Error issue ->
-        failwithf "Expected record-carried effect operation values to evaluate successfully, got %s" issue.Message
+    [<Fact>]
+    let ``one shot resumptions remain one shot under a rebound handled label`` () =
+        let mainSource =
+            [
+                "@PrivateByDefault module main"
+                ""
+                "bad : Int"
+                "let bad : Int ="
+                "    block"
+                "        scoped effect Ask ="
+                "            ask : Unit -> Bool"
+                ""
+                "        let l = Ask"
+                ""
+                "        let comp : Eff <[Ask : Ask]> Int ="
+                "            do"
+                "                let _ <- l.ask ()"
+                "                pure 1"
+                ""
+                "        let handled ="
+                "            deep handle l comp with"
+                "                case return y -> pure y"
+                "                case ask _ k ->"
+                "                    do"
+                "                        let a <- k True"
+                "                        let _ <- k False"
+                "                        pure a"
+                ""
+                "        runPure handled"
+            ]
+            |> String.concat "\n"
+
+        let workspace =
+            compileInMemoryWorkspace
+                "memory-m4-oneshot-rebound-label-overuse-root"
+                [ "main.kp", mainSource ]
+
+        Assert.True(workspace.HasErrors, "Expected one-shot resumption overuse under a rebound handled label to be rejected.")
+        Assert.Contains(workspace.Diagnostics, fun diagnostic -> diagnostic.Code = DiagnosticCode.QttLinearOveruse)
+
+
+    [<Fact>]
+    let ``shallow handlers type resumptions against the remainder row`` () =
+        let mainSource =
+            [
+                "@PrivateByDefault module main"
+                ""
+                "probe : Int"
+                "let probe : Int ="
+                "    block"
+                "        scoped effect Ask ="
+                "            1 ask : Unit -> Bool"
+                ""
+                "        let handleAsk : forall (r : EffRow). Eff <[Ask : Ask | r]> Int -> Eff r Int ="
+                "            \\(comp : Eff <[Ask : Ask | r]> Int) ->"
+                "                handle Ask comp with"
+                "                    case return y -> pure y"
+                "                    case ask () k -> k True"
+                ""
+                "        0"
+            ]
+            |> String.concat "\n"
+
+        let workspace =
+            compileInMemoryWorkspace
+                "memory-m4-remainder-row-root"
+                [ "main.kp", mainSource ]
+
+        Assert.False(workspace.HasErrors, sprintf "Expected shallow handler remainder-row typing to succeed, got:%s%s" Environment.NewLine (diagnosticsText workspace.Diagnostics))
+
+
+    [<Fact>]
+    let ``wildcard imported effect labels remain usable across modules`` () =
+        let libSource =
+            [
+                "module lib"
+                ""
+                "effect Ask ="
+                "    1 ask : Unit -> Bool"
+            ]
+            |> String.concat "\n"
+
+        let mainSource =
+            [
+                "@PrivateByDefault module main"
+                "import lib.*"
+                ""
+                "ok : Int"
+                "let ok : Int ="
+                "    block"
+                "        let comp : Eff <[Ask : Ask]> Int ="
+                "            do"
+                "                let b <- Ask.ask ()"
+                "                if b then 1 else 0"
+                ""
+                "        let handled : Eff <[ ]> Int ="
+                "            deep handle Ask comp with"
+                "                case return x -> pure x"
+                "                case ask () k -> k True"
+                ""
+                "        runPure handled"
+            ]
+            |> String.concat "\n"
+
+        let workspace, result =
+            evaluateInMemoryBinding
+                "memory-m4-wildcard-imported-effect-label-root"
+                "main.ok"
+                [ "lib.kp", libSource
+                  "main.kp", mainSource ]
+
+        Assert.False(workspace.HasErrors, sprintf "Expected wildcard imported effect labels to resolve, got:%s%s" Environment.NewLine (diagnosticsText workspace.Diagnostics))
+
+        match result with
+        | Result.Ok value ->
+            Assert.Equal("1", RuntimeValue.format value)
+        | Result.Error issue ->
+            failwithf "Expected wildcard imported effect label evaluation to succeed, got %s" issue.Message
+
+
+    [<Fact>]
+    let ``handlers can split a handled label out of a normalized tail alias`` () =
+        let mainSource =
+            [
+                "@PrivateByDefault module main"
+                ""
+                "effect Ask ="
+                "    1 ask : Unit -> Bool"
+                ""
+                "effect Other ="
+                "    other : Unit -> Int"
+                ""
+                "type AskTail (r : EffRow) = <[Ask : Ask | r]>"
+                ""
+                "probe : Int"
+                "let probe : Int ="
+                "    block"
+                "        let handleAsk : forall (r : EffRow). Eff <[Other : Other | AskTail r]> Int -> Eff <[Other : Other | r]> Int ="
+                "            \\(comp : Eff <[Other : Other | AskTail r]> Int) ->"
+                "                handle Ask comp with"
+                "                    case return y -> pure y"
+                "                    case ask () k -> k True"
+                ""
+                "        0"
+            ]
+            |> String.concat "\n"
+
+        let workspace =
+            compileInMemoryWorkspace
+                "memory-m4-open-row-tail-alias-root"
+                [ "main.kp", mainSource ]
+
+        Assert.False(workspace.HasErrors, sprintf "Expected handler typing to split handled labels from normalized tail aliases, got:%s%s" Environment.NewLine (diagnosticsText workspace.Diagnostics))
+
+
+    [<Fact>]
+    let ``deep handlers can split a handled label out of a local normalized tail alias`` () =
+        let mainSource =
+            [
+                "@PrivateByDefault module main"
+                ""
+                "probe : Int"
+                "let probe : Int ="
+                "    block"
+                "        scoped effect Ask ="
+                "            1 ask : Unit -> Bool"
+                ""
+                "        scoped effect Other ="
+                "            other : Unit -> Int"
+                ""
+                "        type AskTail (r : EffRow) = <[Ask : Ask | r]>"
+                ""
+                "        let handleAsk : forall (r : EffRow). Eff <[Other : Other | AskTail r]> Int -> Eff <[Other : Other | r]> Int ="
+                "            \\(comp : Eff <[Other : Other | AskTail r]> Int) ->"
+                "                deep handle Ask comp with"
+                "                    case return y -> pure y"
+                "                    case ask () k -> k True"
+                ""
+                "        0"
+            ]
+            |> String.concat "\n"
+
+        let workspace =
+            compileInMemoryWorkspace
+                "memory-m4-local-deep-open-row-tail-alias-root"
+                [ "main.kp", mainSource ]
+
+        Assert.False(workspace.HasErrors, sprintf "Expected deep handlers to split handled labels from local normalized tail aliases, got:%s%s" Environment.NewLine (diagnosticsText workspace.Diagnostics))
+
+
+    [<Fact>]
+    let ``record carried effect operation values preserve effectful application semantics`` () =
+        let mainSource =
+            [
+                "module main"
+                ""
+                "result : Int"
+                "let result : Int ="
+                "    block"
+                "        scoped effect Ask ="
+                "            ask : Unit -> Bool"
+                ""
+                "        let ops = (ask = Ask.ask)"
+                ""
+                "        let comp : Eff <[Ask : Ask]> Int ="
+                "            do"
+                "                let b <- ops.ask ()"
+                "                if b then 1 else 0"
+                ""
+                "        let handled : Eff <[ ]> Int ="
+                "            deep handle Ask comp with"
+                "                case return x -> pure x"
+                "                case ask () k -> k True"
+                ""
+                "        runPure handled"
+            ]
+            |> String.concat "\n"
+
+        let workspace, result =
+            evaluateInMemoryBinding
+                "memory-m4-rebound-operation-record-root"
+                "main.result"
+                [ "main.kp", mainSource ]
+
+        Assert.False(workspace.HasErrors, sprintf "Expected record-carried effect operation values to typecheck and run, got:%s%s" Environment.NewLine (diagnosticsText workspace.Diagnostics))
+
+        match result with
+        | Result.Ok value ->
+            Assert.Equal("1", RuntimeValue.format value)
+        | Result.Error issue ->
+            failwithf "Expected record-carried effect operation values to evaluate successfully, got %s" issue.Message

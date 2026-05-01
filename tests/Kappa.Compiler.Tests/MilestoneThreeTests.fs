@@ -1,5 +1,5 @@
 // Covers M3 ownership, using, and cleanup behavior across supported backends.
-module MilestoneThreeTests
+module MilestoneThreeTestSupport
 
 open System
 open System.Text
@@ -174,250 +174,266 @@ let private inoutSelectorProjectionProgram =
     ]
     |> String.concat "\n"
 
-[<Fact>]
-let ``interpreter executes using release after protected body`` () =
-    let workspace =
-        compileInMemoryWorkspace
-            "memory-m3-interpreter-using-root"
-            [
-                "main.kp", usingReleaseProgram
-            ]
 
-    Assert.False(workspace.HasErrors, diagnosticsText workspace.Diagnostics)
+module MilestoneThreeTestsShard0 =
 
-    let result, output = executeWithCapturedOutput workspace "main.main"
+    [<Fact>]
+    let ``interpreter executes using release after protected body`` () =
+        let workspace =
+            compileInMemoryWorkspace
+                "memory-m3-interpreter-using-root"
+                [
+                    "main.kp", usingReleaseProgram
+                ]
 
-    match result with
-    | Result.Ok value ->
-        Assert.Equal("()", RuntimeValue.format value)
-        Assert.Equal("chunkclosed", output)
-    | Result.Error issue ->
-        failwith issue.Message
+        Assert.False(workspace.HasErrors, diagnosticsText workspace.Diagnostics)
 
-[<Fact>]
-let ``interpreter threads inout successor values across repeated calls`` () =
-    let workspace =
-        compileInMemoryWorkspace
-            "memory-m3-inout-threading-root"
-            [
-                "main.kp", inoutThreadingProgram
-            ]
+        let result, output = executeWithCapturedOutput workspace "main.main"
 
-    Assert.False(workspace.HasErrors, diagnosticsText workspace.Diagnostics)
+        match result with
+        | Result.Ok value ->
+            Assert.Equal("()", RuntimeValue.format value)
+            Assert.Equal("chunkclosed", output)
+        | Result.Error issue ->
+            failwith issue.Message
 
-    let result, output = executeWithCapturedOutput workspace "main.main"
 
-    Assert.True(String.IsNullOrWhiteSpace(output), output)
+    [<Fact>]
+    let ``interpreter threads inout successor values through pure residual binds`` () =
+        let workspace =
+            compileInMemoryWorkspace
+                "memory-m3-inout-pure-residual-root"
+                [
+                    "main.kp", inoutPureResidualProgram
+                ]
 
-    match result with
-    | Result.Ok value ->
-        Assert.Equal("3", RuntimeValue.format value)
-    | Result.Error issue ->
-        failwith issue.Message
+        Assert.False(workspace.HasErrors, diagnosticsText workspace.Diagnostics)
 
-[<Fact>]
-let ``interpreter threads inout successor values through monadic residual binds`` () =
-    let workspace =
-        compileInMemoryWorkspace
-            "memory-m3-inout-monadic-residual-root"
-            [
-                "main.kp", inoutMonadicResidualProgram
-            ]
+        let result, output = executeWithCapturedOutput workspace "main.main"
 
-    Assert.False(workspace.HasErrors, diagnosticsText workspace.Diagnostics)
+        Assert.True(String.IsNullOrWhiteSpace(output), output)
 
-    let result, output = executeWithCapturedOutput workspace "main.main"
+        match result with
+        | Result.Ok value ->
+            Assert.Equal("5", RuntimeValue.format value)
+        | Result.Error issue ->
+            failwith issue.Message
 
-    Assert.True(String.IsNullOrWhiteSpace(output), output)
 
-    match result with
-    | Result.Ok value ->
-        Assert.Equal("5", RuntimeValue.format value)
-    | Result.Error issue ->
-        failwith issue.Message
+    [<Fact>]
+    let ``dotnet backend executes using release after protected body`` () =
+        let workspace =
+            compileInMemoryWorkspaceWithBackend
+                "memory-m3-dotnet-using-root"
+                "dotnet"
+                [
+                    "main.kp", usingReleaseProgram
+                ]
 
-[<Fact>]
-let ``interpreter threads inout successor values through pure residual binds`` () =
-    let workspace =
-        compileInMemoryWorkspace
-            "memory-m3-inout-pure-residual-root"
-            [
-                "main.kp", inoutPureResidualProgram
-            ]
+        Assert.False(workspace.HasErrors, diagnosticsText workspace.Diagnostics)
 
-    Assert.False(workspace.HasErrors, diagnosticsText workspace.Diagnostics)
+        let outputDirectory = createScratchDirectory "dotnet-m3-using-backend"
 
-    let result, output = executeWithCapturedOutput workspace "main.main"
+        let artifact =
+            match Backend.emitDotNetArtifact workspace "main.main" outputDirectory DotNetDeployment.Managed with
+            | Result.Ok artifact -> artifact
+            | Result.Error message -> failwith message
 
-    Assert.True(String.IsNullOrWhiteSpace(output), output)
+        let runResult =
+            runProcess outputDirectory "dotnet" $"run --project \"{artifact.ProjectFilePath}\" -c Release"
 
-    match result with
-    | Result.Ok value ->
-        Assert.Equal("5", RuntimeValue.format value)
-    | Result.Error issue ->
-        failwith issue.Message
+        Assert.True(runResult.ExitCode = 0, runResult.StandardError + runResult.StandardOutput)
+        Assert.Equal("chunkclosed", runResult.StandardOutput.Trim())
+        Assert.True(String.IsNullOrWhiteSpace(runResult.StandardError), runResult.StandardError)
 
-[<Fact>]
-let ``interpreter threads inout successor values through selector projections`` () =
-    let workspace =
-        compileInMemoryWorkspace
-            "memory-m3-inout-selector-projection-root"
-            [
-                "main.kp", inoutSelectorProjectionProgram
-            ]
 
-    Assert.False(workspace.HasErrors, diagnosticsText workspace.Diagnostics)
+    [<Fact>]
+    let ``zig backend executes using release while unwinding protected body`` () =
+        let workspace =
+            compileInMemoryWorkspaceWithBackend
+                "memory-m3-zig-using-unwind-root"
+                "zig"
+                [
+                    "main.kp", usingReleaseThrowingProgram
+                ]
 
-    let result, output = executeWithCapturedOutput workspace "main.main"
+        Assert.False(workspace.HasErrors, diagnosticsText workspace.Diagnostics)
 
-    Assert.True(String.IsNullOrWhiteSpace(output), output)
+        let outputDirectory = createScratchDirectory "zig-m3-using-unwind-backend"
 
-    match result with
-    | Result.Ok value ->
-        Assert.Equal("13", RuntimeValue.format value)
-    | Result.Error issue ->
-        failwith issue.Message
+        let artifact =
+            match Backend.emitZigArtifact workspace "main.main" outputDirectory with
+            | Result.Ok artifact -> artifact
+            | Result.Error message -> failwith message
 
-[<Fact>]
-let ``zig backend executes using release after protected body`` () =
-    let workspace =
-        compileInMemoryWorkspaceWithBackend
-            "memory-m3-zig-using-root"
-            "zig"
-            [
-                "main.kp", usingReleaseProgram
-            ]
+        let compileResult =
+            runProcessWithEnvironment
+                artifact.OutputDirectory
+                (ensureRepoZigExecutablePath ())
+                $"cc -std=c11 -O0 -o \"{artifact.ExecutableFilePath}\" \"{artifact.SourceFilePath}\""
+                []
 
-    Assert.False(workspace.HasErrors, diagnosticsText workspace.Diagnostics)
+        Assert.Equal(0, compileResult.ExitCode)
 
-    let outputDirectory = createScratchDirectory "zig-m3-using-backend"
+        let runResult = runProcess artifact.OutputDirectory artifact.ExecutableFilePath ""
+        Assert.NotEqual(0, runResult.ExitCode)
+        Assert.Equal("chunkclosed", runResult.StandardOutput.Trim())
+        Assert.Contains("Non-exhaustive match", runResult.StandardError)
 
-    let artifact =
-        match Backend.emitZigArtifact workspace "main.main" outputDirectory with
-        | Result.Ok artifact -> artifact
-        | Result.Error message -> failwith message
+module MilestoneThreeTestsShard1 =
 
-    let compileResult =
-        runProcessWithEnvironment
-            artifact.OutputDirectory
-            (ensureRepoZigExecutablePath ())
-            $"cc -std=c11 -O0 -o \"{artifact.ExecutableFilePath}\" \"{artifact.SourceFilePath}\""
-            []
+    [<Fact>]
+    let ``interpreter threads inout successor values across repeated calls`` () =
+        let workspace =
+            compileInMemoryWorkspace
+                "memory-m3-inout-threading-root"
+                [
+                    "main.kp", inoutThreadingProgram
+                ]
 
-    Assert.Equal(0, compileResult.ExitCode)
+        Assert.False(workspace.HasErrors, diagnosticsText workspace.Diagnostics)
 
-    let runResult = runProcess artifact.OutputDirectory artifact.ExecutableFilePath ""
-    Assert.True(runResult.ExitCode = 0, runResult.StandardError + runResult.StandardOutput)
-    Assert.Equal("chunkclosed", runResult.StandardOutput.Trim())
-    Assert.True(String.IsNullOrWhiteSpace(runResult.StandardError), runResult.StandardError)
+        let result, output = executeWithCapturedOutput workspace "main.main"
 
-[<Fact>]
-let ``dotnet backend executes using release after protected body`` () =
-    let workspace =
-        compileInMemoryWorkspaceWithBackend
-            "memory-m3-dotnet-using-root"
-            "dotnet"
-            [
-                "main.kp", usingReleaseProgram
-            ]
+        Assert.True(String.IsNullOrWhiteSpace(output), output)
 
-    Assert.False(workspace.HasErrors, diagnosticsText workspace.Diagnostics)
+        match result with
+        | Result.Ok value ->
+            Assert.Equal("3", RuntimeValue.format value)
+        | Result.Error issue ->
+            failwith issue.Message
 
-    let outputDirectory = createScratchDirectory "dotnet-m3-using-backend"
 
-    let artifact =
-        match Backend.emitDotNetArtifact workspace "main.main" outputDirectory DotNetDeployment.Managed with
-        | Result.Ok artifact -> artifact
-        | Result.Error message -> failwith message
+    [<Fact>]
+    let ``interpreter threads inout successor values through selector projections`` () =
+        let workspace =
+            compileInMemoryWorkspace
+                "memory-m3-inout-selector-projection-root"
+                [
+                    "main.kp", inoutSelectorProjectionProgram
+                ]
 
-    let runResult =
-        runProcess outputDirectory "dotnet" $"run --project \"{artifact.ProjectFilePath}\" -c Release"
+        Assert.False(workspace.HasErrors, diagnosticsText workspace.Diagnostics)
 
-    Assert.True(runResult.ExitCode = 0, runResult.StandardError + runResult.StandardOutput)
-    Assert.Equal("chunkclosed", runResult.StandardOutput.Trim())
-    Assert.True(String.IsNullOrWhiteSpace(runResult.StandardError), runResult.StandardError)
+        let result, output = executeWithCapturedOutput workspace "main.main"
 
-[<Fact>]
-let ``dotnet backend executes using release while unwinding protected body`` () =
-    let workspace =
-        compileInMemoryWorkspaceWithBackend
-            "memory-m3-dotnet-using-unwind-root"
-            "dotnet"
-            [
-                "main.kp", usingReleaseThrowingProgram
-            ]
+        Assert.True(String.IsNullOrWhiteSpace(output), output)
 
-    Assert.False(workspace.HasErrors, diagnosticsText workspace.Diagnostics)
+        match result with
+        | Result.Ok value ->
+            Assert.Equal("13", RuntimeValue.format value)
+        | Result.Error issue ->
+            failwith issue.Message
 
-    let outputDirectory = createScratchDirectory "dotnet-m3-using-unwind-backend"
 
-    let artifact =
-        match Backend.emitDotNetArtifact workspace "main.main" outputDirectory DotNetDeployment.Managed with
-        | Result.Ok artifact -> artifact
-        | Result.Error message -> failwith message
+    [<Fact>]
+    let ``dotnet backend executes using release while unwinding protected body`` () =
+        let workspace =
+            compileInMemoryWorkspaceWithBackend
+                "memory-m3-dotnet-using-unwind-root"
+                "dotnet"
+                [
+                    "main.kp", usingReleaseThrowingProgram
+                ]
 
-    let runResult =
-        runProcess outputDirectory "dotnet" $"run --project \"{artifact.ProjectFilePath}\" -c Release"
+        Assert.False(workspace.HasErrors, diagnosticsText workspace.Diagnostics)
 
-    Assert.NotEqual(0, runResult.ExitCode)
-    Assert.Equal("chunkclosed", runResult.StandardOutput.Trim())
-    Assert.Contains("Non-exhaustive match.", runResult.StandardError)
+        let outputDirectory = createScratchDirectory "dotnet-m3-using-unwind-backend"
 
-[<Fact>]
-let ``dotnet backend executes using release while unwinding protected body without KRuntimeIR`` () =
-    let workspace =
-        compileInMemoryWorkspaceWithBackend
-            "memory-m3-dotnet-using-unwind-no-kruntime-root"
-            "dotnet"
-            [
-                "main.kp", usingReleaseThrowingProgram
-            ]
+        let artifact =
+            match Backend.emitDotNetArtifact workspace "main.main" outputDirectory DotNetDeployment.Managed with
+            | Result.Ok artifact -> artifact
+            | Result.Error message -> failwith message
 
-    Assert.False(workspace.HasErrors, diagnosticsText workspace.Diagnostics)
+        let runResult =
+            runProcess outputDirectory "dotnet" $"run --project \"{artifact.ProjectFilePath}\" -c Release"
 
-    let outputDirectory = createScratchDirectory "dotnet-m3-using-unwind-no-kruntime-backend"
+        Assert.NotEqual(0, runResult.ExitCode)
+        Assert.Equal("chunkclosed", runResult.StandardOutput.Trim())
+        Assert.Contains("Non-exhaustive match.", runResult.StandardError)
 
-    let artifact =
-        match Backend.emitDotNetArtifact { workspace with KRuntimeIR = [] } "main.main" outputDirectory DotNetDeployment.Managed with
-        | Result.Ok artifact -> artifact
-        | Result.Error message -> failwith message
 
-    let runResult =
-        runProcess outputDirectory "dotnet" $"run --project \"{artifact.ProjectFilePath}\" -c Release"
+module MilestoneThreeTestsShard2 =
 
-    Assert.NotEqual(0, runResult.ExitCode)
-    Assert.Equal("chunkclosed", runResult.StandardOutput.Trim())
-    Assert.Contains("Non-exhaustive match.", runResult.StandardError)
+    [<Fact>]
+    let ``interpreter threads inout successor values through monadic residual binds`` () =
+        let workspace =
+            compileInMemoryWorkspace
+                "memory-m3-inout-monadic-residual-root"
+                [
+                    "main.kp", inoutMonadicResidualProgram
+                ]
 
-[<Fact>]
-let ``zig backend executes using release while unwinding protected body`` () =
-    let workspace =
-        compileInMemoryWorkspaceWithBackend
-            "memory-m3-zig-using-unwind-root"
-            "zig"
-            [
-                "main.kp", usingReleaseThrowingProgram
-            ]
+        Assert.False(workspace.HasErrors, diagnosticsText workspace.Diagnostics)
 
-    Assert.False(workspace.HasErrors, diagnosticsText workspace.Diagnostics)
+        let result, output = executeWithCapturedOutput workspace "main.main"
 
-    let outputDirectory = createScratchDirectory "zig-m3-using-unwind-backend"
+        Assert.True(String.IsNullOrWhiteSpace(output), output)
 
-    let artifact =
-        match Backend.emitZigArtifact workspace "main.main" outputDirectory with
-        | Result.Ok artifact -> artifact
-        | Result.Error message -> failwith message
+        match result with
+        | Result.Ok value ->
+            Assert.Equal("5", RuntimeValue.format value)
+        | Result.Error issue ->
+            failwith issue.Message
 
-    let compileResult =
-        runProcessWithEnvironment
-            artifact.OutputDirectory
-            (ensureRepoZigExecutablePath ())
-            $"cc -std=c11 -O0 -o \"{artifact.ExecutableFilePath}\" \"{artifact.SourceFilePath}\""
-            []
 
-    Assert.Equal(0, compileResult.ExitCode)
+    [<Fact>]
+    let ``zig backend executes using release after protected body`` () =
+        let workspace =
+            compileInMemoryWorkspaceWithBackend
+                "memory-m3-zig-using-root"
+                "zig"
+                [
+                    "main.kp", usingReleaseProgram
+                ]
 
-    let runResult = runProcess artifact.OutputDirectory artifact.ExecutableFilePath ""
-    Assert.NotEqual(0, runResult.ExitCode)
-    Assert.Equal("chunkclosed", runResult.StandardOutput.Trim())
-    Assert.Contains("Non-exhaustive match", runResult.StandardError)
+        Assert.False(workspace.HasErrors, diagnosticsText workspace.Diagnostics)
+
+        let outputDirectory = createScratchDirectory "zig-m3-using-backend"
+
+        let artifact =
+            match Backend.emitZigArtifact workspace "main.main" outputDirectory with
+            | Result.Ok artifact -> artifact
+            | Result.Error message -> failwith message
+
+        let compileResult =
+            runProcessWithEnvironment
+                artifact.OutputDirectory
+                (ensureRepoZigExecutablePath ())
+                $"cc -std=c11 -O0 -o \"{artifact.ExecutableFilePath}\" \"{artifact.SourceFilePath}\""
+                []
+
+        Assert.Equal(0, compileResult.ExitCode)
+
+        let runResult = runProcess artifact.OutputDirectory artifact.ExecutableFilePath ""
+        Assert.True(runResult.ExitCode = 0, runResult.StandardError + runResult.StandardOutput)
+        Assert.Equal("chunkclosed", runResult.StandardOutput.Trim())
+        Assert.True(String.IsNullOrWhiteSpace(runResult.StandardError), runResult.StandardError)
+
+
+    [<Fact>]
+    let ``dotnet backend executes using release while unwinding protected body without KRuntimeIR`` () =
+        let workspace =
+            compileInMemoryWorkspaceWithBackend
+                "memory-m3-dotnet-using-unwind-no-kruntime-root"
+                "dotnet"
+                [
+                    "main.kp", usingReleaseThrowingProgram
+                ]
+
+        Assert.False(workspace.HasErrors, diagnosticsText workspace.Diagnostics)
+
+        let outputDirectory = createScratchDirectory "dotnet-m3-using-unwind-no-kruntime-backend"
+
+        let artifact =
+            match Backend.emitDotNetArtifact { workspace with KRuntimeIR = [] } "main.main" outputDirectory DotNetDeployment.Managed with
+            | Result.Ok artifact -> artifact
+            | Result.Error message -> failwith message
+
+        let runResult =
+            runProcess outputDirectory "dotnet" $"run --project \"{artifact.ProjectFilePath}\" -c Release"
+
+        Assert.NotEqual(0, runResult.ExitCode)
+        Assert.Equal("chunkclosed", runResult.StandardOutput.Trim())
+        Assert.Contains("Non-exhaustive match.", runResult.StandardError)
+

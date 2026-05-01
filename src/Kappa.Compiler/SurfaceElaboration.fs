@@ -17,11 +17,12 @@ module SurfaceElaboration =
           DefaultDefinition: LetDefinition option }
 
     type private TraitInfo =
-        { ModuleIdentity: ModuleIdentity
-          Name: string
+        { Identity: DeclarationIdentity
           TypeParameters: string list
           Supertraits: TraitConstraint list
           Members: Map<string, TraitMemberInfo> }
+        member this.ModuleIdentity = DeclarationIdentity.moduleIdentity this.Identity
+        member this.Name = DeclarationIdentity.name this.Identity
 
     type private InstanceInfo =
         { ModuleIdentity: ModuleIdentity
@@ -32,13 +33,14 @@ module SurfaceElaboration =
           Members: Map<string, LetDefinition> }
 
     type private TypeAliasInfo =
-        { ModuleIdentity: ModuleIdentity
-          Name: string
+        { Identity: DeclarationIdentity
           IsOpaque: bool
           Parameters: string list
           Body: TypeExpr
           TerminationCertified: bool
           ConversionReducible: bool }
+        member this.ModuleIdentity = DeclarationIdentity.moduleIdentity this.Identity
+        member this.Name = DeclarationIdentity.name this.Identity
 
     type private TypeFacetKind =
         | TypeAliasFacet
@@ -47,24 +49,21 @@ module SurfaceElaboration =
         | AbstractFacet
 
     type private TypeFacetInfo =
-        { ModuleIdentity: ModuleIdentity
-          Name: string
+        { Identity: DeclarationIdentity
           FacetKind: TypeFacetKind
           IsOpaque: bool
           Scheme: TypeScheme }
-
-    type private StaticObjectKind =
-        | StaticTypeObject
-        | StaticTraitObject
-        | StaticEffectLabelObject
-        | StaticModuleObject
+        member this.ModuleIdentity = DeclarationIdentity.moduleIdentity this.Identity
+        member this.Name = DeclarationIdentity.name this.Identity
 
     type private StaticObjectInfo =
-        { ObjectKind: StaticObjectKind
+        { Identity: SemanticObjectIdentity
           NameSegments: string list
           Scheme: TypeScheme option
           ScopedEffect: EffectSemanticDeclaration option
           TypeFacet: TypeFacetInfo option }
+        member this.ObjectKind =
+            SemanticObjectIdentity.kind this.Identity
 
     type private RecordSurfaceFieldInfo =
         { Name: string
@@ -77,21 +76,23 @@ module SurfaceElaboration =
           RowTail: string option }
 
     type private BindingSchemeInfo =
-        { ModuleIdentity: ModuleIdentity
-          Name: string
+        { Identity: DeclarationIdentity
           IsPattern: bool
           Scheme: TypeScheme
           TypeTokens: Token list
           ParameterLayouts: Parameter list option
           ConstructorTypeName: string option
           DefaultArguments: Map<string, SurfaceExpression> }
+        member this.ModuleIdentity = DeclarationIdentity.moduleIdentity this.Identity
+        member this.Name = DeclarationIdentity.name this.Identity
 
     type private ProjectionInfo =
-        { ModuleIdentity: ModuleIdentity
-          Name: string
+        { Identity: DeclarationIdentity
           Binders: ProjectionBinder list
           ReturnType: TypeExpr
           Body: SurfaceProjectionBody option }
+        member this.ModuleIdentity = DeclarationIdentity.moduleIdentity this.Identity
+        member this.Name = DeclarationIdentity.name this.Identity
 
     type private OrdinaryVisibleTermCandidate =
         | OrdinaryVisibleBindingCandidate of ImportedOrdinaryCandidatePriority * BindingSchemeInfo
@@ -266,6 +267,52 @@ module SurfaceElaboration =
 
     let private moduleIdentityOfModuleSpecifier specifier =
         specifier |> ModuleIdentity.ofModuleSpecifier
+
+    let private topLevelDeclarationIdentity moduleIdentity name kind =
+        DeclarationIdentity.topLevel moduleIdentity name kind
+
+    let private moduleDeclarationIdentity moduleIdentity =
+        moduleIdentity
+        |> ModuleIdentity.segments
+        |> List.last
+        |> fun moduleName -> DeclarationIdentity.topLevel moduleIdentity moduleName ModuleDeclaration
+
+    let private semanticObjectIdentity declarationIdentity kind =
+        SemanticObjectIdentity.create declarationIdentity kind
+
+    let private bindingIdentity moduleIdentity name =
+        topLevelDeclarationIdentity moduleIdentity name TermDeclaration
+
+    let private constructorIdentity moduleIdentity name =
+        topLevelDeclarationIdentity moduleIdentity name ConstructorDeclaration
+
+    let private typeAliasIdentity moduleIdentity name =
+        topLevelDeclarationIdentity moduleIdentity name TypeAliasDeclaration
+
+    let private typeFacetIdentity moduleIdentity name =
+        topLevelDeclarationIdentity moduleIdentity name TypeFacetDeclaration
+
+    let private traitIdentity moduleIdentity name =
+        topLevelDeclarationIdentity moduleIdentity name TraitDeclaration
+
+    let private projectionIdentity moduleIdentity name =
+        topLevelDeclarationIdentity moduleIdentity name ProjectionDeclaration
+
+    let private bindingSchemeInfo identity isPattern scheme typeTokens parameterLayouts constructorTypeName defaultArguments =
+        { Identity = identity
+          IsPattern = isPattern
+          Scheme = scheme
+          TypeTokens = typeTokens
+          ParameterLayouts = parameterLayouts
+          ConstructorTypeName = constructorTypeName
+          DefaultArguments = defaultArguments }
+
+    let private staticObjectInfo identity nameSegments scheme scopedEffect typeFacet =
+        { Identity = identity
+          NameSegments = nameSegments
+          Scheme = scheme
+          ScopedEffect = scopedEffect
+          TypeFacet = typeFacet }
 
     let private preludeModuleIdentity = ModuleIdentity.ofSegments Stdlib.PreludeModuleName
 
@@ -1041,11 +1088,12 @@ module SurfaceElaboration =
           Body = body }
 
     let private typeFacetStaticObject (typeFacetInfo: TypeFacetInfo) =
-        { ObjectKind = StaticTypeObject
-          NameSegments = [ typeFacetInfo.Name ]
-          Scheme = Some typeFacetInfo.Scheme
-          ScopedEffect = None
-          TypeFacet = Some typeFacetInfo }
+        staticObjectInfo
+            (semanticObjectIdentity typeFacetInfo.Identity TypeObject)
+            [ typeFacetInfo.Name ]
+            (Some typeFacetInfo.Scheme)
+            None
+            (Some typeFacetInfo)
 
     let private scopedEffectLabelNameSegments (declaration: EffectSemanticDeclaration) =
         EffectSemantics.labelNameSegments declaration
@@ -1054,33 +1102,36 @@ module SurfaceElaboration =
         EffectSemantics.interfaceNameSegments declaration
 
     let private scopedEffectTypeStaticObject (declaration: EffectSemanticDeclaration) =
-        { ObjectKind = StaticTypeObject
-          NameSegments = scopedEffectInterfaceNameSegments declaration
-          Scheme =
-            Some
+        staticObjectInfo
+            (declaration.InterfaceObjectIdentity
+             |> Option.defaultWith (fun () -> invalidOp $"Scoped effect '{declaration.VisibleName}' is missing a semantic identity."))
+            (scopedEffectInterfaceNameSegments declaration)
+            (Some
                 { Forall = []
                   Constraints = []
-                  Body = typeObjectType }
-          ScopedEffect = Some declaration
-          TypeFacet = None }
+                  Body = typeObjectType })
+            (Some declaration)
+            None
 
     let private scopedEffectLabelStaticObject (declaration: EffectSemanticDeclaration) =
-        { ObjectKind = StaticEffectLabelObject
-          NameSegments = scopedEffectLabelNameSegments declaration
-          Scheme =
-            Some
+        staticObjectInfo
+            (declaration.LabelObjectIdentity
+             |> Option.defaultWith (fun () -> invalidOp $"Scoped effect '{declaration.VisibleName}' is missing a semantic identity."))
+            (scopedEffectLabelNameSegments declaration)
+            (Some
                 { Forall = []
                   Constraints = []
-                  Body = effectLabelObjectType }
-          ScopedEffect = Some declaration
-          TypeFacet = None }
+                  Body = effectLabelObjectType })
+            (Some declaration)
+            None
 
     let private traitStaticObject (traitInfo: TraitInfo) =
-        { ObjectKind = StaticTraitObject
-          NameSegments = [ traitInfo.Name ]
-          Scheme = Some(traitFacetScheme traitInfo)
-          ScopedEffect = None
-          TypeFacet = None }
+        staticObjectInfo
+            (semanticObjectIdentity traitInfo.Identity TraitObject)
+            [ traitInfo.Name ]
+            (Some(traitFacetScheme traitInfo))
+            None
+            None
 
     let private tryResolveVisibleTypeFacetInfo
         (environment: BindingLoweringEnvironment)
@@ -1120,12 +1171,7 @@ module SurfaceElaboration =
             let moduleName = SyntaxFacts.moduleNameToText nameSegments
 
             if environment.VisibleModules.Contains moduleName then
-                Some
-                    { ObjectKind = StaticModuleObject
-                      NameSegments = nameSegments
-                      Scheme = None
-                      ScopedEffect = None
-                      TypeFacet = None }
+                Some(staticObjectInfo (semanticObjectIdentity (moduleDeclarationIdentity (moduleIdentityOfSegments nameSegments)) ModuleObject) nameSegments None None None)
             else
                 None
         | Name nameSegments when not (List.isEmpty nameSegments) ->
@@ -1201,6 +1247,11 @@ module SurfaceElaboration =
         let current = scopedEffectIdentityCounter.Value |> Option.defaultValue 0
         scopedEffectIdentityCounter.Value <- Some(current + 1)
         $"surface-elaboration|{current}"
+
+    let private nextScopedEffectDeclarationIdentity moduleIdentity declarationName =
+        let current = scopedEffectIdentityCounter.Value |> Option.defaultValue 0
+        scopedEffectIdentityCounter.Value <- Some(current + 1)
+        DeclarationIdentity.create moduleIdentity [ $"local-effect-{current}" ] declarationName EffectDeclaration
 
     let private ensureScopedEffectDeclarationIdentity (declaration: EffectDeclaration) =
         if declaration.EffectInterfaceId.IsSome && declaration.EffectLabelId.IsSome && (declaration.Operations |> List.forall (fun operation -> operation.OperationId.IsSome)) then
@@ -1296,8 +1347,13 @@ module SurfaceElaboration =
             None
         )
 
-    let private withScopedEffectDeclaration (declaration: EffectDeclaration) work =
-        let declaration = ensureScopedEffectDeclarationIdentity declaration |> EffectSemantics.toSemantic
+    let private withScopedEffectDeclaration moduleIdentity (declaration: EffectDeclaration) work =
+        let declarationIdentity =
+            nextScopedEffectDeclarationIdentity moduleIdentity declaration.Name
+
+        let declaration =
+            ensureScopedEffectDeclarationIdentity declaration
+            |> EffectSemantics.toSemantic (Some declarationIdentity)
         let saved = currentScopedEffects ()
         let savedDeclarations = currentScopedEffectDeclarations ()
         let savedCounter = scopedEffectIdentityCounter.Value
@@ -1311,7 +1367,7 @@ module SurfaceElaboration =
             scopedEffectDeclarations.Value <- Some savedDeclarations
             scopedEffectIdentityCounter.Value <- savedCounter
 
-    let private withScopedEffectDeclarations (declarations: EffectDeclaration list) work =
+    let private withScopedEffectDeclarations moduleIdentity (declarations: EffectDeclaration list) work =
         let saved = currentScopedEffects ()
         let savedDeclarations = currentScopedEffectDeclarations ()
         let savedCounter = scopedEffectIdentityCounter.Value
@@ -1319,7 +1375,11 @@ module SurfaceElaboration =
         let semanticDeclarations =
             declarations
             |> List.map ensureScopedEffectDeclarationIdentity
-            |> List.map EffectSemantics.toSemantic
+            |> List.mapi (fun index declaration ->
+                let declarationIdentity =
+                    DeclarationIdentity.create moduleIdentity [ $"local-effect-batch-{index}" ] declaration.Name EffectDeclaration
+
+                EffectSemantics.toSemantic (Some declarationIdentity) declaration)
 
         let merged =
             semanticDeclarations
@@ -1377,8 +1437,8 @@ module SurfaceElaboration =
         tryResolveScopedStaticObject environment expression
         |> Option.bind (fun staticObject ->
             match staticObject.ObjectKind, staticObject.ScopedEffect, staticObject.NameSegments with
-            | StaticEffectLabelObject, Some declaration, _ -> Some declaration
-            | StaticEffectLabelObject, None, [ effectName ] -> tryFindScopedEffectDeclaration effectName
+            | EffectLabelObject, Some declaration, _ -> Some declaration
+            | EffectLabelObject, None, [ effectName ] -> tryFindScopedEffectDeclaration effectName
             | _ -> None)
 
     let private tryResolveEffectOperationNamePath
@@ -1392,10 +1452,10 @@ module SurfaceElaboration =
             tryResolveScopedStaticObject environment (Name prefix)
             |> Option.bind (fun staticObject ->
                 match staticObject.ObjectKind, staticObject.ScopedEffect, staticObject.NameSegments with
-                | StaticEffectLabelObject, Some declaration, _ ->
+                | EffectLabelObject, Some declaration, _ ->
                     EffectSemantics.tryFindOperation operationName declaration
                     |> Option.map (fun operation -> declaration.VisibleName, declaration, operation)
-                | StaticEffectLabelObject, None, [ effectName ] ->
+                | EffectLabelObject, None, [ effectName ] ->
                     tryFindScopedEffectOperation effectName operationName
                     |> Option.map (fun (declaration, operation) -> effectName, declaration, operation)
                 | _ ->
@@ -1420,10 +1480,12 @@ module SurfaceElaboration =
     let private staticObjectExpression (staticObject: StaticObjectInfo) =
         let selector =
             match staticObject.ObjectKind with
-            | StaticTypeObject -> TypeKind
-            | StaticTraitObject -> TraitKind
-            | StaticEffectLabelObject -> EffectLabelKind
-            | StaticModuleObject -> ModuleKind
+            | TypeObject -> TypeKind
+            | TraitObject -> TraitKind
+            | EffectLabelObject -> EffectLabelKind
+            | ModuleObject -> ModuleKind
+            | ProjectionObject ->
+                invalidOp "Projection objects do not reify as ordinary static-object paths."
 
         KindQualifiedName(selector, staticObject.NameSegments)
 
@@ -2637,8 +2699,7 @@ module SurfaceElaboration =
         |> Option.bind TypeSignatures.parseType
         |> Option.map (fun body ->
             declaration.Name,
-            { ModuleIdentity = moduleIdentity
-              Name = declaration.Name
+            { Identity = typeAliasIdentity moduleIdentity declaration.Name
               IsOpaque = declaration.IsOpaque
               Parameters = TypeSignatures.collectLeadingTypeParameters declaration.HeaderTokens
               Body = body
@@ -2733,8 +2794,7 @@ module SurfaceElaboration =
             |> List.fold (fun current parameterType -> TypeArrow(QuantityOmega, parameterType, current)) resultType
 
         name,
-        { ModuleIdentity = moduleIdentity
-          Name = name
+        { Identity = typeFacetIdentity moduleIdentity name
           FacetKind = kind
           IsOpaque = isOpaque
           Scheme =
@@ -2884,14 +2944,14 @@ module SurfaceElaboration =
 
         Some
             (constructor.Name,
-             { ModuleIdentity = moduleIdentity
-               Name = constructor.Name
-               IsPattern = false
-               Scheme = scheme
-               TypeTokens = []
-               ParameterLayouts = parameterLayouts
-               ConstructorTypeName = Some dataDeclaration.Name
-               DefaultArguments = defaultArguments })
+             bindingSchemeInfo
+                 (constructorIdentity moduleIdentity constructor.Name)
+                 false
+                 scheme
+                 []
+                 parameterLayouts
+                 (Some dataDeclaration.Name)
+                 defaultArguments)
 
     let private exceptMatches namespaceName name (item: ExceptItem) =
         String.Equals(item.Name, name, StringComparison.Ordinal)
@@ -3031,17 +3091,16 @@ module SurfaceElaboration =
                             |> stripLeadingConstraintAliasParameterLayouts scheme
 
                         declaration.Name,
-                        { ModuleIdentity = moduleIdentity
-                          Name = declaration.Name
-                          IsPattern =
-                            bindingDefinitions
-                              |> Map.tryFind declaration.Name
-                              |> Option.exists (fun definition -> definition.IsPattern)
-                          Scheme = scheme
-                          TypeTokens = declaration.TypeTokens
-                          ParameterLayouts = parameterLayouts
-                          ConstructorTypeName = None
-                          DefaultArguments = Map.empty })
+                        bindingSchemeInfo
+                            (bindingIdentity moduleIdentity declaration.Name)
+                            (bindingDefinitions
+                             |> Map.tryFind declaration.Name
+                             |> Option.exists (fun definition -> definition.IsPattern))
+                            scheme
+                            declaration.TypeTokens
+                            parameterLayouts
+                            None
+                            Map.empty)
                 | ExpectDeclarationNode (ExpectTermDeclaration declaration) ->
                     let signatureParameterLayouts =
                         declaration.TypeTokens
@@ -3063,14 +3122,14 @@ module SurfaceElaboration =
                                     None)
 
                         declaration.Name,
-                        { ModuleIdentity = moduleIdentity
-                          Name = declaration.Name
-                          IsPattern = false
-                          Scheme = scheme
-                          TypeTokens = declaration.TypeTokens
-                          ParameterLayouts = parameterLayouts
-                          ConstructorTypeName = None
-                          DefaultArguments = Map.empty })
+                        bindingSchemeInfo
+                            (bindingIdentity moduleIdentity declaration.Name)
+                            false
+                            scheme
+                            declaration.TypeTokens
+                            parameterLayouts
+                            None
+                            Map.empty)
                 | LetDeclaration definition
                     when definition.Name.IsSome
                          && not (Set.contains definition.Name.Value signatureNames) ->
@@ -3082,14 +3141,14 @@ module SurfaceElaboration =
                             |> stripLeadingConstraintAliasParameterLayouts scheme
 
                         definition.Name.Value,
-                        { ModuleIdentity = moduleIdentity
-                          Name = definition.Name.Value
-                          IsPattern = definition.IsPattern
-                          Scheme = scheme
-                          TypeTokens = definition.ReturnTypeTokens |> Option.defaultValue []
-                          ParameterLayouts = parameterLayouts
-                          ConstructorTypeName = None
-                          DefaultArguments = Map.empty })
+                        bindingSchemeInfo
+                            (bindingIdentity moduleIdentity definition.Name.Value)
+                            definition.IsPattern
+                            scheme
+                            (definition.ReturnTypeTokens |> Option.defaultValue [])
+                            parameterLayouts
+                            None
+                            Map.empty)
                 | _ ->
                     None)
             |> Map.ofList
@@ -3124,8 +3183,7 @@ module SurfaceElaboration =
                     TypeSignatures.parseType declaration.ReturnTypeTokens
                     |> Option.map (fun returnType ->
                         declaration.Name,
-                        { ModuleIdentity = moduleIdentity
-                          Name = declaration.Name
+                        { Identity = projectionIdentity moduleIdentity declaration.Name
                           Binders = declaration.Binders
                           ReturnType = returnType
                           Body = declaration.Body })
@@ -3289,8 +3347,7 @@ module SurfaceElaboration =
 
                     Some(
                         declaration.Name,
-                        { ModuleIdentity = moduleIdentity
-                          Name = declaration.Name
+                        { Identity = traitIdentity moduleIdentity declaration.Name
                           TypeParameters = traitTypeParameters
                           Supertraits = supertraits
                           Members = members }
@@ -3382,17 +3439,16 @@ module SurfaceElaboration =
 
                     Some(
                         binding.Name,
-                        { ModuleIdentity = moduleIdentity
-                          Name = binding.Name
-                          IsPattern = false
-                          Scheme =
+                        bindingSchemeInfo
+                            (bindingIdentity moduleIdentity binding.Name)
+                            false
                             { Forall = []
                               Constraints = []
                               Body = schemeBody }
-                          TypeTokens = typeTextTokens binding.ReturnTypeText
-                          ParameterLayouts = Some parameterLayouts
-                          ConstructorTypeName = None
-                          DefaultArguments = Map.empty }
+                            (typeTextTokens binding.ReturnTypeText)
+                            (Some parameterLayouts)
+                            None
+                            Map.empty
                     )
                 else
                     None)
@@ -3402,8 +3458,7 @@ module SurfaceElaboration =
             description.Types
             |> List.map (fun exportedType ->
                 exportedType.Name,
-                { ModuleIdentity = moduleIdentity
-                  Name = exportedType.Name
+                { Identity = typeFacetIdentity moduleIdentity exportedType.Name
                   FacetKind = AbstractFacet
                   IsOpaque = false
                   Scheme =
@@ -3428,30 +3483,29 @@ module SurfaceElaboration =
           ExportedTypes = description.Types |> List.map (fun exportedType -> exportedType.Name) |> Set.ofList
           ExportedTraits = Set.empty }
 
-    let private buildStandardModuleSurfaceInfo (description: StandardModules.StandardModuleDescription) =
-        let moduleIdentity = description.ModuleIdentity
+    let private buildStandardModuleSurfaceInfo (surfaceInfo: StandardLibraryCatalog.StandardLibrarySurface) =
+        let moduleIdentity = surfaceInfo.ModuleIdentity
         let bindingSchemes =
-            description.Terms
+            surfaceInfo.Terms
             |> List.choose (fun binding ->
                 tryParseSchemeText binding.TypeText
                 |> Option.map (fun scheme ->
                     binding.Name,
-                    { ModuleIdentity = moduleIdentity
-                      Name = binding.Name
-                      IsPattern = false
-                      Scheme = scheme
-                      TypeTokens = typeTextTokens binding.TypeText
-                      ParameterLayouts = None
-                      ConstructorTypeName = None
-                      DefaultArguments = Map.empty }))
+                    bindingSchemeInfo
+                        (bindingIdentity moduleIdentity binding.Name)
+                        false
+                        scheme
+                        (typeTextTokens binding.TypeText)
+                        None
+                        None
+                        Map.empty))
             |> Map.ofList
 
         let typeFacets =
-            description.Types
+            surfaceInfo.Types
             |> List.map (fun typeName ->
                 typeName,
-                { ModuleIdentity = moduleIdentity
-                  Name = typeName
+                { Identity = typeFacetIdentity moduleIdentity typeName
                   FacetKind = AbstractFacet
                   IsOpaque = false
                   Scheme =
@@ -3461,7 +3515,7 @@ module SurfaceElaboration =
             |> Map.ofList
 
         let traits =
-            description.Traits
+            surfaceInfo.Traits
             |> List.map (fun traitInfo ->
                 let members =
                     traitInfo.Members
@@ -3475,8 +3529,7 @@ module SurfaceElaboration =
                     |> Map.ofList
 
                 traitInfo.Name,
-                { ModuleIdentity = moduleIdentity
-                  Name = traitInfo.Name
+                { Identity = traitIdentity moduleIdentity traitInfo.Name
                   TypeParameters = [ for index in 1 .. traitInfo.TypeParameterCount -> $"t{index}" ]
                   Supertraits = []
                   Members = members })
@@ -3492,11 +3545,11 @@ module SurfaceElaboration =
           Traits = traits
           Instances = []
           Imports = []
-          ExportedTerms = description.Terms |> List.map (fun binding -> binding.Name) |> Set.ofList
+          ExportedTerms = surfaceInfo.Terms |> List.map (fun binding -> binding.Name) |> Set.ofList
           ExportedConstructors = Set.empty
           ExportedConstructorsByType = Map.empty
-          ExportedTypes = description.Types |> Set.ofList
-          ExportedTraits = description.Traits |> List.map (fun traitInfo -> traitInfo.Name) |> Set.ofList }
+          ExportedTypes = surfaceInfo.Types |> Set.ofList
+          ExportedTraits = surfaceInfo.Traits |> List.map (fun traitInfo -> traitInfo.Name) |> Set.ofList }
 
     let private mergeSurfaceInfoMaps
         (left: Map<string, 'value>)
@@ -3564,9 +3617,10 @@ module SurfaceElaboration =
             |> Map.ofList
 
         let standardSurfaceIndex =
-            StandardModules.byIdentity
-            |> Map.toList
-            |> List.map (fun (moduleIdentity, description) -> moduleIdentity, buildStandardModuleSurfaceInfo description)
+            StandardLibraryCatalog.syntheticModules
+            |> List.map (fun description ->
+                let surfaceInfo = description.Surface
+                surfaceInfo.ModuleIdentity, buildStandardModuleSurfaceInfo surfaceInfo)
             |> Map.ofList
 
         let directIndex =
@@ -5177,7 +5231,7 @@ module SurfaceElaboration =
                     TypeName(scopedEffectInterfaceNameSegments declaration, arguments |> List.map loop)
                 | None, [ name ] ->
                     match environment.VisibleStaticObjects |> Map.tryFind name with
-                    | Some staticObject when staticObject.ObjectKind = StaticTypeObject ->
+                    | Some staticObject when staticObject.ObjectKind = TypeObject ->
                         TypeName(staticObject.NameSegments, arguments |> List.map loop)
                     | _ when environment.VisibleTypeFacets.ContainsKey(name) ->
                         let typeFacet = environment.VisibleTypeFacets[name]
@@ -5734,17 +5788,16 @@ module SurfaceElaboration =
                                 |> stripLeadingConstraintAliasParameterLayouts scheme
 
                             declaration.Name,
-                            { ModuleIdentity = moduleIdentity
-                              Name = declaration.Name
-                              IsPattern =
-                                moduleTopLevelDefinitionsByName
-                                |> Map.tryFind declaration.Name
-                                |> Option.exists (fun definition -> definition.IsPattern)
-                              Scheme = scheme
-                              TypeTokens = declaration.TypeTokens
-                              ParameterLayouts = parameterLayouts
-                              ConstructorTypeName = None
-                              DefaultArguments = Map.empty })
+                            bindingSchemeInfo
+                                (bindingIdentity moduleIdentity declaration.Name)
+                                (moduleTopLevelDefinitionsByName
+                                 |> Map.tryFind declaration.Name
+                                 |> Option.exists (fun definition -> definition.IsPattern))
+                                scheme
+                                declaration.TypeTokens
+                                parameterLayouts
+                                None
+                                Map.empty)
                     | _ ->
                         None)
                 |> Map.ofList
@@ -5756,17 +5809,16 @@ module SurfaceElaboration =
                     | Some name, Some scheme when not (Map.containsKey name signatureBindingInfos) ->
                         Some(
                             name,
-                            { ModuleIdentity = moduleIdentity
-                              Name = name
-                              IsPattern = definition.IsPattern
-                              Scheme = scheme
-                              TypeTokens = definition.ReturnTypeTokens |> Option.defaultValue []
-                              ParameterLayouts =
-                                Some definition.Parameters
-                                |> stripForallOnlyParameterLayouts scheme
-                                |> stripLeadingConstraintAliasParameterLayouts scheme
-                              ConstructorTypeName = None
-                              DefaultArguments = Map.empty }
+                            bindingSchemeInfo
+                                (bindingIdentity moduleIdentity name)
+                                definition.IsPattern
+                                scheme
+                                (definition.ReturnTypeTokens |> Option.defaultValue [])
+                                (Some definition.Parameters
+                                 |> stripForallOnlyParameterLayouts scheme
+                                 |> stripLeadingConstraintAliasParameterLayouts scheme)
+                                None
+                                Map.empty
                         )
                     | _ ->
                         None
@@ -7779,7 +7831,7 @@ module SurfaceElaboration =
                     |> Map.tryFind aliasName
                     |> Option.bind (fun staticObject ->
                         match staticObject.ObjectKind with
-                        | StaticTypeObject ->
+                        | TypeObject ->
                             loop visited (TypeName(staticObject.NameSegments, []))
                         | _ ->
                             None)
@@ -8960,14 +9012,14 @@ module SurfaceElaboration =
                                 :: memberInfo.Scheme.Constraints }
 
                     let bindingInfo =
-                        { ModuleIdentity = traitInfo.ModuleIdentity
-                          Name = memberName
-                          IsPattern = false
-                          Scheme = overloadedScheme
-                          TypeTokens = []
-                          ParameterLayouts = None
-                          ConstructorTypeName = None
-                          DefaultArguments = Map.empty }
+                        bindingSchemeInfo
+                            (bindingIdentity traitInfo.ModuleIdentity memberName)
+                            false
+                            overloadedScheme
+                            []
+                            None
+                            None
+                            Map.empty
 
                     tryPrepareVisibleBindingCall environment candidateCounter bindingInfo None inferArgumentType noLocalImplicit arguments
                     |> Option.bind (fun preparedCall ->
@@ -9008,14 +9060,14 @@ module SurfaceElaboration =
                         memberInfo.Scheme
 
                 let bindingInfo =
-                    { ModuleIdentity = traitInfo.ModuleIdentity
-                      Name = resolvedMemberName
-                      IsPattern = false
-                      Scheme = specializedScheme
-                      TypeTokens = []
-                      ParameterLayouts = None
-                      ConstructorTypeName = None
-                      DefaultArguments = Map.empty }
+                    bindingSchemeInfo
+                        (bindingIdentity traitInfo.ModuleIdentity resolvedMemberName)
+                        false
+                        specializedScheme
+                        []
+                        None
+                        None
+                        Map.empty
 
                 tryPrepareVisibleBindingCall
                     environment
@@ -9031,17 +9083,14 @@ module SurfaceElaboration =
         (typeObject: StaticObjectInfo)
         (constructorInfo: BindingSchemeInfo)
         =
-        match typeObject.ObjectKind, typeObject.NameSegments with
-        | StaticTypeObject, _ ->
+        match typeObject.ObjectKind, typeObject.TypeFacet with
+        | TypeObject, Some typeFacetInfo ->
             let _, resultType = TypeSignatures.schemeParts constructorInfo.Scheme
 
             match normalizeTypeAliases environment.VisibleTypeAliases resultType with
             | TypeName(resultName, _) ->
-                match List.tryLast resultName, List.tryLast typeObject.NameSegments with
-                | Some resultTypeName, Some objectTypeName ->
-                    String.Equals(resultTypeName, objectTypeName, StringComparison.Ordinal)
-                | _ ->
-                    false
+                tryResolveVisibleTypeFacetInfo environment resultName
+                |> Option.exists (fun resultTypeFacet -> resultTypeFacet.Identity = typeFacetInfo.Identity)
             | _ ->
                 false
         | _ ->
@@ -9060,7 +9109,7 @@ module SurfaceElaboration =
                 |> Option.filter (constructorResultBelongsToType environment typeObject)
 
             match typeObject.ObjectKind, typeObject.TypeFacet with
-            | StaticTypeObject, Some typeFacetInfo ->
+            | TypeObject, Some typeFacetInfo ->
                 environment.SurfaceIndex
                 |> Map.tryFind typeFacetInfo.ModuleIdentity
                 |> Option.bind (fun moduleSurface ->
@@ -9471,7 +9520,7 @@ module SurfaceElaboration =
                 localImplicitTypes
                 bodyForInference
         | LocalScopedEffect(declaration, body) ->
-            withScopedEffectDeclaration declaration (fun () ->
+            withScopedEffectDeclaration environment.CurrentModuleIdentity declaration (fun () ->
                 inferValidationExpressionTypeWithContext environment freshCounter localTypes localImplicitTypes body)
         | Handle(_, label, body, returnClause, _) ->
             let handledResultType =
@@ -17297,7 +17346,7 @@ module SurfaceElaboration =
                     (rewriteLocalTypeAliasesInSurfaceExpression environment.CurrentModuleIdentity environment.VisibleTypeAliases expression)
             | LocalScopedEffect(declaration, body) ->
                 borrowedEffectResumptionQuantityDiagnostics makeDiagnostic declaration
-                @ withScopedEffectDeclaration declaration (fun () ->
+                @ withScopedEffectDeclaration environment.CurrentModuleIdentity declaration (fun () ->
                     validateExpressionWithFlow
                         locals
                         refinements
@@ -20085,7 +20134,7 @@ module SurfaceElaboration =
 
                 localEffects @ importedEffectDeclarations surfaceIndex effectDeclarationsByModule moduleIdentity
 
-            withScopedEffectDeclarations topLevelEffects (fun () ->
+            withScopedEffectDeclarations moduleIdentity topLevelEffects (fun () ->
                 let makeDiagnostic kind message =
                     Diagnostics.errorFact "KFrontIR" (Some(KFrontIRPhase.phaseName CORE_LOWERING)) None [] (DiagnosticFact.simple kind message)
 
@@ -20143,7 +20192,7 @@ module SurfaceElaboration =
                             let semanticDeclaration =
                                 declaration
                                 |> EffectSemantics.ensureTopLevel moduleIdentity
-                                |> EffectSemantics.toSemantic
+                                |> EffectSemantics.toSemantic (Some(topLevelDeclarationIdentity moduleIdentity declaration.Name EffectDeclaration))
 
                             Map.add declaration.Name (scopedEffectLabelStaticObject semanticDeclaration) current) localAliases
 
@@ -21708,7 +21757,7 @@ module SurfaceElaboration =
                                 | LocalTypeAlias(_, body) ->
                                     collectMultishotInvocations body
                                 | LocalScopedEffect(declaration, body) ->
-                                    withScopedEffectDeclaration declaration (fun () -> collectMultishotInvocations body)
+                                    withScopedEffectDeclaration environment.CurrentModuleIdentity declaration (fun () -> collectMultishotInvocations body)
                                 | Lambda(_, body) ->
                                     collectMultishotInvocations body
                                 | Handle(_, label, body, returnClause, operationClauses) ->
@@ -22557,7 +22606,7 @@ module SurfaceElaboration =
                     tryResolveScopedStaticObject environment expression
                     |> Option.bind (fun staticObject ->
                         match staticObject.ObjectKind with
-                        | StaticEffectLabelObject ->
+                        | EffectLabelObject ->
                             staticObject.Scheme |> Option.map (fun scheme -> scheme.Body)
                         | _ ->
                             None)
@@ -22750,7 +22799,7 @@ module SurfaceElaboration =
 
                 inferExpressionType nextLocals bodyForInference
             | LocalScopedEffect(declaration, body) ->
-                withScopedEffectDeclaration declaration (fun () -> inferExpressionType localTypes body)
+                withScopedEffectDeclaration environment.CurrentModuleIdentity declaration (fun () -> inferExpressionType localTypes body)
             | Handle(_, label, body, returnClause, _) ->
                 let handledResultType =
                     match
@@ -24160,11 +24209,11 @@ module SurfaceElaboration =
                 | None ->
                     KCoreWildcardPattern
 
-        and lowerStaticObject staticObject =
+        and lowerStaticObject (staticObject: StaticObjectInfo) =
             match staticObject.ObjectKind, staticObject.ScopedEffect, staticObject.NameSegments with
-            | StaticEffectLabelObject, Some declaration, _ ->
+            | EffectLabelObject, Some declaration, _ ->
                 scopedKCoreEffectLabel declaration
-            | StaticEffectLabelObject, None, [ effectName ] ->
+            | EffectLabelObject, None, [ effectName ] ->
                 match tryFindScopedEffectDeclaration effectName with
                 | Some declaration ->
                     scopedKCoreEffectLabel declaration
@@ -24177,10 +24226,12 @@ module SurfaceElaboration =
             | _ ->
                 let kind =
                     match staticObject.ObjectKind with
-                    | StaticTypeObject -> KCoreTypeObject
-                    | StaticTraitObject -> KCoreTraitObject
-                    | StaticEffectLabelObject -> KCoreEffectLabelObject
-                    | StaticModuleObject -> KCoreModuleObject
+                    | TypeObject -> KCoreTypeObject
+                    | TraitObject -> KCoreTraitObject
+                    | EffectLabelObject -> KCoreEffectLabelObject
+                    | ModuleObject -> KCoreModuleObject
+                    | ProjectionObject ->
+                        invalidOp "Projection objects do not lower directly to KCore static objects."
 
                 KCoreStaticObject
                     { ObjectKind = kind
@@ -25147,7 +25198,7 @@ module SurfaceElaboration =
                 KCoreName [ bindingName ]
             | Name (receiverName :: path) when not (List.isEmpty path) ->
                 match tryResolveScopedStaticObject environment expression with
-                | Some staticObject when staticObject.ObjectKind = StaticEffectLabelObject ->
+                | Some staticObject when staticObject.ObjectKind = EffectLabelObject ->
                     lowerStaticObject staticObject
                 | Some _
                 | None ->
@@ -25274,7 +25325,7 @@ module SurfaceElaboration =
                     loweredValue
                     (fun loweredLocals -> lowerExpression loweredLocals bodyForLowering)
             | LocalScopedEffect(declaration, body) ->
-                withScopedEffectDeclaration declaration (fun () -> lowerExpressionWithExpectedType localTypes expectedType body)
+                withScopedEffectDeclaration environment.CurrentModuleIdentity declaration (fun () -> lowerExpressionWithExpectedType localTypes expectedType body)
             | Lambda(lambdaParameters, lambdaBody) ->
                 lowerLambdaExpression localTypes None lambdaParameters lambdaBody
             | IfThenElse(condition, whenTrue, whenFalse) ->
@@ -27085,7 +27136,7 @@ module SurfaceElaboration =
 
                     localEffects @ importedEffectDeclarations surfaceIndex effectDeclarationsByModule moduleIdentity
 
-                withScopedEffectDeclarations topLevelEffects (fun () ->
+                withScopedEffectDeclarations moduleIdentity topLevelEffects (fun () ->
                     let moduleInfo = surfaceIndex[moduleIdentity]
                     let recordLayouts = ref Map.empty
 
@@ -27126,7 +27177,7 @@ module SurfaceElaboration =
                                 let semanticDeclaration =
                                     declaration
                                     |> EffectSemantics.ensureTopLevel moduleIdentity
-                                    |> EffectSemantics.toSemantic
+                                    |> EffectSemantics.toSemantic (Some(topLevelDeclarationIdentity moduleIdentity declaration.Name EffectDeclaration))
 
                                 Map.add declaration.Name (scopedEffectLabelStaticObject semanticDeclaration) current) localAliases
 

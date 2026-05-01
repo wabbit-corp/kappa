@@ -115,7 +115,7 @@ module internal IlDotNetBackendInput =
 
         loop 0 []
 
-    let private hashModuleIdentity = Stdlib.HashModuleIdentity
+    let private hashModuleIdentity = ModuleIdentity.ofSegments CompilerKnownSymbols.KnownModules.Hash
     let internal tryParsePrimitiveTypeIdentity typeIdentity =
         if TypeIdentity.hasTopLevelName preludeModuleIdentity Stdlib.KnownTypeNames.Int typeIdentity
            || TypeIdentity.hasTopLevelName preludeModuleIdentity Stdlib.KnownTypeNames.Nat typeIdentity
@@ -148,7 +148,7 @@ module internal IlDotNetBackendInput =
                 Set.empty
 
         let bundledStandardTypes =
-            BundledStandardModules.tryTypeNamesText moduleName |> Option.defaultValue Set.empty
+            StandardLibraryCatalog.tryTypeNamesText moduleName |> Option.defaultValue Set.empty
 
         Set.union bundledPreludeExpectTypes bundledStandardTypes
 
@@ -163,10 +163,12 @@ module internal IlDotNetBackendInput =
                     []
 
             let bundledStandardCandidates =
-                BundledStandardModules.all
-                |> List.choose (fun bundled ->
-                    if bundled.Types |> List.exists (fun typeName -> String.Equals(typeName, name, StringComparison.Ordinal)) then
-                        Some(TypeIdentity.topLevel (ModuleIdentity.ofSegments bundled.ModuleName) name)
+                StandardLibraryCatalog.all
+                |> List.choose (fun moduleInfo ->
+                    let surfaceInfo = StandardLibraryCatalog.surface moduleInfo
+
+                    if surfaceInfo.Types |> List.exists (fun typeName -> String.Equals(typeName, name, StringComparison.Ordinal)) then
+                        Some(TypeIdentity.topLevel surfaceInfo.ModuleIdentity name)
                     else
                         None)
 

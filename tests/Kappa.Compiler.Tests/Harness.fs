@@ -175,9 +175,9 @@ let private buildFixtureTypeInventories (workspace: WorkspaceCompilation) =
            [ "std"; "testing" ] ]
          |> List.fold (fun state moduleName ->
             let inventory =
-                { Terms = Stdlib.standardModuleTermNames moduleName
-                  Types = Stdlib.standardModuleTypeNames moduleName
-                  Traits = Stdlib.standardModuleTraitNames moduleName }
+                { Terms = StandardLibraryCatalog.tryTermNames moduleName |> Option.defaultValue Set.empty
+                  Types = StandardLibraryCatalog.tryTypeNames moduleName |> Option.defaultValue Set.empty
+                  Traits = StandardLibraryCatalog.tryTraitNames moduleName |> Option.defaultValue Set.empty }
 
             let moduleNameText = SyntaxFacts.moduleNameToText moduleName
 
@@ -845,7 +845,7 @@ let private tryFindDeclaredTypeInDocument bindingName (document: ParsedDocument)
                 None)
 
 let private tryFindStandardModuleDeclaredType bindingName moduleName currentDocument =
-    Stdlib.tryStandardModuleTermTypeText moduleName bindingName
+    StandardLibraryCatalog.tryTermTypeText moduleName bindingName
     |> Option.map (fun typeText ->
         { Document = currentDocument
           Tokens =

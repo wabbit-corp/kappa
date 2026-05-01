@@ -17,6 +17,7 @@
     <Compile Include="Harness.fs" />
     <Compile Include="ResourceModelTests.fs" />
     <Compile Include="SymbolicIdentityTests.fs" />
+    <Compile Include="StandardLibraryCatalogTests.fs" />
     <Compile Include="FixtureTests.fs" />
     <Compile Include="HostBindingFixture.fs" />
     <Compile Include="Tests.fs" />
@@ -33,6 +34,7 @@
 
   <ItemGroup>
     <None Include="Fixtures\**\*.kp" />
+    <None Include="xunit.runner.json" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
   <ItemGroup>

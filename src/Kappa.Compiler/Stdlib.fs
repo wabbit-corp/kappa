@@ -16,18 +16,6 @@ module Stdlib =
     let PreludeModuleText = SyntaxFacts.moduleNameToText PreludeModuleName
     let PreludeModuleIdentity = ModuleIdentity.ofSegments PreludeModuleName
 
-    let HashModuleName = CompilerKnownSymbols.KnownModules.Hash
-    let HashModuleText = SyntaxFacts.moduleNameToText HashModuleName
-    let HashModuleIdentity = ModuleIdentity.ofSegments HashModuleName
-
-    let UnicodeModuleName = CompilerKnownSymbols.KnownModules.Unicode
-    let UnicodeModuleText = SyntaxFacts.moduleNameToText UnicodeModuleName
-    let UnicodeModuleIdentity = ModuleIdentity.ofSegments UnicodeModuleName
-
-    let BytesModuleName = CompilerKnownSymbols.KnownModules.Bytes
-    let BytesModuleText = SyntaxFacts.moduleNameToText BytesModuleName
-    let BytesModuleIdentity = ModuleIdentity.ofSegments BytesModuleName
-
     module KnownTypeNames =
         let Unit = CompilerKnownSymbols.KnownTypeNames.Unit
         let Bool = CompilerKnownSymbols.KnownTypeNames.Bool
@@ -68,9 +56,9 @@ module Stdlib =
 
     module KnownTypeIdentities =
         let prelude name = TypeIdentity.topLevel PreludeModuleIdentity name
-        let hash name = TypeIdentity.topLevel HashModuleIdentity name
-        let unicode name = TypeIdentity.topLevel UnicodeModuleIdentity name
-        let bytes name = TypeIdentity.topLevel BytesModuleIdentity name
+        let hash name = TypeIdentity.topLevel (ModuleIdentity.ofSegments CompilerKnownSymbols.KnownModules.Hash) name
+        let unicode name = TypeIdentity.topLevel (ModuleIdentity.ofSegments CompilerKnownSymbols.KnownModules.Unicode) name
+        let bytes name = TypeIdentity.topLevel (ModuleIdentity.ofSegments CompilerKnownSymbols.KnownModules.Bytes) name
 
     let PreludeImportSpec =
         { Source = Dotted PreludeModuleName
@@ -106,7 +94,7 @@ module Stdlib =
             ) }
 
     let BundledPreludeVirtualPath =
-        BundledPrelude.virtualPath
+        StandardLibraryCatalog.preludeVirtualPath
 
     let ZigTargetCheckpointName = "zig.c"
     let ClrTargetCheckpointName = "dotnet.clr"
@@ -116,13 +104,13 @@ module Stdlib =
     let private unsafeConsumePreludeText =
         $"{Environment.NewLine}expect term {UnsafeConsumeTermName} : (1 x : a) -> Unit{Environment.NewLine}"
 
-    let loadBundledPreludeText () = BundledPrelude.loadText ()
+    let loadBundledPreludeText () = StandardLibraryCatalog.loadPreludeText ()
 
     let loadBundledPreludeTextForOptions allowUnsafeConsume =
         if allowUnsafeConsume then
-            BundledPrelude.loadText () + unsafeConsumePreludeText
+            StandardLibraryCatalog.loadPreludeText () + unsafeConsumePreludeText
         else
-            BundledPrelude.loadText ()
+            StandardLibraryCatalog.loadPreludeText ()
 
     let shouldImplicitlyImportPrelude moduleName =
         moduleName <> Some PreludeModuleName
@@ -132,40 +120,6 @@ module Stdlib =
             [ PreludeImportSpec; PreludeConstructorImportSpec ]
         else
             []
-
-    let standardModuleTermNames moduleName =
-        BundledStandardModules.tryTermNames moduleName
-        |> Option.orElseWith (fun () ->
-            StandardModules.byIdentity
-            |> Map.tryFind (ModuleIdentity.ofSegments moduleName)
-            |> Option.map (fun description -> description.Terms |> List.map (fun term -> term.Name) |> Set.ofList))
-        |> Option.defaultValue Set.empty
-
-    let standardModuleTypeNames moduleName =
-        BundledStandardModules.tryTypeNames moduleName
-        |> Option.orElseWith (fun () ->
-            StandardModules.byIdentity
-            |> Map.tryFind (ModuleIdentity.ofSegments moduleName)
-            |> Option.map (fun description -> description.Types |> Set.ofList))
-        |> Option.defaultValue Set.empty
-
-    let standardModuleTraitNames moduleName =
-        BundledStandardModules.tryTraitNames moduleName
-        |> Option.orElseWith (fun () ->
-            StandardModules.byIdentity
-            |> Map.tryFind (ModuleIdentity.ofSegments moduleName)
-            |> Option.map (fun description -> description.Traits |> List.map (fun traitInfo -> traitInfo.Name) |> Set.ofList))
-        |> Option.defaultValue Set.empty
-
-    let tryStandardModuleTermTypeText moduleName termName =
-        BundledStandardModules.tryTermTypeText moduleName termName
-        |> Option.orElseWith (fun () ->
-            StandardModules.byIdentity
-            |> Map.tryFind (ModuleIdentity.ofSegments moduleName)
-            |> Option.bind (fun description ->
-                description.Terms
-                |> List.tryFind (fun term -> String.Equals(term.Name, termName, StringComparison.Ordinal))
-                |> Option.map (fun term -> term.TypeText)))
 
     let private preludeIntrinsicSet =
         let contract = IntrinsicCatalog.bundledPreludeExpectContract ()
@@ -246,11 +200,7 @@ module Stdlib =
         if moduleName = PreludeModuleName then
             (intrinsicSetForBackend backendProfile).RuntimeTermNames
         else
-            BundledStandardModules.tryIntrinsicTermNames moduleName
-            |> Option.orElseWith (fun () ->
-                StandardModules.byIdentity
-                |> Map.tryFind (ModuleIdentity.ofSegments moduleName)
-                |> Option.map (fun description -> description.Terms |> List.map (fun term -> term.Name) |> Set.ofList))
+            StandardLibraryCatalog.tryIntrinsicTermNames moduleName
             |> Option.defaultValue Set.empty
 
     let runtimeIntrinsicTermNamesFor backendProfile moduleName =
@@ -262,11 +212,7 @@ module Stdlib =
         if moduleName = PreludeModuleName then
             (intrinsicSetForCompilationProfile backendProfile allowUnsafeConsume).RuntimeTermNames
         else
-            BundledStandardModules.tryIntrinsicTermNames moduleName
-            |> Option.orElseWith (fun () ->
-                StandardModules.byIdentity
-                |> Map.tryFind (ModuleIdentity.ofSegments moduleName)
-                |> Option.map (fun description -> description.Terms |> List.map (fun term -> term.Name) |> Set.ofList))
+            StandardLibraryCatalog.tryIntrinsicTermNames moduleName
             |> Option.defaultValue Set.empty
 
     let runtimeIntrinsicTermNamesForCompilation backendProfile allowUnsafeConsume moduleName =
@@ -301,9 +247,8 @@ module Stdlib =
             moduleName
             |> ModuleIdentity.ofSegments
             |> fun moduleIdentity ->
-                StandardModules.byIdentity
-                |> Map.tryFind moduleIdentity
-                |> Option.map (fun description -> description.Terms |> List.map (fun term -> term.Name) |> Set.ofList)
+                StandardLibraryCatalog.tryFindByIdentity moduleIdentity
+                |> Option.map (StandardLibraryCatalog.surface >> fun description -> description.Terms |> List.map (fun term -> term.Name) |> Set.ofList)
                 |> Option.defaultValue intrinsicSet.ModuleLocalTermNames
 
     let intrinsicTermNamesAvailableInModule backendProfile moduleName =
@@ -320,11 +265,7 @@ module Stdlib =
         if moduleName = PreludeModuleText then
             intrinsicSet.PreludeTermNames
         else
-            BundledStandardModules.tryIntrinsicTermNamesText moduleName
-            |> Option.orElseWith (fun () ->
-                StandardModules.byText
-                |> Map.tryFind moduleName
-                |> Option.map (fun description -> description.Terms |> List.map (fun term -> term.Name) |> Set.ofList))
+            StandardLibraryCatalog.tryIntrinsicTermNamesText moduleName
             |> Option.defaultValue intrinsicSet.ModuleLocalTermNames
 
     let intrinsicTermNamesAvailableInModuleForCompilationProfile backendProfile allowUnsafeConsume moduleName =
@@ -333,14 +274,7 @@ module Stdlib =
         if moduleName = PreludeModuleName then
             intrinsicSet.PreludeTermNames
         else
-            BundledStandardModules.tryIntrinsicTermNames moduleName
-            |> Option.orElseWith (fun () ->
-                moduleName
-                |> ModuleIdentity.ofSegments
-                |> fun moduleIdentity ->
-                    StandardModules.byIdentity
-                    |> Map.tryFind moduleIdentity
-                    |> Option.map (fun description -> description.Terms |> List.map (fun term -> term.Name) |> Set.ofList))
+            StandardLibraryCatalog.tryIntrinsicTermNames moduleName
             |> Option.defaultValue intrinsicSet.ModuleLocalTermNames
 
     let intrinsicTermNamesAvailableInModuleForCompilation backendProfile allowUnsafeConsume moduleName =
@@ -357,11 +291,7 @@ module Stdlib =
         if moduleName = PreludeModuleText then
             intrinsicSet.PreludeTermNames
         else
-            BundledStandardModules.tryIntrinsicTermNamesText moduleName
-            |> Option.orElseWith (fun () ->
-                StandardModules.byText
-                |> Map.tryFind moduleName
-                |> Option.map (fun description -> description.Terms |> List.map (fun term -> term.Name) |> Set.ofList))
+            StandardLibraryCatalog.tryIntrinsicTermNamesText moduleName
             |> Option.defaultValue intrinsicSet.ModuleLocalTermNames
 
     let intrinsicTermNamesAvailableInModuleTextForCompilationProfile backendProfile allowUnsafeConsume moduleName =
@@ -370,11 +300,7 @@ module Stdlib =
         if moduleName = PreludeModuleText then
             intrinsicSet.PreludeTermNames
         else
-            BundledStandardModules.tryIntrinsicTermNamesText moduleName
-            |> Option.orElseWith (fun () ->
-                StandardModules.byText
-                |> Map.tryFind moduleName
-                |> Option.map (fun description -> description.Terms |> List.map (fun term -> term.Name) |> Set.ofList))
+            StandardLibraryCatalog.tryIntrinsicTermNamesText moduleName
             |> Option.defaultValue intrinsicSet.ModuleLocalTermNames
 
     let intrinsicallySatisfiesExpectForBackend backendProfile moduleName declaration =
@@ -383,10 +309,10 @@ module Stdlib =
         match declaration with
         | ExpectTypeDeclaration declaration ->
             (isPreludeExpectation moduleName && intrinsicSet.TypeNames.Contains(declaration.Name))
-            || (standardModuleTypeNames moduleName |> Set.contains declaration.Name)
+            || (StandardLibraryCatalog.tryTypeNames moduleName |> Option.defaultValue Set.empty |> Set.contains declaration.Name)
         | ExpectTraitDeclaration declaration ->
             (isPreludeExpectation moduleName && intrinsicSet.TraitNames.Contains(declaration.Name))
-            || (standardModuleTraitNames moduleName |> Set.contains declaration.Name)
+            || (StandardLibraryCatalog.tryTraitNames moduleName |> Option.defaultValue Set.empty |> Set.contains declaration.Name)
         | ExpectTermDeclaration declaration ->
             intrinsicTermNamesAvailableInModuleForBackend backendProfile moduleName
             |> Set.contains declaration.Name
@@ -402,10 +328,10 @@ module Stdlib =
         match declaration with
         | ExpectTypeDeclaration declaration ->
             (isPreludeExpectation moduleName && intrinsicSet.TypeNames.Contains(declaration.Name))
-            || (standardModuleTypeNames moduleName |> Set.contains declaration.Name)
+            || (StandardLibraryCatalog.tryTypeNames moduleName |> Option.defaultValue Set.empty |> Set.contains declaration.Name)
         | ExpectTraitDeclaration declaration ->
             (isPreludeExpectation moduleName && intrinsicSet.TraitNames.Contains(declaration.Name))
-            || (standardModuleTraitNames moduleName |> Set.contains declaration.Name)
+            || (StandardLibraryCatalog.tryTraitNames moduleName |> Option.defaultValue Set.empty |> Set.contains declaration.Name)
         | ExpectTermDeclaration declaration ->
             intrinsicTermNamesAvailableInModuleForCompilationProfile backendProfile allowUnsafeConsume moduleName
             |> Set.contains declaration.Name

@@ -21,11 +21,9 @@ IGNORE_DIR_NAMES = {".git", ".idea", ".vs", "__pycache__", "bin", "obj"}
 
 ALLOWED_FILES = {
     Path("src/Kappa.Compiler/CompilerKnownSymbols.fs"),
-    Path("src/Kappa.Compiler/BundledPrelude.fs"),
+    Path("src/Kappa.Compiler/StandardLibraryCatalog.fs"),
     Path("src/Kappa.Compiler/Stdlib.fs"),
     Path("src/Kappa.Compiler/IntrinsicCatalog.fs"),
-    Path("src/Kappa.Compiler/StandardModules.fs"),
-    Path("src/Kappa.Compiler/BundledStandardModules.fs"),
     Path("src/Kappa.Runtime/KappaRuntime.cs"),
 }
 

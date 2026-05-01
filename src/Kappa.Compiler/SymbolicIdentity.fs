@@ -67,3 +67,54 @@ module TypeIdentity =
         expectedModuleIdentity = moduleIdentity identity
         && List.isEmpty (scopePath identity)
         && String.Equals(name identity, expectedName, StringComparison.Ordinal)
+
+[<StructuralEquality; StructuralComparison>]
+type DeclarationKind =
+    | TermDeclaration
+    | ConstructorDeclaration
+    | TypeAliasDeclaration
+    | TypeFacetDeclaration
+    | TraitDeclaration
+    | TraitInstanceDeclaration
+    | ProjectionDeclaration
+    | EffectDeclaration
+    | ModuleDeclaration
+
+[<StructuralEquality; StructuralComparison>]
+type DeclarationIdentity = private DeclarationIdentity of ModuleIdentity * string list * string * DeclarationKind
+
+module DeclarationIdentity =
+    let create moduleIdentity scopePath name kind =
+        if String.IsNullOrWhiteSpace(name) then
+            invalidArg (nameof name) "Declaration identities must have a non-blank name."
+
+        DeclarationIdentity(moduleIdentity, scopePath, name, kind)
+
+    let topLevel moduleIdentity name kind = create moduleIdentity [] name kind
+
+    let moduleIdentity (DeclarationIdentity(moduleIdentity, _, _, _)) = moduleIdentity
+
+    let scopePath (DeclarationIdentity(_, scopePath, _, _)) = scopePath
+
+    let name (DeclarationIdentity(_, _, name, _)) = name
+
+    let kind (DeclarationIdentity(_, _, _, kind)) = kind
+
+[<StructuralEquality; StructuralComparison>]
+type SemanticObjectKind =
+    | TypeObject
+    | TraitObject
+    | EffectLabelObject
+    | ModuleObject
+    | ProjectionObject
+
+[<StructuralEquality; StructuralComparison>]
+type SemanticObjectIdentity = private SemanticObjectIdentity of DeclarationIdentity * SemanticObjectKind
+
+module SemanticObjectIdentity =
+    let create declarationIdentity kind =
+        SemanticObjectIdentity(declarationIdentity, kind)
+
+    let declarationIdentity (SemanticObjectIdentity(declarationIdentity, _)) = declarationIdentity
+
+    let kind (SemanticObjectIdentity(_, kind)) = kind

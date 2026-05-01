@@ -26,13 +26,11 @@
     <Compile Include="KRuntimeIR.fs" />
     <Compile Include="KBackendIR.fs" />
     <Compile Include="ClrAssemblyIR.fs" />
+    <Compile Include="StandardLibraryCatalog.fs" />
     <Compile Include="Lexer.fs" />
-    <Compile Include="BundledPrelude.fs" />
-    <Compile Include="BundledStandardModules.fs" />
     <Compile Include="EffectSemantics.fs" />
     <Compile Include="Parser.fs" />
     <Compile Include="IntrinsicCatalog.fs" />
-    <Compile Include="StandardModules.fs" />
     <Compile Include="Stdlib.fs" />
     <Compile Include="HostBindings.fs" />
     <Compile Include="KCore.fs" />

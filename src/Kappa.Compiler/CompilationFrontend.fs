@@ -45,13 +45,13 @@ module internal CompilationFrontend =
           Syntax = parsed.Syntax
           Diagnostics = lexed.Diagnostics @ parsed.Diagnostics }
 
-    let parseBundledStandardModule (moduleInfo: BundledStandardModules.BundledStandardModule) =
+    let parseBundledStandardModule (moduleInfo: StandardLibraryCatalog.SourceBackedStandardLibraryModule) =
         let source = SourceText.From(moduleInfo.VirtualPath, moduleInfo.LoadText())
         let lexed = Lexer.tokenize source
         let parsed = Parser.parse source lexed.Tokens
 
         { Source = source
-          InferredModuleName = Some moduleInfo.ModuleName
+          InferredModuleName = Some(ModuleIdentity.segments moduleInfo.Surface.ModuleIdentity)
           Syntax = parsed.Syntax
           Diagnostics = lexed.Diagnostics @ parsed.Diagnostics }
 
@@ -1006,12 +1006,13 @@ module internal CompilationFrontend =
                     "ChildSpec", [ "ChildSpec" ] ];
               "std.hash",
               inventory
-                  (Stdlib.standardModuleTermNames CompilerKnownSymbols.KnownModules.Hash |> Set.toList)
-                  (Stdlib.standardModuleTypeNames CompilerKnownSymbols.KnownModules.Hash |> Set.toList)
-                  (Stdlib.standardModuleTraitNames CompilerKnownSymbols.KnownModules.Hash |> Set.toList)
+                  (StandardLibraryCatalog.tryTermNames CompilerKnownSymbols.KnownModules.Hash |> Option.defaultValue Set.empty |> Set.toList)
+                  (StandardLibraryCatalog.tryTypeNames CompilerKnownSymbols.KnownModules.Hash |> Option.defaultValue Set.empty |> Set.toList)
+                  (StandardLibraryCatalog.tryTraitNames CompilerKnownSymbols.KnownModules.Hash |> Option.defaultValue Set.empty |> Set.toList)
                   []
                   [] ]
-             @ (StandardModules.all
+             @ (StandardLibraryCatalog.syntheticModules
+                |> List.map _.Surface
                 |> List.filter (fun description ->
                     not (
                         description.ModuleIdentity = ModuleIdentity.ofSegments CompilerKnownSymbols.KnownModules.Hash

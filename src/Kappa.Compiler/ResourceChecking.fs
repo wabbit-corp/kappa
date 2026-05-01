@@ -100,13 +100,30 @@ module ResourceChecking =
             true
         | _ -> false
 
-    let private semanticEffectDeclaration (declaration: EffectDeclaration) =
-        if declaration.EffectInterfaceId.IsSome && declaration.EffectLabelId.IsSome && (declaration.Operations |> List.forall (fun operation -> operation.OperationId.IsSome)) then
-            EffectSemantics.toSemantic declaration
-        else
-            declaration
-            |> EffectSemantics.ensureLocal $"{declaration.Name}|resource-checking"
-            |> EffectSemantics.toSemantic
+    let private semanticTopLevelEffectDeclaration (document: ParsedDocument) (declaration: EffectDeclaration) =
+        let declarationIdentity =
+            document.ModuleIdentity
+            |> Option.map (fun moduleIdentity -> DeclarationIdentity.topLevel moduleIdentity declaration.Name EffectDeclaration)
+
+        EffectSemantics.toSemantic declarationIdentity declaration
+
+    let private semanticLocalEffectDeclaration (document: ParsedDocument) (declaration: EffectDeclaration) =
+        let declaration =
+            if declaration.EffectInterfaceId.IsSome
+               && declaration.EffectLabelId.IsSome
+               && (declaration.Operations |> List.forall (fun operation -> operation.OperationId.IsSome)) then
+                declaration
+            else
+                declaration
+                |> EffectSemantics.ensureLocal $"{declaration.Name}|resource-checking"
+
+        let declarationIdentity =
+            document.ModuleIdentity
+            |> Option.map (fun moduleIdentity ->
+                let scopeKey = declaration.EffectLabelId |> Option.defaultValue declaration.Name
+                DeclarationIdentity.create moduleIdentity [ $"resource-checking-{scopeKey}" ] declaration.Name EffectDeclaration)
+
+        EffectSemantics.toSemantic declarationIdentity declaration
 
     let private isPrivateByDefault (document: ParsedDocument) =
         document.Syntax.ModuleAttributes
@@ -2951,7 +2968,7 @@ module ResourceChecking =
                 |> List.collect (fun document ->
                     document.Syntax.Declarations
                     |> List.choose (function
-                        | EffectDeclarationNode declaration -> Some(EffectSemantics.toSemantic declaration)
+                        | EffectDeclarationNode declaration -> Some(semanticTopLevelEffectDeclaration document declaration)
                         | _ -> None)))
 
         let exportedEffectDeclarationsByModule =
@@ -2965,7 +2982,7 @@ module ResourceChecking =
                     |> List.choose (function
                         | EffectDeclarationNode declaration
                             when isExportedVisibility privateByDefault declaration.Visibility ->
-                            Some(EffectSemantics.toSemantic declaration)
+                            Some(semanticTopLevelEffectDeclaration document declaration)
                         | _ -> None)))
 
         localEffectDeclarationsByModule, exportedEffectDeclarationsByModule
@@ -6058,7 +6075,7 @@ module ResourceChecking =
         | LocalTypeAlias(_, body) ->
             checkExpression projectionSummaries document signatures localTypes state body
         | LocalScopedEffect(declaration, body) ->
-            withScopedEffectDeclaration (semanticEffectDeclaration declaration) (fun () ->
+            withScopedEffectDeclaration (semanticLocalEffectDeclaration document declaration) (fun () ->
                 checkExpression projectionSummaries document signatures localTypes state body)
         | Name(root :: path) ->
             if localTypes |> Map.tryFind root |> Option.exists typeIsElaborationOnlyCarrierType then
