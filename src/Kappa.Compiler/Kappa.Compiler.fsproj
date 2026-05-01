@@ -16,10 +16,10 @@
     <Compile Include="Diagnostics.fs" />
     <Compile Include="BackendTypes.fs" />
     <Compile Include="Syntax.fs" />
+    <Compile Include="SymbolicIdentity.fs" />
     <Compile Include="CompilerKnownSymbols.fs" />
     <Compile Include="TypeSignatures.fs" />
     <Compile Include="CoreParsing.fs" />
-    <Compile Include="SymbolicIdentity.fs" />
     <Compile Include="CompilationPipeline.fs" />
     <Compile Include="KFrontIR.fs" />
     <Compile Include="KCoreCommon.fs" />

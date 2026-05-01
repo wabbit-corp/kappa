@@ -100,6 +100,14 @@ module DeclarationIdentity =
 
     let kind (DeclarationIdentity(_, _, _, kind)) = kind
 
+    let canonicalText identity =
+        let segments =
+            (moduleIdentity identity |> ModuleIdentity.segments)
+            @ (scopePath identity)
+            @ [ name identity ]
+
+        SyntaxFacts.moduleNameToText segments
+
 [<StructuralEquality; StructuralComparison>]
 type SemanticObjectKind =
     | TypeObject

@@ -341,6 +341,67 @@ module CoreTestsShard0 =
 
 
     [<Fact>]
+    let ``instance search distinguishes same-spelling qualified traits by semantic identity`` () =
+        let mainSource =
+            [
+                "module main"
+                ""
+                "import providers.a as a"
+                "import providers.b as b"
+                ""
+                "resolve : forall (t : Type). (@_ : IsTrait t) -> (@v : t) -> t"
+                "let resolve @v = v"
+                ""
+                "showA : a.Show Int"
+                "let showA = resolve"
+                ""
+                "result : Int"
+                "let result = showA.show 0"
+            ]
+            |> String.concat "\n"
+
+        let traitASource =
+            [
+                "module providers.a"
+                ""
+                "trait Show a ="
+                "    show : a -> Int"
+                ""
+                "instance Show Int ="
+                "    let show _ = 1"
+            ]
+            |> String.concat "\n"
+
+        let traitBSource =
+            [
+                "module providers.b"
+                ""
+                "trait Show a ="
+                "    show : a -> Int"
+                ""
+                "instance Show Int ="
+                "    let show _ = 2"
+            ]
+            |> String.concat "\n"
+
+        let workspace, result =
+            evaluateInMemoryBinding
+                "memory-qualified-trait-identity-root"
+                "main.result"
+                [ "main.kp", mainSource
+                  "providers/a.kp", traitASource
+                  "providers/b.kp", traitBSource ]
+
+        Assert.False(workspace.HasErrors, sprintf "Expected no diagnostics, got %A" workspace.Diagnostics)
+
+        match result with
+        | Result.Ok value ->
+            Assert.Equal("1", RuntimeValue.format value)
+        | Result.Error issue ->
+            failwithf "Expected semantic trait identity resolution to succeed, got %s" issue.Message
+
+
+    [<Fact>]
     let ``interpreter resolves bundled summon helper across imported trait modules`` () =
         let mainSource =
             [

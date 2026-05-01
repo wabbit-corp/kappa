@@ -88,6 +88,17 @@ let ``DeclarationIdentity keeps module, scope, name, and kind structured`` () =
     Assert.Equal(TermDeclaration, DeclarationIdentity.kind identity)
 
 [<Fact>]
+let ``DeclarationIdentity canonical text preserves module and scope`` () =
+    let identity =
+        DeclarationIdentity.create
+            (ModuleIdentity.ofSegments [ "providers"; "a" ])
+            [ "Nested" ]
+            "Show"
+            TraitDeclaration
+
+    Assert.Equal("providers.a.Nested.Show", DeclarationIdentity.canonicalText identity)
+
+[<Fact>]
 let ``SemanticObjectIdentity layers reified facets over declaration identity without flattening`` () =
     let declarationIdentity =
         DeclarationIdentity.topLevel (ModuleIdentity.ofSegments [ "std"; "prelude" ]) "Bool" TypeFacetDeclaration
@@ -96,6 +107,28 @@ let ``SemanticObjectIdentity layers reified facets over declaration identity wit
 
     Assert.Equal(declarationIdentity, SemanticObjectIdentity.declarationIdentity semanticIdentity)
     Assert.Equal(TypeObject, SemanticObjectIdentity.kind semanticIdentity)
+
+[<Fact>]
+let ``TraitReference matches by semantic identity when available`` () =
+    let moduleA = ModuleIdentity.ofSegments [ "providers"; "a" ]
+    let moduleB = ModuleIdentity.ofSegments [ "providers"; "b" ]
+    let declarationA = DeclarationIdentity.topLevel moduleA "Show" TraitDeclaration
+    let declarationB = DeclarationIdentity.topLevel moduleB "Show" TraitDeclaration
+
+    let aliasedA =
+        TypeSignatures.TraitReference.ofSegments [ "aliasA"; "Show" ]
+        |> TypeSignatures.TraitReference.attachIdentity declarationA
+
+    let canonicalA =
+        TypeSignatures.TraitReference.ofSegments [ "providers"; "a"; "Show" ]
+        |> TypeSignatures.TraitReference.attachIdentity declarationA
+
+    let canonicalB =
+        TypeSignatures.TraitReference.ofSegments [ "providers"; "b"; "Show" ]
+        |> TypeSignatures.TraitReference.attachIdentity declarationB
+
+    Assert.True(TypeSignatures.TraitReference.matches aliasedA canonicalA)
+    Assert.False(TypeSignatures.TraitReference.matches canonicalA canonicalB)
 
 [<Fact>]
 let ``Effect semantics preserve declaration identity and reified object identities`` () =

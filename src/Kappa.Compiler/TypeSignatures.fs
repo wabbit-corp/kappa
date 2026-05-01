@@ -44,19 +44,26 @@ module TypeSignatures =
           Quantity: Quantity
           Type: TypeExpr }
 
-    type TraitReference = private TraitReference of string list
+    type TraitReference = private TraitReference of string list * DeclarationIdentity option
 
     module TraitReference =
-        let ofSegments segments =
+        let create segments identity =
             match segments with
             | [] ->
                 invalidArg (nameof segments) "Trait references must contain at least one segment."
             | _ ->
-                TraitReference segments
+                TraitReference(segments, identity)
+
+        let ofSegments segments = create segments None
 
         let unqualified name = ofSegments [ name ]
 
-        let segments (TraitReference segments) = segments
+        let segments (TraitReference(segments, _)) = segments
+
+        let identity (TraitReference(_, identity)) = identity
+
+        let attachIdentity declarationIdentity traitReference =
+            create (segments traitReference) (Some declarationIdentity)
 
         let text traitReference =
             traitReference
@@ -67,6 +74,19 @@ module TypeSignatures =
             traitReference
             |> segments
             |> List.last
+
+        let canonicalName traitReference =
+            traitReference
+            |> identity
+            |> Option.map DeclarationIdentity.canonicalText
+            |> Option.defaultValue (localName traitReference)
+
+        let matches left right =
+            match identity left, identity right with
+            | Some leftIdentity, Some rightIdentity ->
+                leftIdentity = rightIdentity
+            | _ ->
+                segments left = segments right
 
     type TraitConstraint =
         { Trait: TraitReference
@@ -2438,7 +2458,7 @@ module TypeSignatures =
         && List.length left.Constraints = List.length right.Constraints
         && List.forall2
             (fun leftConstraint rightConstraint ->
-                TraitReference.segments leftConstraint.Trait = TraitReference.segments rightConstraint.Trait
+                TraitReference.matches leftConstraint.Trait rightConstraint.Trait
                 && List.length leftConstraint.Arguments = List.length rightConstraint.Arguments
                 && List.forall2 definitionallyEqual leftConstraint.Arguments rightConstraint.Arguments)
             left.Constraints
