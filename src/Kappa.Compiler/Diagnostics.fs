@@ -4705,7 +4705,7 @@ module DiagnosticFact =
                 (payload
                     "qtt-inout-threaded-field-missing"
                     [ field "reason" (DiagnosticPayloadText "inout-threaded-field-missing")
-                      field "parameter" (DiagnosticPayloadText parameterName) ])
+                      field "parameter-name" (DiagnosticPayloadText parameterName) ])
 
 type Diagnostic =
     { Severity: DiagnosticSeverity

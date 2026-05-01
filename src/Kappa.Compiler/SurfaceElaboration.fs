@@ -10903,9 +10903,6 @@ module SurfaceElaboration =
             | parameters, body, None ->
                 parameters, body
 
-        let makeDiagnostic kind message =
-            Diagnostics.errorFact "KFrontIR" (Some(KFrontIRPhase.phaseName CORE_LOWERING)) None [] (DiagnosticFact.simple kind message)
-
         let makeSurfaceElaborationDiagnostic evidence =
             Diagnostics.errorFact
                 "KFrontIR"
@@ -10922,8 +10919,8 @@ module SurfaceElaboration =
                     None
             )
 
-        let makeLocatedDiagnostic kind message location =
-            { (makeDiagnostic kind message) with
+        let makeLocatedDiagnosticFact diagnosticFact location =
+            { (Diagnostics.errorFact "KFrontIR" (Some(KFrontIRPhase.phaseName CORE_LOWERING)) None [] diagnosticFact) with
                 Location = location }
 
         let tokenMatchesName expectedName (token: Token) =
@@ -11039,9 +11036,8 @@ module SurfaceElaboration =
                     []
                 | Some _ ->
                     [
-                        makeLocatedDiagnostic
-                            SimpleDiagnosticKind.QttInoutThreadedFieldMissing
-                            $"An 'inout' parameter '{parameter.Name}' requires the result type to contain a quantity-1 field named '{parameter.Name}' after peeling any enclosing monad."
+                        makeLocatedDiagnosticFact
+                            (DiagnosticFact.qttInoutThreadedFieldMissing (InoutThreadedFieldMissing parameter.Name))
                             (tryFindHeaderBinderLocation parameter.Name)
                     ]
                 | None ->
@@ -11383,9 +11379,6 @@ module SurfaceElaboration =
                          | _ -> None)
                      |> Set.ofSeq)
             |> Set.remove "<anonymous>"
-
-        let makeDiagnostic kind message =
-            Diagnostics.errorFact "KFrontIR" (Some(KFrontIRPhase.phaseName CORE_LOWERING)) None [] (DiagnosticFact.simple kind message)
 
         let makeSurfaceElaborationDiagnostic evidence =
             Diagnostics.errorFact
@@ -15570,9 +15563,8 @@ module SurfaceElaboration =
                                             ()
                                         | true, _ ->
                                             diagnostics.Add(
-                                                makeLocatedDiagnostic
-                                                    SimpleDiagnosticKind.QttInoutMarkerRequired
-                                                    "An argument supplied to an 'inout' parameter must be marked with '~'."
+                                                makeLocatedDiagnosticFact
+                                                    (DiagnosticFact.qttInoutMarkerRequired InoutMarkerRequired)
                                                     (tryFindArgumentLocation bindingInfo.Name nextArgument)
                                             )
                                         | false, InoutArgument _ ->
@@ -20847,9 +20839,6 @@ module SurfaceElaboration =
                 localEffects @ importedEffectDeclarations surfaceIndex effectDeclarationsByModule moduleIdentity
 
             withScopedEffectDeclarations moduleIdentity topLevelEffects (fun () ->
-                let makeDiagnostic kind message =
-                    Diagnostics.errorFact "KFrontIR" (Some(KFrontIRPhase.phaseName CORE_LOWERING)) None [] (DiagnosticFact.simple kind message)
-
                 let makeNameUnresolvedDiagnostic name =
                     Diagnostics.errorFact
                         "KFrontIR"

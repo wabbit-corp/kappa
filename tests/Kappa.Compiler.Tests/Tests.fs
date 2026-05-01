@@ -4033,8 +4033,16 @@ module SmokeTestsShard4 =
                 UsingBindsBorrowedPattern
         )
         bag.AddError(
+            DiagnosticFact.qttInoutMarkerRequired
+                InoutMarkerRequired
+        )
+        bag.AddError(
             DiagnosticFact.qttInoutMarkerUnexpected
                 InoutMarkerUnexpected
+        )
+        bag.AddError(
+            DiagnosticFact.qttInoutThreadedFieldMissing
+                (InoutThreadedFieldMissing "file")
         )
 
         let diagnostics = bag.Items
@@ -4049,6 +4057,14 @@ module SmokeTestsShard4 =
         let inoutUnexpectedDiagnostic =
             diagnostics
             |> List.find (fun item -> item.Code = DiagnosticCode.QttInoutMarkerUnexpected)
+
+        let inoutRequiredDiagnostic =
+            diagnostics
+            |> List.find (fun item -> item.Code = DiagnosticCode.QttInoutMarkerRequired)
+
+        let threadedFieldDiagnostic =
+            diagnostics
+            |> List.find (fun item -> item.Code = DiagnosticCode.QttInoutThreadedFieldMissing)
 
         Assert.Equal(DiagnosticCode.QttLinearOveruse, diagnostic.Code)
         Assert.Equal("An argument available at quantity '1' cannot satisfy parameter demand '&'.", diagnostic.Message)
@@ -4074,6 +4090,25 @@ module SmokeTestsShard4 =
             fun field ->
                 field.Name = "reason"
                 && field.Value = DiagnosticPayloadText "inout-marker-unexpected"
+        )
+        Assert.Equal("An argument supplied to an 'inout' parameter must be marked with '~'.", inoutRequiredDiagnostic.Message)
+        Assert.Equal("qtt-inout-marker-required", inoutRequiredDiagnostic.Payload.Kind)
+        Assert.Contains(
+            inoutRequiredDiagnostic.Payload.Fields,
+            fun field ->
+                field.Name = "reason"
+                && field.Value = DiagnosticPayloadText "inout-marker-required"
+        )
+        Assert.Equal(
+            "An 'inout' parameter 'file' requires the result type to contain a quantity-1 field named 'file' after peeling any enclosing monad.",
+            threadedFieldDiagnostic.Message
+        )
+        Assert.Equal("qtt-inout-threaded-field-missing", threadedFieldDiagnostic.Payload.Kind)
+        Assert.Contains(
+            threadedFieldDiagnostic.Payload.Fields,
+            fun field ->
+                field.Name = "parameter-name"
+                && field.Value = DiagnosticPayloadText "file"
         )
 
     [<Fact>]
@@ -7456,10 +7491,13 @@ module SmokeTestsShard4 =
                 ]
 
         Assert.True(workspace.HasErrors, "Expected invalid inout declaration to be rejected in frontend validation.")
-        Assert.Contains(
-            workspace.Diagnostics,
-            fun diagnostic -> diagnostic.Code = DiagnosticCode.QttInoutThreadedFieldMissing
-        )
+
+        let diagnostic =
+            workspace.Diagnostics
+            |> List.find (fun item -> item.Code = DiagnosticCode.QttInoutThreadedFieldMissing)
+
+        Assert.Equal("qtt-inout-threaded-field-missing", diagnostic.Payload.Kind)
+        Assert.Equal(Some "c", tryFindPayloadText "parameter-name" diagnostic)
 
 
     [<Fact>]
@@ -8141,14 +8179,19 @@ module SmokeTestsShard5 =
                 ]
 
         Assert.True(workspace.HasErrors, "Expected missing '~' at an inout call site to be rejected in frontend validation.")
-        Assert.Contains(
-            workspace.Diagnostics,
-            fun diagnostic -> diagnostic.Code = DiagnosticCode.QttInoutMarkerRequired
-        )
-        Assert.Contains(
-            workspace.Diagnostics,
-            fun diagnostic -> diagnostic.Code = DiagnosticCode.QttInoutThreadedFieldMissing
-        )
+
+        let requiredDiagnostic =
+            workspace.Diagnostics
+            |> List.find (fun item -> item.Code = DiagnosticCode.QttInoutMarkerRequired)
+
+        let threadedFieldDiagnostic =
+            workspace.Diagnostics
+            |> List.find (fun item -> item.Code = DiagnosticCode.QttInoutThreadedFieldMissing)
+
+        Assert.Equal("qtt-inout-marker-required", requiredDiagnostic.Payload.Kind)
+        Assert.Equal(Some "inout-marker-required", tryFindPayloadText "reason" requiredDiagnostic)
+        Assert.Equal("qtt-inout-threaded-field-missing", threadedFieldDiagnostic.Payload.Kind)
+        Assert.Equal(Some "file", tryFindPayloadText "parameter-name" threadedFieldDiagnostic)
 
 
     [<Fact>]
