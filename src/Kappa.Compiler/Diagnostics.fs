@@ -698,6 +698,12 @@ type CodeDetailEvidence =
     { Code: DiagnosticCode
       Detail: string }
 
+type MacroExpansionDiagnosticEvidence =
+    | FailElabMessage of message: string
+    | WarnElabMessage of message: string
+    | FailElabWithCode of code: DiagnosticCode * message: string
+    | WarnElabWithCode of code: DiagnosticCode * message: string
+
 type NameUnresolvedReferenceKind =
     | OrdinaryNameReference
     | ModuleQualifierReference
@@ -1215,6 +1221,7 @@ type DiagnosticFact =
     | ImportCycleDiagnostic of ImportCycleEvidence
     | ModuleCaseFoldCollisionDiagnostic of ModuleCaseFoldCollisionEvidence
     | InvalidUtf8SourceDiagnostic of InvalidUtf8SourceEvidence
+    | MacroExpansionDiagnostic of MacroExpansionDiagnosticEvidence
     | ModuleNameUnresolvedDiagnostic of ModuleNameUnresolvedEvidence
     | HostModuleReservedRootDiagnostic of HostModuleReservedRootEvidence
     | ModulePathMismatchDiagnostic of ModulePathMismatchEvidence
@@ -1420,6 +1427,9 @@ module DiagnosticFact =
         CodeDetailDiagnostic
             { Code = code
               Detail = detail }
+
+    let macroExpansion evidence =
+        MacroExpansionDiagnostic evidence
 
     let nameUnresolved spelling =
         NameUnresolvedDiagnostic
@@ -1834,6 +1844,42 @@ module DiagnosticFact =
 
                      trimmed.ToLowerInvariant().Replace('_', '-'))
                     [ field "detail" (DiagnosticPayloadText evidence.Detail) ])
+        | MacroExpansionDiagnostic evidence ->
+            let descriptorFor code reason message =
+                descriptor
+                    code
+                    None
+                    message
+                    (payload
+                        "macro-expansion-diagnostic"
+                        [ field "reason" (DiagnosticPayloadText reason)
+                          field "message" (DiagnosticPayloadText message) ])
+
+            match evidence with
+            | FailElabMessage message ->
+                descriptorFor DiagnosticCode.ElaborationFailed "fail-elab" message
+            | WarnElabMessage message ->
+                descriptorFor DiagnosticCode.SourceWarning "warn-elab" message
+            | FailElabWithCode(code, message) ->
+                descriptor
+                    code
+                    None
+                    message
+                    (payload
+                        "macro-expansion-diagnostic"
+                        [ field "reason" (DiagnosticPayloadText "fail-elab-with")
+                          field "message" (DiagnosticPayloadText message)
+                          field "diagnostic-code" (DiagnosticPayloadText(DiagnosticCode.toIdentifier code)) ])
+            | WarnElabWithCode(code, message) ->
+                descriptor
+                    code
+                    None
+                    message
+                    (payload
+                        "macro-expansion-diagnostic"
+                        [ field "reason" (DiagnosticPayloadText "warn-elab-with")
+                          field "message" (DiagnosticPayloadText message)
+                          field "diagnostic-code" (DiagnosticPayloadText(DiagnosticCode.toIdentifier code)) ])
         | NameUnresolvedDiagnostic evidence ->
             let referenceKindText, message =
                 match evidence.ReferenceKind with

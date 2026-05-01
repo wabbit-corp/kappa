@@ -3385,9 +3385,43 @@ module SmokeTestsShard3 =
             workspace.Diagnostics,
             fun diagnostic ->
                 diagnostic.Code = DiagnosticCode.ElaborationFailed
-                && diagnostic.Payload.Kind = "elaboration-failed"
+                && diagnostic.Payload.Kind = "macro-expansion-diagnostic"
                 && diagnostic.Message.Contains("macro rejected this declaration", StringComparison.Ordinal)
         )
+
+        let diagnostic =
+            workspace.Diagnostics
+            |> List.find (fun item -> item.Code = DiagnosticCode.ElaborationFailed)
+
+        Assert.Equal("macro-expansion-diagnostic", diagnostic.Payload.Kind)
+        Assert.Equal(Some "fail-elab", tryFindPayloadText "reason" diagnostic)
+        Assert.Equal(Some "macro rejected this declaration", tryFindPayloadText "message" diagnostic)
+
+    [<Fact>]
+    let ``macro failElabWith uses typed macro expansion diagnostics`` () =
+        let workspace =
+            compileInMemoryWorkspace
+                "memory-fail-elab-with-root"
+                [
+                    "main.kp",
+                    [
+                        "module main"
+                        "broken : Unit"
+                        "let broken = $(failElabWith \"E_UNSUPPORTED_SYNTAX\" \"macro typed failure\" [])"
+                    ]
+                    |> String.concat "\n"
+                ]
+
+        Assert.True(workspace.HasErrors, "Expected failElabWith to surface the requested diagnostic code.")
+
+        let diagnostic =
+            workspace.Diagnostics
+            |> List.find (fun item -> item.Code = DiagnosticCode.UnsupportedSyntax)
+
+        Assert.Equal("macro-expansion-diagnostic", diagnostic.Payload.Kind)
+        Assert.Equal(Some "fail-elab-with", tryFindPayloadText "reason" diagnostic)
+        Assert.Equal(Some "macro typed failure", tryFindPayloadText "message" diagnostic)
+        Assert.Equal(Some "E_UNSUPPORTED_SYNTAX", tryFindPayloadText "diagnostic-code" diagnostic)
 
 
     [<Fact>]
