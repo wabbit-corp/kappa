@@ -200,7 +200,7 @@ module internal CompilationFrontend =
 
         match effectiveModuleName with
         | Some moduleName when HostBindings.isReservedHostModuleName moduleName ->
-            diagnostics.AddError(DiagnosticFact.simple SimpleDiagnosticKind.HostModuleReservedRoot $"Source-defined module '{SyntaxFacts.moduleNameToText moduleName}' uses a reserved host binding root. Host binding modules are supplied from host metadata, not user-written Kappa source.",
+            diagnostics.AddError(DiagnosticFact.hostModuleReservedRoot (SyntaxFacts.moduleNameToText moduleName),
                 document.Source.GetLocation(TextSpan.FromBounds(0, 0)),
                 stage = "KFrontIR",
                 phase = KFrontIRPhase.phaseName CHECKERS
@@ -210,7 +210,10 @@ module internal CompilationFrontend =
 
         match document.InferredModuleName, document.Syntax.ModuleHeader with
         | Some inferred, Some declared when options.PackageMode && inferred <> declared ->
-            diagnostics.AddError(DiagnosticFact.simple SimpleDiagnosticKind.ModulePathMismatch $"Module header '{SyntaxFacts.moduleNameToText declared}' does not match the path-derived module name '{SyntaxFacts.moduleNameToText inferred}'.",
+            diagnostics.AddError(
+                DiagnosticFact.modulePathMismatch
+                    (SyntaxFacts.moduleNameToText declared)
+                    (SyntaxFacts.moduleNameToText inferred),
                 document.Source.GetLocation(TextSpan.FromBounds(0, 0)),
                 stage = "KFrontIR",
                 phase = KFrontIRPhase.phaseName CHECKERS
@@ -1530,15 +1533,11 @@ module internal CompilationFrontend =
         match specifier.Pin with
         | None when packageMode ->
             UrlImportInvalid(
-                DiagnosticFact.codeDetail
-                    DiagnosticCode.UrlImportUnpinnedInPackageMode
-                    $"URL import '{specifier.OriginalText}' is unpinned. Package mode requires pinned URL imports."
+                DiagnosticFact.urlImportUnpinnedInPackageMode specifier.OriginalText
             )
         | Some(RefPin _) when packageMode ->
             UrlImportInvalid(
-                DiagnosticFact.codeDetail
-                    DiagnosticCode.UrlImportRefPinRequiresLock
-                    $"URL import '{specifier.OriginalText}' uses a ref pin, but this toolchain has no recorded immutable resolution for it in package mode."
+                DiagnosticFact.urlImportRefPinRequiresLock specifier.OriginalText
             )
         | _ ->
             UrlImportValid
@@ -1576,7 +1575,7 @@ module internal CompilationFrontend =
                                 )
                                 urlImportBlocked <- true
                             | UrlImportValid ->
-                                diagnostics.AddError(DiagnosticFact.simple SimpleDiagnosticKind.UrlImportUnsupported $"URL module specifier '{specifier.OriginalText}' is not supported by this toolchain. URL imports and exports require fetch/cache/lock resolution, which is not implemented.",
+                                diagnostics.AddError(DiagnosticFact.urlImportUnsupported specifier.OriginalText,
                                     specLocation,
                                     stage = "KFrontIR",
                                     phase = KFrontIRPhase.phaseName CHECKERS
@@ -1585,7 +1584,10 @@ module internal CompilationFrontend =
                         | Dotted _ ->
                             match HostBindings.tryResolveImport backendProfile spec.Source with
                             | HostBindings.UnsupportedBackend rootText ->
-                                diagnostics.AddError(DiagnosticFact.simple SimpleDiagnosticKind.HostModuleUnsupportedBackend $"Backend profile '{BackendProfile.toPortableName backendProfile}' does not provide host binding root '{rootText}'.",
+                                diagnostics.AddError(
+                                    DiagnosticFact.hostModuleUnsupportedBackend
+                                        (BackendProfile.toPortableName backendProfile)
+                                        rootText,
                                     specLocation,
                                     stage = "KFrontIR",
                                     phase = KFrontIRPhase.phaseName CHECKERS
@@ -1596,13 +1598,13 @@ module internal CompilationFrontend =
                         if not skipFurtherValidation && not urlImportBlocked then
                             match resolveQualifiedOnlyImportSpec exportInventories spec with
                             | AmbiguousBareImport(fullModuleName, parentModuleName, itemName) ->
-                                diagnostics.AddError(DiagnosticFact.simple SimpleDiagnosticKind.ImportAmbiguous $"Bare dotted import/export '{fullModuleName}' is ambiguous between module '{fullModuleName}' and item '{itemName}' from module '{parentModuleName}'. Use an explicit module-only form or '(...)' singleton syntax.",
+                                diagnostics.AddError(DiagnosticFact.importAmbiguous fullModuleName parentModuleName itemName,
                                     specLocation,
                                     stage = "KFrontIR",
                                     phase = KFrontIRPhase.phaseName CHECKERS
                                 )
                             | UnresolvedBareImport(fullModuleName, parentModuleName, itemName) ->
-                                diagnostics.AddError(DiagnosticFact.simple SimpleDiagnosticKind.ModuleNameUnresolved $"Neither module '{fullModuleName}' nor item '{itemName}' from module '{parentModuleName}' was found.",
+                                diagnostics.AddError(DiagnosticFact.bareImportTargetNotFound fullModuleName parentModuleName itemName,
                                     specLocation,
                                     stage = "KFrontIR",
                                     phase = KFrontIRPhase.phaseName CHECKERS
@@ -1618,7 +1620,10 @@ module internal CompilationFrontend =
                                         let mutable disabled = false
 
                                         if itemRequestsUnhide item && not allowUnhiding then
-                                            diagnostics.AddError(DiagnosticFact.simple SimpleDiagnosticKind.ImportUnhideRequiresBuildSetting $"Import item '{importItemText item}' requires build setting 'allow_unhiding', which is disabled in package mode.",
+                                            diagnostics.AddError(
+                                                DiagnosticFact.importModifierRequiresBuildSetting
+                                                    (importItemText item)
+                                                    AllowUnhiding,
                                                 itemLocation,
                                                 stage = "KFrontIR",
                                                 phase = KFrontIRPhase.phaseName CHECKERS
@@ -1626,7 +1631,10 @@ module internal CompilationFrontend =
                                             disabled <- true
 
                                         if itemRequestsClarify item && not allowClarify then
-                                            diagnostics.AddError(DiagnosticFact.simple SimpleDiagnosticKind.ImportClarifyRequiresBuildSetting $"Import item '{importItemText item}' requires build setting 'allow_clarify', which is disabled in package mode.",
+                                            diagnostics.AddError(
+                                                DiagnosticFact.importModifierRequiresBuildSetting
+                                                    (importItemText item)
+                                                    AllowClarify,
                                                 itemLocation,
                                                 stage = "KFrontIR",
                                                 phase = KFrontIRPhase.phaseName CHECKERS
@@ -1634,7 +1642,9 @@ module internal CompilationFrontend =
                                             disabled <- true
 
                                         if isExport && not (List.isEmpty item.Modifiers) then
-                                            diagnostics.AddError(DiagnosticFact.simple SimpleDiagnosticKind.ImportItemModifierReexportForbidden $"Import item '{importItemText item}' uses unhide/clarify and must not be re-exported.",
+                                            diagnostics.AddError(
+                                                DiagnosticFact.importItemModifierReexportForbidden
+                                                    (importItemText item),
                                                 itemLocation,
                                                 stage = "KFrontIR",
                                                 phase = KFrontIRPhase.phaseName CHECKERS
@@ -1652,7 +1662,11 @@ module internal CompilationFrontend =
                                             |> Option.exists (fun escapeInventory -> importItemExistsViaEscapeHatch escapeInventory item)
 
                                         if not ordinaryExists && not escapeExists then
-                                            diagnostics.AddError(DiagnosticFact.simple SimpleDiagnosticKind.ImportItemNotFound $"Import item '{item.Name}' was not found in module '{importedModuleName}'.",
+                                            diagnostics.AddError(
+                                                DiagnosticFact.importItemNotFound
+                                                    item.Name
+                                                    importedModuleName
+                                                    IncludedImportItem,
                                                 itemLocation,
                                                 stage = "KFrontIR",
                                                 phase = KFrontIRPhase.phaseName CHECKERS
@@ -1673,7 +1687,11 @@ module internal CompilationFrontend =
                                             | AllExcept items ->
                                                 for item in items do
                                                     if not (exceptItemExists inventory item) then
-                                                        diagnostics.AddError(DiagnosticFact.simple SimpleDiagnosticKind.ImportItemNotFound $"Excluded import item '{item.Name}' was not found in module '{importedModuleName}'.",
+                                                        diagnostics.AddError(
+                                                            DiagnosticFact.importItemNotFound
+                                                                item.Name
+                                                                importedModuleName
+                                                                ExcludedImportItem,
                                                             defaultArg (findTokenLocation document item.Name) defaultLocation,
                                                             stage = "KFrontIR",
                                                             phase = KFrontIRPhase.phaseName CHECKERS
@@ -1681,7 +1699,7 @@ module internal CompilationFrontend =
                                             | _ ->
                                                 ()
                                         | None ->
-                                            diagnostics.AddError(DiagnosticFact.simple SimpleDiagnosticKind.ModuleNameUnresolved $"Imported module '{importedModuleName}' was not found.",
+                                            diagnostics.AddError(DiagnosticFact.importedModuleNotFound importedModuleName,
                                                 specLocation,
                                                 stage = "KFrontIR",
                                                 phase = KFrontIRPhase.phaseName CHECKERS
@@ -1696,7 +1714,11 @@ module internal CompilationFrontend =
                                         | AllExcept items ->
                                             for item in items do
                                                 if not (exceptItemExists inventory item) then
-                                                    diagnostics.AddError(DiagnosticFact.simple SimpleDiagnosticKind.ImportItemNotFound $"Excluded import item '{item.Name}' was not found in module '{importedModuleName}'.",
+                                                    diagnostics.AddError(
+                                                        DiagnosticFact.importItemNotFound
+                                                            item.Name
+                                                            importedModuleName
+                                                            ExcludedImportItem,
                                                         defaultArg (findTokenLocation document item.Name) defaultLocation,
                                                         stage = "KFrontIR",
                                                         phase = KFrontIRPhase.phaseName CHECKERS
@@ -1704,7 +1726,7 @@ module internal CompilationFrontend =
                                         | _ ->
                                             ()
                                     | None ->
-                                        diagnostics.AddError(DiagnosticFact.simple SimpleDiagnosticKind.ModuleNameUnresolved $"Imported module '{importedModuleName}' was not found.",
+                                        diagnostics.AddError(DiagnosticFact.importedModuleNotFound importedModuleName,
                                             specLocation,
                                             stage = "KFrontIR",
                                             phase = KFrontIRPhase.phaseName CHECKERS
@@ -2071,11 +2093,17 @@ module internal CompilationFrontend =
                 false)
         |> List.length
 
-    let private describeExpectation declaration =
+    let private expectationKind declaration =
         match declaration with
-        | ExpectTypeDeclaration declaration -> $"type '{declaration.Name}'"
-        | ExpectTraitDeclaration declaration -> $"trait '{declaration.Name}'"
-        | ExpectTermDeclaration declaration -> $"term '{declaration.Name}'"
+        | ExpectTypeDeclaration _ -> ExpectedTypeDeclaration
+        | ExpectTraitDeclaration _ -> ExpectedTraitDeclaration
+        | ExpectTermDeclaration _ -> ExpectedTermDeclaration
+
+    let private expectationName declaration =
+        match declaration with
+        | ExpectTypeDeclaration declaration -> declaration.Name
+        | ExpectTraitDeclaration declaration -> declaration.Name
+        | ExpectTermDeclaration declaration -> declaration.Name
 
     let private spanOfExpectation declaration =
         match declaration with
@@ -2103,7 +2131,7 @@ module internal CompilationFrontend =
                         match declaredTypeTokens |> Option.bind TypeSignatures.parseType with
                         | Some(TypeSignatures.TypeEquality(left, right))
                             when not (TypeSignatures.definitionallyEqual left right) ->
-                            diagnostics.AddError(DiagnosticFact.simple SimpleDiagnosticKind.TypeEqualityMismatch "The proof term 'refl' requires both sides of the equality type to be definitionally equal. Function binder quantities are part of type identity.",
+                            diagnostics.AddError(DiagnosticFact.reflRequiresDefinitionallyEqualSides,
                                 findTokenLocation document name |> Option.defaultValue (document.Source.GetLocation(TextSpan.FromBounds(0, 0))),
                                 stage = "KFrontIR",
                                 phase = KFrontIRPhase.phaseName CHECKERS
@@ -2149,13 +2177,19 @@ module internal CompilationFrontend =
                               0
 
                     if satisfactionCount = 0 then
-                        diagnostics.AddError(DiagnosticFact.simple SimpleDiagnosticKind.ExpectUnsatisfied $"Unsatisfied expect declaration for {describeExpectation declaration}.",
+                        diagnostics.AddError(
+                            DiagnosticFact.expectUnsatisfied
+                                (expectationKind declaration)
+                                (expectationName declaration),
                             document.Source.GetLocation(spanOfExpectation declaration),
                             stage = "KFrontIR",
                             phase = KFrontIRPhase.phaseName CHECKERS
                         )
                     elif satisfactionCount > 1 then
-                        diagnostics.AddError(DiagnosticFact.simple SimpleDiagnosticKind.ExpectAmbiguous $"Multiple satisfactions were found for expected {describeExpectation declaration}.",
+                        diagnostics.AddError(
+                            DiagnosticFact.expectAmbiguous
+                                (expectationKind declaration)
+                                (expectationName declaration),
                             document.Source.GetLocation(spanOfExpectation declaration),
                             stage = "KFrontIR",
                             phase = KFrontIRPhase.phaseName CHECKERS
@@ -2172,7 +2206,10 @@ module internal CompilationFrontend =
             for declaration in document.Syntax.Declarations do
                 match declaration with
                 | SignatureDeclaration signature when countSameFileSignatureSatisfactions document signature = 0 ->
-                    diagnostics.AddError(DiagnosticFact.simple SimpleDiagnosticKind.SignatureUnsatisfied $"Top-level signature '{signature.Name} : {tokensText signature.TypeTokens}' has no matching definition in the same source file. Define it with 'let {signature.Name} = ...' or declare it as 'expect term {signature.Name} : {tokensText signature.TypeTokens}'.",
+                    diagnostics.AddError(
+                        DiagnosticFact.signatureUnsatisfied
+                            signature.Name
+                            (tokensText signature.TypeTokens),
                         findTokenLocation document signature.Name
                         |> Option.defaultValue (document.Source.GetLocation(TextSpan.FromBounds(0, 0))),
                         stage = "KFrontIR",

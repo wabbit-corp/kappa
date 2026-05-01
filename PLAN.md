@@ -102,5 +102,11 @@ Current M4 status note: started, not complete. The compiler now has a real effec
 ## 9. Structured diagnostics only
 
 - [ ] Remove the remaining string escape hatches from `Diagnostics.fs`, especially `SimpleDiagnosticEvidence.Detail` and `CodeDetailEvidence.Detail`, so compiler phases cannot smuggle raw prose into emitted diagnostics.
-- [ ] Convert each diagnostic-producing subsystem to typed evidence ADTs with centralized formatting. The QTT/resource-checking family now uses structured evidence end-to-end, `CompilationFrontend` checking diagnostics now use typed evidence for module/import/URL/expect/signature/`refl` errors, `Parser.fs` routes its static syntax/module-header/modifier diagnostics through `ParserSyntaxEvidence`, and `CoreParsing.fs` now routes its parameter-binder and pattern diagnostics through `CorePatternParsingEvidence`. Dynamic literal/string decode failures in `CoreParsing.fs`, dynamic string-literal/URL parse failures in `Parser.fs`, plus elaboration, backend, checkpoint verification, lexer, and the remaining frontend diagnostics still rely heavily on raw detail strings.
+- [ ] Finish `Parser.fs` diagnostics conversion by replacing the remaining dynamic raw-string parse failures, especially string-literal decoding and URL module-specifier parsing.
+- [ ] Finish `CoreParsing.fs` diagnostics conversion for dynamic literal and Unicode decode failures.
+- [ ] Finish `CoreParsing.fs` diagnostics conversion for the remaining structural frontend paths: queries/comprehensions, handlers, projection bodies, function/local-function headers, record/application/update forms, and expression-tail validation.
+- [ ] Convert `Lexer.fs` diagnostics to typed evidence ADTs with centralized formatting.
+- [ ] Convert elaboration/typechecking diagnostics to typed evidence ADTs with centralized formatting.
+- [ ] Convert backend/lowering diagnostics to typed evidence ADTs with centralized formatting.
+- [ ] Convert checkpoint verification and target-checkpoint diagnostics to typed evidence ADTs with centralized formatting.
 - [ ] Preserve machine-readable payload structure as the primary contract, and keep tests asserting codes/families/payload fields rather than exact prose except where the spec mandates wording-sensitive content.

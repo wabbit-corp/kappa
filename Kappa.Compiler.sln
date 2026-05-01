@@ -1,4 +1,4 @@
-Microsoft Visual Studio Solution File, Format Version 12.00
+﻿Microsoft Visual Studio Solution File, Format Version 12.00
 # Visual Studio Version 17
 VisualStudioVersion = 17.0.31903.59
 MinimumVisualStudioVersion = 10.0.40219.1
@@ -13,6 +13,8 @@ EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "tests", "tests", "{0AB3BF05-4346-4AA6-1389-037BE0695223}"
 EndProject
 Project("{F2A71F9B-5D33-465A-A702-920D77279786}") = "Kappa.Compiler.Tests", "tests\Kappa.Compiler.Tests\Kappa.Compiler.Tests.fsproj", "{1D144828-E21E-42E0-9B60-12CB25E110CD}"
+EndProject
+Project("{F2A71F9B-5D33-465A-A702-920D77279786}") = "Kappa.Names", "src\Kappa.Names\Kappa.Names.fsproj", "{1D7629E7-7E83-4A9B-B5C5-1AD20DB5A126}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -72,6 +74,18 @@ Global
 		{1D144828-E21E-42E0-9B60-12CB25E110CD}.Release|x64.Build.0 = Release|Any CPU
 		{1D144828-E21E-42E0-9B60-12CB25E110CD}.Release|x86.ActiveCfg = Release|Any CPU
 		{1D144828-E21E-42E0-9B60-12CB25E110CD}.Release|x86.Build.0 = Release|Any CPU
+		{1D7629E7-7E83-4A9B-B5C5-1AD20DB5A126}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{1D7629E7-7E83-4A9B-B5C5-1AD20DB5A126}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{1D7629E7-7E83-4A9B-B5C5-1AD20DB5A126}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{1D7629E7-7E83-4A9B-B5C5-1AD20DB5A126}.Debug|x64.Build.0 = Debug|Any CPU
+		{1D7629E7-7E83-4A9B-B5C5-1AD20DB5A126}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{1D7629E7-7E83-4A9B-B5C5-1AD20DB5A126}.Debug|x86.Build.0 = Debug|Any CPU
+		{1D7629E7-7E83-4A9B-B5C5-1AD20DB5A126}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{1D7629E7-7E83-4A9B-B5C5-1AD20DB5A126}.Release|Any CPU.Build.0 = Release|Any CPU
+		{1D7629E7-7E83-4A9B-B5C5-1AD20DB5A126}.Release|x64.ActiveCfg = Release|Any CPU
+		{1D7629E7-7E83-4A9B-B5C5-1AD20DB5A126}.Release|x64.Build.0 = Release|Any CPU
+		{1D7629E7-7E83-4A9B-B5C5-1AD20DB5A126}.Release|x86.ActiveCfg = Release|Any CPU
+		{1D7629E7-7E83-4A9B-B5C5-1AD20DB5A126}.Release|x86.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
@@ -81,5 +95,6 @@ Global
 		{8C8B9F0E-94E-4C32-9920-5E1C39F35E52} = {26E8AD7D-B4A5-486E-B11D-7865080E1430}
 		{C3A30885-6C10-4A9B-97D9-B06E697587CB} = {26E8AD7D-B4A5-486E-B11D-7865080E1430}
 		{1D144828-E21E-42E0-9B60-12CB25E110CD} = {0AB3BF05-4346-4AA6-1389-037BE0695223}
+		{1D7629E7-7E83-4A9B-B5C5-1AD20DB5A126} = {26E8AD7D-B4A5-486E-B11D-7865080E1430}
 	EndGlobalSection
 EndGlobal

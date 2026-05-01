@@ -3311,7 +3311,7 @@ module ResourceChecking =
             else
                 addDiagnostic
                     linearDropDiagnostic
-                    $"Shadowing binding '{shadowedBinding.Name}' must consume the previous linear value exactly once in the right-hand side."
+                    (ShadowedBindingMustConsumePreviousValue shadowedBinding.Name)
                     (findBinderLocation document shadowedBinding.Name |> Option.orElse shadowedBinding.Origin)
                     [
                         match shadowedBinding.Origin with
@@ -3643,7 +3643,7 @@ module ResourceChecking =
             else
                 addDiagnostic
                     inoutThreadedFieldMissingDiagnostic
-                    $"An 'inout' parameter '{parameter.Name}' requires the result type to contain a quantity-1 field named '{parameter.Name}' after peeling any enclosing monad."
+                    (InoutThreadedFieldMissing parameter.Name)
                     (findBinderLocation document parameter.Name)
                     []
                     document
@@ -3677,7 +3677,7 @@ module ResourceChecking =
 
                     addDiagnostic
                         borrowConsumeDiagnostic
-                        $"Borrowed resource '{place.Root}' cannot be consumed."
+                        (BorrowedResourceCannotBeConsumed place.Root)
                         consumeOrigin
                         relatedLocations
                         document
@@ -3695,7 +3695,7 @@ module ResourceChecking =
 
                     addDiagnostic
                         borrowOverlapDiagnostic
-                        $"Place '{placeText}' overlaps an active borrowed footprint."
+                        (PlaceOverlapsActiveBorrowedFootprint placeText)
                         consumeOrigin
                         relatedLocations
                         document
@@ -3705,7 +3705,7 @@ module ResourceChecking =
                     |> addCopyForbiddenEventAtPlace consumeOrigin place.Root place.Path binding
                     |> addDiagnostic
                         linearOveruseDiagnostic
-                        $"Linear resource '{place.Root}' cannot be consumed as a whole after one of its field paths has already been consumed."
+                        (WholeResourceConsumedAfterFieldPath place.Root)
                         consumeOrigin
                         []
                         document
@@ -3714,7 +3714,7 @@ module ResourceChecking =
                     |> addCopyForbiddenEventAtPlace consumeOrigin place.Root place.Path binding
                     |> addDiagnostic
                         linearOveruseDiagnostic
-                        $"Field path '{placeText}' cannot be consumed after its root resource has already been consumed."
+                        (FieldPathConsumedAfterRoot placeText)
                         consumeOrigin
                         []
                         document
@@ -3724,7 +3724,7 @@ module ResourceChecking =
                     |> addCopyForbiddenEventAtPlace consumeOrigin place.Root place.Path binding
                     |> addDiagnostic
                         linearOveruseDiagnostic
-                        $"Field path '{placeText}' has already been consumed."
+                        (FieldPathAlreadyConsumed placeText)
                         consumeOrigin
                         []
                         document
@@ -3748,7 +3748,7 @@ module ResourceChecking =
                     |> addCopyForbiddenEventAtPlace consumeOrigin place.Root place.Path binding
                     |> addDiagnostic
                         linearOveruseDiagnostic
-                        $"Linear resource '{place.Root}' is consumed more than once."
+                        (ResourceConsumedMoreThanOnce place.Root)
                         consumeOrigin
                         relatedLocations
                         document
@@ -3819,7 +3819,7 @@ module ResourceChecking =
             | Some binding when binding.DeclaredQuantity = Some ResourceQuantity.zero ->
                 addDiagnostic
                     erasedRuntimeUseDiagnostic
-                    $"Quantity-0 binding '{binding.Name}' cannot be used at runtime."
+                    (QuantityZeroBindingUsedAtRuntime binding.Name)
                     (findUseLocation document root 1)
                     []
                     document
@@ -3838,7 +3838,7 @@ module ResourceChecking =
             | Some binding when binding.DeclaredQuantity = Some ResourceQuantity.zero ->
                 addDiagnostic
                     erasedRuntimeUseDiagnostic
-                    $"Quantity-0 binding '{binding.Name}' cannot be used at runtime."
+                    (QuantityZeroBindingUsedAtRuntime binding.Name)
                     (findUseLocation document name 1)
                     []
                     document
@@ -4042,12 +4042,12 @@ module ResourceChecking =
         [ 1 .. useCount ]
         |> List.fold (fun current _ -> noteValueDemandingNameUse document (Name [ aliasName ]) current) state
 
-    let private hasPriorBorrowOverlap message (state: CheckState) =
+    let private hasPriorBorrowOverlap evidence (state: CheckState) =
         state.Diagnostics
         |> List.exists (fun diagnostic ->
             diagnostic.Severity = Error
             && diagnostic.Code = borrowOverlapCode
-            && diagnostic.Message = message)
+            && diagnostic.Fact = borrowOverlapDiagnostic evidence)
 
     let private validatePlaceAccess (document: ParsedDocument) (place: ResourcePlace) (state: CheckState) =
         match tryFindBinding place.Root state with
@@ -4056,14 +4056,13 @@ module ResourceChecking =
         | _ when tryFindBorrowOverlap place state |> Option.isSome ->
             let borrowLock = tryFindBorrowOverlap place state |> Option.get
             let placeText = String.concat "." (place.Root :: place.Path)
-            let message = $"Place '{placeText}' overlaps an active borrowed footprint."
 
-            if hasPriorBorrowOverlap message state then
+            if hasPriorBorrowOverlap (PlaceOverlapsActiveBorrowedFootprint placeText) state then
                 state
             else
                 addDiagnostic
                     borrowOverlapDiagnostic
-                    message
+                    (PlaceOverlapsActiveBorrowedFootprint placeText)
                     (borrowLock.Origin |> Option.orElseWith (fun () -> Some(diagnosticLocation document)))
                     [
                         match borrowLock.Origin with
@@ -4077,7 +4076,7 @@ module ResourceChecking =
         | Some binding when List.isEmpty place.Path && not (List.isEmpty binding.ConsumedPaths) ->
             addDiagnostic
                 linearOveruseDiagnostic
-                $"Linear resource '{place.Root}' cannot be used as a whole after one of its field paths has already been consumed."
+                (WholeResourceUsedAfterFieldPath place.Root)
                 (findBindingUseLocation document binding 1)
                 []
                 document
@@ -4087,7 +4086,7 @@ module ResourceChecking =
             let placeText = String.concat "." (place.Root :: place.Path)
             addDiagnostic
                 linearOveruseDiagnostic
-                $"Field path '{placeText}' has already been consumed."
+                (FieldPathAlreadyConsumed placeText)
                 (findBindingUseLocation document binding 1)
                 []
                 document
@@ -4566,7 +4565,7 @@ module ResourceChecking =
 
             addDiagnostic
                 borrowEscapeDiagnostic
-                "A value that captures a borrowed region cannot escape its protected scope."
+                ValueCapturesBorrowedRegion
                 escapeOrigin
                 relatedLocations
                 document
@@ -4869,7 +4868,7 @@ module ResourceChecking =
                 |> List.fold (fun current binding ->
                     addDiagnostic
                         erasedRuntimeUseDiagnostic
-                        $"A runtime closure cannot capture erased quantity-0 binding '{binding.Name}'."
+                        (RuntimeClosureCapturesErasedBinding binding.Name)
                         (findUseLocation document binding.Name 1)
                         []
                         document
@@ -4902,7 +4901,7 @@ module ResourceChecking =
 
                 addDiagnostic
                     borrowEscapeDiagnostic
-                    "A lambda that captures a borrowed region cannot escape its protected scope."
+                    LambdaCapturesBorrowedRegion
                     escapeOrigin
                     relatedLocations
                     document
@@ -5021,7 +5020,7 @@ module ResourceChecking =
                && not (hasPriorLinearDropAt binding.Origin current) then
                 addDiagnostic
                     linearDropDiagnostic
-                    $"Linear resource '{binding.Name}' is not consumed on every path."
+                    (BindingNotConsumedOnEveryPath binding.Name)
                     binding.Origin
                     []
                     document
@@ -5045,7 +5044,7 @@ module ResourceChecking =
                && not (hasPriorLinearDropAt binding.Origin current) then
                 addDiagnostic
                     linearDropDiagnostic
-                    $"Linear resource '{binding.Name}' is not consumed on every path."
+                    (BindingNotConsumedOnEveryPath binding.Name)
                     binding.Origin
                     []
                     document
@@ -5423,7 +5422,7 @@ module ResourceChecking =
             | bindingName :: _ ->
                 addClauseDiagnostic
                     linearOveruseDiagnostic
-                    $"`{clauseLabel}` must not consume row binding '{bindingName}'."
+                    (ClauseMustNotConsumeRowBinding(clauseLabel, bindingName))
                     clauseExpression
                     restored
 
@@ -5434,29 +5433,30 @@ module ResourceChecking =
             | (_, binding) :: _ ->
                 let mayDrop = QuerySemantics.mayDiscardRows card
                 let mayDuplicate = QuerySemantics.mayDuplicateRows card
-                let makeFact =
-                    if mayDuplicate then
-                        linearOveruseDiagnostic
-                    else
-                        linearDropDiagnostic
-
                 let effectText =
                     match mayDrop, mayDuplicate with
-                    | true, true -> "duplicate or discard"
-                    | true, false -> "discard"
-                    | false, true -> "duplicate"
-                    | false, false -> "reorder"
+                    | true, true -> DuplicateOrDiscard
+                    | true, false -> Discard
+                    | false, true -> Duplicate
+                    | false, false -> Reorder
 
-                addClauseDiagnostic
-                    makeFact
-                    $"`{clauseLabel}` may {effectText} linear row binding '{binding.Name}' because the clause cardinality is {queryCardText card}."
-                    clauseExpression
-                    current
+                if mayDuplicate then
+                    addClauseDiagnostic
+                        linearOveruseDiagnostic
+                        (OveruseClauseCardinalityMayAffectRowBinding(clauseLabel, binding.Name, effectText, queryCardText card))
+                        clauseExpression
+                        current
+                else
+                    addClauseDiagnostic
+                        linearDropDiagnostic
+                        (DropClauseCardinalityMayAffectRowBinding(clauseLabel, binding.Name, effectText, queryCardText card))
+                        clauseExpression
+                        current
 
         let addDropDiagnostic clauseLabel clauseExpression current =
             addExactOneRowClauseDiagnostic
                 linearDropDiagnostic
-                (fun bindingName -> $"`{clauseLabel}` may discard linear row binding '{bindingName}'.")
+                (fun bindingName -> ClauseMayDiscardRowBinding(clauseLabel, bindingName))
                 clauseExpression
                 current
 
@@ -5475,7 +5475,7 @@ module ResourceChecking =
             | Some bindingName ->
                 addClauseDiagnostic
                     linearOveruseDiagnostic
-                    $"`left join ... into` would capture linear outer row binding '{bindingName}' for delayed query use."
+                    (LeftJoinCapturesLinearOuterRowBinding bindingName)
                     condition
                     current
             | None ->
@@ -6321,7 +6321,7 @@ module ResourceChecking =
                             | Some binding when binding.DeclaredQuantity = Some ResourceQuantity.zero ->
                                 addDiagnostic
                                     erasedRuntimeUseDiagnostic
-                                    "A match scrutinee cannot use an erased quantity-0 value at runtime."
+                                    MatchScrutineeUsesErasedValue
                                     (argumentLocation document scrutinee)
                                     []
                                     document
@@ -6383,7 +6383,7 @@ module ResourceChecking =
                                     |> List.fold (fun current (fieldName, _) ->
                                         addDiagnostic
                                             linearDropDiagnostic
-                                            $"Record pattern omits linear field '{fieldName}'."
+                                            (RecordPatternOmittedField fieldName)
                                             (argumentLocation document scrutinee)
                                             []
                                             document
@@ -6461,7 +6461,7 @@ module ResourceChecking =
 
                                 addDiagnostic
                                     linearOveruseDiagnostic
-                                    $"Record update on '{receiverPlace.Root}' must explicitly repair previously consumed path '{firstUnrepairedPath}'."
+                                    (RecordUpdateRequiresRepair(receiverPlace.Root, firstUnrepairedPath))
                                     (argumentLocation document receiver)
                                     []
                                     document
@@ -6647,7 +6647,7 @@ module ResourceChecking =
                 else
                     addDiagnostic
                         borrowEscapeDiagnostic
-                        "A forked child computation cannot capture a borrowed region from the parent fiber."
+                        ForkedChildCapturesBorrowedRegion
                         (argumentLocation document body)
                         []
                         document
@@ -7031,7 +7031,7 @@ module ResourceChecking =
                     if overlaps then
                         addDiagnostic
                             borrowOverlapDiagnostic
-                            "Inout arguments must have disjoint place footprints."
+                            InoutArgumentsRequireDisjointFootprints
                             (argumentLocation document rightArgument)
                             []
                             document
@@ -7102,7 +7102,7 @@ module ResourceChecking =
                             if overlaps then
                                 addDiagnostic
                                     borrowOverlapDiagnostic
-                                    "A temporary borrow introduced earlier in this application spine overlaps a later consuming argument."
+                                    TemporaryBorrowOverlapsLaterConsumingArgument
                                     (argumentLocation document consumeArgument)
                                     [
                                         match argumentLocation document borrowArgument with
@@ -7147,7 +7147,7 @@ module ResourceChecking =
                         if expectsInout && not hasInoutMarker then
                             addDiagnostic
                                 inoutMarkerRequiredDiagnostic
-                                "An argument supplied to an 'inout' parameter must be marked with '~'."
+                                InoutMarkerRequired
                                 (argumentLocation document argument)
                                 []
                                 document
@@ -7155,7 +7155,7 @@ module ResourceChecking =
                         elif hasInoutMarker && not expectsInout then
                             addDiagnostic
                                 inoutMarkerUnexpectedDiagnostic
-                                "The '~' marker can only be used for an 'inout' parameter."
+                                InoutMarkerUnexpected
                                 (argumentLocation document argument)
                                 []
                                 document
@@ -7183,7 +7183,11 @@ module ResourceChecking =
                                 else
                                     addDiagnostic
                                         linearOveruseDiagnostic
-                                        $"An argument available at quantity '{ResourceQuantity.toSurfaceText capability}' cannot satisfy parameter demand '{ResourceQuantity.toSurfaceText demandQuantity}'."
+                                        (QuantityCannotSatisfyParameterDemand(
+                                            ResourceQuantity.toSurfaceText capability,
+                                            ResourceQuantity.toSurfaceText demandQuantity,
+                                            Available
+                                        ))
                                         (argumentLocation document argument)
                                         []
                                         document
@@ -7202,7 +7206,11 @@ module ResourceChecking =
 
                             addDiagnostic
                                 linearOveruseDiagnostic
-                                $"An argument usable at quantity '{ResourceQuantity.toSurfaceText capability}' cannot satisfy parameter demand '{ResourceQuantity.toSurfaceText demandQuantity}'."
+                                (QuantityCannotSatisfyParameterDemand(
+                                    ResourceQuantity.toSurfaceText capability,
+                                    ResourceQuantity.toSurfaceText demandQuantity,
+                                    Usable
+                                ))
                                 (argumentLocation document argument)
                                 []
                                 document
@@ -7631,7 +7639,7 @@ module ResourceChecking =
                     | None when letQuestionPlainFailureDropsPositiveResidue document binding.Pattern ->
                         addDiagnostic
                             linearDropDiagnostic
-                            "Plain let? would discard a refutation residue carrying a positive lower-bound obligation; use an explicit else arm."
+                            PlainLetQuestionDiscardRefutationResidue
                             (bindPatternIntroductionOrigin document binding |> Option.orElseWith (fun () -> argumentLocation document expression))
                             []
                             document

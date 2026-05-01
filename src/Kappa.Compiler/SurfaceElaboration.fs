@@ -331,7 +331,7 @@ module SurfaceElaboration =
         segments |> ModuleIdentity.ofOptionalSegments
 
     let private moduleIdentityOfModuleSpecifier specifier =
-        specifier |> ModuleIdentity.ofModuleSpecifier
+        specifier |> SymbolicIdentity.moduleIdentityOfSpecifier
 
     let private topLevelDeclarationIdentity moduleIdentity name kind =
         DeclarationIdentity.topLevel moduleIdentity name kind

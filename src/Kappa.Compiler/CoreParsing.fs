@@ -3746,7 +3746,7 @@ type private ExpressionParser
                 innerTokens.Add(this.Advance())
 
         if depth > 0 then
-            diagnostics.AddError(DiagnosticFact.simple SimpleDiagnosticKind.ExpectedSyntaxToken "Unterminated parameter binder.", source.GetLocation(start.Span))
+            diagnostics.AddError(DiagnosticFact.coreExpressionParsing UnterminatedParameterBinder, source.GetLocation(start.Span))
             None
         else
             let tokens = List.ofSeq innerTokens
@@ -3798,11 +3798,11 @@ type private ExpressionParser
                         false
                 )
             | _ ->
-                diagnostics.AddError(DiagnosticFact.simple SimpleDiagnosticKind.ExpectedSyntaxToken "Expected a lambda parameter or '->'.", source.GetLocation(this.Current.Span))
+                diagnostics.AddError(DiagnosticFact.coreExpressionParsing ExpectedLambdaParameterOrArrow, source.GetLocation(this.Current.Span))
                 keepReading <- false
 
         if parameters.Count = 0 then
-            diagnostics.AddError(DiagnosticFact.simple SimpleDiagnosticKind.ExpectedSyntaxToken "A lambda must declare at least one parameter.", source.GetLocation(this.Current.Span))
+            diagnostics.AddError(DiagnosticFact.coreExpressionParsing LambdaMustDeclareAtLeastOneParameter, source.GetLocation(this.Current.Span))
 
         List.ofSeq parameters
 
@@ -3869,7 +3869,7 @@ type private ExpressionParser
             elif this.Current.Kind = EndOfFile && nestedIndents = 0 then
                 ()
             else
-                diagnostics.AddError(DiagnosticFact.simple SimpleDiagnosticKind.ExpectedSyntaxToken "Expected the do block to dedent.", source.GetLocation(this.Current.Span))
+                diagnostics.AddError(DiagnosticFact.coreExpressionParsing ExpectedDoBlockDedent, source.GetLocation(this.Current.Span))
         else
             let inlineTokens = ResizeArray<Token>()
 
@@ -3905,7 +3905,7 @@ type private ExpressionParser
         match result with
         | Some tokens -> tokens
         | None ->
-            diagnostics.AddError(DiagnosticFact.simple SimpleDiagnosticKind.ExpectedSyntaxToken "Expected '->' in the case clause.", source.GetLocation(this.Current.Span))
+            diagnostics.AddError(DiagnosticFact.coreExpressionParsing ExpectedCaseClauseArrow, source.GetLocation(this.Current.Span))
             List.ofSeq tokens
 
     member private this.CollectCurrentIndentedExpressionTokens() =
@@ -3929,7 +3929,7 @@ type private ExpressionParser
             if this.Current.Kind = Dedent then
                 this.Advance() |> ignore
             else
-                diagnostics.AddError(DiagnosticFact.simple SimpleDiagnosticKind.ExpectedSyntaxToken "Expected the indented expression to dedent.", source.GetLocation(this.Current.Span))
+                diagnostics.AddError(DiagnosticFact.coreExpressionParsing ExpectedIndentedExpressionDedent, source.GetLocation(this.Current.Span))
 
         List.ofSeq tokens
 
@@ -4014,7 +4014,7 @@ type private ExpressionParser
                 let body =
                     match bodyTokens with
                     | [ doToken ] when Token.isKeyword Keyword.Do doToken && this.Current.Kind = LeftBrace ->
-                        diagnostics.AddError(DiagnosticFact.simple SimpleDiagnosticKind.ExpectedSyntaxToken "Explicit braces are not permitted after a layout-introduced block.",
+                        diagnostics.AddError(DiagnosticFact.coreExpressionParsing ExplicitBracesAfterLayoutIntroducedBlockForbidden,
                             source.GetLocation(this.Current.Span)
                         )
 
@@ -4028,7 +4028,7 @@ type private ExpressionParser
                     | [] when this.Current.Kind = Indent ->
                         this.ParseStandaloneExpression(this.CollectCurrentIndentedExpressionTokens())
                     | [] when this.Current.Kind = Dedent && not (Token.isKeyword Keyword.Case (this.Peek(1))) ->
-                        diagnostics.AddError(DiagnosticFact.simple SimpleDiagnosticKind.UnexpectedIndentation "Unexpected indentation.",
+                        diagnostics.AddError(DiagnosticFact.coreExpressionParsing UnexpectedIndentationInIndentedCaseBody,
                             source.GetLocation(this.Peek(1).Span)
                         )
 
@@ -4056,16 +4056,16 @@ type private ExpressionParser
                 while this.Current.Kind = Newline do
                     this.Advance() |> ignore
             | None ->
-                diagnostics.AddError(DiagnosticFact.simple SimpleDiagnosticKind.ExpectedSyntaxToken "Expected '->' in the case clause.", source.GetLocation(this.Current.Span))
+                diagnostics.AddError(DiagnosticFact.coreExpressionParsing ExpectedCaseClauseArrow, source.GetLocation(this.Current.Span))
 
         if cases.Count = 0 then
-            diagnostics.AddError(DiagnosticFact.simple SimpleDiagnosticKind.ExpectedSyntaxToken "A match expression must declare at least one case.", source.GetLocation(this.Current.Span))
+            diagnostics.AddError(DiagnosticFact.coreExpressionParsing MatchExpressionMustDeclareAtLeastOneCase, source.GetLocation(this.Current.Span))
 
         if hasIndentedCases then
             if this.Current.Kind = Dedent then
                 this.Advance() |> ignore
             else
-                diagnostics.AddError(DiagnosticFact.simple SimpleDiagnosticKind.ExpectedSyntaxToken "Expected the match cases to dedent.", source.GetLocation(this.Current.Span))
+                diagnostics.AddError(DiagnosticFact.coreExpressionParsing ExpectedMatchCasesDedent, source.GetLocation(this.Current.Span))
 
         Match(scrutinee, List.ofSeq cases)
 
@@ -4240,7 +4240,7 @@ type private ExpressionParser
                 elif (current ()).Kind = EndOfFile && nestedIndents = 0 then
                     ()
                 else
-                    diagnostics.AddError(DiagnosticFact.simple SimpleDiagnosticKind.ExpectedSyntaxToken "Expected the while body to dedent.", source.GetLocation((current ()).Span))
+                    diagnostics.AddError(DiagnosticFact.coreExpressionParsing ExpectedWhileBodyDedent, source.GetLocation((current ()).Span))
             else
                 let inlineTokens =
                     tokens
@@ -4295,14 +4295,14 @@ type private ExpressionParser
                                 { ResiduePattern = this.ParseBindPatternFromTokens residuePatternTokens
                                   Body = body }
                         | None ->
-                            diagnostics.AddError(DiagnosticFact.simple SimpleDiagnosticKind.ExpectedSyntaxToken "Expected '->' in the let? failure arm.", source.GetLocation(letQuestionToken.Span))
+                            diagnostics.AddError(DiagnosticFact.coreExpressionParsing ExpectedLetQuestionFailureArrow, source.GetLocation(letQuestionToken.Span))
                             valueTokens, None
                     | None ->
                         afterEquals, None
 
                 DoLetQuestion(this.ParseBindPatternFromTokens patternTokens, this.ParseStandaloneExpression(valueTokens), failure)
             | None ->
-                diagnostics.AddError(DiagnosticFact.simple SimpleDiagnosticKind.ExpectedSyntaxToken "Expected '=' in the let? binding.", source.GetLocation(letQuestionToken.Span))
+                diagnostics.AddError(DiagnosticFact.coreExpressionParsing ExpectedLetQuestionEquals, source.GetLocation(letQuestionToken.Span))
                 DoExpression(Literal LiteralValue.Unit)
 
         let parseDoIf (ifToken: Token) (rest: Token list) =
@@ -4324,7 +4324,7 @@ type private ExpressionParser
                     if List.isEmpty whenFalseTokens then [] else parseDoBlockTokens whenFalseTokens
                 )
             | None ->
-                diagnostics.AddError(DiagnosticFact.simple SimpleDiagnosticKind.ExpectedSyntaxToken "Expected 'then' in the do if statement.", source.GetLocation(ifToken.Span))
+                diagnostics.AddError(DiagnosticFact.coreExpressionParsing ExpectedDoIfThen, source.GetLocation(ifToken.Span))
                 DoExpression(Literal LiteralValue.Unit)
 
         match lineTokens with
@@ -4336,7 +4336,7 @@ type private ExpressionParser
             DoReturn(this.ParseStandaloneExpression(rest))
         | deferToken :: rest when Token.isKeyword Keyword.Defer deferToken ->
             if List.isEmpty rest then
-                diagnostics.AddError(DiagnosticFact.simple SimpleDiagnosticKind.ExpectedSyntaxToken "Expected an expression after 'defer'.", source.GetLocation(deferToken.Span))
+                diagnostics.AddError(DiagnosticFact.coreExpressionParsing ExpectedExpressionAfterDefer, source.GetLocation(deferToken.Span))
                 DoExpression(Literal LiteralValue.Unit)
             else
                 DoDefer(this.ParseStandaloneExpression(rest))
@@ -4364,7 +4364,7 @@ type private ExpressionParser
                         patternTokens
 
                 if List.isEmpty patternTokens then
-                    diagnostics.AddError(DiagnosticFact.simple SimpleDiagnosticKind.ExpectedSyntaxToken "Expected a pattern in the using binding.",
+                    diagnostics.AddError(DiagnosticFact.coreExpressionParsing ExpectedUsingBindingPattern,
                         source.GetLocation(usingToken.Span)
                     )
 
@@ -4373,7 +4373,7 @@ type private ExpressionParser
                 let binding = SurfaceBinderParsing.makeBindPattern pattern (Some(QuantityBorrow None)) patternTokens
                 DoUsing(binding, this.ParseStandaloneExpression(expressionTokens))
             | None ->
-                diagnostics.AddError(DiagnosticFact.simple SimpleDiagnosticKind.ExpectedSyntaxToken "Expected '<-' in the using binding.", source.GetLocation(usingToken.Span))
+                diagnostics.AddError(DiagnosticFact.coreExpressionParsing ExpectedUsingBindingArrow, source.GetLocation(usingToken.Span))
                 DoExpression(Literal LiteralValue.Unit)
         | letQuestionToken :: rest when Token.isKeyword Keyword.LetQuestion letQuestionToken ->
             parseLetQuestion letQuestionToken rest
@@ -4401,7 +4401,7 @@ type private ExpressionParser
                             TypeTokens = bindingTypeTokens |> Option.orElse current.TypeTokens }
 
                 if containsInvalidIndentedExpressionContinuation expressionTokens then
-                    diagnostics.AddError(DiagnosticFact.simple SimpleDiagnosticKind.ExpectedSyntaxToken "Unexpected indented expression continuation in the do binding.",
+                    diagnostics.AddError(DiagnosticFact.coreExpressionParsing UnexpectedIndentedExpressionContinuationInDoBinding,
                         source.GetLocation(letToken.Span)
                     )
 
@@ -4410,7 +4410,7 @@ type private ExpressionParser
                 else
                     DoLet(binding, this.ParseStandaloneExpression(expressionTokens))
             | None ->
-                diagnostics.AddError(DiagnosticFact.simple SimpleDiagnosticKind.ExpectedSyntaxToken "Expected '=' or '<-' in the do binding.", source.GetLocation(letToken.Span))
+                diagnostics.AddError(DiagnosticFact.coreExpressionParsing ExpectedDoBindingAssignmentOrBind, source.GetLocation(letToken.Span))
                 DoExpression(Literal LiteralValue.Unit)
         | whileToken :: rest when Token.isKeyword Keyword.While whileToken ->
             let tokenArray = List.toArray rest
@@ -4428,7 +4428,7 @@ type private ExpressionParser
                 index <- index + 1
 
             if splitIndex < 0 then
-                diagnostics.AddError(DiagnosticFact.simple SimpleDiagnosticKind.ExpectedSyntaxToken "Expected 'do' in the while statement.", source.GetLocation(whileToken.Span))
+                diagnostics.AddError(DiagnosticFact.coreExpressionParsing ExpectedWhileDo, source.GetLocation(whileToken.Span))
                 DoExpression(Literal LiteralValue.Unit)
             else
                 let conditionTokens = tokenArray[0 .. splitIndex - 1] |> Array.toList
@@ -4457,7 +4457,7 @@ type private ExpressionParser
                         | [] -> this.Current.Span
 
                 if containsInvalidIndentedExpressionContinuation expressionTokens then
-                    diagnostics.AddError(DiagnosticFact.simple SimpleDiagnosticKind.ExpectedSyntaxToken "Unexpected indented expression continuation in the do binding.",
+                    diagnostics.AddError(DiagnosticFact.coreExpressionParsing UnexpectedIndentedExpressionContinuationInDoBinding,
                         source.GetLocation(bindingLocation)
                     )
 
@@ -4475,7 +4475,7 @@ type private ExpressionParser
 
         match statements with
         | [] ->
-            diagnostics.AddError(DiagnosticFact.simple SimpleDiagnosticKind.ExpectedSyntaxToken "A do block must contain at least one statement.", source.GetLocation(this.Current.Span))
+            diagnostics.AddError(DiagnosticFact.coreExpressionParsing DoBlockMustContainAtLeastOneStatement, source.GetLocation(this.Current.Span))
         | _ ->
             ()
 
@@ -4489,7 +4489,7 @@ type private ExpressionParser
         if this.Current.Kind = Arrow then
             this.Advance() |> ignore
         else
-            diagnostics.AddError(DiagnosticFact.simple SimpleDiagnosticKind.ExpectedSyntaxToken "Expected '->' after the lambda parameters.", source.GetLocation(this.Current.Span))
+            diagnostics.AddError(DiagnosticFact.coreExpressionParsing ExpectedLambdaBodyArrow, source.GetLocation(this.Current.Span))
 
         let body =
             match this.Current.Kind, this.Peek(1).Kind with

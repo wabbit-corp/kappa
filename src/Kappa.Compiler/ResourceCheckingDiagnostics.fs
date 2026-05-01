@@ -15,15 +15,15 @@ module internal ResourceCheckingDiagnostics =
     let inoutMarkerUnexpectedCode = DiagnosticCode.QttInoutMarkerUnexpected
     let inoutThreadedFieldMissingCode = DiagnosticCode.QttInoutThreadedFieldMissing
 
-    let linearDropDiagnostic detail = DiagnosticFact.simple SimpleDiagnosticKind.QttLinearDrop detail
-    let linearOveruseDiagnostic detail = DiagnosticFact.simple SimpleDiagnosticKind.QttLinearOveruse detail
-    let borrowConsumeDiagnostic detail = DiagnosticFact.simple SimpleDiagnosticKind.QttBorrowConsume detail
-    let borrowOverlapDiagnostic detail = DiagnosticFact.simple SimpleDiagnosticKind.QttBorrowOverlap detail
-    let borrowEscapeDiagnostic detail = DiagnosticFact.simple SimpleDiagnosticKind.QttBorrowEscape detail
-    let erasedRuntimeUseDiagnostic detail = DiagnosticFact.simple SimpleDiagnosticKind.QttErasedRuntimeUse detail
-    let inoutMarkerRequiredDiagnostic detail = DiagnosticFact.simple SimpleDiagnosticKind.QttInoutMarkerRequired detail
-    let inoutMarkerUnexpectedDiagnostic detail = DiagnosticFact.simple SimpleDiagnosticKind.QttInoutMarkerUnexpected detail
-    let inoutThreadedFieldMissingDiagnostic detail = DiagnosticFact.simple SimpleDiagnosticKind.QttInoutThreadedFieldMissing detail
+    let linearDropDiagnostic evidence = DiagnosticFact.qttLinearDrop evidence
+    let linearOveruseDiagnostic evidence = DiagnosticFact.qttLinearOveruse evidence
+    let borrowConsumeDiagnostic evidence = DiagnosticFact.qttBorrowConsume evidence
+    let borrowOverlapDiagnostic evidence = DiagnosticFact.qttBorrowOverlap evidence
+    let borrowEscapeDiagnostic evidence = DiagnosticFact.qttBorrowEscape evidence
+    let erasedRuntimeUseDiagnostic evidence = DiagnosticFact.qttErasedRuntimeUse evidence
+    let inoutMarkerRequiredDiagnostic evidence = DiagnosticFact.qttInoutMarkerRequired evidence
+    let inoutMarkerUnexpectedDiagnostic evidence = DiagnosticFact.qttInoutMarkerUnexpected evidence
+    let inoutThreadedFieldMissingDiagnostic evidence = DiagnosticFact.qttInoutThreadedFieldMissing evidence
 
     let diagnosticLocation (document: ParsedDocument) =
         document.Source.GetLocation(TextSpan.FromBounds(0, 0))
@@ -125,11 +125,11 @@ module internal ResourceCheckingDiagnostics =
         |> List.filter (fun location -> location.Span.Start >= origin.Span.End)
         |> List.tryItem (max 0 (ordinal - 1))
 
-    let addDiagnostic makeFact message location relatedLocations (document: ParsedDocument) (state: ResourceContext) =
+    let addDiagnostic makeFact evidence location relatedLocations (document: ParsedDocument) (state: ResourceContext) =
         let diagnostic: Diagnostic =
             Diagnostics.create
                 Error
-                (makeFact message)
+                (makeFact evidence)
                 (location |> Option.orElseWith (fun () -> Some(diagnosticLocation document)))
                 relatedLocations
                 (Some "KFrontIR")

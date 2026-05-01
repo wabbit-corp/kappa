@@ -18,7 +18,7 @@ let ``ModuleIdentity ASCII case-fold key is segment-wise`` () =
 
 [<Fact>]
 let ``ModuleIdentity maps dotted module specifiers to semantic identities`` () =
-    let identity = ModuleIdentity.ofModuleSpecifier (Dotted [ "Std"; "Prelude" ])
+    let identity = SymbolicIdentity.moduleIdentityOfSpecifier (Dotted [ "Std"; "Prelude" ])
 
     Assert.Equal(Some(ModuleIdentity.ofSegments [ "Std"; "Prelude" ]), identity)
 
@@ -33,7 +33,7 @@ let ``ModuleIdentity lifts optional path segments`` () =
 [<Fact>]
 let ``ModuleIdentity ignores URL module specifiers`` () =
     let identity =
-        ModuleIdentity.ofModuleSpecifier
+        SymbolicIdentity.moduleIdentityOfSpecifier
             (Url
                 { OriginalText = "\"https://example.test/std/prelude.kp\""
                   BaseUrl = "https://example.test/std/prelude.kp"

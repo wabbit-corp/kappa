@@ -810,6 +810,30 @@ type CorePatternParsingEvidence =
     | OnlyConstructorPatternsMayTakeArguments
     | UnexpectedTrailingPatternTokens
 
+type CoreExpressionParsingEvidence =
+    | UnterminatedParameterBinder
+    | ExpectedLambdaParameterOrArrow
+    | LambdaMustDeclareAtLeastOneParameter
+    | ExpectedDoBlockDedent
+    | ExpectedCaseClauseArrow
+    | ExpectedIndentedExpressionDedent
+    | ExplicitBracesAfterLayoutIntroducedBlockForbidden
+    | UnexpectedIndentationInIndentedCaseBody
+    | MatchExpressionMustDeclareAtLeastOneCase
+    | ExpectedMatchCasesDedent
+    | ExpectedWhileBodyDedent
+    | ExpectedLetQuestionFailureArrow
+    | ExpectedLetQuestionEquals
+    | ExpectedDoIfThen
+    | ExpectedExpressionAfterDefer
+    | ExpectedUsingBindingPattern
+    | ExpectedUsingBindingArrow
+    | UnexpectedIndentedExpressionContinuationInDoBinding
+    | ExpectedDoBindingAssignmentOrBind
+    | ExpectedWhileDo
+    | DoBlockMustContainAtLeastOneStatement
+    | ExpectedLambdaBodyArrow
+
 type ParserNameExpectationRole =
     | BindingName
     | DataTypeName
@@ -986,6 +1010,7 @@ type DiagnosticFact =
     | TypeEqualityMismatchDiagnostic of TypeEqualityMismatchEvidence
     | ParserSyntaxDiagnostic of ParserSyntaxEvidence
     | CorePatternParsingDiagnostic of CorePatternParsingEvidence
+    | CoreExpressionParsingDiagnostic of CoreExpressionParsingEvidence
     | QttLinearDropDiagnostic of QttLinearDropEvidence
     | QttLinearOveruseDiagnostic of QttLinearOveruseEvidence
     | QttBorrowConsumeDiagnostic of QttBorrowConsumeEvidence
@@ -1269,6 +1294,9 @@ module DiagnosticFact =
 
     let corePatternParsing evidence =
         CorePatternParsingDiagnostic evidence
+
+    let coreExpressionParsing evidence =
+        CoreExpressionParsingDiagnostic evidence
 
     let qttLinearDrop evidence = QttLinearDropDiagnostic evidence
     let qttLinearOveruse evidence = QttLinearOveruseDiagnostic evidence
@@ -2066,6 +2094,74 @@ module DiagnosticFact =
                     None
                     "Unexpected tokens at the end of the pattern."
                     (payload "core-pattern-parsing" [ field "reason" (DiagnosticPayloadText "unexpected-trailing-pattern-tokens") ])
+        | CoreExpressionParsingDiagnostic evidence ->
+            match evidence with
+            | UnterminatedParameterBinder ->
+                descriptor DiagnosticCode.ExpectedSyntaxToken None "Unterminated parameter binder."
+                    (payload "core-expression-parsing" [ field "reason" (DiagnosticPayloadText "unterminated-parameter-binder") ])
+            | ExpectedLambdaParameterOrArrow ->
+                descriptor DiagnosticCode.ExpectedSyntaxToken None "Expected a lambda parameter or '->'."
+                    (payload "core-expression-parsing" [ field "reason" (DiagnosticPayloadText "expected-lambda-parameter-or-arrow") ])
+            | LambdaMustDeclareAtLeastOneParameter ->
+                descriptor DiagnosticCode.ExpectedSyntaxToken None "A lambda must declare at least one parameter."
+                    (payload "core-expression-parsing" [ field "reason" (DiagnosticPayloadText "lambda-must-declare-at-least-one-parameter") ])
+            | ExpectedDoBlockDedent ->
+                descriptor DiagnosticCode.ExpectedSyntaxToken None "Expected the do block to dedent."
+                    (payload "core-expression-parsing" [ field "reason" (DiagnosticPayloadText "expected-do-block-dedent") ])
+            | ExpectedCaseClauseArrow ->
+                descriptor DiagnosticCode.ExpectedSyntaxToken None "Expected '->' in the case clause."
+                    (payload "core-expression-parsing" [ field "reason" (DiagnosticPayloadText "expected-case-clause-arrow") ])
+            | ExpectedIndentedExpressionDedent ->
+                descriptor DiagnosticCode.ExpectedSyntaxToken None "Expected the indented expression to dedent."
+                    (payload "core-expression-parsing" [ field "reason" (DiagnosticPayloadText "expected-indented-expression-dedent") ])
+            | ExplicitBracesAfterLayoutIntroducedBlockForbidden ->
+                descriptor DiagnosticCode.ExpectedSyntaxToken None "Explicit braces are not permitted after a layout-introduced block."
+                    (payload "core-expression-parsing" [ field "reason" (DiagnosticPayloadText "explicit-braces-after-layout-introduced-block-forbidden") ])
+            | UnexpectedIndentationInIndentedCaseBody ->
+                descriptor DiagnosticCode.UnexpectedIndentation None "Unexpected indentation."
+                    (payload "core-expression-parsing" [ field "reason" (DiagnosticPayloadText "unexpected-indentation-in-indented-case-body") ])
+            | MatchExpressionMustDeclareAtLeastOneCase ->
+                descriptor DiagnosticCode.ExpectedSyntaxToken None "A match expression must declare at least one case."
+                    (payload "core-expression-parsing" [ field "reason" (DiagnosticPayloadText "match-expression-must-declare-at-least-one-case") ])
+            | ExpectedMatchCasesDedent ->
+                descriptor DiagnosticCode.ExpectedSyntaxToken None "Expected the match cases to dedent."
+                    (payload "core-expression-parsing" [ field "reason" (DiagnosticPayloadText "expected-match-cases-dedent") ])
+            | ExpectedWhileBodyDedent ->
+                descriptor DiagnosticCode.ExpectedSyntaxToken None "Expected the while body to dedent."
+                    (payload "core-expression-parsing" [ field "reason" (DiagnosticPayloadText "expected-while-body-dedent") ])
+            | ExpectedLetQuestionFailureArrow ->
+                descriptor DiagnosticCode.ExpectedSyntaxToken None "Expected '->' in the let? failure arm."
+                    (payload "core-expression-parsing" [ field "reason" (DiagnosticPayloadText "expected-let-question-failure-arrow") ])
+            | ExpectedLetQuestionEquals ->
+                descriptor DiagnosticCode.ExpectedSyntaxToken None "Expected '=' in the let? binding."
+                    (payload "core-expression-parsing" [ field "reason" (DiagnosticPayloadText "expected-let-question-equals") ])
+            | ExpectedDoIfThen ->
+                descriptor DiagnosticCode.ExpectedSyntaxToken None "Expected 'then' in the do if statement."
+                    (payload "core-expression-parsing" [ field "reason" (DiagnosticPayloadText "expected-do-if-then") ])
+            | ExpectedExpressionAfterDefer ->
+                descriptor DiagnosticCode.ExpectedSyntaxToken None "Expected an expression after 'defer'."
+                    (payload "core-expression-parsing" [ field "reason" (DiagnosticPayloadText "expected-expression-after-defer") ])
+            | ExpectedUsingBindingPattern ->
+                descriptor DiagnosticCode.ExpectedSyntaxToken None "Expected a pattern in the using binding."
+                    (payload "core-expression-parsing" [ field "reason" (DiagnosticPayloadText "expected-using-binding-pattern") ])
+            | ExpectedUsingBindingArrow ->
+                descriptor DiagnosticCode.ExpectedSyntaxToken None "Expected '<-' in the using binding."
+                    (payload "core-expression-parsing" [ field "reason" (DiagnosticPayloadText "expected-using-binding-arrow") ])
+            | UnexpectedIndentedExpressionContinuationInDoBinding ->
+                descriptor DiagnosticCode.ExpectedSyntaxToken None "Unexpected indented expression continuation in the do binding."
+                    (payload "core-expression-parsing" [ field "reason" (DiagnosticPayloadText "unexpected-indented-expression-continuation-in-do-binding") ])
+            | ExpectedDoBindingAssignmentOrBind ->
+                descriptor DiagnosticCode.ExpectedSyntaxToken None "Expected '=' or '<-' in the do binding."
+                    (payload "core-expression-parsing" [ field "reason" (DiagnosticPayloadText "expected-do-binding-assignment-or-bind") ])
+            | ExpectedWhileDo ->
+                descriptor DiagnosticCode.ExpectedSyntaxToken None "Expected 'do' in the while statement."
+                    (payload "core-expression-parsing" [ field "reason" (DiagnosticPayloadText "expected-while-do") ])
+            | DoBlockMustContainAtLeastOneStatement ->
+                descriptor DiagnosticCode.ExpectedSyntaxToken None "A do block must contain at least one statement."
+                    (payload "core-expression-parsing" [ field "reason" (DiagnosticPayloadText "do-block-must-contain-at-least-one-statement") ])
+            | ExpectedLambdaBodyArrow ->
+                descriptor DiagnosticCode.ExpectedSyntaxToken None "Expected '->' after the lambda parameters."
+                    (payload "core-expression-parsing" [ field "reason" (DiagnosticPayloadText "expected-lambda-body-arrow") ])
         | QttLinearDropDiagnostic evidence ->
             match evidence with
             | ShadowedBindingMustConsumePreviousValue shadowedBindingName ->

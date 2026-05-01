@@ -437,7 +437,7 @@ module internal ElaborationEvaluation =
         |> Option.orElseWith (fun () ->
             model.Imports
             |> List.tryPick (fun spec ->
-                match ModuleIdentity.ofModuleSpecifier spec.Source with
+                match SymbolicIdentity.moduleIdentityOfSpecifier spec.Source with
                 | Some importedModuleIdentity ->
                     inventories
                     |> Map.tryFind importedModuleIdentity
@@ -457,7 +457,7 @@ module internal ElaborationEvaluation =
         |> Option.orElseWith (fun () ->
             model.Imports
             |> List.tryPick (fun spec ->
-                match ModuleIdentity.ofModuleSpecifier spec.Source with
+                match SymbolicIdentity.moduleIdentityOfSpecifier spec.Source with
                 | Some importedModuleIdentity ->
                     inventories
                     |> Map.tryFind importedModuleIdentity
@@ -477,7 +477,7 @@ module internal ElaborationEvaluation =
         |> Option.orElseWith (fun () ->
             model.Imports
             |> List.tryPick (fun spec ->
-                match ModuleIdentity.ofModuleSpecifier spec.Source with
+                match SymbolicIdentity.moduleIdentityOfSpecifier spec.Source with
                 | Some importedModuleIdentity ->
                     inventories
                     |> Map.tryFind importedModuleIdentity
@@ -497,7 +497,7 @@ module internal ElaborationEvaluation =
         |> Option.orElseWith (fun () ->
             model.Imports
             |> List.tryPick (fun spec ->
-                match ModuleIdentity.ofModuleSpecifier spec.Source with
+                match SymbolicIdentity.moduleIdentityOfSpecifier spec.Source with
                 | Some importedModuleIdentity ->
                     match inventories |> Map.tryFind importedModuleIdentity, models |> Map.tryFind importedModuleIdentity with
                     | Some inventory, Some importedModel when selectionImportsConstructorName importedModel inventory spec.Selection localName ->
@@ -774,7 +774,7 @@ module internal ElaborationEvaluation =
         let importedInstances =
             model.Imports
             |> List.collect (fun spec ->
-                match ModuleIdentity.ofModuleSpecifier spec.Source with
+                match SymbolicIdentity.moduleIdentityOfSpecifier spec.Source with
                 | Some importedModuleIdentity ->
                     models |> Map.tryFind importedModuleIdentity |> Option.map (fun imported -> imported.Instances) |> Option.defaultValue []
                 | None ->
@@ -808,7 +808,7 @@ module internal ElaborationEvaluation =
         let importedAliases =
             moduleModel.Imports
             |> List.collect (fun spec ->
-                match ModuleIdentity.ofModuleSpecifier spec.Source with
+                match SymbolicIdentity.moduleIdentityOfSpecifier spec.Source with
                 | Some importedModuleIdentity ->
                     match models |> Map.tryFind importedModuleIdentity, inventories |> Map.tryFind importedModuleIdentity with
                     | Some importedModel, Some inventory ->

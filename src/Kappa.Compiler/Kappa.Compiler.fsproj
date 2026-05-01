@@ -7,6 +7,7 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <ProjectReference Include="..\Kappa.Names\Kappa.Names.fsproj" />
     <ProjectReference Include="..\Kappa.Runtime\Kappa.Runtime.csproj" />
   </ItemGroup>
 

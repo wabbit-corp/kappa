@@ -3624,6 +3624,45 @@ module SmokeTestsShard4 =
         Assert.Equal("Each or-pattern alternative must bind the same set of names.", orPatternDiagnostic.Message)
         Assert.Equal("core-pattern-parsing", orPatternDiagnostic.Payload.Kind)
 
+    [<Fact>]
+    let ``core expression parsing diagnostics render from typed evidence`` () =
+        let bag = DiagnosticBag()
+        bag.AddError(DiagnosticFact.coreExpressionParsing ExpectedUsingBindingArrow)
+        bag.AddError(DiagnosticFact.coreExpressionParsing MatchExpressionMustDeclareAtLeastOneCase)
+        bag.AddError(DiagnosticFact.coreExpressionParsing UnexpectedIndentationInIndentedCaseBody)
+
+        let diagnostics = bag.Items
+        let usingDiagnostic =
+            diagnostics
+            |> List.find (fun item -> item.Message = "Expected '<-' in the using binding.")
+
+        let matchDiagnostic =
+            diagnostics
+            |> List.find (fun item -> item.Message = "A match expression must declare at least one case.")
+
+        let indentationDiagnostic =
+            diagnostics
+            |> List.find (fun item -> item.Code = DiagnosticCode.UnexpectedIndentation)
+
+        Assert.Equal("core-expression-parsing", usingDiagnostic.Payload.Kind)
+        Assert.Contains(
+            usingDiagnostic.Payload.Fields,
+            fun field ->
+                field.Name = "reason"
+                && field.Value = DiagnosticPayloadText "expected-using-binding-arrow"
+        )
+
+        Assert.Equal(DiagnosticCode.ExpectedSyntaxToken, matchDiagnostic.Code)
+        Assert.Contains(
+            matchDiagnostic.Payload.Fields,
+            fun field ->
+                field.Name = "reason"
+                && field.Value = DiagnosticPayloadText "match-expression-must-declare-at-least-one-case"
+        )
+
+        Assert.Equal("Unexpected indentation.", indentationDiagnostic.Message)
+        Assert.Equal("core-expression-parsing", indentationDiagnostic.Payload.Kind)
+
 
     [<Fact>]
     let ``byte literal decoder preserves raw byte escape provenance`` () =
