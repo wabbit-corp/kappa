@@ -294,6 +294,53 @@ module CoreTestsShard0 =
 
 
     [<Fact>]
+    let ``interpreter resolves qualified trait aliases through module imports`` () =
+        let mainSource =
+            [
+                "module main"
+                ""
+                "import providers.score as score"
+                ""
+                "resolve : forall (t : Type). (@_ : IsTrait t) -> (@v : t) -> t"
+                "let resolve @v = v"
+                ""
+                "scoreInt : score.Score Int"
+                "let scoreInt = resolve"
+                ""
+                "result : Int"
+                "let result = scoreInt.score 42"
+            ]
+            |> String.concat "\n"
+
+        let scoreSource =
+            [
+                "module providers.score"
+                ""
+                "trait Score a ="
+                "    score : a -> Int"
+                ""
+                "instance Score Int ="
+                "    let score x = x"
+            ]
+            |> String.concat "\n"
+
+        let workspace, result =
+            evaluateInMemoryBinding
+                "memory-qualified-trait-alias-root"
+                "main.result"
+                [ "main.kp", mainSource
+                  "providers/score.kp", scoreSource ]
+
+        Assert.False(workspace.HasErrors, sprintf "Expected no diagnostics, got %A" workspace.Diagnostics)
+
+        match result with
+        | Result.Ok value ->
+            Assert.Equal("42", RuntimeValue.format value)
+        | Result.Error issue ->
+            failwithf "Expected qualified trait alias resolution to succeed, got %s" issue.Message
+
+
+    [<Fact>]
     let ``interpreter resolves bundled summon helper across imported trait modules`` () =
         let mainSource =
             [

@@ -1153,6 +1153,27 @@ module SurfaceElaboration =
                 | _ ->
                     typeFacetInfo.ModuleIdentity = moduleIdentityOfSegments (List.rev reversedModuleSegments))
 
+    let private tryResolveVisibleTraitInfo
+        (environment: BindingLoweringEnvironment)
+        nameSegments
+        =
+        match List.rev nameSegments with
+        | [] ->
+            None
+        | traitName :: reversedModuleSegments ->
+            match reversedModuleSegments with
+            | [] ->
+                environment.VisibleTraits |> Map.tryFind traitName
+            | _ ->
+                let moduleName = SyntaxFacts.moduleNameToText (List.rev reversedModuleSegments)
+
+                environment.VisibleModules
+                |> Map.tryFind moduleName
+                |> Option.bind (fun moduleIdentity ->
+                    environment.SurfaceIndex
+                    |> Map.tryFind moduleIdentity
+                    |> Option.bind (fun moduleInfo -> moduleInfo.Traits |> Map.tryFind traitName))
+
     let private tryResolveStaticObject
         (environment: BindingLoweringEnvironment)
         expression
@@ -1162,12 +1183,8 @@ module SurfaceElaboration =
             tryResolveVisibleTypeFacetInfo environment nameSegments
             |> Option.map typeFacetStaticObject
         | KindQualifiedName(TraitKind, nameSegments) ->
-            match List.rev nameSegments with
-            | [] -> None
-            | traitName :: _ ->
-                environment.VisibleTraits
-                |> Map.tryFind traitName
-                |> Option.map traitStaticObject
+            tryResolveVisibleTraitInfo environment nameSegments
+            |> Option.map traitStaticObject
         | KindQualifiedName(EffectLabelKind, _) ->
             None
         | KindQualifiedName(ModuleKind, nameSegments) ->
@@ -7007,12 +7024,8 @@ module SurfaceElaboration =
         | TypeName([ traitName ], arguments) when environment.VisibleTraits.ContainsKey(traitName) ->
             tryFindOwnerTrait traitName arguments memberName
         | TypeName(qualifiedName, arguments) ->
-            let traitName = SyntaxFacts.moduleNameToText qualifiedName
-
-            if environment.VisibleTraits.ContainsKey(traitName) then
-                tryFindOwnerTrait traitName arguments memberName
-            else
-                None
+            tryResolveVisibleTraitInfo environment qualifiedName
+            |> Option.bind (fun traitInfo -> tryFindOwnerTrait traitInfo.Name arguments memberName)
         | _ ->
             None
 
@@ -7146,7 +7159,7 @@ module SurfaceElaboration =
             | TypeName([ traitName ], _) when environment.VisibleTraits.ContainsKey(traitName) ->
                 true
             | TypeName(qualifiedName, _) ->
-                environment.VisibleTraits.ContainsKey(SyntaxFacts.moduleNameToText qualifiedName)
+                tryResolveVisibleTraitInfo environment qualifiedName |> Option.isSome
             | _ ->
                 false
 
@@ -7220,7 +7233,7 @@ module SurfaceElaboration =
             | TypeName([ traitName ], _) when environment.VisibleTraits.ContainsKey(traitName) ->
                 true
             | TypeName(qualifiedName, _) ->
-                environment.VisibleTraits.ContainsKey(SyntaxFacts.moduleNameToText qualifiedName)
+                tryResolveVisibleTraitInfo environment qualifiedName |> Option.isSome
             | _ ->
                 false
 
@@ -7472,12 +7485,10 @@ module SurfaceElaboration =
                 { TraitName = traitName
                   Arguments = arguments })
         | TypeName(qualifiedName, arguments) ->
-            let traitName = SyntaxFacts.moduleNameToText qualifiedName
-
-            if environment.VisibleTraits.ContainsKey(traitName) then
-                Some { TraitName = traitName; Arguments = arguments }
-            else
-                None
+            tryResolveVisibleTraitInfo environment qualifiedName
+            |> Option.map (fun traitInfo ->
+                { TraitName = traitInfo.Name
+                  Arguments = arguments })
         | _ ->
             None
 
