@@ -20620,10 +20620,7 @@ module SurfaceElaboration =
                 @ constructorNamespaceDiagnostics
                 @ instanceDiagnostics)
 
-        let validateFrontendModule (frontendModule: KFrontIRModule) =
-            let moduleName = moduleNameText frontendModule.ModuleIdentity
-            let moduleIdentity = frontendModule.ModuleIdentity |> moduleIdentityOfOptionalSegments |> Option.defaultValue (ModuleIdentity.ofSegments [ "__unknown__" ])
-
+        let validateNamedFrontendModule moduleName moduleIdentity (frontendModule: KFrontIRModule) =
             let topLevelNames =
                 frontendModule.Declarations
                 |> List.collect (function
@@ -22574,6 +22571,14 @@ module SurfaceElaboration =
                             validateProjectionDeclaration declaration
                         | _ ->
                             [])))
+
+        let validateFrontendModule (frontendModule: KFrontIRModule) =
+            let moduleName = moduleNameText frontendModule.ModuleIdentity
+
+            frontendModule.ModuleIdentity
+            |> moduleIdentityOfOptionalSegments
+            |> Option.map (fun moduleIdentity -> validateNamedFrontendModule moduleName moduleIdentity frontendModule)
+            |> Option.defaultValue []
 
         duplicateDeclarationDiagnostics @ (frontendModules |> List.collect validateFrontendModule)
 
