@@ -3729,6 +3729,10 @@ module SmokeTestsShard4 =
         bag.AddError(DiagnosticFact.coreExpressionParsing ExpectedExplicitMemberProjectionName)
         bag.AddError(DiagnosticFact.coreExpressionParsing ExpectedSafeNavigationMemberAccess)
         bag.AddError(DiagnosticFact.coreExpressionParsing UnexpectedTrailingExpressionTokens)
+        bag.AddError(DiagnosticFact.coreExpressionParsing ExpectedNamedApplicationFieldLabel)
+        bag.AddError(DiagnosticFact.coreExpressionParsing ExpectedNamedApplicationField)
+        bag.AddError(DiagnosticFact.coreExpressionParsing ExpectedSealAs)
+        bag.AddError(DiagnosticFact.coreExpressionParsing ExpectedSealValue)
 
         let diagnostics = bag.Items
         let usingDiagnostic =
@@ -3794,6 +3798,22 @@ module SmokeTestsShard4 =
         let trailingDiagnostic =
             diagnostics
             |> List.find (fun item -> item.Message = "Unexpected tokens at the end of the expression.")
+
+        let namedApplicationFieldLabelDiagnostic =
+            diagnostics
+            |> List.find (fun item -> item.Message = "Expected a named application field label.")
+
+        let namedApplicationFieldDiagnostic =
+            diagnostics
+            |> List.find (fun item -> item.Message = "Expected a named application field of the form 'name = expr' or a punned field name.")
+
+        let sealAsDiagnostic =
+            diagnostics
+            |> List.find (fun item -> item.Message = "Expected 'as' in the seal expression.")
+
+        let sealValueDiagnostic =
+            diagnostics
+            |> List.find (fun item -> item.Message = "Expected a value to seal.")
 
         Assert.Equal("core-expression-parsing", usingDiagnostic.Payload.Kind)
         Assert.Contains(
@@ -3890,6 +3910,30 @@ module SmokeTestsShard4 =
             fun field ->
                 field.Name = "reason"
                 && field.Value = DiagnosticPayloadText "unexpected-trailing-expression-tokens"
+        )
+        Assert.Contains(
+            namedApplicationFieldLabelDiagnostic.Payload.Fields,
+            fun field ->
+                field.Name = "reason"
+                && field.Value = DiagnosticPayloadText "expected-named-application-field-label"
+        )
+        Assert.Contains(
+            namedApplicationFieldDiagnostic.Payload.Fields,
+            fun field ->
+                field.Name = "reason"
+                && field.Value = DiagnosticPayloadText "expected-named-application-field"
+        )
+        Assert.Contains(
+            sealAsDiagnostic.Payload.Fields,
+            fun field ->
+                field.Name = "reason"
+                && field.Value = DiagnosticPayloadText "expected-seal-as"
+        )
+        Assert.Contains(
+            sealValueDiagnostic.Payload.Fields,
+            fun field ->
+                field.Name = "reason"
+                && field.Value = DiagnosticPayloadText "expected-seal-value"
         )
 
     [<Fact>]
@@ -4177,6 +4221,46 @@ module SmokeTestsShard4 =
         Assert.Equal("core-expression-parsing", constructorDiagnostic.Payload.Kind)
         Assert.Equal("core-expression-parsing", chainedDiagnostic.Payload.Kind)
         Assert.Equal("core-expression-parsing", trailingDiagnostic.Payload.Kind)
+
+    [<Fact>]
+    let ``parser reports structured named application and seal diagnostics`` () =
+        let sourceText =
+            [
+                "module main"
+                "let badNamedLabel = f { 1 = x }"
+                "let badNamedForm = f { @x }"
+                "let badSealAs = seal value Int"
+                "let badSealValue = seal as Int"
+            ]
+            |> String.concat "\n"
+
+        let _, lexed, parsed =
+            lexAndParse
+                "main.kp"
+                sourceText
+
+        Assert.Empty(lexed.Diagnostics)
+
+        let namedLabelDiagnostic =
+            parsed.Diagnostics
+            |> List.find (fun diagnostic -> tryFindPayloadText "reason" diagnostic = Some "expected-named-application-field-label")
+
+        let namedFieldDiagnostic =
+            parsed.Diagnostics
+            |> List.find (fun diagnostic -> tryFindPayloadText "reason" diagnostic = Some "expected-named-application-field")
+
+        let sealAsDiagnostic =
+            parsed.Diagnostics
+            |> List.find (fun diagnostic -> tryFindPayloadText "reason" diagnostic = Some "expected-seal-as")
+
+        let sealValueDiagnostic =
+            parsed.Diagnostics
+            |> List.find (fun diagnostic -> tryFindPayloadText "reason" diagnostic = Some "expected-seal-value")
+
+        Assert.Equal("core-expression-parsing", namedLabelDiagnostic.Payload.Kind)
+        Assert.Equal("core-expression-parsing", namedFieldDiagnostic.Payload.Kind)
+        Assert.Equal("core-expression-parsing", sealAsDiagnostic.Payload.Kind)
+        Assert.Equal("core-expression-parsing", sealValueDiagnostic.Payload.Kind)
 
 
     [<Fact>]

@@ -871,6 +871,10 @@ type CoreExpressionParsingEvidence =
     | ExpectedSafeNavigationMemberAccess
     | ConstructorTagTestsCannotBeChained
     | UnexpectedTrailingExpressionTokens
+    | ExpectedNamedApplicationFieldLabel
+    | ExpectedNamedApplicationField
+    | ExpectedSealAs
+    | ExpectedSealValue
 
 and CoreHeaderContext =
     | TopLevelFunctionHeader
@@ -2524,6 +2528,18 @@ module DiagnosticFact =
             | UnexpectedTrailingExpressionTokens ->
                 descriptor DiagnosticCode.ExpectedSyntaxToken None "Unexpected tokens at the end of the expression."
                     (payload "core-expression-parsing" [ field "reason" (DiagnosticPayloadText "unexpected-trailing-expression-tokens") ])
+            | ExpectedNamedApplicationFieldLabel ->
+                descriptor DiagnosticCode.ExpectedSyntaxToken None "Expected a named application field label."
+                    (payload "core-expression-parsing" [ field "reason" (DiagnosticPayloadText "expected-named-application-field-label") ])
+            | ExpectedNamedApplicationField ->
+                descriptor DiagnosticCode.ExpectedSyntaxToken None "Expected a named application field of the form 'name = expr' or a punned field name."
+                    (payload "core-expression-parsing" [ field "reason" (DiagnosticPayloadText "expected-named-application-field") ])
+            | ExpectedSealAs ->
+                descriptor DiagnosticCode.ExpectedSyntaxToken None "Expected 'as' in the seal expression."
+                    (payload "core-expression-parsing" [ field "reason" (DiagnosticPayloadText "expected-seal-as") ])
+            | ExpectedSealValue ->
+                descriptor DiagnosticCode.ExpectedSyntaxToken None "Expected a value to seal."
+                    (payload "core-expression-parsing" [ field "reason" (DiagnosticPayloadText "expected-seal-value") ])
         | UnicodeScalarLiteralDiagnostic evidence ->
             match evidence with
             | UnicodeScalarInvalidLiteralForm ->

@@ -4787,7 +4787,10 @@ type private ExpressionParser
                 valueTokens.Add(this.Advance())
 
         if not foundAs then
-            diagnostics.AddError(DiagnosticFact.simple SimpleDiagnosticKind.ExpectedSyntaxToken "Expected 'as' in the seal expression.", source.GetLocation(this.Current.Span))
+            diagnostics.AddError(
+                DiagnosticFact.coreExpressionParsing ExpectedSealAs,
+                source.GetLocation(this.Current.Span)
+            )
 
         let ascriptionTokens = ResizeArray<Token>()
 
@@ -4796,7 +4799,10 @@ type private ExpressionParser
 
         let value =
             if valueTokens.Count = 0 then
-                diagnostics.AddError(DiagnosticFact.simple SimpleDiagnosticKind.ExpectedSyntaxToken "Expected a value to seal.", source.GetLocation(this.Current.Span))
+                diagnostics.AddError(
+                    DiagnosticFact.coreExpressionParsing ExpectedSealValue,
+                    source.GetLocation(this.Current.Span)
+                )
                 Literal LiteralValue.Unit
             else
                 this.ParseStandaloneExpression(List.ofSeq valueTokens)
@@ -5088,12 +5094,18 @@ type private ExpressionParser
                           IsImplicit = isImplicit
                           Value = this.ParseStandaloneExpression(valueTokens) }
                     | labelToken :: _ ->
-                        diagnostics.AddError(DiagnosticFact.simple SimpleDiagnosticKind.ExpectedSyntaxToken "Expected a named application field label.", source.GetLocation(labelToken.Span))
+                        diagnostics.AddError(
+                            DiagnosticFact.coreExpressionParsing ExpectedNamedApplicationFieldLabel,
+                            source.GetLocation(labelToken.Span)
+                        )
                         { Name = "<missing>"
                           IsImplicit = isImplicit
                           Value = Literal LiteralValue.Unit }
                     | [] ->
-                        diagnostics.AddError(DiagnosticFact.simple SimpleDiagnosticKind.ExpectedSyntaxToken "Expected a named application field label.", source.GetLocation(eofSpan))
+                        diagnostics.AddError(
+                            DiagnosticFact.coreExpressionParsing ExpectedNamedApplicationFieldLabel,
+                            source.GetLocation(eofSpan)
+                        )
                         { Name = "<missing>"
                           IsImplicit = isImplicit
                           Value = Literal LiteralValue.Unit }
@@ -5106,7 +5118,8 @@ type private ExpressionParser
                           IsImplicit = false
                           Value = Name [ fieldName ] }
                     | token :: _ ->
-                        diagnostics.AddError(DiagnosticFact.simple SimpleDiagnosticKind.ExpectedSyntaxToken "Expected a named application field of the form 'name = expr' or a punned field name.",
+                        diagnostics.AddError(
+                            DiagnosticFact.coreExpressionParsing ExpectedNamedApplicationField,
                             source.GetLocation(token.Span)
                         )
 
@@ -5114,7 +5127,8 @@ type private ExpressionParser
                           IsImplicit = isImplicit
                           Value = Literal LiteralValue.Unit }
                     | [] ->
-                        diagnostics.AddError(DiagnosticFact.simple SimpleDiagnosticKind.ExpectedSyntaxToken "Expected a named application field of the form 'name = expr' or a punned field name.",
+                        diagnostics.AddError(
+                            DiagnosticFact.coreExpressionParsing ExpectedNamedApplicationField,
                             source.GetLocation(eofSpan)
                         )
 
