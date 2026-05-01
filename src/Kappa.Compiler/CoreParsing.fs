@@ -511,6 +511,152 @@ module private SurfaceEffectParsing =
         | _ ->
             None
 
+module private HeaderParsing =
+    let parseHeaderParameters
+        (source: SourceText)
+        (diagnostics: DiagnosticBag)
+        (context: CoreHeaderContext)
+        (skipOperatorToken: bool)
+        (parameterTokens: Token list)
+        =
+        let tokenArray = List.toArray parameterTokens
+        let parameters = ResizeArray<Parameter>()
+        let mutable index = 0
+
+        while index < tokenArray.Length do
+            match tokenArray[index].Kind with
+            | AtSign ->
+                if index + 1 >= tokenArray.Length then
+                    diagnostics.AddError(
+                        DiagnosticFact.coreExpressionParsing (ExpectedImplicitParameterAfterAt context),
+                        source.GetLocation(tokenArray[index].Span)
+                    )
+
+                    index <- tokenArray.Length
+                else
+                    match tokenArray[index + 1].Kind with
+                    | Identifier
+                    | Keyword _ ->
+                        parameters.Add(
+                            SurfaceBinderParsing.makeParameter
+                                (SyntaxFacts.trimIdentifierQuotes tokenArray[index + 1].Text)
+                                None
+                                None
+                                true
+                                false
+                        )
+
+                        index <- index + 2
+                    | LeftParen ->
+                        let startToken = tokenArray[index + 1]
+                        let mutable depth = 1
+                        let mutable endIndex = index + 2
+
+                        while endIndex < tokenArray.Length && depth > 0 do
+                            match tokenArray[endIndex].Kind with
+                            | LeftParen -> depth <- depth + 1
+                            | RightParen -> depth <- depth - 1
+                            | _ -> ()
+
+                            endIndex <- endIndex + 1
+
+                        if depth > 0 then
+                            diagnostics.AddError(
+                                DiagnosticFact.coreExpressionParsing (UnterminatedImplicitParameterBinder context),
+                                source.GetLocation(startToken.Span)
+                            )
+
+                            index <- tokenArray.Length
+                        else
+                            let innerTokens = List.ofArray tokenArray[index + 2 .. endIndex - 2]
+
+                            match SurfaceBinderParsing.parseParameterFromTokens diagnostics source startToken.Span innerTokens with
+                            | Some parameter -> parameters.Add({ parameter with IsImplicit = true })
+                            | None -> ()
+
+                            index <- endIndex
+                    | _ ->
+                        diagnostics.AddError(
+                            DiagnosticFact.coreExpressionParsing (UnsupportedImplicitParameterSyntax context),
+                            source.GetLocation(tokenArray[index + 1].Span)
+                        )
+
+                        index <- index + 2
+            | Identifier
+            | Keyword _ ->
+                parameters.Add(
+                    SurfaceBinderParsing.makeParameter
+                        (SyntaxFacts.trimIdentifierQuotes tokenArray[index].Text)
+                        None
+                        None
+                        false
+                        false
+                )
+
+                index <- index + 1
+            | Operator when skipOperatorToken ->
+                // In an infix binding header like `let x |> f = ...`, the operator token is the
+                // binding name and the surrounding tokens are the real parameters.
+                index <- index + 1
+            | Underscore ->
+                parameters.Add(
+                    SurfaceBinderParsing.makeParameter
+                        (SurfaceBinderParsing.wildcardParameterName tokenArray[index].Span)
+                        None
+                        None
+                        false
+                        false
+                )
+
+                index <- index + 1
+            | LeftParen ->
+                let startToken = tokenArray[index]
+                let mutable depth = 1
+                let mutable endIndex = index + 1
+
+                while endIndex < tokenArray.Length && depth > 0 do
+                    match tokenArray[endIndex].Kind with
+                    | LeftParen -> depth <- depth + 1
+                    | RightParen -> depth <- depth - 1
+                    | _ -> ()
+
+                    endIndex <- endIndex + 1
+
+                if depth > 0 then
+                    diagnostics.AddError(
+                        DiagnosticFact.coreExpressionParsing (UnterminatedParameterBinderInHeader context),
+                        source.GetLocation(startToken.Span)
+                    )
+
+                    index <- tokenArray.Length
+                else
+                    let innerTokens = List.ofArray tokenArray[index + 1 .. endIndex - 2]
+
+                    if List.isEmpty innerTokens then
+                        parameters.Add(
+                            SurfaceBinderParsing.makeParameter
+                                (SurfaceBinderParsing.wildcardParameterName startToken.Span)
+                                None
+                                None
+                                false
+                                false
+                        )
+                    else
+                        match SurfaceBinderParsing.parseParameterFromTokens diagnostics source startToken.Span innerTokens with
+                        | Some parameter -> parameters.Add(parameter)
+                        | None -> ()
+
+                    index <- endIndex
+            | _ ->
+                diagnostics.AddError(
+                    DiagnosticFact.coreExpressionParsing (UnsupportedHeaderSyntax context),
+                    source.GetLocation(tokenArray[index].Span)
+                )
+
+                index <- index + 1
+
+        List.ofSeq parameters
+
 type private PatternParser(tokens: Token list, source: SourceText, diagnostics: DiagnosticBag, fixities: FixityTable) =
     let eofSpan =
         match List.tryLast tokens with
@@ -3235,119 +3381,8 @@ type private ExpressionParser
             let parameterTokens, returnTypeTokens =
                 splitReturnTypeTokens parameterHeaderTokens
 
-            let tokenArray = List.toArray parameterTokens
-            let parameters = ResizeArray<Parameter>()
-            let mutable index = 0
-
-            while index < tokenArray.Length do
-                match tokenArray[index].Kind with
-                | AtSign ->
-                    if index + 1 >= tokenArray.Length then
-                        diagnostics.AddError(DiagnosticFact.simple SimpleDiagnosticKind.ExpectedSyntaxToken "Expected an implicit parameter after '@' in the local function header.", source.GetLocation(tokenArray[index].Span))
-                        index <- tokenArray.Length
-                    else
-                        match tokenArray[index + 1].Kind with
-                        | Identifier
-                        | Keyword _ ->
-                            parameters.Add(
-                                SurfaceBinderParsing.makeParameter
-                                    (SyntaxFacts.trimIdentifierQuotes tokenArray[index + 1].Text)
-                                    None
-                                    None
-                                    true
-                                    false
-                            )
-
-                            index <- index + 2
-                        | LeftParen ->
-                            let startToken = tokenArray[index + 1]
-                            let mutable depth = 1
-                            let mutable endIndex = index + 2
-
-                            while endIndex < tokenArray.Length && depth > 0 do
-                                match tokenArray[endIndex].Kind with
-                                | LeftParen -> depth <- depth + 1
-                                | RightParen -> depth <- depth - 1
-                                | _ -> ()
-
-                                endIndex <- endIndex + 1
-
-                            if depth > 0 then
-                                diagnostics.AddError(DiagnosticFact.simple SimpleDiagnosticKind.ExpectedSyntaxToken "Unterminated implicit parameter binder in local function header.", source.GetLocation(startToken.Span))
-                                index <- tokenArray.Length
-                            else
-                                let innerTokens = List.ofArray tokenArray[index + 2 .. endIndex - 2]
-
-                                match SurfaceBinderParsing.parseParameterFromTokens diagnostics source startToken.Span innerTokens with
-                                | Some parameter -> parameters.Add({ parameter with IsImplicit = true })
-                                | None -> ()
-
-                                index <- endIndex
-                        | _ ->
-                            diagnostics.AddError(DiagnosticFact.simple SimpleDiagnosticKind.ExpectedSyntaxToken "Unsupported implicit parameter syntax in local function header.", source.GetLocation(tokenArray[index + 1].Span))
-                            index <- index + 2
-                | Identifier
-                | Keyword _ ->
-                    parameters.Add(
-                        SurfaceBinderParsing.makeParameter
-                            (SyntaxFacts.trimIdentifierQuotes tokenArray[index].Text)
-                            None
-                            None
-                            false
-                            false
-                    )
-
-                    index <- index + 1
-                | Underscore ->
-                    parameters.Add(
-                        SurfaceBinderParsing.makeParameter
-                            (SurfaceBinderParsing.wildcardParameterName tokenArray[index].Span)
-                            None
-                            None
-                            false
-                            false
-                    )
-
-                    index <- index + 1
-                | LeftParen ->
-                    let startToken = tokenArray[index]
-                    let mutable depth = 1
-                    let mutable endIndex = index + 1
-
-                    while endIndex < tokenArray.Length && depth > 0 do
-                        match tokenArray[endIndex].Kind with
-                        | LeftParen -> depth <- depth + 1
-                        | RightParen -> depth <- depth - 1
-                        | _ -> ()
-
-                        endIndex <- endIndex + 1
-
-                    if depth > 0 then
-                        diagnostics.AddError(DiagnosticFact.simple SimpleDiagnosticKind.ExpectedSyntaxToken "Unterminated parameter binder in local function header.", source.GetLocation(startToken.Span))
-                        index <- tokenArray.Length
-                    else
-                        let innerTokens = List.ofArray tokenArray[index + 1 .. endIndex - 2]
-
-                        if List.isEmpty innerTokens then
-                            parameters.Add(
-                                SurfaceBinderParsing.makeParameter
-                                    (SurfaceBinderParsing.wildcardParameterName startToken.Span)
-                                    None
-                                    None
-                                    false
-                                    false
-                            )
-                        else
-                            match SurfaceBinderParsing.parseParameterFromTokens diagnostics source startToken.Span innerTokens with
-                            | Some parameter -> parameters.Add(parameter)
-                            | None -> ()
-
-                        index <- endIndex
-                | _ ->
-                    diagnostics.AddError(DiagnosticFact.simple SimpleDiagnosticKind.ExpectedSyntaxToken "Unsupported local function header syntax.", source.GetLocation(tokenArray[index].Span))
-                    index <- index + 1
-
-            let parsedParameters = List.ofSeq parameters
+            let parsedParameters =
+                HeaderParsing.parseHeaderParameters source diagnostics LocalFunctionHeader false parameterTokens
 
             let value =
                 match parsedParameters with
@@ -5555,134 +5590,8 @@ type private ExpressionParser
             let parameterTokens, returnTypeTokens =
                 splitReturnTypeTokens parameterHeaderTokens
 
-            let tokenArray = List.toArray parameterTokens
-            let parameters = ResizeArray<Parameter>()
-            let mutable index = 0
-
-            while index < tokenArray.Length do
-                match tokenArray[index].Kind with
-                | AtSign ->
-                    if index + 1 >= tokenArray.Length then
-                        diagnostics.AddError(DiagnosticFact.simple SimpleDiagnosticKind.ExpectedSyntaxToken "Expected an implicit parameter after '@' in the local function header.",
-                            source.GetLocation(tokenArray[index].Span)
-                        )
-
-                        index <- tokenArray.Length
-                    else
-                        match tokenArray[index + 1].Kind with
-                        | Identifier
-                        | Keyword _ ->
-                            parameters.Add(
-                                SurfaceBinderParsing.makeParameter
-                                    (SyntaxFacts.trimIdentifierQuotes tokenArray[index + 1].Text)
-                                    None
-                                    None
-                                    true
-                                    false
-                            )
-
-                            index <- index + 2
-                        | LeftParen ->
-                            let startToken = tokenArray[index + 1]
-                            let mutable depth = 1
-                            let mutable endIndex = index + 2
-
-                            while endIndex < tokenArray.Length && depth > 0 do
-                                match tokenArray[endIndex].Kind with
-                                | LeftParen -> depth <- depth + 1
-                                | RightParen -> depth <- depth - 1
-                                | _ -> ()
-
-                                endIndex <- endIndex + 1
-
-                            if depth > 0 then
-                                diagnostics.AddError(DiagnosticFact.simple SimpleDiagnosticKind.ExpectedSyntaxToken "Unterminated implicit parameter binder in local function header.",
-                                    source.GetLocation(startToken.Span)
-                                )
-
-                                index <- tokenArray.Length
-                            else
-                                let innerTokens = List.ofArray tokenArray[index + 2 .. endIndex - 2]
-
-                                match SurfaceBinderParsing.parseParameterFromTokens diagnostics source startToken.Span innerTokens with
-                                | Some parameter -> parameters.Add({ parameter with IsImplicit = true })
-                                | None -> ()
-
-                                index <- endIndex
-                        | _ ->
-                            diagnostics.AddError(DiagnosticFact.simple SimpleDiagnosticKind.ExpectedSyntaxToken "Unsupported implicit parameter syntax in local function header.",
-                                source.GetLocation(tokenArray[index + 1].Span)
-                            )
-
-                            index <- index + 2
-                | Identifier
-                | Keyword _ ->
-                    parameters.Add(
-                        SurfaceBinderParsing.makeParameter
-                            (SyntaxFacts.trimIdentifierQuotes tokenArray[index].Text)
-                            None
-                            None
-                            false
-                            false
-                    )
-
-                    index <- index + 1
-                | Underscore ->
-                    parameters.Add(
-                        SurfaceBinderParsing.makeParameter
-                            (SurfaceBinderParsing.wildcardParameterName tokenArray[index].Span)
-                            None
-                            None
-                            false
-                            false
-                    )
-
-                    index <- index + 1
-                | LeftParen ->
-                    let startToken = tokenArray[index]
-                    let mutable depth = 1
-                    let mutable endIndex = index + 1
-
-                    while endIndex < tokenArray.Length && depth > 0 do
-                        match tokenArray[endIndex].Kind with
-                        | LeftParen -> depth <- depth + 1
-                        | RightParen -> depth <- depth - 1
-                        | _ -> ()
-
-                        endIndex <- endIndex + 1
-
-                    if depth > 0 then
-                        diagnostics.AddError(DiagnosticFact.simple SimpleDiagnosticKind.ExpectedSyntaxToken "Unterminated parameter binder in local function header.",
-                            source.GetLocation(startToken.Span)
-                        )
-
-                        index <- tokenArray.Length
-                    else
-                        let innerTokens = List.ofArray tokenArray[index + 1 .. endIndex - 2]
-
-                        if List.isEmpty innerTokens then
-                            parameters.Add(
-                                SurfaceBinderParsing.makeParameter
-                                    (SurfaceBinderParsing.wildcardParameterName startToken.Span)
-                                    None
-                                    None
-                                    false
-                                    false
-                            )
-                        else
-                            match SurfaceBinderParsing.parseParameterFromTokens diagnostics source startToken.Span innerTokens with
-                            | Some parameter -> parameters.Add(parameter)
-                            | None -> ()
-
-                        index <- endIndex
-                | _ ->
-                    diagnostics.AddError(DiagnosticFact.simple SimpleDiagnosticKind.ExpectedSyntaxToken "Unsupported local function header syntax.",
-                        source.GetLocation(tokenArray[index].Span)
-                    )
-
-                    index <- index + 1
-
-            let parsedParameters = List.ofSeq parameters
+            let parsedParameters =
+                HeaderParsing.parseHeaderParameters source diagnostics LocalFunctionHeader false parameterTokens
 
             let value =
                 match parsedParameters with
@@ -6637,123 +6546,10 @@ module CoreParsing =
 
     let parseLetHeader (source: SourceText) (diagnostics: DiagnosticBag) (tokens: Token list) =
         let parameterTokens, returnTypeTokens = splitReturnTypeTokens tokens
-        let tokenArray = List.toArray parameterTokens
-        let parameters = ResizeArray<Parameter>()
-        let mutable index = 0
+        let parameters =
+            HeaderParsing.parseHeaderParameters source diagnostics TopLevelFunctionHeader true parameterTokens
 
-        while index < tokenArray.Length do
-            match tokenArray[index].Kind with
-            | AtSign ->
-                if index + 1 >= tokenArray.Length then
-                    diagnostics.AddError(DiagnosticFact.simple SimpleDiagnosticKind.ExpectedSyntaxToken "Expected an implicit parameter after '@' in the function header.", source.GetLocation(tokenArray[index].Span))
-                    index <- tokenArray.Length
-                else
-                    match tokenArray[index + 1].Kind with
-                    | Identifier
-                    | Keyword _ ->
-                        parameters.Add(
-                            SurfaceBinderParsing.makeParameter
-                                (SyntaxFacts.trimIdentifierQuotes tokenArray[index + 1].Text)
-                                None
-                                None
-                                true
-                                false
-                        )
-
-                        index <- index + 2
-                    | LeftParen ->
-                        let startToken = tokenArray[index + 1]
-                        let mutable depth = 1
-                        let mutable endIndex = index + 2
-
-                        while endIndex < tokenArray.Length && depth > 0 do
-                            match tokenArray[endIndex].Kind with
-                            | LeftParen -> depth <- depth + 1
-                            | RightParen -> depth <- depth - 1
-                            | _ -> ()
-
-                            endIndex <- endIndex + 1
-
-                        if depth > 0 then
-                            diagnostics.AddError(DiagnosticFact.simple SimpleDiagnosticKind.ExpectedSyntaxToken "Unterminated implicit parameter binder in function header.", source.GetLocation(startToken.Span))
-                            index <- tokenArray.Length
-                        else
-                            let innerTokens = List.ofArray tokenArray[index + 2 .. endIndex - 2]
-
-                            match SurfaceBinderParsing.parseParameterFromTokens diagnostics source startToken.Span innerTokens with
-                            | Some parameter -> parameters.Add({ parameter with IsImplicit = true })
-                            | None -> ()
-
-                            index <- endIndex
-                    | _ ->
-                        diagnostics.AddError(DiagnosticFact.simple SimpleDiagnosticKind.ExpectedSyntaxToken "Unsupported implicit parameter syntax in function header.", source.GetLocation(tokenArray[index + 1].Span))
-                        index <- index + 2
-            | Identifier
-            | Keyword _ ->
-                parameters.Add(
-                    SurfaceBinderParsing.makeParameter
-                        (SyntaxFacts.trimIdentifierQuotes tokenArray[index].Text)
-                        None
-                        None
-                        false
-                        false
-                )
-
-                index <- index + 1
-            | Operator ->
-                // In an infix binding header like `let x |> f = ...`, the operator token is the
-                // binding name and the surrounding tokens are the real parameters.
-                index <- index + 1
-            | Underscore ->
-                parameters.Add(
-                    SurfaceBinderParsing.makeParameter
-                        (SurfaceBinderParsing.wildcardParameterName tokenArray[index].Span)
-                        None
-                        None
-                        false
-                        false
-                )
-
-                index <- index + 1
-            | LeftParen ->
-                let startToken = tokenArray[index]
-                let mutable depth = 1
-                let mutable endIndex = index + 1
-
-                while endIndex < tokenArray.Length && depth > 0 do
-                    match tokenArray[endIndex].Kind with
-                    | LeftParen -> depth <- depth + 1
-                    | RightParen -> depth <- depth - 1
-                    | _ -> ()
-
-                    endIndex <- endIndex + 1
-
-                if depth > 0 then
-                    diagnostics.AddError(DiagnosticFact.simple SimpleDiagnosticKind.ExpectedSyntaxToken "Unterminated parameter binder in function header.", source.GetLocation(startToken.Span))
-                    index <- tokenArray.Length
-                else
-                    let innerTokens = List.ofArray tokenArray[index + 1 .. endIndex - 2]
-
-                    if List.isEmpty innerTokens then
-                        parameters.Add(
-                            SurfaceBinderParsing.makeParameter
-                                (SurfaceBinderParsing.wildcardParameterName startToken.Span)
-                                None
-                                None
-                                false
-                                false
-                        )
-                    else
-                        match SurfaceBinderParsing.parseParameterFromTokens diagnostics source startToken.Span innerTokens with
-                        | Some parameter -> parameters.Add(parameter)
-                        | None -> ()
-
-                    index <- endIndex
-            | _ ->
-                diagnostics.AddError(DiagnosticFact.simple SimpleDiagnosticKind.ExpectedSyntaxToken "Unsupported function header syntax.", source.GetLocation(tokenArray[index].Span))
-                index <- index + 1
-
-        { Parameters = List.ofSeq parameters
+        { Parameters = parameters
           ReturnTypeTokens = returnTypeTokens }
 
     let parseProjectionHeader (source: SourceText) (diagnostics: DiagnosticBag) (tokens: Token list) =

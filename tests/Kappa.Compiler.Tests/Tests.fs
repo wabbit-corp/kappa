@@ -3723,6 +3723,8 @@ module SmokeTestsShard4 =
         bag.AddError(DiagnosticFact.coreExpressionParsing ComprehensionMustEndWithYieldClause)
         bag.AddError(DiagnosticFact.coreExpressionParsing ExpectedHandlerClauseArrow)
         bag.AddError(DiagnosticFact.coreExpressionParsing ExpectedHandlerWith)
+        bag.AddError(DiagnosticFact.coreExpressionParsing (ExpectedImplicitParameterAfterAt TopLevelFunctionHeader))
+        bag.AddError(DiagnosticFact.coreExpressionParsing (ExpectedImplicitParameterAfterAt LocalFunctionHeader))
 
         let diagnostics = bag.Items
         let usingDiagnostic =
@@ -3764,6 +3766,14 @@ module SmokeTestsShard4 =
         let handlerWithDiagnostic =
             diagnostics
             |> List.find (fun item -> item.Message = "Expected 'with' in the handler expression.")
+
+        let functionHeaderDiagnostic =
+            diagnostics
+            |> List.find (fun item -> item.Message = "Expected an implicit parameter after '@' in the function header.")
+
+        let localFunctionHeaderDiagnostic =
+            diagnostics
+            |> List.find (fun item -> item.Message = "Expected an implicit parameter after '@' in the local function header.")
 
         Assert.Equal("core-expression-parsing", usingDiagnostic.Payload.Kind)
         Assert.Contains(
@@ -3824,6 +3834,18 @@ module SmokeTestsShard4 =
             fun field ->
                 field.Name = "reason"
                 && field.Value = DiagnosticPayloadText "expected-handler-with"
+        )
+        Assert.Contains(
+            functionHeaderDiagnostic.Payload.Fields,
+            fun field ->
+                field.Name = "header-context"
+                && field.Value = DiagnosticPayloadText "function-header"
+        )
+        Assert.Contains(
+            localFunctionHeaderDiagnostic.Payload.Fields,
+            fun field ->
+                field.Name = "header-context"
+                && field.Value = DiagnosticPayloadText "local-function-header"
         )
 
     [<Fact>]
@@ -4024,6 +4046,47 @@ module SmokeTestsShard4 =
         Assert.Equal(Some "expected-handler-clause-starting-with-case", tryFindPayloadText "reason" caseDiagnostic)
         Assert.Equal("core-expression-parsing", arrowDiagnostic.Payload.Kind)
         Assert.Equal(Some "expected-handler-clause-arrow", tryFindPayloadText "reason" arrowDiagnostic)
+
+    [<Fact>]
+    let ``parser reports structured function header diagnostics`` () =
+        let sourceText =
+            [
+                "module main"
+                "let badTop @ = 0"
+                "let outer ="
+                "    block"
+                "        let badLocal @ = 0"
+                "        badLocal"
+            ]
+            |> String.concat "\n"
+
+        let _, lexed, parsed =
+            lexAndParse
+                "main.kp"
+                sourceText
+
+        Assert.Empty(lexed.Diagnostics)
+
+        let topDiagnostic =
+            parsed.Diagnostics
+            |> List.find (fun diagnostic ->
+                tryFindPayloadText "reason" diagnostic = Some "expected-implicit-parameter-after-at"
+                && tryFindPayloadText "header-context" diagnostic = Some "function-header"
+            )
+
+        let localDiagnostic =
+            parsed.Diagnostics
+            |> List.find (fun diagnostic ->
+                tryFindPayloadText "reason" diagnostic = Some "expected-implicit-parameter-after-at"
+                && tryFindPayloadText "header-context" diagnostic = Some "local-function-header"
+            )
+
+        Assert.Equal("core-expression-parsing", topDiagnostic.Payload.Kind)
+        Assert.Equal(Some "expected-implicit-parameter-after-at", tryFindPayloadText "reason" topDiagnostic)
+        Assert.Equal(Some "function-header", tryFindPayloadText "header-context" topDiagnostic)
+        Assert.Equal("core-expression-parsing", localDiagnostic.Payload.Kind)
+        Assert.Equal(Some "expected-implicit-parameter-after-at", tryFindPayloadText "reason" localDiagnostic)
+        Assert.Equal(Some "local-function-header", tryFindPayloadText "header-context" localDiagnostic)
 
 
     [<Fact>]

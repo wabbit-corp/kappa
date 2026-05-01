@@ -859,6 +859,15 @@ type CoreExpressionParsingEvidence =
     | ExpectedHandlerClauseStartingWithCase
     | ExpectedHandlerClause
     | ExpectedHandlerWith
+    | ExpectedImplicitParameterAfterAt of CoreHeaderContext
+    | UnterminatedImplicitParameterBinder of CoreHeaderContext
+    | UnsupportedImplicitParameterSyntax of CoreHeaderContext
+    | UnterminatedParameterBinderInHeader of CoreHeaderContext
+    | UnsupportedHeaderSyntax of CoreHeaderContext
+
+and CoreHeaderContext =
+    | TopLevelFunctionHeader
+    | LocalFunctionHeader
 
 type ParserNameExpectationRole =
     | BindingName
@@ -1422,6 +1431,16 @@ module DiagnosticFact =
         | SignatureDeclarationTarget -> "signature declarations"
         | InstanceDeclarationTarget -> "instance declarations"
         | TermDeclarationsOnly -> "term declarations"
+
+    let private coreHeaderContextText context =
+        match context with
+        | TopLevelFunctionHeader -> "function header"
+        | LocalFunctionHeader -> "local function header"
+
+    let private coreHeaderContextPayloadText context =
+        match context with
+        | TopLevelFunctionHeader -> "function-header"
+        | LocalFunctionHeader -> "local-function-header"
 
     let private stringLiteralDecodeErrorTag error =
         match error with
@@ -2432,6 +2451,51 @@ module DiagnosticFact =
             | ExpectedHandlerWith ->
                 descriptor DiagnosticCode.ExpectedSyntaxToken None "Expected 'with' in the handler expression."
                     (payload "core-expression-parsing" [ field "reason" (DiagnosticPayloadText "expected-handler-with") ])
+            | ExpectedImplicitParameterAfterAt context ->
+                descriptor
+                    DiagnosticCode.ExpectedSyntaxToken
+                    None
+                    $"Expected an implicit parameter after '@' in the {coreHeaderContextText context}."
+                    (payload
+                        "core-expression-parsing"
+                        [ field "reason" (DiagnosticPayloadText "expected-implicit-parameter-after-at")
+                          field "header-context" (DiagnosticPayloadText(coreHeaderContextPayloadText context)) ])
+            | UnterminatedImplicitParameterBinder context ->
+                descriptor
+                    DiagnosticCode.ExpectedSyntaxToken
+                    None
+                    $"Unterminated implicit parameter binder in the {coreHeaderContextText context}."
+                    (payload
+                        "core-expression-parsing"
+                        [ field "reason" (DiagnosticPayloadText "unterminated-implicit-parameter-binder")
+                          field "header-context" (DiagnosticPayloadText(coreHeaderContextPayloadText context)) ])
+            | UnsupportedImplicitParameterSyntax context ->
+                descriptor
+                    DiagnosticCode.ExpectedSyntaxToken
+                    None
+                    $"Unsupported implicit parameter syntax in the {coreHeaderContextText context}."
+                    (payload
+                        "core-expression-parsing"
+                        [ field "reason" (DiagnosticPayloadText "unsupported-implicit-parameter-syntax")
+                          field "header-context" (DiagnosticPayloadText(coreHeaderContextPayloadText context)) ])
+            | UnterminatedParameterBinderInHeader context ->
+                descriptor
+                    DiagnosticCode.ExpectedSyntaxToken
+                    None
+                    $"Unterminated parameter binder in the {coreHeaderContextText context}."
+                    (payload
+                        "core-expression-parsing"
+                        [ field "reason" (DiagnosticPayloadText "unterminated-parameter-binder-in-header")
+                          field "header-context" (DiagnosticPayloadText(coreHeaderContextPayloadText context)) ])
+            | UnsupportedHeaderSyntax context ->
+                descriptor
+                    DiagnosticCode.ExpectedSyntaxToken
+                    None
+                    $"Unsupported {coreHeaderContextText context} syntax."
+                    (payload
+                        "core-expression-parsing"
+                        [ field "reason" (DiagnosticPayloadText "unsupported-header-syntax")
+                          field "header-context" (DiagnosticPayloadText(coreHeaderContextPayloadText context)) ])
         | UnicodeScalarLiteralDiagnostic evidence ->
             match evidence with
             | UnicodeScalarInvalidLiteralForm ->
