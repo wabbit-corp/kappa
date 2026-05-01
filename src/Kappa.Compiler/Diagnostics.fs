@@ -908,6 +908,13 @@ type CoreExpressionParsingEvidence =
     | UnterminatedProjectionBinder
     | UnsupportedProjectionBinderSyntax
     | ExpectedProjectionSetAccessorParameter
+    | ExpectedListExpressionClose
+    | ExpectedSetExpressionClose
+    | ExpectedMapExpressionClose
+    | ExpectedNamedApplicationBlockClose
+    | ExpectedSyntaxQuoteClose
+    | ExpectedSyntaxSpliceClose
+    | ExpectedCodeQuoteClose
 
 and CoreHeaderContext =
     | TopLevelFunctionHeader
@@ -2740,6 +2747,27 @@ module DiagnosticFact =
                     (payload
                         "core-expression-parsing"
                         [ field "reason" (DiagnosticPayloadText "expected-projection-set-accessor-parameter") ])
+            | ExpectedListExpressionClose ->
+                descriptor DiagnosticCode.ExpectedSyntaxToken None "Expected ']' to close the list expression."
+                    (payload "core-expression-parsing" [ field "reason" (DiagnosticPayloadText "expected-list-expression-close") ])
+            | ExpectedSetExpressionClose ->
+                descriptor DiagnosticCode.ExpectedSyntaxToken None "Expected '|}' to close the set expression."
+                    (payload "core-expression-parsing" [ field "reason" (DiagnosticPayloadText "expected-set-expression-close") ])
+            | ExpectedMapExpressionClose ->
+                descriptor DiagnosticCode.ExpectedSyntaxToken None "Expected '}' to close the map expression."
+                    (payload "core-expression-parsing" [ field "reason" (DiagnosticPayloadText "expected-map-expression-close") ])
+            | ExpectedNamedApplicationBlockClose ->
+                descriptor DiagnosticCode.ExpectedSyntaxToken None "Expected '}' to close the named application block."
+                    (payload "core-expression-parsing" [ field "reason" (DiagnosticPayloadText "expected-named-application-block-close") ])
+            | ExpectedSyntaxQuoteClose ->
+                descriptor DiagnosticCode.ExpectedSyntaxToken None "Expected '}' to close the syntax quote."
+                    (payload "core-expression-parsing" [ field "reason" (DiagnosticPayloadText "expected-syntax-quote-close") ])
+            | ExpectedSyntaxSpliceClose ->
+                descriptor DiagnosticCode.ExpectedSyntaxToken None "Expected '}' to close the syntax splice."
+                    (payload "core-expression-parsing" [ field "reason" (DiagnosticPayloadText "expected-syntax-splice-close") ])
+            | ExpectedCodeQuoteClose ->
+                descriptor DiagnosticCode.ExpectedSyntaxToken None "Expected '>.' to close the code quote."
+                    (payload "core-expression-parsing" [ field "reason" (DiagnosticPayloadText "expected-code-quote-close") ])
         | UnicodeScalarLiteralDiagnostic evidence ->
             match evidence with
             | UnicodeScalarInvalidLiteralForm ->

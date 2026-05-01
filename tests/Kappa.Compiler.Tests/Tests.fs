@@ -3786,6 +3786,13 @@ module SmokeTestsShard4 =
         bag.AddError(DiagnosticFact.coreExpressionParsing UnterminatedProjectionBinder)
         bag.AddError(DiagnosticFact.coreExpressionParsing UnsupportedProjectionBinderSyntax)
         bag.AddError(DiagnosticFact.coreExpressionParsing ExpectedProjectionSetAccessorParameter)
+        bag.AddError(DiagnosticFact.coreExpressionParsing ExpectedListExpressionClose)
+        bag.AddError(DiagnosticFact.coreExpressionParsing ExpectedSetExpressionClose)
+        bag.AddError(DiagnosticFact.coreExpressionParsing ExpectedMapExpressionClose)
+        bag.AddError(DiagnosticFact.coreExpressionParsing ExpectedNamedApplicationBlockClose)
+        bag.AddError(DiagnosticFact.coreExpressionParsing ExpectedSyntaxQuoteClose)
+        bag.AddError(DiagnosticFact.coreExpressionParsing ExpectedSyntaxSpliceClose)
+        bag.AddError(DiagnosticFact.coreExpressionParsing ExpectedCodeQuoteClose)
 
         let diagnostics = bag.Items
         let usingDiagnostic =
@@ -3999,6 +4006,34 @@ module SmokeTestsShard4 =
         let projectionSetAccessorParameterDiagnostic =
             diagnostics
             |> List.find (fun item -> item.Message = "Expected a projection set accessor parameter of the form '(name : Type)'.")
+
+        let listCloseDiagnostic =
+            diagnostics
+            |> List.find (fun item -> item.Message = "Expected ']' to close the list expression.")
+
+        let setCloseDiagnostic =
+            diagnostics
+            |> List.find (fun item -> item.Message = "Expected '|}' to close the set expression.")
+
+        let mapCloseDiagnostic =
+            diagnostics
+            |> List.find (fun item -> item.Message = "Expected '}' to close the map expression.")
+
+        let namedApplicationCloseDiagnostic =
+            diagnostics
+            |> List.find (fun item -> item.Message = "Expected '}' to close the named application block.")
+
+        let syntaxQuoteCloseDiagnostic =
+            diagnostics
+            |> List.find (fun item -> item.Message = "Expected '}' to close the syntax quote.")
+
+        let syntaxSpliceCloseDiagnostic =
+            diagnostics
+            |> List.find (fun item -> item.Message = "Expected '}' to close the syntax splice.")
+
+        let codeQuoteCloseDiagnostic =
+            diagnostics
+            |> List.find (fun item -> item.Message = "Expected '>.' to close the code quote.")
 
         Assert.Equal("core-expression-parsing", usingDiagnostic.Payload.Kind)
         Assert.Contains(
@@ -4317,6 +4352,48 @@ module SmokeTestsShard4 =
             fun field ->
                 field.Name = "reason"
                 && field.Value = DiagnosticPayloadText "expected-projection-set-accessor-parameter"
+        )
+        Assert.Contains(
+            listCloseDiagnostic.Payload.Fields,
+            fun field ->
+                field.Name = "reason"
+                && field.Value = DiagnosticPayloadText "expected-list-expression-close"
+        )
+        Assert.Contains(
+            setCloseDiagnostic.Payload.Fields,
+            fun field ->
+                field.Name = "reason"
+                && field.Value = DiagnosticPayloadText "expected-set-expression-close"
+        )
+        Assert.Contains(
+            mapCloseDiagnostic.Payload.Fields,
+            fun field ->
+                field.Name = "reason"
+                && field.Value = DiagnosticPayloadText "expected-map-expression-close"
+        )
+        Assert.Contains(
+            namedApplicationCloseDiagnostic.Payload.Fields,
+            fun field ->
+                field.Name = "reason"
+                && field.Value = DiagnosticPayloadText "expected-named-application-block-close"
+        )
+        Assert.Contains(
+            syntaxQuoteCloseDiagnostic.Payload.Fields,
+            fun field ->
+                field.Name = "reason"
+                && field.Value = DiagnosticPayloadText "expected-syntax-quote-close"
+        )
+        Assert.Contains(
+            syntaxSpliceCloseDiagnostic.Payload.Fields,
+            fun field ->
+                field.Name = "reason"
+                && field.Value = DiagnosticPayloadText "expected-syntax-splice-close"
+        )
+        Assert.Contains(
+            codeQuoteCloseDiagnostic.Payload.Fields,
+            fun field ->
+                field.Name = "reason"
+                && field.Value = DiagnosticPayloadText "expected-code-quote-close"
         )
 
     [<Fact>]
@@ -4884,6 +4961,71 @@ module SmokeTestsShard4 =
         Assert.Equal("core-expression-parsing", setAccessorDiagnostic.Payload.Kind)
         Assert.Equal("core-expression-parsing", typedParameterDiagnostic.Payload.Kind)
         Assert.Equal("core-expression-parsing", ordinaryParameterDiagnostic.Payload.Kind)
+
+    [<Fact>]
+    let ``parser reports structured enclosure close diagnostics`` () =
+        let sourceText =
+            [
+                "module main"
+                "let badList = [1, 2"
+                "let badSet = {|1, 2"
+                "let badMap = {1 : 2"
+                "let badNamed = f { x = 1"
+                "let badQuote = '{ x"
+                "let badSplice = '{ ${x"
+                "let badCode = .< x"
+            ]
+            |> String.concat "\n"
+
+        let _, lexed, parsed =
+            lexAndParse
+                "main.kp"
+                sourceText
+
+        Assert.Empty(lexed.Diagnostics)
+
+        let listDiagnostic =
+            parsed.Diagnostics
+            |> List.find (fun diagnostic ->
+                tryFindPayloadText "reason" diagnostic = Some "expected-list-expression-close")
+
+        let setDiagnostic =
+            parsed.Diagnostics
+            |> List.find (fun diagnostic ->
+                tryFindPayloadText "reason" diagnostic = Some "expected-set-expression-close")
+
+        let mapDiagnostic =
+            parsed.Diagnostics
+            |> List.find (fun diagnostic ->
+                tryFindPayloadText "reason" diagnostic = Some "expected-map-expression-close")
+
+        let namedApplicationDiagnostic =
+            parsed.Diagnostics
+            |> List.find (fun diagnostic ->
+                tryFindPayloadText "reason" diagnostic = Some "expected-named-application-block-close")
+
+        let syntaxQuoteDiagnostic =
+            parsed.Diagnostics
+            |> List.find (fun diagnostic ->
+                tryFindPayloadText "reason" diagnostic = Some "expected-syntax-quote-close")
+
+        let syntaxSpliceDiagnostic =
+            parsed.Diagnostics
+            |> List.find (fun diagnostic ->
+                tryFindPayloadText "reason" diagnostic = Some "expected-syntax-splice-close")
+
+        let codeQuoteDiagnostic =
+            parsed.Diagnostics
+            |> List.find (fun diagnostic ->
+                tryFindPayloadText "reason" diagnostic = Some "expected-code-quote-close")
+
+        Assert.Equal("core-expression-parsing", listDiagnostic.Payload.Kind)
+        Assert.Equal("core-expression-parsing", setDiagnostic.Payload.Kind)
+        Assert.Equal("core-expression-parsing", mapDiagnostic.Payload.Kind)
+        Assert.Equal("core-expression-parsing", namedApplicationDiagnostic.Payload.Kind)
+        Assert.Equal("core-expression-parsing", syntaxQuoteDiagnostic.Payload.Kind)
+        Assert.Equal("core-expression-parsing", syntaxSpliceDiagnostic.Payload.Kind)
+        Assert.Equal("core-expression-parsing", codeQuoteDiagnostic.Payload.Kind)
 
     [<Fact>]
     let ``parser reports structured projection binder diagnostics`` () =

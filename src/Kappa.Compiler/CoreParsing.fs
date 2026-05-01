@@ -1590,7 +1590,7 @@ type private ExpressionParser
         && this.Peek(1).Kind = CharacterLiteral
         && this.Current.Span.End = this.Peek(1).Span.Start
 
-    member private this.CollectBracketedTokens(errorMessage: string) =
+    member private this.CollectBracketedTokens(error: CoreExpressionParsingEvidence) =
         let start = this.Current
         this.Advance() |> ignore
 
@@ -1613,11 +1613,14 @@ type private ExpressionParser
                 innerTokens.Add(this.Advance())
 
         if depth > 0 then
-            diagnostics.AddError(DiagnosticFact.simple SimpleDiagnosticKind.ExpectedSyntaxToken errorMessage, source.GetLocation(start.Span))
+            diagnostics.AddError(
+                DiagnosticFact.coreExpressionParsing error,
+                source.GetLocation(start.Span)
+            )
 
         List.ofSeq innerTokens
 
-    member private this.CollectSetBracedTokens(errorMessage: string) =
+    member private this.CollectSetBracedTokens(error: CoreExpressionParsingEvidence) =
         let start = this.Current
         this.Advance() |> ignore
 
@@ -1640,7 +1643,10 @@ type private ExpressionParser
                 innerTokens.Add(this.Advance())
 
         if depth > 0 then
-            diagnostics.AddError(DiagnosticFact.simple SimpleDiagnosticKind.ExpectedSyntaxToken errorMessage, source.GetLocation(start.Span))
+            diagnostics.AddError(
+                DiagnosticFact.coreExpressionParsing error,
+                source.GetLocation(start.Span)
+            )
 
         List.ofSeq innerTokens
 
@@ -3734,7 +3740,7 @@ type private ExpressionParser
 
         List.ofSeq innerTokens
 
-    member private this.CollectBracedTokens(errorMessage: string) =
+    member private this.CollectBracedTokens(error: CoreExpressionParsingEvidence) =
         let start = this.Current
         this.Advance() |> ignore
 
@@ -3757,18 +3763,24 @@ type private ExpressionParser
                 innerTokens.Add(this.Advance())
 
         if depth > 0 then
-            diagnostics.AddError(DiagnosticFact.simple SimpleDiagnosticKind.ExpectedSyntaxToken errorMessage, source.GetLocation(start.Span))
+            diagnostics.AddError(
+                DiagnosticFact.coreExpressionParsing error,
+                source.GetLocation(start.Span)
+            )
 
         List.ofSeq innerTokens
 
-    member private this.CollectCodeQuoteTokens(errorMessage: string) =
+    member private this.CollectCodeQuoteTokens(error: CoreExpressionParsingEvidence) =
         let start = this.Current
         let openingDot = this.Advance()
 
         if this.Current.Kind = Operator && this.Current.Text = "<" then
             this.Advance() |> ignore
         else
-            diagnostics.AddError(DiagnosticFact.simple SimpleDiagnosticKind.ExpectedSyntaxToken errorMessage, source.GetLocation(openingDot.Span))
+            diagnostics.AddError(
+                DiagnosticFact.coreExpressionParsing error,
+                source.GetLocation(openingDot.Span)
+            )
 
         let innerTokens = ResizeArray<Token>()
         let mutable quoteDepth = 1
@@ -3789,7 +3801,10 @@ type private ExpressionParser
                 innerTokens.Add(this.Advance())
 
         if quoteDepth > 0 then
-            diagnostics.AddError(DiagnosticFact.simple SimpleDiagnosticKind.ExpectedSyntaxToken errorMessage, source.GetLocation(start.Span))
+            diagnostics.AddError(
+                DiagnosticFact.coreExpressionParsing error,
+                source.GetLocation(start.Span)
+            )
 
         List.ofSeq innerTokens
 
@@ -5017,7 +5032,7 @@ type private ExpressionParser
 
     member private this.ParseNamedApplicationBlockArgument() =
         let tokens =
-            this.CollectBracedTokens("Expected '}' to close the named application block.")
+            this.CollectBracedTokens ExpectedNamedApplicationBlockClose
 
         let startsComprehension =
             tokens
@@ -5825,7 +5840,7 @@ type private ExpressionParser
             let token = this.Advance()
             Literal(Character(this.DecodeCharacterLiteral token))
         | Dot when this.Peek(1).Kind = Operator && this.Peek(1).Text = "<" ->
-            let innerTokens = this.CollectCodeQuoteTokens("Expected '>.' to close the code quote.")
+            let innerTokens = this.CollectCodeQuoteTokens ExpectedCodeQuoteClose
             CodeQuote(this.ParseNestedExpression(innerTokens, false, true))
         | Underscore ->
             this.Advance() |> ignore
@@ -5972,13 +5987,13 @@ type private ExpressionParser
                                         )
                                         Literal Unit
         | LeftBracket ->
-            let innerTokens = this.CollectBracketedTokens("Expected ']' to close the list expression.")
+            let innerTokens = this.CollectBracketedTokens ExpectedListExpressionClose
             this.ParseCollectionExpression(ListCollection, innerTokens)
         | LeftBrace ->
-            let innerTokens = this.CollectBracedTokens("Expected '}' to close the map expression.")
+            let innerTokens = this.CollectBracedTokens ExpectedMapExpressionClose
             this.ParseCollectionExpression(MapCollection, innerTokens)
         | LeftSetBrace ->
-            let innerTokens = this.CollectSetBracedTokens("Expected '|}' to close the set expression.")
+            let innerTokens = this.CollectSetBracedTokens ExpectedSetExpressionClose
             this.ParseCollectionExpression(SetCollection, innerTokens)
         | _ when this.IsNameToken(this.Current) ->
             let segments = this.ParseQualifiedName()
@@ -6004,7 +6019,7 @@ type private ExpressionParser
         | Operator ->
             if this.Current.Text = "'" && this.Peek(1).Kind = LeftBrace then
                 this.Advance() |> ignore
-                let innerTokens = this.CollectBracedTokens("Expected '}' to close the syntax quote.")
+                let innerTokens = this.CollectBracedTokens ExpectedSyntaxQuoteClose
                 SyntaxQuote(this.ParseNestedSyntaxPayload(innerTokens))
             elif this.Current.Text = "$" && this.Peek(1).Kind = LeftParen then
                 this.Advance() |> ignore
@@ -6012,7 +6027,7 @@ type private ExpressionParser
                 TopLevelSyntaxSplice(this.ParseNestedExpression(innerTokens, false, false))
             elif this.Current.Text = "$" && inSyntaxQuote && this.Peek(1).Kind = LeftBrace then
                 this.Advance() |> ignore
-                let innerTokens = this.CollectBracedTokens("Expected '}' to close the syntax splice.")
+                let innerTokens = this.CollectBracedTokens ExpectedSyntaxSpliceClose
                 SyntaxSplice(this.ParseNestedExpression(innerTokens, false, false))
             elif this.Current.Text = "!" then
                 this.Advance() |> ignore
