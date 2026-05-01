@@ -17707,13 +17707,17 @@ module SurfaceElaboration =
                        && List.isEmpty missingFieldDiagnostics
                        && List.isEmpty staticMemberDiagnostics
                        && not (isVisibleQualifiedRootName locals lexicalNames root) then
-                        let message =
-                            if not (String.IsNullOrEmpty(root)) && Char.IsUpper(root[0]) then
-                                $"Module qualifier '{root}' is not in scope."
-                            else
-                                $"Name '{root}' is not in scope."
-
-                        [ makeDiagnostic SimpleDiagnosticKind.NameUnresolved message ]
+                        if not (String.IsNullOrEmpty(root)) && Char.IsUpper(root[0]) then
+                            [
+                                Diagnostics.errorFact
+                                    "KFrontIR"
+                                    (Some(KFrontIRPhase.phaseName CORE_LOWERING))
+                                    None
+                                    []
+                                    (DiagnosticFact.moduleQualifierUnresolved root)
+                            ]
+                        else
+                            [ makeNameUnresolvedDiagnostic root ]
                     else
                         []
 

@@ -2897,6 +2897,67 @@ module SmokeTestsShard3 =
                 field.Name = "spelling"
                 && field.Value = DiagnosticPayloadText "missing"
         )
+        Assert.Contains(
+            diagnostic.Payload.Fields,
+            fun field ->
+                field.Name = "reference-kind"
+                && field.Value = DiagnosticPayloadText "ordinary-name"
+        )
+
+    [<Fact>]
+    let ``module qualifier unresolved diagnostics normalize through the shared formatter`` () =
+        let source = createSource "fact.kp" "Missing.value"
+        let location = source.GetLocation(TextSpan.FromBounds(0, 13))
+
+        let diagnostic =
+            Diagnostics.errorFact
+                "KFrontIR"
+                (Some(KFrontIRPhase.phaseName CHECKERS))
+                (Some location)
+                []
+                (DiagnosticFact.moduleQualifierUnresolved "Missing")
+
+        Assert.Equal(DiagnosticCode.NameUnresolved, diagnostic.Code)
+        Assert.Equal("Module qualifier 'Missing' is not in scope.", diagnostic.Message)
+        Assert.Equal(Some "kappa.name.unresolved", diagnostic.Family)
+        Assert.Equal("name-unresolved", diagnostic.Payload.Kind)
+        Assert.Contains(
+            diagnostic.Payload.Fields,
+            fun field ->
+                field.Name = "spelling"
+                && field.Value = DiagnosticPayloadText "Missing"
+        )
+        Assert.Contains(
+            diagnostic.Payload.Fields,
+            fun field ->
+                field.Name = "reference-kind"
+                && field.Value = DiagnosticPayloadText "module-qualifier"
+        )
+
+    [<Fact>]
+    let ``source compilation reports module qualifier unresolved payloads`` () =
+        let workspace =
+            compileInMemoryWorkspace
+                "memory-missing-module-qualifier-root"
+                [
+                    "main.kp",
+                    [
+                        "module main"
+                        "value : Int"
+                        "let value = Missing.answer"
+                    ]
+                    |> String.concat "\n"
+                ]
+
+        Assert.True(workspace.HasErrors, "Expected the missing module qualifier to be rejected.")
+
+        let diagnostic =
+            workspace.Diagnostics
+            |> List.find (fun item ->
+                item.Code = DiagnosticCode.NameUnresolved
+                && tryFindPayloadText "reference-kind" item = Some "module-qualifier")
+
+        Assert.Equal(Some "Missing", tryFindPayloadText "spelling" diagnostic)
 
 
     [<Fact>]

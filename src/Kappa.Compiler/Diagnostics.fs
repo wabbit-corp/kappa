@@ -698,8 +698,13 @@ type CodeDetailEvidence =
     { Code: DiagnosticCode
       Detail: string }
 
+type NameUnresolvedReferenceKind =
+    | OrdinaryNameReference
+    | ModuleQualifierReference
+
 type NameUnresolvedEvidence =
     { Spelling: string
+      ReferenceKind: NameUnresolvedReferenceKind
       AdmissibleKinds: string list
       SearchedScopes: string list
       GeneratedSyntax: bool }
@@ -1414,6 +1419,15 @@ module DiagnosticFact =
     let nameUnresolved spelling =
         NameUnresolvedDiagnostic
             { Spelling = spelling
+              ReferenceKind = OrdinaryNameReference
+              AdmissibleKinds = []
+              SearchedScopes = []
+              GeneratedSyntax = false }
+
+    let moduleQualifierUnresolved spelling =
+        NameUnresolvedDiagnostic
+            { Spelling = spelling
+              ReferenceKind = ModuleQualifierReference
               AdmissibleKinds = []
               SearchedScopes = []
               GeneratedSyntax = false }
@@ -1816,13 +1830,19 @@ module DiagnosticFact =
                      trimmed.ToLowerInvariant().Replace('_', '-'))
                     [ field "detail" (DiagnosticPayloadText evidence.Detail) ])
         | NameUnresolvedDiagnostic evidence ->
+            let referenceKindText, message =
+                match evidence.ReferenceKind with
+                | OrdinaryNameReference -> "ordinary-name", $"Name '{evidence.Spelling}' is not in scope."
+                | ModuleQualifierReference -> "module-qualifier", $"Module qualifier '{evidence.Spelling}' is not in scope."
+
             descriptor
                 DiagnosticCode.NameUnresolved
                 (Some "kappa.name.unresolved")
-                $"Name '{evidence.Spelling}' is not in scope."
+                message
                 (payload
                     "name-unresolved"
                     [ field "spelling" (DiagnosticPayloadText evidence.Spelling)
+                      field "reference-kind" (DiagnosticPayloadText referenceKindText)
                       field "admissible-kinds" (DiagnosticPayloadTextList evidence.AdmissibleKinds)
                       field "searched-scopes" (DiagnosticPayloadTextList evidence.SearchedScopes)
                       field "generated-syntax" (DiagnosticPayloadText(string evidence.GeneratedSyntax)) ])
