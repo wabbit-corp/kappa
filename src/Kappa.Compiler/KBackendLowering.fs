@@ -283,8 +283,8 @@ module internal KBackendLowering =
           BindingInfos = bindingInfos
           ConstructorInfos = constructorInfos }
 
-    let private loweringDiagnostic (_runtimeModule: KRuntimeModule) (_binding: KRuntimeBinding option) message =
-        Diagnostics.errorFact "KBackendIR" None None [] (DiagnosticFact.simple SimpleDiagnosticKind.CheckpointVerification message)
+    let private loweringDiagnostic (runtimeModule: KRuntimeModule) (_binding: KRuntimeBinding option) error =
+        Diagnostics.errorFact "KBackendIR" None None [] (DiagnosticFact.backend (KBackendLoweringFailed(runtimeModule.Name, error)))
 
     let lowerKBackendModules backendProfile allowUnsafeConsume (kRuntimeIR: KRuntimeModule list) =
         let context = buildBackendLoweringContext kRuntimeIR
@@ -366,7 +366,7 @@ module internal KBackendLowering =
 
             match segments with
             | [] ->
-                Result.Error "empty runtime name"
+                Result.Error EmptyRuntimeName
             | [ name ] when locals.ContainsKey name ->
                 let resolved = BackendLocalName(name, Map.tryFind name locals)
                 Result.Ok(resolved, resolvedNameRepresentation resolved)
@@ -404,9 +404,9 @@ module internal KBackendLowering =
                     | [ _, resolved ] ->
                         Result.Ok(resolved, resolvedNameRepresentation resolved)
                     | _ :: _ :: _ ->
-                        Result.Error $"ambiguous runtime name '{name}'"
+                        Result.Error(AmbiguousRuntimeName name)
                     | [] ->
-                        Result.Error $"unresolved runtime name '{name}'"
+                        Result.Error(UnresolvedRuntimeName name)
             | _ ->
                 let qualifierSegments = segments |> List.take (segments.Length - 1)
                 let memberName = List.last segments
@@ -418,9 +418,9 @@ module internal KBackendLowering =
                         Result.Ok(resolved, resolvedNameRepresentation resolved)
                     | None ->
                         let text = String.concat "." segments
-                        Result.Error $"unresolved runtime name '{text}'"
+                        Result.Error(UnresolvedRuntimeName text)
                 | None ->
-                    Result.Error $"unresolved module qualifier '{SyntaxFacts.moduleNameToText qualifierSegments}'"
+                    Result.Error(UnresolvedModuleQualifier(SyntaxFacts.moduleNameToText qualifierSegments))
 
         let resolveRuntimeConstructor currentModule segments =
             let resolvedConstructorRepresentation resolvedName =
@@ -449,7 +449,7 @@ module internal KBackendLowering =
 
             match segments with
             | [] ->
-                Result.Error "empty runtime constructor name"
+                Result.Error EmptyRuntimeConstructorName
             | [ constructorName ] ->
                 match tryResolveModuleConstructor currentModule constructorName with
                 | Some resolved ->
@@ -484,9 +484,9 @@ module internal KBackendLowering =
                     | [ _, resolved ] ->
                         Result.Ok(resolved, resolvedConstructorRepresentation resolved)
                     | _ :: _ :: _ ->
-                        Result.Error $"ambiguous runtime constructor name '{constructorName}'"
+                        Result.Error(AmbiguousRuntimeConstructorName constructorName)
                     | [] ->
-                        Result.Error $"unresolved runtime constructor name '{constructorName}'"
+                        Result.Error(UnresolvedRuntimeConstructorName constructorName)
             | _ ->
                 let qualifierSegments = segments |> List.take (segments.Length - 1)
                 let constructorName = List.last segments
@@ -498,9 +498,9 @@ module internal KBackendLowering =
                         Result.Ok(resolved, resolvedConstructorRepresentation resolved)
                     | None ->
                         let text = String.concat "." segments
-                        Result.Error $"unresolved runtime constructor name '{text}'"
+                        Result.Error(UnresolvedRuntimeConstructorName text)
                 | None ->
-                    Result.Error $"unresolved module qualifier '{SyntaxFacts.moduleNameToText qualifierSegments}'"
+                    Result.Error(UnresolvedModuleQualifier(SyntaxFacts.moduleNameToText qualifierSegments))
 
         let rec collectClosureCaptures (locals: Set<string>) (bound: Set<string>) expression =
             match expression with
@@ -626,7 +626,7 @@ module internal KBackendLowering =
                             Set.union state (collectClosureCaptures locals bound inner))
                     Set.empty
 
-        let lowerModule (runtimeModule: KRuntimeModule) : Result<KBackendModule, string> =
+        let lowerModule (runtimeModule: KRuntimeModule) : Result<KBackendModule, BackendLoweringErrorEvidence> =
             let environmentLayouts = ResizeArray<KBackendEnvironmentLayout>()
             let mutable nextEnvironmentLayoutId = 0
             let mutable nextSyntheticBindingId = 0
@@ -652,7 +652,7 @@ module internal KBackendLowering =
                 (constructorInfo: BackendLoweringConstructorInfo)
                 (loweredArguments: KBackendExpression list)
                 (argumentRepresentations: KBackendRepresentationClass list)
-                : Result<KBackendExpression * KBackendRepresentationClass, string> =
+                : Result<KBackendExpression * KBackendRepresentationClass, BackendLoweringErrorEvidence> =
                 let remainingFieldRepresentations =
                     constructorInfo.FieldRepresentations
                     |> List.skip (List.length loweredArguments)
@@ -736,7 +736,7 @@ module internal KBackendLowering =
                 (argumentRepresentations: KBackendRepresentationClass list)
                 (fallbackResultRepresentation: KBackendRepresentationClass)
                 (resolvedName: KBackendResolvedName)
-                : Result<KBackendExpression * KBackendRepresentationClass, string> =
+                : Result<KBackendExpression * KBackendRepresentationClass, BackendLoweringErrorEvidence> =
                 match resolvedName with
                 | BackendConstructorName(moduleName, typeName, constructorName, tag, arity, representation)
                     when arity = List.length loweredArguments ->
@@ -796,8 +796,7 @@ module internal KBackendLowering =
                             resultRepresentation
                         )
                     else
-                        Result.Error
-                            $"Runtime intrinsic '{moduleName}.{bindingName}' expects {intrinsicArity} arguments but received {List.length loweredArguments}."
+                        Result.Error(RuntimeIntrinsicArityMismatch($"{moduleName}.{bindingName}", intrinsicArity, List.length loweredArguments))
                 | BackendGlobalBindingName(moduleName, bindingName, _) ->
                     let conventionResult =
                         match tryLookupBindingInfo moduleName bindingName with
@@ -844,10 +843,9 @@ module internal KBackendLowering =
                                     loweredArguments
                                 )
                             | _ ->
-                                Result.Error
-                                    $"Runtime call target '{moduleName}.{bindingName}' expects {bindingInfo.Arity} arguments but received {List.length loweredArguments}."
+                                Result.Error(RuntimeCallTargetArityMismatch(moduleName, bindingName, bindingInfo.Arity, List.length loweredArguments))
                         | None ->
-                            Result.Error $"Could not lower runtime call target '{moduleName}.{bindingName}' to KBackendIR."
+                            Result.Error(RuntimeCallTargetCouldNotBeLowered(moduleName, bindingName))
 
                     conventionResult
                     |> Result.map (fun (convention, resultRepresentation, receiver, callArguments) ->
@@ -873,7 +871,7 @@ module internal KBackendLowering =
                 (loweredArguments: KBackendExpression list)
                 (argumentRepresentations: KBackendRepresentationClass list)
                 (fallbackResultRepresentation: KBackendRepresentationClass)
-                : Result<KBackendExpression * KBackendRepresentationClass, string> =
+                : Result<KBackendExpression * KBackendRepresentationClass, BackendLoweringErrorEvidence> =
                 match resolveRuntimeName runtimeModule locals [ runtimeName ] with
                 | Result.Ok(resolvedName, _) ->
                     lowerResolvedCall loweredArguments argumentRepresentations fallbackResultRepresentation resolvedName
@@ -883,14 +881,14 @@ module internal KBackendLowering =
 
                     lowerResolvedCall loweredArguments argumentRepresentations fallbackResultRepresentation resolvedName
                 | Result.Error _ ->
-                    Result.Error $"unresolved runtime name '{runtimeName}'"
+                    Result.Error(UnresolvedRuntimeName runtimeName)
 
             let lowerIntrinsicRuntimeCall
                 (runtimeName: string)
                 (loweredArguments: KBackendExpression list)
                 (argumentRepresentations: KBackendRepresentationClass list)
                 (fallbackResultRepresentation: KBackendRepresentationClass)
-                : Result<KBackendExpression * KBackendRepresentationClass, string> =
+                : Result<KBackendExpression * KBackendRepresentationClass, BackendLoweringErrorEvidence> =
                 let resolvedName =
                     BackendIntrinsicName(Stdlib.PreludeModuleText, runtimeName, Some fallbackResultRepresentation)
 
@@ -964,7 +962,7 @@ module internal KBackendLowering =
 
             let validateOrPatternBindings
                 (alternatives: (KBackendPattern * Map<string, KBackendRepresentationClass>) list)
-                : Result<Map<string, KBackendRepresentationClass>, string> =
+                : Result<Map<string, KBackendRepresentationClass>, BackendLoweringErrorEvidence> =
                 match alternatives with
                 | [] ->
                     Result.Ok Map.empty
@@ -979,7 +977,7 @@ module internal KBackendLowering =
                                 let candidateNames = candidateBindings |> Map.keys |> Set.ofSeq
 
                                 if candidateNames <> firstNames then
-                                    Result.Error "Backend lowering requires each or-pattern alternative to bind the same names."
+                                    Result.Error OrPatternAlternativesBindDifferentNames
                                 else
                                     firstBindings
                                     |> Map.fold
@@ -991,8 +989,7 @@ module internal KBackendLowering =
                                                 if candidateRepresentation = representation then
                                                     Result.Ok()
                                                 else
-                                                    Result.Error
-                                                        $"Backend lowering requires binder '{name}' to keep the same runtime representation across every or-pattern alternative."))
+                                                    Result.Error(OrPatternBinderRepresentationMismatch name)))
                                         (Result.Ok())
                                     |> Result.map (fun () -> agreedBindings))
                         )
@@ -1002,7 +999,7 @@ module internal KBackendLowering =
                 (locals: Map<string, KBackendRepresentationClass>)
                 (patternRepresentation: KBackendRepresentationClass)
                 (pattern: KRuntimePattern)
-                : Result<KBackendPattern * Map<string, KBackendRepresentationClass>, string> =
+                : Result<KBackendPattern * Map<string, KBackendRepresentationClass>, BackendLoweringErrorEvidence> =
                 match pattern with
                 | KRuntimeWildcardPattern ->
                     Result.Ok(BackendWildcardPattern, Map.empty)
@@ -1041,8 +1038,7 @@ module internal KBackendLowering =
                             let actualArity = List.length argumentPatterns
 
                             if expectedArity <> actualArity then
-                                Result.Error
-                                    $"Pattern '{constructorText}' expected {expectedArity} constructor argument(s), but received {actualArity}."
+                                Result.Error(ConstructorPatternArityMismatch(constructorText, expectedArity, actualArity))
                             else
                                 ((Result.Ok([], Map.empty)), List.zip argumentPatterns constructorInfo.FieldRepresentations)
                                 ||> List.fold (fun state (argumentPattern, fieldRepresentation) ->
@@ -1056,13 +1052,13 @@ module internal KBackendLowering =
                                     BackendConstructorPattern(moduleName, typeName, constructorName, tag, List.rev patterns),
                                     discoveredLocals)
                         | _ ->
-                            Result.Error $"Pattern '{constructorText}' does not resolve to a constructor.")
+                            Result.Error(PatternDoesNotResolveToConstructor constructorText))
 
             let rec lowerExpression
                 (scopeLabel: string)
                 (locals: Map<string, KBackendRepresentationClass>)
                 (expression: KRuntimeExpression)
-                : Result<KBackendExpression * KBackendRepresentationClass, string> =
+                : Result<KBackendExpression * KBackendRepresentationClass, BackendLoweringErrorEvidence> =
                 match expression with
                 | KRuntimeLiteral literal ->
                     let representation = backendLiteralRepresentation literal
@@ -1347,25 +1343,25 @@ module internal KBackendLowering =
                             | [ loweredValue ] ->
                                 Result.Ok(BackendPure(loweredValue, BackendRepIOAction), BackendRepIOAction)
                             | _ ->
-                                Result.Error $"Runtime intrinsic 'pure' expects 1 argument but received {List.length loweredArguments}."
+                                Result.Error(RuntimeIntrinsicArityMismatch("pure", 1, List.length loweredArguments))
                         | KRuntimeName [ ">>=" ] ->
                             match loweredArguments with
                             | [ loweredAction; loweredBinder ] ->
                                 Result.Ok(BackendBind(loweredAction, loweredBinder, BackendRepIOAction), BackendRepIOAction)
                             | _ ->
-                                Result.Error $"Runtime intrinsic '>>=' expects 2 arguments but received {List.length loweredArguments}."
+                                Result.Error(RuntimeIntrinsicArityMismatch(">>=", 2, List.length loweredArguments))
                         | KRuntimeName [ ">>" ] ->
                             match loweredArguments with
                             | [ loweredFirst; loweredSecond ] ->
                                 Result.Ok(BackendThen(loweredFirst, loweredSecond, BackendRepIOAction), BackendRepIOAction)
                             | _ ->
-                                Result.Error $"Runtime intrinsic '>>' expects 2 arguments but received {List.length loweredArguments}."
+                                Result.Error(RuntimeIntrinsicArityMismatch(">>", 2, List.length loweredArguments))
                         | KRuntimeName [ "runPure" ] ->
                             match loweredArguments with
                             | [ loweredAction ] ->
                                 Result.Ok(BackendExecute(loweredAction, fallbackResultRepresentation), fallbackResultRepresentation)
                             | _ ->
-                                Result.Error $"Runtime intrinsic 'runPure' expects 1 argument but received {List.length loweredArguments}."
+                                Result.Error(RuntimeIntrinsicArityMismatch("runPure", 1, List.length loweredArguments))
                         | KRuntimeName [ runtimeName ] ->
                             lowerNamedRuntimeCall
                                 locals
@@ -1440,7 +1436,7 @@ module internal KBackendLowering =
                                         [ leftRepresentation; constructorRepresentation ]
                                         BackendRepBoolean)
                             | _ ->
-                                Result.Error "Runtime operator 'is' expects a constructor name on the right-hand side.")
+                                Result.Error RuntimeTagTestRequiresConstructorName)
                     | _ ->
                         lowerExpression scopeLabel locals left
                         |> Result.bind (fun (loweredLeft, leftRepresentation) ->
@@ -1538,7 +1534,7 @@ module internal KBackendLowering =
                 (scopeLabel: string)
                 (locals: Map<string, KBackendRepresentationClass>)
                 (action: KRuntimeExitAction)
-                : Result<KBackendExpression * KBackendRepresentationClass, string> =
+                : Result<KBackendExpression * KBackendRepresentationClass, BackendLoweringErrorEvidence> =
                 let cleanupExpression =
                     match action with
                     | KRuntimeDeferred expression ->
@@ -1591,8 +1587,6 @@ module internal KBackendLowering =
                             |> Result.map (fun (loweredBody, _) -> Some loweredBody)
 
                 bodyResult
-                |> Result.mapError (fun issue ->
-                    $"Could not lower runtime binding '{runtimeModule.Name}.{binding.Name}' to KBackendIR: {issue}")
                 |> Result.map (fun body ->
                     { Name = binding.Name
                       Parameters = parameterRepresentations

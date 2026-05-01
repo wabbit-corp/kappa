@@ -4341,6 +4341,103 @@ module SmokeTestsShard4 =
         Assert.Equal(Some "definition-body-result-type-mismatch", tryFindPayloadText "reason" definitionMismatchDiagnostic)
 
     [<Fact>]
+    let ``backend and target checkpoint diagnostics render from typed evidence`` () =
+        let bag = DiagnosticBag()
+        bag.AddError(
+            DiagnosticFact.backend
+                (EffectRuntimeUnsupportedBackend("wasm", "main.answer", BackendEffectOperationUse "Console.print"))
+        )
+        bag.AddError(
+            DiagnosticFact.backend
+                (KBackendLoweringFailed("main", RuntimeIntrinsicArityMismatch("pure", 1, 2)))
+        )
+        bag.AddError(
+            DiagnosticFact.targetCheckpoint
+                (TargetCheckpointWorkspaceHasDiagnostics("dotnet.clr", 2, [ "E_NAME_UNRESOLVED"; "E_TYPE_EQUALITY_MISMATCH" ]))
+        )
+        bag.AddError(
+            DiagnosticFact.targetCheckpoint
+                (TargetCheckpointMalformedInput("zig.c", "KBackendIR", 1, [ "E_CHECKPOINT_VERIFICATION" ]))
+        )
+        bag.AddError(
+            DiagnosticFact.targetCheckpoint
+                (TargetCheckpointEmitterFailure("zig.c", "zig", "zig does not yet support intrinsic 'foo'."))
+        )
+        bag.AddError(DiagnosticFact.targetCheckpoint (UnknownTargetCheckpoint "jvm.class"))
+
+        let diagnostics = bag.Items
+
+        let effectRuntimeDiagnostic =
+            diagnostics
+            |> List.find (fun item ->
+                item.Code = DiagnosticCode.EffectRuntimeUnsupportedBackend
+                && tryFindPayloadText "reason" item = Some "effect-runtime-unsupported-backend")
+
+        let backendLoweringDiagnostic =
+            diagnostics
+            |> List.find (fun item ->
+                item.Code = DiagnosticCode.CheckpointVerification
+                && tryFindPayloadText "reason" item = Some "backend-lowering-runtime-intrinsic-arity-mismatch")
+
+        let workspaceTargetDiagnostic =
+            diagnostics
+            |> List.find (fun item ->
+                item.Code = DiagnosticCode.TargetCheckpoint
+                && tryFindPayloadText "reason" item = Some "target-checkpoint-workspace-has-diagnostics")
+
+        let malformedTargetDiagnostic =
+            diagnostics
+            |> List.find (fun item ->
+                item.Code = DiagnosticCode.TargetCheckpoint
+                && tryFindPayloadText "reason" item = Some "target-checkpoint-malformed-input")
+
+        let unknownTargetDiagnostic =
+            diagnostics
+            |> List.find (fun item ->
+                item.Code = DiagnosticCode.TargetCheckpoint
+                && tryFindPayloadText "reason" item = Some "unknown-target-checkpoint")
+
+        let emitterFailureDiagnostic =
+            diagnostics
+            |> List.find (fun item ->
+                item.Code = DiagnosticCode.TargetCheckpoint
+                && tryFindPayloadText "reason" item = Some "target-checkpoint-emitter-failure")
+
+        Assert.Equal("backend-diagnostic", effectRuntimeDiagnostic.Payload.Kind)
+        Assert.Equal(Some "wasm", tryFindPayloadText "backend-profile" effectRuntimeDiagnostic)
+        Assert.Equal(Some "main.answer", tryFindPayloadText "declaration-name" effectRuntimeDiagnostic)
+        Assert.Equal(Some "effect-operation", tryFindPayloadText "effect-use-kind" effectRuntimeDiagnostic)
+        Assert.Equal(Some "Console.print", tryFindPayloadText "effect-use-name" effectRuntimeDiagnostic)
+
+        Assert.Equal("backend-diagnostic", backendLoweringDiagnostic.Payload.Kind)
+        Assert.Equal(Some "main", tryFindPayloadText "module-name" backendLoweringDiagnostic)
+        Assert.Equal(Some "pure", tryFindPayloadText "intrinsic-name" backendLoweringDiagnostic)
+        Assert.Equal(Some "1", tryFindPayloadText "expected-arity" backendLoweringDiagnostic)
+        Assert.Equal(Some "2", tryFindPayloadText "actual-arity" backendLoweringDiagnostic)
+
+        Assert.Equal("target-checkpoint-diagnostic", workspaceTargetDiagnostic.Payload.Kind)
+        Assert.Equal(Some "dotnet.clr", tryFindPayloadText "checkpoint" workspaceTargetDiagnostic)
+        Assert.Equal(Some "2", tryFindPayloadText "diagnostic-count" workspaceTargetDiagnostic)
+        Assert.Equal(
+            Some [ "E_NAME_UNRESOLVED"; "E_TYPE_EQUALITY_MISMATCH" ],
+            tryFindPayloadTextList "diagnostic-codes" workspaceTargetDiagnostic
+        )
+
+        Assert.Equal("target-checkpoint-diagnostic", malformedTargetDiagnostic.Payload.Kind)
+        Assert.Equal(Some "zig.c", tryFindPayloadText "checkpoint" malformedTargetDiagnostic)
+        Assert.Equal(Some "KBackendIR", tryFindPayloadText "input-checkpoint" malformedTargetDiagnostic)
+        Assert.Equal(Some "1", tryFindPayloadText "diagnostic-count" malformedTargetDiagnostic)
+        Assert.Equal(Some [ "E_CHECKPOINT_VERIFICATION" ], tryFindPayloadTextList "diagnostic-codes" malformedTargetDiagnostic)
+
+        Assert.Equal("target-checkpoint-diagnostic", emitterFailureDiagnostic.Payload.Kind)
+        Assert.Equal(Some "zig.c", tryFindPayloadText "checkpoint" emitterFailureDiagnostic)
+        Assert.Equal(Some "zig", tryFindPayloadText "backend-profile" emitterFailureDiagnostic)
+        Assert.Equal(Some "zig does not yet support intrinsic 'foo'.", tryFindPayloadText "detail" emitterFailureDiagnostic)
+
+        Assert.Equal("target-checkpoint-diagnostic", unknownTargetDiagnostic.Payload.Kind)
+        Assert.Equal(Some "jvm.class", tryFindPayloadText "checkpoint" unknownTargetDiagnostic)
+
+    [<Fact>]
     let ``surface record diagnostics render from typed evidence`` () =
         let bag = DiagnosticBag()
         bag.AddError(DiagnosticFact.surfaceRecord (RecordFieldDeclaredMoreThanOnce "name"))

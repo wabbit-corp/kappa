@@ -66,10 +66,11 @@ module internal CompilationCheckpoints =
                requiredBySpec = false
                profileSpecific = false |}
 
-    let private aggregateDiagnostics diagnostics =
+    let private diagnosticCodeIdentifiers diagnostics =
         diagnostics
-        |> List.map (fun diagnostic -> diagnostic.Message)
-        |> String.concat Environment.NewLine
+        |> List.map (fun diagnostic -> DiagnosticCode.toIdentifier diagnostic.Code)
+        |> List.distinct
+        |> List.sort
 
     type TargetVerificationOutcome =
         { Diagnostics: Diagnostic list
@@ -77,15 +78,26 @@ module internal CompilationCheckpoints =
 
     let private ensureTargetLoweringPreconditions (workspace: WorkspaceCompilation) checkpoint =
         if workspace.HasErrors then
-            Result.Error
-                $"Cannot emit target checkpoint '{checkpoint}' for a workspace with diagnostics:{Environment.NewLine}{aggregateDiagnostics workspace.Diagnostics}"
+            Result.Error(
+                TargetCheckpointWorkspaceHasDiagnostics(
+                    checkpoint,
+                    List.length workspace.Diagnostics,
+                    diagnosticCodeIdentifiers workspace.Diagnostics
+                )
+            )
         else
             let inputCheckpoint = targetInputCheckpoint workspace checkpoint
             let verificationDiagnostics = CheckpointVerification.verifyCheckpoint workspace inputCheckpoint
 
             if not (List.isEmpty verificationDiagnostics) then
-                Result.Error
-                    $"Cannot emit target checkpoint '{checkpoint}' from malformed {inputCheckpoint}:{Environment.NewLine}{aggregateDiagnostics verificationDiagnostics}"
+                Result.Error(
+                    TargetCheckpointMalformedInput(
+                        checkpoint,
+                        inputCheckpoint,
+                        List.length verificationDiagnostics,
+                        diagnosticCodeIdentifiers verificationDiagnostics
+                    )
+                )
             else
                 Result.Ok()
 
@@ -129,20 +141,29 @@ module internal CompilationCheckpoints =
         | BackendProfile.Zig, checkpointName when checkpointName = Stdlib.ZigTargetCheckpointName ->
             match ensureTargetLoweringPreconditions workspace checkpoint with
             | Result.Ok () ->
-                ZigCcBackend.emitTranslationUnit workspace, true
-            | Result.Error message ->
-                Result.Error message, false
+                ZigCcBackend.emitTranslationUnit workspace
+                |> Result.mapError (fun detail ->
+                    TargetCheckpointEmitterFailure(
+                        checkpoint,
+                        BackendProfile.toPortableName workspace.Backend,
+                        detail
+                    )),
+                true
+            | Result.Error error ->
+                Result.Error error, false
         | BackendProfile.DotNet, checkpointName when checkpointName = Stdlib.ClrTargetCheckpointName ->
             match ensureTargetLoweringPreconditions workspace checkpoint with
             | Result.Ok () ->
                 emitClrTargetManifest workspace, true
-            | Result.Error message ->
-                Result.Error message, false
+            | Result.Error error ->
+                Result.Error error, false
         | _ ->
-            Result.Error $"Unknown checkpoint '{checkpoint}'.", false
+            Result.Error(UnknownTargetCheckpoint checkpoint), false
 
     let tryEmitTargetTranslationUnit (workspace: WorkspaceCompilation) checkpoint =
-        tryEmitTargetTranslationUnitDetailed workspace checkpoint |> fst
+        tryEmitTargetTranslationUnitDetailed workspace checkpoint
+        |> fst
+        |> Result.mapError (fun error -> (DiagnosticFact.describe (DiagnosticFact.targetCheckpoint error)).Message)
 
     let verifyTargetCheckpointDetailed (workspace: WorkspaceCompilation) checkpoint =
         let result, loweringAttempted = tryEmitTargetTranslationUnitDetailed workspace checkpoint
@@ -151,8 +172,8 @@ module internal CompilationCheckpoints =
             match result with
             | Result.Ok _ ->
                 []
-            | Result.Error message ->
-                [ Diagnostics.errorFact "target-lowering" None None [] (DiagnosticFact.simple SimpleDiagnosticKind.TargetCheckpoint message) ]
+            | Result.Error error ->
+                [ Diagnostics.errorFact "target-lowering" None None [] (DiagnosticFact.targetCheckpoint error) ]
 
         { Diagnostics = diagnostics
           LoweringAttempted = loweringAttempted }

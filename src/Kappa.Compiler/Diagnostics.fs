@@ -835,6 +835,38 @@ type TypecheckingDiagnosticEvidence =
     | DeferredActionContainsAbruptOuterEscape
     | DefinitionBodyResultTypeMismatch
 
+type BackendRuntimeEffectUseEvidence =
+    | BackendEffectLabelUse of labelName: string
+    | BackendEffectOperationUse of operationName: string
+    | BackendEffectHandlerUse of isDeep: bool
+
+type BackendLoweringErrorEvidence =
+    | EmptyRuntimeName
+    | AmbiguousRuntimeName of name: string
+    | UnresolvedRuntimeName of name: string
+    | UnresolvedModuleQualifier of qualifierText: string
+    | EmptyRuntimeConstructorName
+    | AmbiguousRuntimeConstructorName of constructorName: string
+    | UnresolvedRuntimeConstructorName of constructorName: string
+    | RuntimeCallTargetArityMismatch of moduleName: string * bindingName: string * expectedArity: int * actualArity: int
+    | RuntimeCallTargetCouldNotBeLowered of moduleName: string * bindingName: string
+    | OrPatternAlternativesBindDifferentNames
+    | OrPatternBinderRepresentationMismatch of binderName: string
+    | ConstructorPatternArityMismatch of patternText: string * expectedArity: int * actualArity: int
+    | PatternDoesNotResolveToConstructor of patternText: string
+    | RuntimeIntrinsicArityMismatch of intrinsicName: string * expectedArity: int * actualArity: int
+    | RuntimeTagTestRequiresConstructorName
+
+type BackendDiagnosticEvidence =
+    | EffectRuntimeUnsupportedBackend of backendProfile: string * declarationName: string * effectUse: BackendRuntimeEffectUseEvidence
+    | KBackendLoweringFailed of moduleName: string * error: BackendLoweringErrorEvidence
+
+type TargetCheckpointDiagnosticEvidence =
+    | TargetCheckpointWorkspaceHasDiagnostics of checkpoint: string * diagnosticCount: int * diagnosticCodes: string list
+    | TargetCheckpointMalformedInput of checkpoint: string * inputCheckpoint: string * diagnosticCount: int * diagnosticCodes: string list
+    | TargetCheckpointEmitterFailure of checkpoint: string * backendProfile: string * detail: string
+    | UnknownTargetCheckpoint of checkpoint: string
+
 type SurfaceRecordContext =
     | RecordTypeTelescope
     | RecordLiteralFields
@@ -1288,6 +1320,8 @@ type DiagnosticFact =
     | UrlImportPackageModeDiagnostic of UrlImportPackageModeEvidence
     | TypeEqualityMismatchDiagnostic of TypeEqualityMismatchEvidence
     | TypecheckingDiagnostic of TypecheckingDiagnosticEvidence
+    | BackendDiagnostic of BackendDiagnosticEvidence
+    | TargetCheckpointDiagnostic of TargetCheckpointDiagnosticEvidence
     | SurfaceRecordDiagnostic of SurfaceRecordDiagnosticEvidence
     | SurfaceElaborationDiagnostic of SurfaceElaborationDiagnosticEvidence
     | ParserSyntaxDiagnostic of ParserSyntaxEvidence
@@ -1604,6 +1638,12 @@ module DiagnosticFact =
 
     let typechecking evidence =
         TypecheckingDiagnostic evidence
+
+    let backend evidence =
+        BackendDiagnostic evidence
+
+    let targetCheckpoint evidence =
+        TargetCheckpointDiagnostic evidence
 
     let surfaceRecord evidence =
         SurfaceRecordDiagnostic evidence
@@ -2294,6 +2334,176 @@ module DiagnosticFact =
                     (payload
                         "typechecking-diagnostic"
                         [ field "reason" (DiagnosticPayloadText "definition-body-result-type-mismatch") ])
+        | BackendDiagnostic evidence ->
+            let backendEffectUseFields effectUse =
+                match effectUse with
+                | BackendEffectLabelUse labelName ->
+                    "effect-label", "effect label", [ field "effect-use-name" (DiagnosticPayloadText labelName) ]
+                | BackendEffectOperationUse operationName ->
+                    "effect-operation", "effect operation", [ field "effect-use-name" (DiagnosticPayloadText operationName) ]
+                | BackendEffectHandlerUse true ->
+                    "deep-handler", "deep effect handler", []
+                | BackendEffectHandlerUse false ->
+                    "handler", "effect handler", []
+
+            let backendLoweringErrorDescriptor moduleName error =
+                match error with
+                | EmptyRuntimeName ->
+                    DiagnosticCode.CheckpointVerification,
+                    "backend-lowering-empty-runtime-name",
+                    "Runtime name resolution cannot lower an empty runtime name.",
+                    []
+                | AmbiguousRuntimeName name ->
+                    DiagnosticCode.CheckpointVerification,
+                    "backend-lowering-ambiguous-runtime-name",
+                    $"Runtime name '{name}' resolves ambiguously during KBackendIR lowering.",
+                    [ field "runtime-name" (DiagnosticPayloadText name) ]
+                | UnresolvedRuntimeName name ->
+                    DiagnosticCode.CheckpointVerification,
+                    "backend-lowering-unresolved-runtime-name",
+                    $"Runtime name '{name}' could not be resolved during KBackendIR lowering.",
+                    [ field "runtime-name" (DiagnosticPayloadText name) ]
+                | UnresolvedModuleQualifier qualifierText ->
+                    DiagnosticCode.CheckpointVerification,
+                    "backend-lowering-unresolved-module-qualifier",
+                    $"Module qualifier '{qualifierText}' could not be resolved during KBackendIR lowering.",
+                    [ field "qualifier-text" (DiagnosticPayloadText qualifierText) ]
+                | EmptyRuntimeConstructorName ->
+                    DiagnosticCode.CheckpointVerification,
+                    "backend-lowering-empty-runtime-constructor-name",
+                    "Runtime constructor resolution cannot lower an empty constructor name.",
+                    []
+                | AmbiguousRuntimeConstructorName constructorName ->
+                    DiagnosticCode.CheckpointVerification,
+                    "backend-lowering-ambiguous-runtime-constructor-name",
+                    $"Runtime constructor '{constructorName}' resolves ambiguously during KBackendIR lowering.",
+                    [ field "constructor-name" (DiagnosticPayloadText constructorName) ]
+                | UnresolvedRuntimeConstructorName constructorName ->
+                    DiagnosticCode.CheckpointVerification,
+                    "backend-lowering-unresolved-runtime-constructor-name",
+                    $"Runtime constructor '{constructorName}' could not be resolved during KBackendIR lowering.",
+                    [ field "constructor-name" (DiagnosticPayloadText constructorName) ]
+                | RuntimeCallTargetArityMismatch(targetModuleName, bindingName, expectedArity, actualArity) ->
+                    DiagnosticCode.CheckpointVerification,
+                    "backend-lowering-runtime-call-target-arity-mismatch",
+                    $"Runtime call target '{targetModuleName}.{bindingName}' expects {expectedArity} argument(s) but received {actualArity}.",
+                    [ field "target-module-name" (DiagnosticPayloadText targetModuleName)
+                      field "binding-name" (DiagnosticPayloadText bindingName)
+                      field "expected-arity" (DiagnosticPayloadText(string expectedArity))
+                      field "actual-arity" (DiagnosticPayloadText(string actualArity)) ]
+                | RuntimeCallTargetCouldNotBeLowered(targetModuleName, bindingName) ->
+                    DiagnosticCode.CheckpointVerification,
+                    "backend-lowering-runtime-call-target-could-not-be-lowered",
+                    $"Runtime call target '{targetModuleName}.{bindingName}' could not be lowered to KBackendIR.",
+                    [ field "target-module-name" (DiagnosticPayloadText targetModuleName)
+                      field "binding-name" (DiagnosticPayloadText bindingName) ]
+                | OrPatternAlternativesBindDifferentNames ->
+                    DiagnosticCode.CheckpointVerification,
+                    "backend-lowering-or-pattern-alternatives-bind-different-names",
+                    "Backend lowering requires each or-pattern alternative to bind the same names.",
+                    []
+                | OrPatternBinderRepresentationMismatch binderName ->
+                    DiagnosticCode.CheckpointVerification,
+                    "backend-lowering-or-pattern-binder-representation-mismatch",
+                    $"Backend lowering requires binder '{binderName}' to keep the same runtime representation across every or-pattern alternative.",
+                    [ field "binder-name" (DiagnosticPayloadText binderName) ]
+                | ConstructorPatternArityMismatch(patternText, expectedArity, actualArity) ->
+                    DiagnosticCode.CheckpointVerification,
+                    "backend-lowering-constructor-pattern-arity-mismatch",
+                    $"Pattern '{patternText}' expected {expectedArity} constructor argument(s), but received {actualArity}.",
+                    [ field "pattern-text" (DiagnosticPayloadText patternText)
+                      field "expected-arity" (DiagnosticPayloadText(string expectedArity))
+                      field "actual-arity" (DiagnosticPayloadText(string actualArity)) ]
+                | PatternDoesNotResolveToConstructor patternText ->
+                    DiagnosticCode.CheckpointVerification,
+                    "backend-lowering-pattern-does-not-resolve-to-constructor",
+                    $"Pattern '{patternText}' does not resolve to a constructor during KBackendIR lowering.",
+                    [ field "pattern-text" (DiagnosticPayloadText patternText) ]
+                | RuntimeIntrinsicArityMismatch(intrinsicName, expectedArity, actualArity) ->
+                    DiagnosticCode.CheckpointVerification,
+                    "backend-lowering-runtime-intrinsic-arity-mismatch",
+                    $"Runtime intrinsic '{intrinsicName}' expects {expectedArity} argument(s) but received {actualArity}.",
+                    [ field "intrinsic-name" (DiagnosticPayloadText intrinsicName)
+                      field "expected-arity" (DiagnosticPayloadText(string expectedArity))
+                      field "actual-arity" (DiagnosticPayloadText(string actualArity)) ]
+                | RuntimeTagTestRequiresConstructorName ->
+                    DiagnosticCode.CheckpointVerification,
+                    "backend-lowering-runtime-tag-test-requires-constructor-name",
+                    "Runtime operator 'is' expects a constructor name on the right-hand side.",
+                    []
+
+            match evidence with
+            | EffectRuntimeUnsupportedBackend(backendProfile, declarationName, effectUse) ->
+                let effectUseKind, effectUseText, useFields = backendEffectUseFields effectUse
+
+                descriptor
+                    DiagnosticCode.EffectRuntimeUnsupportedBackend
+                    None
+                    $"Backend profile '{backendProfile}' does not implement {effectUseText} in declaration '{declarationName}'. This backend must reject unsupported effect runtime constructs before target lowering."
+                    (payload
+                        "backend-diagnostic"
+                        ([ field "reason" (DiagnosticPayloadText "effect-runtime-unsupported-backend")
+                           field "backend-profile" (DiagnosticPayloadText backendProfile)
+                           field "declaration-name" (DiagnosticPayloadText declarationName)
+                           field "effect-use-kind" (DiagnosticPayloadText effectUseKind) ]
+                         @ useFields))
+            | KBackendLoweringFailed(moduleName, error) ->
+                let code, reason, message, fields = backendLoweringErrorDescriptor moduleName error
+
+                descriptor
+                    code
+                    None
+                    message
+                    (payload
+                        "backend-diagnostic"
+                        ([ field "reason" (DiagnosticPayloadText reason)
+                           field "module-name" (DiagnosticPayloadText moduleName) ]
+                         @ fields))
+        | TargetCheckpointDiagnostic evidence ->
+            match evidence with
+            | TargetCheckpointWorkspaceHasDiagnostics(checkpoint, diagnosticCount, diagnosticCodes) ->
+                descriptor
+                    DiagnosticCode.TargetCheckpoint
+                    None
+                    $"Cannot emit target checkpoint '{checkpoint}' for a workspace with diagnostics."
+                    (payload
+                        "target-checkpoint-diagnostic"
+                        [ field "reason" (DiagnosticPayloadText "target-checkpoint-workspace-has-diagnostics")
+                          field "checkpoint" (DiagnosticPayloadText checkpoint)
+                          field "diagnostic-count" (DiagnosticPayloadText(string diagnosticCount))
+                          field "diagnostic-codes" (DiagnosticPayloadTextList diagnosticCodes) ])
+            | TargetCheckpointMalformedInput(checkpoint, inputCheckpoint, diagnosticCount, diagnosticCodes) ->
+                descriptor
+                    DiagnosticCode.TargetCheckpoint
+                    None
+                    $"Cannot emit target checkpoint '{checkpoint}' from malformed {inputCheckpoint}."
+                    (payload
+                        "target-checkpoint-diagnostic"
+                        [ field "reason" (DiagnosticPayloadText "target-checkpoint-malformed-input")
+                          field "checkpoint" (DiagnosticPayloadText checkpoint)
+                          field "input-checkpoint" (DiagnosticPayloadText inputCheckpoint)
+                          field "diagnostic-count" (DiagnosticPayloadText(string diagnosticCount))
+                          field "diagnostic-codes" (DiagnosticPayloadTextList diagnosticCodes) ])
+            | TargetCheckpointEmitterFailure(checkpoint, backendProfile, detail) ->
+                descriptor
+                    DiagnosticCode.TargetCheckpoint
+                    None
+                    $"Target checkpoint '{checkpoint}' failed during backend emission for profile '{backendProfile}': {detail}"
+                    (payload
+                        "target-checkpoint-diagnostic"
+                        [ field "reason" (DiagnosticPayloadText "target-checkpoint-emitter-failure")
+                          field "checkpoint" (DiagnosticPayloadText checkpoint)
+                          field "backend-profile" (DiagnosticPayloadText backendProfile)
+                          field "detail" (DiagnosticPayloadText detail) ])
+            | UnknownTargetCheckpoint checkpoint ->
+                descriptor
+                    DiagnosticCode.TargetCheckpoint
+                    None
+                    $"Unknown checkpoint '{checkpoint}'."
+                    (payload
+                        "target-checkpoint-diagnostic"
+                        [ field "reason" (DiagnosticPayloadText "unknown-target-checkpoint")
+                          field "checkpoint" (DiagnosticPayloadText checkpoint) ])
         | SurfaceRecordDiagnostic evidence ->
             match evidence with
             | RecordFieldDeclaredMoreThanOnce fieldName ->

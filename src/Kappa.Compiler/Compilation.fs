@@ -9,11 +9,6 @@ module Compilation =
 
     let tryInferModuleName = CompilationFrontend.tryInferModuleName
 
-    type private EffectRuntimeUse =
-        | EffectLabelUse of string
-        | EffectOperationUse of string
-        | EffectHandlerUse of isDeep: bool
-
     let private tokenName (token: Token) =
         match token.Kind with
         | Identifier
@@ -48,11 +43,11 @@ module Compilation =
     let rec private tryFindEffectRuntimeUse expression =
         match expression with
         | KRuntimeEffectLabel(labelName, _, _, _) ->
-            Some(EffectLabelUse labelName)
+            Some(BackendEffectLabelUse labelName)
         | KRuntimeEffectOperation(label, _, operationName) ->
-            Some(EffectOperationUse $"{describeEffectLabelExpression label}.{operationName}")
+            Some(BackendEffectOperationUse $"{describeEffectLabelExpression label}.{operationName}")
         | KRuntimeHandle(isDeep, _, _, _, _) ->
-            Some(EffectHandlerUse isDeep)
+            Some(BackendEffectHandlerUse isDeep)
         | KRuntimeClosure(_, body)
         | KRuntimeExecute body
         | KRuntimeDoScope(_, body)
@@ -109,12 +104,6 @@ module Compilation =
                 | Some declarationName -> $"{KCoreOrigin.moduleNameText binding.Provenance}.{declarationName}"
                 | None -> KCoreOrigin.moduleNameText binding.Provenance
 
-            let describeUse = function
-                | EffectLabelUse labelName -> $"effect label '{labelName}'"
-                | EffectOperationUse operationName -> $"effect operation '{operationName}'"
-                | EffectHandlerUse true -> "deep effect handler"
-                | EffectHandlerUse false -> "effect handler"
-
             kRuntimeIR
             |> List.collect (fun runtimeModule ->
                 runtimeModule.Bindings
@@ -124,9 +113,12 @@ module Compilation =
                     |> Option.map (fun effectUse ->
                         Diagnostics.create
                             DiagnosticSeverity.Error
-                            (DiagnosticFact.simple
-                                SimpleDiagnosticKind.EffectRuntimeUnsupportedBackend
-                                $"Backend profile '{normalizedBackendProfile}' does not implement {describeUse effectUse} in declaration '{describeDeclaration binding}'. This backend must reject unsupported effect runtime constructs before target lowering.")
+                            (DiagnosticFact.backend
+                                (EffectRuntimeUnsupportedBackend(
+                                    normalizedBackendProfile,
+                                    describeDeclaration binding,
+                                    effectUse
+                                )))
                             (provenanceLocation documents binding.Provenance)
                             []
                             (Some "KRuntimeIR")
