@@ -401,7 +401,7 @@ module internal IlDotNetBackendTyping =
                                         let candidateNames = candidateBindings |> Map.keys |> Set.ofSeq
 
                                         if candidateNames <> firstNames then
-                                            Result.Error "IL backend requires each or-pattern alternative to bind the same names."
+                                            Result.Error(DiagnosticFact.ClrBackendEmitterError.message ClrOrPatternAlternativesBindDifferentNames)
                                         else
                                             firstBindings
                                             |> Map.fold
@@ -413,8 +413,9 @@ module internal IlDotNetBackendTyping =
                                                         if actualBindingType = expectedBindingType then
                                                             Result.Ok()
                                                         else
-                                                            Result.Error
-                                                                $"IL backend requires binder '{name}' to have the same type in every or-pattern alternative, but found {formatIlType expectedBindingType} and {formatIlType actualBindingType}."))
+                                                            Result.Error(
+                                                                DiagnosticFact.ClrBackendEmitterError.message
+                                                                    (ClrOrPatternBinderTypeMismatch(name, formatIlType expectedBindingType, formatIlType actualBindingType)))))
                                                 (Result.Ok())
                                             |> Result.map (fun () -> agreedBindings))
                                 )
@@ -455,15 +456,24 @@ module internal IlDotNetBackendTyping =
                         match tryResolveConstructor rawModules currentModule nameSegments with
                         | None ->
                             let patternName = String.concat "." nameSegments
-                            Result.Error $"IL backend could not resolve constructor pattern '{patternName}'."
+                            Result.Error(
+                                DiagnosticFact.ClrBackendEmitterError.message
+                                    (ClrConstructorPatternResolutionFailed patternName)
+                            )
                         | Some(_, constructorInfo) ->
                             let resultTemplate = constructorResultType constructorInfo
 
                             unifyTypes Map.empty resultTemplate expectedType
                             |> Result.bind (fun substitution ->
                                 if List.length argumentPatterns <> List.length constructorInfo.FieldTypes then
-                                    Result.Error
-                                        $"IL backend expected pattern '{DeclarationIdentity.name constructorInfo.Identity}' to receive {List.length constructorInfo.FieldTypes} argument(s), but received {List.length argumentPatterns}."
+                                    Result.Error(
+                                        DiagnosticFact.ClrBackendEmitterError.message
+                                            (ClrConstructorPatternArityMismatch(
+                                                DeclarationIdentity.name constructorInfo.Identity,
+                                                List.length constructorInfo.FieldTypes,
+                                                List.length argumentPatterns
+                                            ))
+                                    )
                                 else
                                     List.zip argumentPatterns constructorInfo.FieldTypes
                                     |> List.fold

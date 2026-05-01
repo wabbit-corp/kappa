@@ -863,6 +863,12 @@ type ClrBackendEmitterErrorEvidence =
     | PrefixedStringsUnsupported
     | FunctionValuedNameUnsupported of targetModuleName: string * bindingName: string
     | ConstructorValuedNameUnsupported of targetModuleName: string * constructorName: string
+    | ClrOrPatternAlternativesBindDifferentNames
+    | ClrOrPatternBinderTypeMismatch of binderName: string * expectedTypeText: string * actualTypeText: string
+    | ClrConstructorPatternResolutionFailed of patternName: string
+    | ClrConstructorPatternArityMismatch of patternName: string * expectedArity: int * actualArity: int
+    | ClrConstructorArityMismatch of constructorName: string * expectedArity: int * actualArity: int
+    | ClrMissingBindingBody of moduleName: string * bindingName: string
     | UnaryOperatorUnsupported of operatorName: string
     | UnaryOperatorOperandTypeUnsupported of operatorName: string * operandTypeText: string
     | BinaryOperatorUnsupported of operatorName: string * leftTypeText: string * rightTypeText: string
@@ -1766,6 +1772,18 @@ module DiagnosticFact =
                 $"The CLR dotnet backend does not yet support function-valued name '{targetModuleName}.{bindingName}'."
             | ConstructorValuedNameUnsupported(targetModuleName, constructorName) ->
                 $"The CLR dotnet backend does not yet support constructor-valued name '{targetModuleName}.{constructorName}'."
+            | ClrOrPatternAlternativesBindDifferentNames ->
+                "The CLR dotnet backend requires each or-pattern alternative to bind the same names."
+            | ClrOrPatternBinderTypeMismatch(binderName, expectedTypeText, actualTypeText) ->
+                $"The CLR dotnet backend requires binder '{binderName}' to have the same type in every or-pattern alternative, but found {expectedTypeText} and {actualTypeText}."
+            | ClrConstructorPatternResolutionFailed patternName ->
+                $"The CLR dotnet backend could not resolve constructor pattern '{patternName}'."
+            | ClrConstructorPatternArityMismatch(patternName, expectedArity, actualArity) ->
+                $"The CLR dotnet backend expected pattern '{patternName}' to receive {expectedArity} argument(s), but received {actualArity}."
+            | ClrConstructorArityMismatch(constructorName, expectedArity, actualArity) ->
+                $"The CLR dotnet backend expected constructor '{constructorName}' to receive {expectedArity} argument(s), but received {actualArity}."
+            | ClrMissingBindingBody(moduleName, bindingName) ->
+                $"The CLR dotnet backend requires a body for '{moduleName}.{bindingName}'."
             | UnaryOperatorUnsupported operatorName ->
                 $"The CLR dotnet backend does not yet support unary operator '{operatorName}'."
             | UnaryOperatorOperandTypeUnsupported(operatorName, operandTypeText) ->

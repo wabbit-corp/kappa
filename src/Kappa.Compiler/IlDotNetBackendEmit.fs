@@ -322,7 +322,7 @@ module internal IlDotNetBackendEmit =
                                     let candidateNames = candidateBindings |> Map.keys |> Set.ofSeq
 
                                     if candidateNames <> firstNames then
-                                        Result.Error "IL backend requires each or-pattern alternative to bind the same names."
+                                        Result.Error(DiagnosticFact.ClrBackendEmitterError.message ClrOrPatternAlternativesBindDifferentNames)
                                     else
                                         firstBindings
                                         |> Map.fold
@@ -334,8 +334,9 @@ module internal IlDotNetBackendEmit =
                                                     if actualBindingType = expectedBindingType then
                                                         Result.Ok()
                                                     else
-                                                        Result.Error
-                                                            $"IL backend requires binder '{name}' to have the same type in every or-pattern alternative, but found {formatIlType expectedBindingType} and {formatIlType actualBindingType}."))
+                                                        Result.Error(
+                                                            DiagnosticFact.ClrBackendEmitterError.message
+                                                                (ClrOrPatternBinderTypeMismatch(name, formatIlType expectedBindingType, formatIlType actualBindingType)))))
                                             (Result.Ok())
                                         |> Result.map (fun () -> agreedBindings))
                             )
@@ -376,13 +377,22 @@ module internal IlDotNetBackendEmit =
                     match tryResolveConstructor modules currentModule nameSegments with
                     | None ->
                         let patternName = String.concat "." nameSegments
-                        Result.Error $"IL backend could not resolve constructor pattern '{patternName}'."
+                        Result.Error(
+                            DiagnosticFact.ClrBackendEmitterError.message
+                                (ClrConstructorPatternResolutionFailed patternName)
+                        )
                     | Some(_, constructorInfo) ->
                         unifyTypes Map.empty (constructorResultType constructorInfo) expectedType
                         |> Result.bind (fun substitution ->
                             if List.length argumentPatterns <> List.length constructorInfo.FieldTypes then
-                                Result.Error
-                                    $"IL backend expected pattern '{constructorInfo.Name}' to receive {List.length constructorInfo.FieldTypes} argument(s), but received {List.length argumentPatterns}."
+                                Result.Error(
+                                    DiagnosticFact.ClrBackendEmitterError.message
+                                        (ClrConstructorPatternArityMismatch(
+                                            constructorInfo.Name,
+                                            List.length constructorInfo.FieldTypes,
+                                            List.length argumentPatterns
+                                        ))
+                                )
                             else
                                 List.zip argumentPatterns constructorInfo.FieldTypes
                                 |> List.fold
@@ -796,8 +806,14 @@ module internal IlDotNetBackendEmit =
 
                 let! substitution, argumentTypes =
                     if List.length arguments <> List.length constructorInfo.FieldTypes then
-                        Result.Error
-                            $"IL backend expected constructor '{constructorInfo.Name}' to receive {List.length constructorInfo.FieldTypes} argument(s), but received {List.length arguments}."
+                        Result.Error(
+                            DiagnosticFact.ClrBackendEmitterError.message
+                                (ClrConstructorArityMismatch(
+                                    constructorInfo.Name,
+                                    List.length constructorInfo.FieldTypes,
+                                    List.length arguments
+                                ))
+                        )
                     else
                         List.zip arguments constructorInfo.FieldTypes
                         |> List.fold
@@ -1381,7 +1397,7 @@ module internal IlDotNetBackendEmit =
                                                 let candidateNames = candidateBindings |> Map.keys |> Set.ofSeq
 
                                                 if candidateNames <> firstNames then
-                                                    Result.Error "IL backend requires each or-pattern alternative to bind the same names."
+                                                    Result.Error(DiagnosticFact.ClrBackendEmitterError.message ClrOrPatternAlternativesBindDifferentNames)
                                                 else
                                                     firstBindings
                                                     |> Map.fold
@@ -1393,8 +1409,9 @@ module internal IlDotNetBackendEmit =
                                                                 if actualBindingType = expectedBindingType then
                                                                     Result.Ok()
                                                                 else
-                                                                    Result.Error
-                                                                        $"IL backend requires binder '{name}' to have the same type in every or-pattern alternative, but found {formatIlType expectedBindingType} and {formatIlType actualBindingType}."))
+                                                                    Result.Error(
+                                                                        DiagnosticFact.ClrBackendEmitterError.message
+                                                                            (ClrOrPatternBinderTypeMismatch(name, formatIlType expectedBindingType, formatIlType actualBindingType)))))
                                                         (Result.Ok())
                                                     |> Result.map (fun () -> agreedBindings))
                                         )
@@ -1403,13 +1420,22 @@ module internal IlDotNetBackendEmit =
                             match tryResolveConstructor state.Environment.Modules currentModule nameSegments with
                             | None ->
                                 let patternName = String.concat "." nameSegments
-                                Result.Error $"IL backend could not resolve constructor pattern '{patternName}'."
+                                Result.Error(
+                                    DiagnosticFact.ClrBackendEmitterError.message
+                                        (ClrConstructorPatternResolutionFailed patternName)
+                                )
                             | Some(_, constructorInfo) ->
                                 unifyTypes Map.empty (constructorResultType constructorInfo) currentExpectedType
                                 |> Result.bind (fun substitution ->
                                     if List.length argumentPatterns <> List.length constructorInfo.FieldTypes then
-                                        Result.Error
-                                            $"IL backend expected pattern '{constructorInfo.Name}' to receive {List.length constructorInfo.FieldTypes} argument(s), but received {List.length argumentPatterns}."
+                                        Result.Error(
+                                            DiagnosticFact.ClrBackendEmitterError.message
+                                                (ClrConstructorPatternArityMismatch(
+                                                    constructorInfo.Name,
+                                                    List.length constructorInfo.FieldTypes,
+                                                    List.length argumentPatterns
+                                                ))
+                                        )
                                     else
                                         List.zip argumentPatterns constructorInfo.FieldTypes
                                         |> List.fold
@@ -1481,13 +1507,22 @@ module internal IlDotNetBackendEmit =
                 match tryResolveConstructor state.Environment.Modules currentModule nameSegments with
                 | None ->
                     let patternName = String.concat "." nameSegments
-                    Result.Error $"IL backend could not resolve constructor pattern '{patternName}'."
+                    Result.Error(
+                        DiagnosticFact.ClrBackendEmitterError.message
+                            (ClrConstructorPatternResolutionFailed patternName)
+                    )
                 | Some(_, constructorInfo) ->
                     unifyTypes Map.empty (constructorResultType constructorInfo) expectedType
                     |> Result.bind (fun substitution ->
                         if List.length argumentPatterns <> List.length constructorInfo.FieldTypes then
-                            Result.Error
-                                $"IL backend expected pattern '{constructorInfo.Name}' to receive {List.length constructorInfo.FieldTypes} argument(s), but received {List.length argumentPatterns}."
+                            Result.Error(
+                                DiagnosticFact.ClrBackendEmitterError.message
+                                    (ClrConstructorPatternArityMismatch(
+                                        constructorInfo.Name,
+                                        List.length constructorInfo.FieldTypes,
+                                        List.length argumentPatterns
+                                    ))
+                            )
                         else
                             match tryResolveEnumConstructorOrdinal state constructorInfo with
                             | Some caseOrdinal ->
@@ -2012,7 +2047,11 @@ module internal IlDotNetBackendEmit =
                             Result.Error
                                 $"IL backend could not resolve durable host binding metadata for '{moduleInfo.Name}.{bindingInfo.Binding.Name}'."
                 | None ->
-                    return! Result.Error $"IL backend requires a body for '{moduleInfo.Name}.{bindingInfo.Binding.Name}'."
+                    return!
+                        Result.Error(
+                            DiagnosticFact.ClrBackendEmitterError.message
+                                (ClrMissingBindingBody(moduleInfo.Name, bindingInfo.Binding.Name))
+                        )
             | Some body ->
                 do!
                     emitExpression
