@@ -74,6 +74,16 @@ let private tryFindPayloadText fieldName (diagnostic: Diagnostic) =
             | DiagnosticPayloadText value -> Some value
             | DiagnosticPayloadTextList _ -> None)
 
+let private tryFindPayloadTextList fieldName (diagnostic: Diagnostic) =
+    diagnostic.Payload.Fields
+    |> List.tryPick (fun field ->
+        if field.Name <> fieldName then
+            None
+        else
+            match field.Value with
+            | DiagnosticPayloadText _ -> None
+            | DiagnosticPayloadTextList values -> Some values)
+
 let rec private tryFindLocalScopedEffect expression =
     match expression with
     | LocalScopedEffect(declaration, _) ->
@@ -2607,12 +2617,13 @@ module SmokeTestsShard2 =
                 ]
 
         Assert.True(blockedTerminatesWorkspace.HasErrors, "Expected assertTerminates to require allow_assert_terminates.")
-        Assert.Contains(
-            blockedTerminatesWorkspace.Diagnostics,
-            fun diagnostic ->
-                diagnostic.Code = DiagnosticCode.AssertTerminatesRequiresModuleAttribute
-                && diagnostic.Message.Contains("allow_assert_terminates", StringComparison.Ordinal)
-        )
+        let blockedTerminatesDiagnostic =
+            blockedTerminatesWorkspace.Diagnostics
+            |> List.find (fun diagnostic -> diagnostic.Code = DiagnosticCode.AssertTerminatesRequiresModuleAttribute)
+
+        Assert.Equal("surface-elaboration-diagnostic", blockedTerminatesDiagnostic.Payload.Kind)
+        Assert.Equal(Some "keep", tryFindPayloadText "binding-name" blockedTerminatesDiagnostic)
+        Assert.Equal(Some "assert-terminates-requires-allow-attribute", tryFindPayloadText "reason" blockedTerminatesDiagnostic)
 
         let blockedReducibleWorkspace =
             compileInMemoryWorkspace
@@ -2627,12 +2638,13 @@ module SmokeTestsShard2 =
                 ]
 
         Assert.True(blockedReducibleWorkspace.HasErrors, "Expected assertReducible to require allow_assert_reducible.")
-        Assert.Contains(
-            blockedReducibleWorkspace.Diagnostics,
-            fun diagnostic ->
-                diagnostic.Code = DiagnosticCode.AssertReducibleRequiresModuleAttribute
-                && diagnostic.Message.Contains("allow_assert_reducible", StringComparison.Ordinal)
-        )
+        let blockedReducibleDiagnostic =
+            blockedReducibleWorkspace.Diagnostics
+            |> List.find (fun diagnostic -> diagnostic.Code = DiagnosticCode.AssertReducibleRequiresModuleAttribute)
+
+        Assert.Equal("surface-elaboration-diagnostic", blockedReducibleDiagnostic.Payload.Kind)
+        Assert.Equal(Some "uncheckedId", tryFindPayloadText "binding-name" blockedReducibleDiagnostic)
+        Assert.Equal(Some "assert-reducible-requires-allow-attribute", tryFindPayloadText "reason" blockedReducibleDiagnostic)
 
 
     [<Fact>]
@@ -3753,6 +3765,12 @@ module SmokeTestsShard4 =
         bag.AddError(DiagnosticFact.surfaceElaboration (SelectorProjectionYieldInvalid ProjectionYieldMustBeRootedInPlaceBinder))
         bag.AddError(DiagnosticFact.surfaceElaboration ExpandedAccessorProjectionRequiresExactlyOnePlaceBinder)
         bag.AddError(DiagnosticFact.surfaceElaboration (ProjectionAccessorClauseDeclaredMoreThanOnce "get"))
+        bag.AddError(DiagnosticFact.surfaceElaboration (UnknownModuleAttribute("NotAKappaModuleAttribute", [ "allow_assert_reducible"; "allow_assert_terminates" ])))
+        bag.AddError(DiagnosticFact.surfaceElaboration (AssertTerminatesRequiresAllowAttribute "keep"))
+        bag.AddError(DiagnosticFact.surfaceElaboration (AssertReducibleRequiresAllowAttribute "uncheckedId"))
+        bag.AddError(DiagnosticFact.surfaceElaboration (RecursiveTypeAliasDependsOnItself "Loop"))
+        bag.AddError(DiagnosticFact.surfaceElaboration (TopLevelRecursiveBindingRequiresPrecedingSignature "loop"))
+        bag.AddError(DiagnosticFact.surfaceElaboration (TrivialRecursiveCycleMustBeRejected "cycle"))
 
         let diagnostics = bag.Items
         let staticObjectDiagnostic = diagnostics |> List.find (fun item -> item.Code = DiagnosticCode.StaticObjectUnresolved)
@@ -3800,6 +3818,23 @@ module SmokeTestsShard4 =
             diagnostics
             |> List.find (fun item -> item.Code = DiagnosticCode.ProjectionAccessorClauseDuplicate)
 
+        let unknownModuleAttributeDiagnostic = diagnostics |> List.find (fun item -> item.Code = DiagnosticCode.ModuleAttributeUnknown)
+        let assertTerminatesDiagnostic = diagnostics |> List.find (fun item -> item.Code = DiagnosticCode.AssertTerminatesRequiresModuleAttribute)
+        let assertReducibleDiagnostic = diagnostics |> List.find (fun item -> item.Code = DiagnosticCode.AssertReducibleRequiresModuleAttribute)
+        let recursiveAliasDiagnostic = diagnostics |> List.find (fun item -> item.Code = DiagnosticCode.RecursiveTypeAlias)
+
+        let recursiveBindingDiagnostic =
+            diagnostics
+            |> List.find (fun item ->
+                item.Code = DiagnosticCode.RecursionRequiresSignature
+                && tryFindPayloadText "reason" item = Some "top-level-recursive-binding-requires-preceding-signature")
+
+        let trivialCycleDiagnostic =
+            diagnostics
+            |> List.find (fun item ->
+                item.Code = DiagnosticCode.RecursionRequiresSignature
+                && tryFindPayloadText "reason" item = Some "trivial-recursive-cycle-must-be-rejected")
+
         Assert.Equal("surface-elaboration-diagnostic", staticObjectDiagnostic.Payload.Kind)
         Assert.Equal(Some "Some", tryFindPayloadText "member-name" staticObjectDiagnostic)
         Assert.Equal(Some "Bad", tryFindPayloadText "head-name" patternHeadDiagnostic)
@@ -3814,6 +3849,13 @@ module SmokeTestsShard4 =
         Assert.Equal(Some "projection-yield-invalid", tryFindPayloadText "category" rootedYieldDiagnostic)
         Assert.Equal(Some "expanded-accessor-projection-requires-exactly-one-place-binder", tryFindPayloadText "reason" accessorPlaceBinderDiagnostic)
         Assert.Equal(Some "get", tryFindPayloadText "clause-kind" accessorDuplicateDiagnostic)
+        Assert.Equal(Some "NotAKappaModuleAttribute", tryFindPayloadText "attribute-name" unknownModuleAttributeDiagnostic)
+        Assert.Equal(Some [ "@allow_assert_reducible"; "@allow_assert_terminates" ], tryFindPayloadTextList "supported-attributes" unknownModuleAttributeDiagnostic)
+        Assert.Equal(Some "keep", tryFindPayloadText "binding-name" assertTerminatesDiagnostic)
+        Assert.Equal(Some "uncheckedId", tryFindPayloadText "binding-name" assertReducibleDiagnostic)
+        Assert.Equal(Some "Loop", tryFindPayloadText "alias-name" recursiveAliasDiagnostic)
+        Assert.Equal(Some "loop", tryFindPayloadText "binding-name" recursiveBindingDiagnostic)
+        Assert.Equal(Some "cycle", tryFindPayloadText "binding-name" trivialCycleDiagnostic)
 
     [<Fact>]
     let ``parser syntax diagnostics render from typed evidence`` () =
@@ -6586,12 +6628,13 @@ module SmokeTestsShard5 =
                 ]
 
         Assert.True(workspace.HasErrors, "Expected unknown module attributes to be rejected.")
-        Assert.Contains(
-            workspace.Diagnostics,
-            fun diagnostic ->
-                diagnostic.Code = DiagnosticCode.ModuleAttributeUnknown
-                && diagnostic.Message.Contains("@NotAKappaModuleAttribute", StringComparison.Ordinal)
-        )
+        let diagnostic =
+            workspace.Diagnostics
+            |> List.find (fun item -> item.Code = DiagnosticCode.ModuleAttributeUnknown)
+
+        Assert.Equal("surface-elaboration-diagnostic", diagnostic.Payload.Kind)
+        Assert.Equal(Some "unknown-module-attribute", tryFindPayloadText "reason" diagnostic)
+        Assert.Equal(Some "NotAKappaModuleAttribute", tryFindPayloadText "attribute-name" diagnostic)
 
 
     [<Fact>]
@@ -7495,6 +7538,57 @@ module SmokeTestsShard6 =
 
         Assert.Equal("surface-elaboration-diagnostic", diagnostic.Payload.Kind)
         Assert.Equal(Some "Some", tryFindPayloadText "member-name" diagnostic)
+
+    [<Fact>]
+    let ``source compilation rejects recursive type aliases with structured diagnostics`` () =
+        let workspace =
+            compileInMemoryWorkspace
+                "memory-recursive-type-alias-root"
+                [
+                    "main.kp",
+                    [
+                        "module main"
+                        "type Loop = Loop"
+                        "ok : Int"
+                        "let ok = 0"
+                    ]
+                    |> String.concat "\n"
+                ]
+
+        Assert.True(workspace.HasErrors, "Expected recursive type aliases to be rejected.")
+
+        let diagnostic =
+            workspace.Diagnostics
+            |> List.find (fun item -> item.Code = DiagnosticCode.RecursiveTypeAlias)
+
+        Assert.Equal("surface-elaboration-diagnostic", diagnostic.Payload.Kind)
+        Assert.Equal(Some "recursive-type-alias-depends-on-itself", tryFindPayloadText "reason" diagnostic)
+        Assert.Equal(Some "Loop", tryFindPayloadText "alias-name" diagnostic)
+
+    [<Fact>]
+    let ``source compilation rejects recursive top level bindings without signatures with structured diagnostics`` () =
+        let workspace =
+            compileInMemoryWorkspace
+                "memory-recursive-top-level-binding-root"
+                [
+                    "main.kp",
+                    [
+                        "module main"
+                        "let loop x = loop x"
+                    ]
+                    |> String.concat "\n"
+                ]
+
+        Assert.True(workspace.HasErrors, "Expected recursive top-level bindings without signatures to be rejected.")
+
+        let diagnostic =
+            workspace.Diagnostics
+            |> List.find (fun item ->
+                item.Code = DiagnosticCode.RecursionRequiresSignature
+                && tryFindPayloadText "reason" item = Some "top-level-recursive-binding-requires-preceding-signature")
+
+        Assert.Equal("surface-elaboration-diagnostic", diagnostic.Payload.Kind)
+        Assert.Equal(Some "loop", tryFindPayloadText "binding-name" diagnostic)
 
     [<Fact>]
     let ``source compilation reports structured projection definition diagnostics`` () =

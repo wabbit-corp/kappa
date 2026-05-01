@@ -21033,8 +21033,6 @@ module SurfaceElaboration =
                         ModuleAttribute.knownAttributes
                         |> Set.toList
                         |> List.sort
-                        |> List.map (fun attributeName -> "@" + attributeName)
-                        |> String.concat ", "
 
                     frontendModule.ModuleAttributes
                     |> List.choose (fun attributeName ->
@@ -21042,9 +21040,13 @@ module SurfaceElaboration =
                             None
                         else
                             Some(
-                                makeDiagnostic
-                                    SimpleDiagnosticKind.ModuleAttributeUnknown
-                                    $"Unknown module attribute '@{attributeName}'. Supported module attributes in this implementation are: {supportedAttributes}."
+                                Diagnostics.errorFact
+                                    "KFrontIR"
+                                    (Some(KFrontIRPhase.phaseName CORE_LOWERING))
+                                    None
+                                    []
+                                    (DiagnosticFact.surfaceElaboration
+                                        (UnknownModuleAttribute(attributeName, supportedAttributes)))
                             ))
 
                 let totalityAssertionDiagnostics =
@@ -21057,10 +21059,26 @@ module SurfaceElaboration =
                             match definition.TotalityAssertion with
                             | Some AssertTerminatesAssertion when not allowAssertTerminates ->
                                 let bindingName = definition.Name |> Option.defaultValue "<anonymous>"
-                                Some(makeDiagnostic SimpleDiagnosticKind.AssertTerminatesRequiresModuleAttribute $"Declaration '{bindingName}' uses assertTerminates/assertTotal without enabling module attribute 'allow_assert_terminates'.")
+                                Some(
+                                    Diagnostics.errorFact
+                                        "KFrontIR"
+                                        (Some(KFrontIRPhase.phaseName CORE_LOWERING))
+                                        None
+                                        []
+                                        (DiagnosticFact.surfaceElaboration
+                                            (AssertTerminatesRequiresAllowAttribute bindingName))
+                                )
                             | Some AssertReducibleAssertion when not allowAssertReducible ->
                                 let bindingName = definition.Name |> Option.defaultValue "<anonymous>"
-                                Some(makeDiagnostic SimpleDiagnosticKind.AssertReducibleRequiresModuleAttribute $"Declaration '{bindingName}' uses assertReducible without enabling module attribute 'allow_assert_reducible'.")
+                                Some(
+                                    Diagnostics.errorFact
+                                        "KFrontIR"
+                                        (Some(KFrontIRPhase.phaseName CORE_LOWERING))
+                                        None
+                                        []
+                                        (DiagnosticFact.surfaceElaboration
+                                            (AssertReducibleRequiresAllowAttribute bindingName))
+                                )
                             | _ ->
                                 None
                         | _ ->
@@ -21155,7 +21173,12 @@ module SurfaceElaboration =
                     |> Seq.filter (fun aliasName -> reaches aliasName aliasName (Set.singleton aliasName))
                     |> Seq.distinct
                     |> Seq.map (fun aliasName ->
-                        makeDiagnostic SimpleDiagnosticKind.RecursiveTypeAlias $"Type alias '{aliasName}' recursively depends on itself.")
+                        Diagnostics.errorFact
+                            "KFrontIR"
+                            (Some(KFrontIRPhase.phaseName CORE_LOWERING))
+                            None
+                            []
+                            (DiagnosticFact.surfaceElaboration (RecursiveTypeAliasDependsOnItself aliasName)))
                     |> Seq.toList
 
                 let malformedConstructorDiagnostics =
@@ -21633,7 +21656,15 @@ module SurfaceElaboration =
                             let shadowed = parameterNames definition.Parameters
 
                             if expressionReferences name shadowed definition.Body.Value then
-                                Some(makeDiagnostic SimpleDiagnosticKind.RecursionRequiresSignature $"Top-level binding '{name}' is recursive but has no preceding signature declaration.")
+                                Some(
+                                    Diagnostics.errorFact
+                                        "KFrontIR"
+                                        (Some(KFrontIRPhase.phaseName CORE_LOWERING))
+                                        None
+                                        []
+                                        (DiagnosticFact.surfaceElaboration
+                                            (TopLevelRecursiveBindingRequiresPrecedingSignature name))
+                                )
                             else
                                 None
                         | _ ->
@@ -21651,9 +21682,12 @@ module SurfaceElaboration =
                             match definition.Body.Value with
                             | Name [ referencedName ] when String.Equals(referencedName, name, StringComparison.Ordinal) ->
                                 Some(
-                                    makeDiagnostic
-                                        SimpleDiagnosticKind.RecursionRequiresSignature
-                                        $"Recursive cycle for binding '{name}' is not total and must be rejected."
+                                    Diagnostics.errorFact
+                                        "KFrontIR"
+                                        (Some(KFrontIRPhase.phaseName CORE_LOWERING))
+                                        None
+                                        []
+                                        (DiagnosticFact.surfaceElaboration (TrivialRecursiveCycleMustBeRejected name))
                                 )
                             | _ ->
                                 None

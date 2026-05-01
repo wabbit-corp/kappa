@@ -822,6 +822,12 @@ type SurfaceElaborationDiagnosticEvidence =
     | SelectorProjectionYieldInvalid of reason: ProjectionYieldInvalidReason
     | ExpandedAccessorProjectionRequiresExactlyOnePlaceBinder
     | ProjectionAccessorClauseDeclaredMoreThanOnce of clauseKind: string
+    | UnknownModuleAttribute of attributeName: string * supportedAttributes: string list
+    | AssertTerminatesRequiresAllowAttribute of bindingName: string
+    | AssertReducibleRequiresAllowAttribute of bindingName: string
+    | RecursiveTypeAliasDependsOnItself of aliasName: string
+    | TopLevelRecursiveBindingRequiresPrecedingSignature of bindingName: string
+    | TrivialRecursiveCycleMustBeRejected of bindingName: string
     | StaticConstructorRequiresPreservedStaticObjectIdentity of memberName: string
     | PatternHeadResolvedToOrdinaryTerm of headName: string
     | ActivePatternLinearlyConsumesScrutineeInRefutableContext of patternName: string * context: string
@@ -2195,6 +2201,64 @@ module DiagnosticFact =
                         "surface-elaboration-diagnostic"
                         [ field "reason" (DiagnosticPayloadText "projection-accessor-clause-declared-more-than-once")
                           field "clause-kind" (DiagnosticPayloadText clauseKind) ])
+            | UnknownModuleAttribute(attributeName, supportedAttributes) ->
+                let supportedAttributeSpellings = supportedAttributes |> List.map (fun name -> "@" + name)
+                let supportedText = String.concat ", " supportedAttributeSpellings
+
+                descriptor
+                    DiagnosticCode.ModuleAttributeUnknown
+                    None
+                    $"Unknown module attribute '@{attributeName}'. Supported module attributes in this implementation are: {supportedText}."
+                    (payload
+                        "surface-elaboration-diagnostic"
+                        [ field "reason" (DiagnosticPayloadText "unknown-module-attribute")
+                          field "attribute-name" (DiagnosticPayloadText attributeName)
+                          field "supported-attributes" (DiagnosticPayloadTextList supportedAttributeSpellings) ])
+            | AssertTerminatesRequiresAllowAttribute bindingName ->
+                descriptor
+                    DiagnosticCode.AssertTerminatesRequiresModuleAttribute
+                    None
+                    $"Declaration '{bindingName}' uses assertTerminates/assertTotal without enabling module attribute 'allow_assert_terminates'."
+                    (payload
+                        "surface-elaboration-diagnostic"
+                        [ field "reason" (DiagnosticPayloadText "assert-terminates-requires-allow-attribute")
+                          field "binding-name" (DiagnosticPayloadText bindingName) ])
+            | AssertReducibleRequiresAllowAttribute bindingName ->
+                descriptor
+                    DiagnosticCode.AssertReducibleRequiresModuleAttribute
+                    None
+                    $"Declaration '{bindingName}' uses assertReducible without enabling module attribute 'allow_assert_reducible'."
+                    (payload
+                        "surface-elaboration-diagnostic"
+                        [ field "reason" (DiagnosticPayloadText "assert-reducible-requires-allow-attribute")
+                          field "binding-name" (DiagnosticPayloadText bindingName) ])
+            | RecursiveTypeAliasDependsOnItself aliasName ->
+                descriptor
+                    DiagnosticCode.RecursiveTypeAlias
+                    None
+                    $"Type alias '{aliasName}' recursively depends on itself."
+                    (payload
+                        "surface-elaboration-diagnostic"
+                        [ field "reason" (DiagnosticPayloadText "recursive-type-alias-depends-on-itself")
+                          field "alias-name" (DiagnosticPayloadText aliasName) ])
+            | TopLevelRecursiveBindingRequiresPrecedingSignature bindingName ->
+                descriptor
+                    DiagnosticCode.RecursionRequiresSignature
+                    None
+                    $"Top-level binding '{bindingName}' is recursive but has no preceding signature declaration."
+                    (payload
+                        "surface-elaboration-diagnostic"
+                        [ field "reason" (DiagnosticPayloadText "top-level-recursive-binding-requires-preceding-signature")
+                          field "binding-name" (DiagnosticPayloadText bindingName) ])
+            | TrivialRecursiveCycleMustBeRejected bindingName ->
+                descriptor
+                    DiagnosticCode.RecursionRequiresSignature
+                    None
+                    $"Recursive cycle for binding '{bindingName}' is not total and must be rejected."
+                    (payload
+                        "surface-elaboration-diagnostic"
+                        [ field "reason" (DiagnosticPayloadText "trivial-recursive-cycle-must-be-rejected")
+                          field "binding-name" (DiagnosticPayloadText bindingName) ])
             | StaticConstructorRequiresPreservedStaticObjectIdentity memberName ->
                 descriptor
                     DiagnosticCode.StaticObjectUnresolved
