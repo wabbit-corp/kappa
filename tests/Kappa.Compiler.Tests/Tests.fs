@@ -3725,6 +3725,10 @@ module SmokeTestsShard4 =
         bag.AddError(DiagnosticFact.coreExpressionParsing ExpectedHandlerWith)
         bag.AddError(DiagnosticFact.coreExpressionParsing (ExpectedImplicitParameterAfterAt TopLevelFunctionHeader))
         bag.AddError(DiagnosticFact.coreExpressionParsing (ExpectedImplicitParameterAfterAt LocalFunctionHeader))
+        bag.AddError(DiagnosticFact.coreExpressionParsing ExpectedNameAfterEffectLabel)
+        bag.AddError(DiagnosticFact.coreExpressionParsing ExpectedExplicitMemberProjectionName)
+        bag.AddError(DiagnosticFact.coreExpressionParsing ExpectedSafeNavigationMemberAccess)
+        bag.AddError(DiagnosticFact.coreExpressionParsing UnexpectedTrailingExpressionTokens)
 
         let diagnostics = bag.Items
         let usingDiagnostic =
@@ -3774,6 +3778,22 @@ module SmokeTestsShard4 =
         let localFunctionHeaderDiagnostic =
             diagnostics
             |> List.find (fun item -> item.Message = "Expected an implicit parameter after '@' in the local function header.")
+
+        let effectLabelDiagnostic =
+            diagnostics
+            |> List.find (fun item -> item.Message = "Expected a name after 'effect-label'.")
+
+        let explicitProjectionDiagnostic =
+            diagnostics
+            |> List.find (fun item -> item.Message = "Expected an operator or member name inside explicit member projection.")
+
+        let safeNavigationDiagnostic =
+            diagnostics
+            |> List.find (fun item -> item.Message = "Expected a member access after '?.'.")
+
+        let trailingDiagnostic =
+            diagnostics
+            |> List.find (fun item -> item.Message = "Unexpected tokens at the end of the expression.")
 
         Assert.Equal("core-expression-parsing", usingDiagnostic.Payload.Kind)
         Assert.Contains(
@@ -3846,6 +3866,30 @@ module SmokeTestsShard4 =
             fun field ->
                 field.Name = "header-context"
                 && field.Value = DiagnosticPayloadText "local-function-header"
+        )
+        Assert.Contains(
+            effectLabelDiagnostic.Payload.Fields,
+            fun field ->
+                field.Name = "reason"
+                && field.Value = DiagnosticPayloadText "expected-name-after-effect-label"
+        )
+        Assert.Contains(
+            explicitProjectionDiagnostic.Payload.Fields,
+            fun field ->
+                field.Name = "reason"
+                && field.Value = DiagnosticPayloadText "expected-explicit-member-projection-name"
+        )
+        Assert.Contains(
+            safeNavigationDiagnostic.Payload.Fields,
+            fun field ->
+                field.Name = "reason"
+                && field.Value = DiagnosticPayloadText "expected-safe-navigation-member-access"
+        )
+        Assert.Contains(
+            trailingDiagnostic.Payload.Fields,
+            fun field ->
+                field.Name = "reason"
+                && field.Value = DiagnosticPayloadText "unexpected-trailing-expression-tokens"
         )
 
     [<Fact>]
@@ -4087,6 +4131,52 @@ module SmokeTestsShard4 =
         Assert.Equal("core-expression-parsing", localDiagnostic.Payload.Kind)
         Assert.Equal(Some "expected-implicit-parameter-after-at", tryFindPayloadText "reason" localDiagnostic)
         Assert.Equal(Some "local-function-header", tryFindPayloadText "header-context" localDiagnostic)
+
+    [<Fact>]
+    let ``parser reports structured selector and expression tail diagnostics`` () =
+        let sourceText =
+            [
+                "module main"
+                "let badEffect = effect-label"
+                "let badSafe = value?."
+                "let badIs = value is"
+                "let badChain = value is Foo is Bar"
+                "let badTail = value )"
+            ]
+            |> String.concat "\n"
+
+        let _, lexed, parsed =
+            lexAndParse
+                "main.kp"
+                sourceText
+
+        Assert.Empty(lexed.Diagnostics)
+
+        let effectDiagnostic =
+            parsed.Diagnostics
+            |> List.find (fun diagnostic -> tryFindPayloadText "reason" diagnostic = Some "expected-name-after-effect-label")
+
+        let safeDiagnostic =
+            parsed.Diagnostics
+            |> List.find (fun diagnostic -> tryFindPayloadText "reason" diagnostic = Some "expected-safe-navigation-member-access")
+
+        let constructorDiagnostic =
+            parsed.Diagnostics
+            |> List.find (fun diagnostic -> tryFindPayloadText "reason" diagnostic = Some "expected-constructor-name-after-is")
+
+        let chainedDiagnostic =
+            parsed.Diagnostics
+            |> List.find (fun diagnostic -> tryFindPayloadText "reason" diagnostic = Some "constructor-tag-tests-cannot-be-chained")
+
+        let trailingDiagnostic =
+            parsed.Diagnostics
+            |> List.find (fun diagnostic -> tryFindPayloadText "reason" diagnostic = Some "unexpected-trailing-expression-tokens")
+
+        Assert.Equal("core-expression-parsing", effectDiagnostic.Payload.Kind)
+        Assert.Equal("core-expression-parsing", safeDiagnostic.Payload.Kind)
+        Assert.Equal("core-expression-parsing", constructorDiagnostic.Payload.Kind)
+        Assert.Equal("core-expression-parsing", chainedDiagnostic.Payload.Kind)
+        Assert.Equal("core-expression-parsing", trailingDiagnostic.Payload.Kind)
 
 
     [<Fact>]

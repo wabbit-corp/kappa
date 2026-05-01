@@ -5167,7 +5167,8 @@ type private ExpressionParser
         if this.IsNameToken(this.Current) then
             KindQualifiedName(EffectLabelKind, this.ParseQualifiedName())
         else
-            diagnostics.AddError(DiagnosticFact.simple SimpleDiagnosticKind.ExpectedSyntaxToken "Expected a name after 'effect-label'.",
+            diagnostics.AddError(
+                DiagnosticFact.coreExpressionParsing ExpectedNameAfterEffectLabel,
                 source.GetLocation(this.Current.Span)
             )
 
@@ -6028,7 +6029,8 @@ type private ExpressionParser
         if this.IsNameToken(this.Current) then
             this.ParseQualifiedName()
         else
-            diagnostics.AddError(DiagnosticFact.simple SimpleDiagnosticKind.ExpectedSyntaxToken "Expected a constructor name after 'is'.",
+            diagnostics.AddError(
+                DiagnosticFact.coreExpressionParsing ExpectedConstructorNameAfterIs,
                 source.GetLocation(this.Current.Span)
             )
 
@@ -6073,7 +6075,10 @@ type private ExpressionParser
                     innerTokens.Add(this.Advance())
 
             if depth > 0 then
-                diagnostics.AddError(DiagnosticFact.simple SimpleDiagnosticKind.ExpectedSyntaxToken "Expected '}' to close the record update.", source.GetLocation(startToken.Span))
+                diagnostics.AddError(
+                    DiagnosticFact.coreExpressionParsing ExpectedRecordUpdateClose,
+                    source.GetLocation(startToken.Span)
+                )
 
             List.ofSeq innerTokens
 
@@ -6316,7 +6321,8 @@ type private ExpressionParser
 
                     expression <- MemberAccess(expression, [ memberName ], List.ofSeq memberArguments)
                 | None ->
-                    diagnostics.AddError(DiagnosticFact.simple SimpleDiagnosticKind.ExpectedSyntaxToken "Expected an operator or member name inside explicit member projection.",
+                    diagnostics.AddError(
+                        DiagnosticFact.coreExpressionParsing ExpectedExplicitMemberProjectionName,
                         source.GetLocation(this.Current.Span)
                     )
             elif this.Current.Kind = Dot && this.IsNameToken(this.Peek(1)) then
@@ -6343,7 +6349,8 @@ type private ExpressionParser
                 | Some navigation ->
                     expression <- SafeNavigation(expression, navigation)
                 | None ->
-                    diagnostics.AddError(DiagnosticFact.simple SimpleDiagnosticKind.ExpectedSyntaxToken "Expected a member access after '?.'.",
+                    diagnostics.AddError(
+                        DiagnosticFact.coreExpressionParsing ExpectedSafeNavigationMemberAccess,
                         source.GetLocation(safeNavigationToken.Span)
                     )
 
@@ -6372,7 +6379,8 @@ type private ExpressionParser
 
                     match left with
                     | TagTest _ ->
-                        diagnostics.AddError(DiagnosticFact.simple SimpleDiagnosticKind.ExpectedSyntaxToken "Constructor tag tests cannot be chained without parentheses.",
+                        diagnostics.AddError(
+                            DiagnosticFact.coreExpressionParsing ConstructorTagTestsCannotBeChained,
                             source.GetLocation(isToken.Span)
                         )
                     | _ ->
@@ -6425,7 +6433,10 @@ type private ExpressionParser
             this.SkipLayout()
 
             if this.Current.Kind <> EndOfFile then
-                diagnostics.AddError(DiagnosticFact.simple SimpleDiagnosticKind.ExpectedSyntaxToken "Unexpected tokens at the end of the expression.", source.GetLocation(this.Current.Span))
+                diagnostics.AddError(
+                    DiagnosticFact.coreExpressionParsing UnexpectedTrailingExpressionTokens,
+                    source.GetLocation(this.Current.Span)
+                )
 
             Some expression
 

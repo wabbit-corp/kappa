@@ -105,6 +105,7 @@ Current M4 status note: started, not complete. The compiler now has a real effec
   Query/comprehension diagnostics now route through `CoreExpressionParsingEvidence`, including generator/group/join/left-join/conflict-clause errors, unordered `skip` / `take`, unsupported comprehension clauses, and missing trailing `yield`.
   Handler-expression diagnostics now route through `CoreExpressionParsingEvidence`, including missing `with`, malformed clause heads, missing clause arrows, and missing resumption binders.
   Function and local-function header diagnostics now route through `CoreExpressionParsingEvidence`, and both sites share the same header-parameter parser loop with only the header context varying.
+  Expression-tail diagnostics now route through `CoreExpressionParsingEvidence` for missing effect-label names, missing constructor names after `is`, safe-navigation member access failures, chained tag tests, explicit member projection failures, unexpected trailing tokens, and record-update close failures; record literal/application field diagnostics and the remaining seal/selector cases are still stringly.
 - [ ] Convert `Lexer.fs` diagnostics to typed evidence ADTs with centralized formatting.
 - [ ] Convert elaboration/typechecking diagnostics to typed evidence ADTs with centralized formatting.
 - [ ] Convert backend/lowering diagnostics to typed evidence ADTs with centralized formatting.

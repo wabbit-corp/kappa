@@ -864,6 +864,13 @@ type CoreExpressionParsingEvidence =
     | UnsupportedImplicitParameterSyntax of CoreHeaderContext
     | UnterminatedParameterBinderInHeader of CoreHeaderContext
     | UnsupportedHeaderSyntax of CoreHeaderContext
+    | ExpectedNameAfterEffectLabel
+    | ExpectedConstructorNameAfterIs
+    | ExpectedRecordUpdateClose
+    | ExpectedExplicitMemberProjectionName
+    | ExpectedSafeNavigationMemberAccess
+    | ConstructorTagTestsCannotBeChained
+    | UnexpectedTrailingExpressionTokens
 
 and CoreHeaderContext =
     | TopLevelFunctionHeader
@@ -2496,6 +2503,27 @@ module DiagnosticFact =
                         "core-expression-parsing"
                         [ field "reason" (DiagnosticPayloadText "unsupported-header-syntax")
                           field "header-context" (DiagnosticPayloadText(coreHeaderContextPayloadText context)) ])
+            | ExpectedNameAfterEffectLabel ->
+                descriptor DiagnosticCode.ExpectedSyntaxToken None "Expected a name after 'effect-label'."
+                    (payload "core-expression-parsing" [ field "reason" (DiagnosticPayloadText "expected-name-after-effect-label") ])
+            | ExpectedConstructorNameAfterIs ->
+                descriptor DiagnosticCode.ExpectedSyntaxToken None "Expected a constructor name after 'is'."
+                    (payload "core-expression-parsing" [ field "reason" (DiagnosticPayloadText "expected-constructor-name-after-is") ])
+            | ExpectedRecordUpdateClose ->
+                descriptor DiagnosticCode.ExpectedSyntaxToken None "Expected '}' to close the record update."
+                    (payload "core-expression-parsing" [ field "reason" (DiagnosticPayloadText "expected-record-update-close") ])
+            | ExpectedExplicitMemberProjectionName ->
+                descriptor DiagnosticCode.ExpectedSyntaxToken None "Expected an operator or member name inside explicit member projection."
+                    (payload "core-expression-parsing" [ field "reason" (DiagnosticPayloadText "expected-explicit-member-projection-name") ])
+            | ExpectedSafeNavigationMemberAccess ->
+                descriptor DiagnosticCode.ExpectedSyntaxToken None "Expected a member access after '?.'."
+                    (payload "core-expression-parsing" [ field "reason" (DiagnosticPayloadText "expected-safe-navigation-member-access") ])
+            | ConstructorTagTestsCannotBeChained ->
+                descriptor DiagnosticCode.ExpectedSyntaxToken None "Constructor tag tests cannot be chained without parentheses."
+                    (payload "core-expression-parsing" [ field "reason" (DiagnosticPayloadText "constructor-tag-tests-cannot-be-chained") ])
+            | UnexpectedTrailingExpressionTokens ->
+                descriptor DiagnosticCode.ExpectedSyntaxToken None "Unexpected tokens at the end of the expression."
+                    (payload "core-expression-parsing" [ field "reason" (DiagnosticPayloadText "unexpected-trailing-expression-tokens") ])
         | UnicodeScalarLiteralDiagnostic evidence ->
             match evidence with
             | UnicodeScalarInvalidLiteralForm ->
