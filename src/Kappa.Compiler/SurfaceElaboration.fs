@@ -22735,7 +22735,14 @@ module SurfaceElaboration =
                                     |> List.countBy (fun field -> field.Name)
                                     |> List.choose (fun (name, count) ->
                                         if count > 1 then
-                                            Some(makeDiagnostic SimpleDiagnosticKind.RecordDuplicateField $"Record field '{name}' is declared more than once.")
+                                            Some(
+                                                Diagnostics.errorFact
+                                                    "KFrontIR"
+                                                    (Some(KFrontIRPhase.phaseName CORE_LOWERING))
+                                                    None
+                                                    []
+                                                    (DiagnosticFact.surfaceRecord (RecordFieldDeclaredMoreThanOnce name))
+                                            )
                                         else
                                             None)
 
@@ -22753,7 +22760,14 @@ module SurfaceElaboration =
                                         let typeExpr = TypeRecord(parsedFields |> List.choose id)
 
                                         if hasCyclicRecordDependencies typeExpr then
-                                            [ makeDiagnostic SimpleDiagnosticKind.RecordDependencyCycle "Record type field dependencies must be acyclic." ]
+                                            [
+                                                Diagnostics.errorFact
+                                                    "KFrontIR"
+                                                    (Some(KFrontIRPhase.phaseName CORE_LOWERING))
+                                                    None
+                                                    []
+                                                    (DiagnosticFact.surfaceRecord (RecordDependenciesMustBeAcyclic RecordTypeTelescope))
+                                            ]
                                         else
                                             []
                                     else
