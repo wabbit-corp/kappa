@@ -128,6 +128,7 @@ Current M4 status note: started, not complete. The compiler now has a real effec
   Plain CLR unresolved-name and unresolved-callee failures now likewise route through `ClrBackendEmitterErrorEvidence` in both typing and emission.
   Plain CLR trait-instance / trait-member / missing-trait-route failures and durable host binding metadata failures now also route through `ClrBackendEmitterErrorEvidence`.
   Plain CLR `openFile` diagnostics now also route through `ClrBackendEmitterErrorEvidence`, including missing default `File` types and malformed non-`File` result shapes.
+  Plain CLR `if`/`while` Bool-condition failures, empty `match` failures, and non-named application failures now also route through `ClrBackendEmitterErrorEvidence`.
   The effectful CLR emitter lane now likewise routes its constructor/name/intrinsic/pattern/body-preparation failures through typed `EffectfulClrBackendEmitterErrorEvidence` instead of hardcoding prose inline.
   The outer CLR artifact-emission wrapper failures now route through typed `ClrArtifactEmitterErrorEvidence` instead of duplicating raw `Cannot emit ...` prose across `ClrDotNetBackend.fs`, `IlDotNetBackendEmit.fs`, and `IlDotNetEffectBackend.fs`.
   The remaining backend work is the still-raw plain CLR resolution/emission failures (`IlDotNetBackendInput.fs`, `IlDotNetBackendTyping.fs`, `IlDotNetBackendEmit.fs`) and the Zig/backend support stack.

@@ -880,6 +880,13 @@ type ClrBackendEmitterErrorEvidence =
     | ClrOpenFileHandleConstructorMissing of resultTypeText: string
     | ClrOpenFileHandleConstructorArityMismatch of moduleName: string * constructorName: string
     | ClrOpenFileHandleFieldTypeMismatch of moduleName: string * constructorName: string * actualFieldTypeText: string
+    | ClrIfConditionMustBeBool
+    | ClrWhileConditionMustBeBool
+    | ClrMatchGuardMustBeBool
+    | ClrIfBranchTypesMustMatch of trueTypeText: string * falseTypeText: string
+    | ClrMatchRequiresAtLeastOneCase
+    | ClrMatchCaseTypesMustMatch
+    | ClrApplicationRequiresNamedCallee
     | UnaryOperatorUnsupported of operatorName: string
     | UnaryOperatorOperandTypeUnsupported of operatorName: string * operandTypeText: string
     | BinaryOperatorUnsupported of operatorName: string * leftTypeText: string * rightTypeText: string
@@ -1817,6 +1824,20 @@ module DiagnosticFact =
                 $"The CLR dotnet backend intrinsic 'openFile' expected constructor '{moduleName}.{constructorName}' to take one Int field."
             | ClrOpenFileHandleFieldTypeMismatch(moduleName, constructorName, actualFieldTypeText) ->
                 $"The CLR dotnet backend intrinsic 'openFile' expected constructor '{moduleName}.{constructorName}' to take Int, but got {actualFieldTypeText}."
+            | ClrIfConditionMustBeBool ->
+                "The CLR dotnet backend requires Bool conditions for if expressions."
+            | ClrWhileConditionMustBeBool ->
+                "The CLR dotnet backend requires Bool conditions for while expressions."
+            | ClrMatchGuardMustBeBool ->
+                "The CLR dotnet backend requires Bool guards for match cases."
+            | ClrIfBranchTypesMustMatch(trueTypeText, falseTypeText) ->
+                $"The CLR dotnet backend requires both if branches to have the same type, but saw {trueTypeText} and {falseTypeText}."
+            | ClrMatchRequiresAtLeastOneCase ->
+                "The CLR dotnet backend requires at least one match case."
+            | ClrMatchCaseTypesMustMatch ->
+                "The CLR dotnet backend requires all match cases to return the same type."
+            | ClrApplicationRequiresNamedCallee ->
+                "The CLR dotnet backend currently supports application only when the callee is a named binding."
             | UnaryOperatorUnsupported operatorName ->
                 $"The CLR dotnet backend does not yet support unary operator '{operatorName}'."
             | UnaryOperatorOperandTypeUnsupported(operatorName, operandTypeText) ->

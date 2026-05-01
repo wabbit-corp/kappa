@@ -795,15 +795,21 @@ module internal IlDotNetBackendTyping =
                             let! conditionType = inferExpressionType currentModule localTypes active allowedTypeParameters None condition
 
                             if conditionType <> IlPrimitive IlBool then
-                                return! Result.Error "IL backend requires Bool conditions for if expressions."
+                                return!
+                                    Result.Error(
+                                        DiagnosticFact.ClrBackendEmitterError.message
+                                            ClrIfConditionMustBeBool
+                                    )
 
                             let! trueType = inferExpressionType currentModule localTypes active allowedTypeParameters expectedType whenTrue
                             let! falseType = inferExpressionType currentModule localTypes active allowedTypeParameters (Some trueType) whenFalse
 
                             if trueType <> falseType then
                                 return!
-                                    Result.Error
-                                        $"IL backend requires both if branches to have the same type, but saw {formatIlType trueType} and {formatIlType falseType}."
+                                    Result.Error(
+                                        DiagnosticFact.ClrBackendEmitterError.message
+                                            (ClrIfBranchTypesMustMatch(formatIlType trueType, formatIlType falseType))
+                                    )
 
                             return trueType
                         }
@@ -833,7 +839,11 @@ module internal IlDotNetBackendTyping =
                                                     inferExpressionType currentModule extendedLocals active allowedTypeParameters None guard
 
                                                 if guardType <> IlPrimitive IlBool then
-                                                    return! Result.Error "IL backend requires Bool guards for match cases."
+                                                    return!
+                                                        Result.Error(
+                                                            DiagnosticFact.ClrBackendEmitterError.message
+                                                                ClrMatchGuardMustBeBool
+                                                        )
                                             | None ->
                                                 ()
 
@@ -852,10 +862,18 @@ module internal IlDotNetBackendTyping =
 
                             match caseTypes with
                             | [] ->
-                                return! Result.Error "IL backend requires at least one match case."
+                                return!
+                                    Result.Error(
+                                        DiagnosticFact.ClrBackendEmitterError.message
+                                            ClrMatchRequiresAtLeastOneCase
+                                    )
                             | head :: tail ->
                                 if tail |> List.exists ((<>) head) then
-                                    return! Result.Error "IL backend requires all match cases to return the same type."
+                                    return!
+                                        Result.Error(
+                                            DiagnosticFact.ClrBackendEmitterError.message
+                                                ClrMatchCaseTypesMustMatch
+                                        )
 
                                 return head
                         }
@@ -921,7 +939,11 @@ module internal IlDotNetBackendTyping =
                             let! conditionType = inferExpressionType currentModule localTypes active allowedTypeParameters None condition
 
                             if conditionType <> IlPrimitive IlBool then
-                                return! Result.Error "IL backend requires Bool conditions for while expressions."
+                                return!
+                                    Result.Error(
+                                        DiagnosticFact.ClrBackendEmitterError.message
+                                            ClrWhileConditionMustBeBool
+                                    )
 
                             do! inferExpressionType currentModule localTypes active allowedTypeParameters None body |> Result.map (fun _ -> ())
                             return! ensureExpected unitIlType
@@ -944,7 +966,10 @@ module internal IlDotNetBackendTyping =
                     | KRuntimeTraitCall(traitName, memberName, dictionary, arguments) ->
                         inferTraitCall traitName memberName dictionary arguments
                     | KRuntimeApply _ ->
-                        Result.Error "IL backend currently supports application only when the callee is a named binding."
+                        Result.Error(
+                            DiagnosticFact.ClrBackendEmitterError.message
+                                ClrApplicationRequiresNamedCallee
+                        )
                     | KRuntimeClosure _ ->
                         Result.Error(DiagnosticFact.ClrBackendEmitterError.message RuntimeClosuresUnsupported)
                     | KRuntimePrefixedString _ ->

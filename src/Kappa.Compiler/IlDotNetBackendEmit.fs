@@ -677,15 +677,21 @@ module internal IlDotNetBackendEmit =
                         let! conditionType = infer condition None
 
                         if conditionType <> IlPrimitive IlBool then
-                            return! Result.Error "IL backend requires Bool conditions for if expressions."
+                            return!
+                                Result.Error(
+                                    DiagnosticFact.ClrBackendEmitterError.message
+                                        ClrIfConditionMustBeBool
+                                )
 
                         let! trueType = infer whenTrue expectedType
                         let! falseType = infer whenFalse (Some trueType)
 
                         if trueType <> falseType then
                             return!
-                                Result.Error
-                                    $"IL backend requires both if branches to have the same type, but saw {formatIlType trueType} and {formatIlType falseType}."
+                                Result.Error(
+                                    DiagnosticFact.ClrBackendEmitterError.message
+                                        (ClrIfBranchTypesMustMatch(formatIlType trueType, formatIlType falseType))
+                                )
 
                         return trueType
                     }
@@ -717,10 +723,18 @@ module internal IlDotNetBackendEmit =
 
                         match caseTypes with
                         | [] ->
-                            return! Result.Error "IL backend requires at least one match case."
+                            return!
+                                Result.Error(
+                                    DiagnosticFact.ClrBackendEmitterError.message
+                                        ClrMatchRequiresAtLeastOneCase
+                                )
                         | head :: tail ->
                             if tail |> List.exists ((<>) head) then
-                                return! Result.Error "IL backend requires all match cases to return the same type."
+                                return!
+                                    Result.Error(
+                                        DiagnosticFact.ClrBackendEmitterError.message
+                                            ClrMatchCaseTypesMustMatch
+                                    )
 
                             return head
                     }
@@ -797,7 +811,10 @@ module internal IlDotNetBackendEmit =
                 | KRuntimeTraitCall(traitName, memberName, dictionary, arguments) ->
                     inferTraitCall traitName memberName dictionary arguments
                 | KRuntimeApply _ ->
-                    Result.Error "IL backend currently supports application only when the callee is a named binding."
+                    Result.Error(
+                        DiagnosticFact.ClrBackendEmitterError.message
+                            ClrApplicationRequiresNamedCallee
+                    )
                 | KRuntimeClosure _ ->
                     Result.Error(DiagnosticFact.ClrBackendEmitterError.message RuntimeClosuresUnsupported)
                 | KRuntimePrefixedString _ ->
@@ -1850,6 +1867,15 @@ module internal IlDotNetBackendEmit =
                 let endLabel = il.DefineLabel()
 
                 il.MarkLabel(loopLabel)
+                let! conditionType = inferExpressionType currentModule localTypes None condition
+
+                if conditionType <> IlPrimitive IlBool then
+                    return!
+                        Result.Error(
+                            DiagnosticFact.ClrBackendEmitterError.message
+                                ClrWhileConditionMustBeBool
+                        )
+
                 do! emitExpression state currentModule typeParameters localValues (Some(IlPrimitive IlBool)) il condition
                 il.Emit(OpCodes.Brfalse, endLabel)
 
@@ -1873,7 +1899,10 @@ module internal IlDotNetBackendEmit =
         | KRuntimeTraitCall(traitName, memberName, dictionary, arguments) ->
             emitTraitCall traitName memberName dictionary arguments
         | KRuntimeApply _ ->
-            Result.Error "IL backend currently supports application only when the callee is a named binding."
+            Result.Error(
+                DiagnosticFact.ClrBackendEmitterError.message
+                    ClrApplicationRequiresNamedCallee
+            )
         | KRuntimeClosure _ ->
             Result.Error(DiagnosticFact.ClrBackendEmitterError.message RuntimeClosuresUnsupported)
         | KRuntimePrefixedString _ ->
