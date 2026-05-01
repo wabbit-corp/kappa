@@ -3733,6 +3733,10 @@ module SmokeTestsShard4 =
         bag.AddError(DiagnosticFact.coreExpressionParsing ExpectedNamedApplicationField)
         bag.AddError(DiagnosticFact.coreExpressionParsing ExpectedSealAs)
         bag.AddError(DiagnosticFact.coreExpressionParsing ExpectedSealValue)
+        bag.AddError(DiagnosticFact.coreExpressionParsing ExpectedProjectionBodyHead)
+        bag.AddError(DiagnosticFact.coreExpressionParsing ExpectedProjectionMatchCaseBlock)
+        bag.AddError(DiagnosticFact.coreExpressionParsing ExpectedProjectionMatchCaseClause)
+        bag.AddError(DiagnosticFact.coreExpressionParsing ExpectedProjectionCaseClauseArrow)
 
         let diagnostics = bag.Items
         let usingDiagnostic =
@@ -3814,6 +3818,22 @@ module SmokeTestsShard4 =
         let sealValueDiagnostic =
             diagnostics
             |> List.find (fun item -> item.Message = "Expected a value to seal.")
+
+        let projectionBodyHeadDiagnostic =
+            diagnostics
+            |> List.find (fun item -> item.Message = "Expected 'yield', 'if', or 'match' in the projection body.")
+
+        let projectionMatchCaseBlockDiagnostic =
+            diagnostics
+            |> List.find (fun item -> item.Message = "Expected an indented case block in the projection match body.")
+
+        let projectionMatchCaseClauseDiagnostic =
+            diagnostics
+            |> List.find (fun item -> item.Message = "Expected a 'case' clause in the projection match body.")
+
+        let projectionCaseClauseArrowDiagnostic =
+            diagnostics
+            |> List.find (fun item -> item.Message = "Expected '->' in the projection case clause.")
 
         Assert.Equal("core-expression-parsing", usingDiagnostic.Payload.Kind)
         Assert.Contains(
@@ -3934,6 +3954,30 @@ module SmokeTestsShard4 =
             fun field ->
                 field.Name = "reason"
                 && field.Value = DiagnosticPayloadText "expected-seal-value"
+        )
+        Assert.Contains(
+            projectionBodyHeadDiagnostic.Payload.Fields,
+            fun field ->
+                field.Name = "reason"
+                && field.Value = DiagnosticPayloadText "expected-projection-body-head"
+        )
+        Assert.Contains(
+            projectionMatchCaseBlockDiagnostic.Payload.Fields,
+            fun field ->
+                field.Name = "reason"
+                && field.Value = DiagnosticPayloadText "expected-projection-match-case-block"
+        )
+        Assert.Contains(
+            projectionMatchCaseClauseDiagnostic.Payload.Fields,
+            fun field ->
+                field.Name = "reason"
+                && field.Value = DiagnosticPayloadText "expected-projection-match-case-clause"
+        )
+        Assert.Contains(
+            projectionCaseClauseArrowDiagnostic.Payload.Fields,
+            fun field ->
+                field.Name = "reason"
+                && field.Value = DiagnosticPayloadText "expected-projection-case-clause-arrow"
         )
 
     [<Fact>]
@@ -4261,6 +4305,50 @@ module SmokeTestsShard4 =
         Assert.Equal("core-expression-parsing", namedFieldDiagnostic.Payload.Kind)
         Assert.Equal("core-expression-parsing", sealAsDiagnostic.Payload.Kind)
         Assert.Equal("core-expression-parsing", sealValueDiagnostic.Payload.Kind)
+
+    [<Fact>]
+    let ``parser reports structured projection body diagnostics`` () =
+        let sourceText =
+            [
+                "module main"
+                "projection badBody (place this : Int) : Int = nope"
+                "projection badMatchBlock (place this : Int) : Int = match this"
+                "projection badMatchClause (place this : Int) : Int ="
+                "    match this"
+                "        nope"
+                "projection badMatchArrow (place this : Int) : Int ="
+                "    match this"
+                "        case _ 0"
+            ]
+            |> String.concat "\n"
+
+        let _, lexed, parsed =
+            lexAndParse
+                "main.kp"
+                sourceText
+
+        Assert.Empty(lexed.Diagnostics)
+
+        let bodyDiagnostic =
+            parsed.Diagnostics
+            |> List.find (fun diagnostic -> tryFindPayloadText "reason" diagnostic = Some "expected-projection-body-head")
+
+        let blockDiagnostic =
+            parsed.Diagnostics
+            |> List.find (fun diagnostic -> tryFindPayloadText "reason" diagnostic = Some "expected-projection-match-case-block")
+
+        let clauseDiagnostic =
+            parsed.Diagnostics
+            |> List.find (fun diagnostic -> tryFindPayloadText "reason" diagnostic = Some "expected-projection-match-case-clause")
+
+        let arrowDiagnostic =
+            parsed.Diagnostics
+            |> List.find (fun diagnostic -> tryFindPayloadText "reason" diagnostic = Some "expected-projection-case-clause-arrow")
+
+        Assert.Equal("core-expression-parsing", bodyDiagnostic.Payload.Kind)
+        Assert.Equal("core-expression-parsing", blockDiagnostic.Payload.Kind)
+        Assert.Equal("core-expression-parsing", clauseDiagnostic.Payload.Kind)
+        Assert.Equal("core-expression-parsing", arrowDiagnostic.Payload.Kind)
 
 
     [<Fact>]

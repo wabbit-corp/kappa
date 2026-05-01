@@ -875,6 +875,10 @@ type CoreExpressionParsingEvidence =
     | ExpectedNamedApplicationField
     | ExpectedSealAs
     | ExpectedSealValue
+    | ExpectedProjectionBodyHead
+    | ExpectedProjectionMatchCaseBlock
+    | ExpectedProjectionMatchCaseClause
+    | ExpectedProjectionCaseClauseArrow
 
 and CoreHeaderContext =
     | TopLevelFunctionHeader
@@ -2540,6 +2544,18 @@ module DiagnosticFact =
             | ExpectedSealValue ->
                 descriptor DiagnosticCode.ExpectedSyntaxToken None "Expected a value to seal."
                     (payload "core-expression-parsing" [ field "reason" (DiagnosticPayloadText "expected-seal-value") ])
+            | ExpectedProjectionBodyHead ->
+                descriptor DiagnosticCode.ExpectedSyntaxToken None "Expected 'yield', 'if', or 'match' in the projection body."
+                    (payload "core-expression-parsing" [ field "reason" (DiagnosticPayloadText "expected-projection-body-head") ])
+            | ExpectedProjectionMatchCaseBlock ->
+                descriptor DiagnosticCode.ExpectedSyntaxToken None "Expected an indented case block in the projection match body."
+                    (payload "core-expression-parsing" [ field "reason" (DiagnosticPayloadText "expected-projection-match-case-block") ])
+            | ExpectedProjectionMatchCaseClause ->
+                descriptor DiagnosticCode.ExpectedSyntaxToken None "Expected a 'case' clause in the projection match body."
+                    (payload "core-expression-parsing" [ field "reason" (DiagnosticPayloadText "expected-projection-match-case-clause") ])
+            | ExpectedProjectionCaseClauseArrow ->
+                descriptor DiagnosticCode.ExpectedSyntaxToken None "Expected '->' in the projection case clause."
+                    (payload "core-expression-parsing" [ field "reason" (DiagnosticPayloadText "expected-projection-case-clause-arrow") ])
         | UnicodeScalarLiteralDiagnostic evidence ->
             match evidence with
             | UnicodeScalarInvalidLiteralForm ->

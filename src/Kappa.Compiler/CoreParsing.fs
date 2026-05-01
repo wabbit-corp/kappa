@@ -6959,7 +6959,10 @@ module CoreParsing =
                     tokenArray[0 .. index - 1] |> Array.toList,
                     tokenArray[index ..] |> Array.toList
                 | None ->
-                    diagnostics.AddError(DiagnosticFact.simple SimpleDiagnosticKind.ExpectedSyntaxToken "Expected an indented case block in the projection match body.", source.GetLocation(TextSpan.FromBounds(source.Length, source.Length)))
+                    diagnostics.AddError(
+                        DiagnosticFact.coreExpressionParsing ExpectedProjectionMatchCaseBlock,
+                        source.GetLocation(TextSpan.FromBounds(source.Length, source.Length))
+                    )
                     rest, []
 
             let scrutinee =
@@ -6997,13 +7000,22 @@ module CoreParsing =
                                         parseProjectionBody fixities source diagnostics bodyTokens
                                         |> Option.defaultValue (ProjectionYield(Literal LiteralValue.Unit)) }
                             | None ->
-                                diagnostics.AddError(DiagnosticFact.simple SimpleDiagnosticKind.ExpectedSyntaxToken "Expected '->' in the projection case clause.", source.GetLocation(caseToken.Span))
+                                diagnostics.AddError(
+                                    DiagnosticFact.coreExpressionParsing ExpectedProjectionCaseClauseArrow,
+                                    source.GetLocation(caseToken.Span)
+                                )
                                 None
                         | _ ->
-                            diagnostics.AddError(DiagnosticFact.simple SimpleDiagnosticKind.ExpectedSyntaxToken "Expected a 'case' clause in the projection match body.", source.GetLocation(TextSpan.FromBounds(source.Length, source.Length)))
+                            diagnostics.AddError(
+                                DiagnosticFact.coreExpressionParsing ExpectedProjectionMatchCaseClause,
+                                source.GetLocation(TextSpan.FromBounds(source.Length, source.Length))
+                            )
                             None)
                 | None ->
-                    diagnostics.AddError(DiagnosticFact.simple SimpleDiagnosticKind.ExpectedSyntaxToken "Expected an indented case block in the projection match body.", source.GetLocation(TextSpan.FromBounds(source.Length, source.Length)))
+                    diagnostics.AddError(
+                        DiagnosticFact.coreExpressionParsing ExpectedProjectionMatchCaseBlock,
+                        source.GetLocation(TextSpan.FromBounds(source.Length, source.Length))
+                    )
                     []
 
             ProjectionMatch(scrutinee, cases)
@@ -7018,7 +7030,10 @@ module CoreParsing =
         | head :: _ when isAccessorHead head ->
             parseAccessorBody tokens
         | head :: _ ->
-            diagnostics.AddError(DiagnosticFact.simple SimpleDiagnosticKind.ExpectedSyntaxToken "Expected 'yield', 'if', or 'match' in the projection body.", source.GetLocation(head.Span))
+            diagnostics.AddError(
+                DiagnosticFact.coreExpressionParsing ExpectedProjectionBodyHead,
+                source.GetLocation(head.Span)
+            )
             Some(parseYield tokens)
         | [] ->
             None
