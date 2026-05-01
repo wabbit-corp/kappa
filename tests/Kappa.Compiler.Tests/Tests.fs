@@ -3771,35 +3771,122 @@ module SmokeTestsShard4 =
                 && field.Value = DiagnosticPayloadText "unknown-escape-sequence"
         )
 
+    [<Fact>]
+    let ``unicode literal diagnostics render from typed evidence`` () =
+        let bag = DiagnosticBag()
+        bag.AddError(DiagnosticFact.unicodeInvalidScalarLiteral (UnicodeScalarTextInvalid(UnknownEscapeSequence "\\q")))
+        bag.AddError(DiagnosticFact.unicodeInvalidGraphemeLiteral GraphemeMustDecodeToExactlyOneExtendedCluster)
+        bag.AddError(DiagnosticFact.unicodeInvalidByteLiteral (ByteInvalidEscape "\\xGG"))
+
+        let diagnostics = bag.Items
+        let scalarDiagnostic =
+            diagnostics
+            |> List.find (fun item -> item.Code = DiagnosticCode.UnicodeInvalidScalarLiteral)
+
+        let graphemeDiagnostic =
+            diagnostics
+            |> List.find (fun item -> item.Code = DiagnosticCode.UnicodeInvalidGraphemeLiteral)
+
+        let byteDiagnostic =
+            diagnostics
+            |> List.find (fun item -> item.Code = DiagnosticCode.UnicodeInvalidByteLiteral)
+
+        Assert.Equal("Unicode scalar literal text is invalid: unknown escape sequence '\\q'.", scalarDiagnostic.Message)
+        Assert.Equal("unicode-invalid-scalar-literal", scalarDiagnostic.Payload.Kind)
+        Assert.Contains(
+            scalarDiagnostic.Payload.Fields,
+            fun field ->
+                field.Name = "unicode-scalar-error"
+                && field.Value = DiagnosticPayloadText "unknown-escape-sequence"
+        )
+
+        Assert.Equal("Grapheme literal must decode to exactly one extended grapheme cluster.", graphemeDiagnostic.Message)
+        Assert.Equal("unicode-invalid-grapheme-literal", graphemeDiagnostic.Payload.Kind)
+        Assert.Contains(
+            graphemeDiagnostic.Payload.Fields,
+            fun field ->
+                field.Name = "reason"
+                && field.Value = DiagnosticPayloadText "must-decode-to-exactly-one-extended-cluster"
+        )
+
+        Assert.Equal("Byte literal text is invalid: invalid byte escape '\\xGG'.", byteDiagnostic.Message)
+        Assert.Equal("unicode-invalid-byte-literal", byteDiagnostic.Payload.Kind)
+        Assert.Contains(
+            byteDiagnostic.Payload.Fields,
+            fun field ->
+                field.Name = "byte-literal-error"
+                && field.Value = DiagnosticPayloadText "invalid-byte-escape"
+        )
+
 
     [<Fact>]
     let ``byte literal decoder preserves raw byte escape provenance`` () =
         match SyntaxFacts.tryDecodeByteLiteral "'\\xFF'" with
         | Result.Ok value ->
             Assert.Equal(0xFFuy, value)
-        | Result.Error message ->
-            failwithf "Expected \\xFF byte escape to decode, got %s" message
+        | Result.Error error ->
+            failwithf "Expected \\xFF byte escape to decode, got %A" error
 
         match SyntaxFacts.tryDecodeByteLiteral "'\\u{61}'" with
         | Result.Ok value ->
             Assert.Equal(byte 'a', value)
-        | Result.Error message ->
-            failwithf "Expected one-byte Unicode escape to decode, got %s" message
+        | Result.Error error ->
+            failwithf "Expected one-byte Unicode escape to decode, got %A" error
 
         match SyntaxFacts.tryDecodeByteLiteral "'ÿ'" with
         | Result.Ok value ->
             failwithf "Expected raw non-ASCII byte literal to be rejected, but decoded to %A" value
-        | Result.Error _ -> ()
+        | Result.Error ByteMustDecodeToExactlyOneByte -> ()
+        | Result.Error other -> failwithf "Expected exact one-byte failure, got %A" other
 
         match SyntaxFacts.tryDecodeByteLiteral "'\\u{00FF}'" with
         | Result.Ok value ->
             failwithf "Expected two-byte UTF-8 Unicode escape to be rejected, but decoded to %A" value
-        | Result.Error _ -> ()
+        | Result.Error ByteMustDecodeToExactlyOneByte -> ()
+        | Result.Error other -> failwithf "Expected exact one-byte failure, got %A" other
 
         match SyntaxFacts.tryDecodeByteLiteral "'\\u{0080}'" with
         | Result.Ok value ->
             failwithf "Expected non-ASCII two-byte UTF-8 escape to be rejected, but decoded to %A" value
-        | Result.Error _ -> ()
+        | Result.Error ByteMustDecodeToExactlyOneByte -> ()
+        | Result.Error other -> failwithf "Expected exact one-byte failure, got %A" other
+
+    [<Fact>]
+    let ``parser reports structured unicode literal diagnostics`` () =
+        let sourceText =
+            [
+                "module main"
+                "let badScalar = '\\q'"
+                "let badGrapheme = g'ab'"
+                "let badByte = b'\\u{00FF}'"
+            ]
+            |> String.concat "\n"
+
+        let _, lexed, parsed =
+            lexAndParse
+                "main.kp"
+                sourceText
+
+        Assert.Empty(lexed.Diagnostics)
+
+        let scalarDiagnostic =
+            parsed.Diagnostics
+            |> List.find (fun diagnostic -> diagnostic.Code = DiagnosticCode.UnicodeInvalidScalarLiteral)
+
+        let graphemeDiagnostic =
+            parsed.Diagnostics
+            |> List.find (fun diagnostic -> diagnostic.Code = DiagnosticCode.UnicodeInvalidGraphemeLiteral)
+
+        let byteDiagnostic =
+            parsed.Diagnostics
+            |> List.find (fun diagnostic -> diagnostic.Code = DiagnosticCode.UnicodeInvalidByteLiteral)
+
+        Assert.Equal("unicode-invalid-scalar-literal", scalarDiagnostic.Payload.Kind)
+        Assert.Equal(Some "unknown-escape-sequence", tryFindPayloadText "unicode-scalar-error" scalarDiagnostic)
+        Assert.Equal("unicode-invalid-grapheme-literal", graphemeDiagnostic.Payload.Kind)
+        Assert.Equal(Some "must-decode-to-exactly-one-extended-cluster", tryFindPayloadText "reason" graphemeDiagnostic)
+        Assert.Equal("unicode-invalid-byte-literal", byteDiagnostic.Payload.Kind)
+        Assert.Equal(Some "must-decode-to-exactly-one-byte", tryFindPayloadText "reason" byteDiagnostic)
 
 
     [<Fact>]

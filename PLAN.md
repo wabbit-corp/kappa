@@ -17,8 +17,8 @@ The sections below are the active execution plan. `TODO.md` remains the consolid
 
 ## 3. Prelude import semantics
 
-- [ ] Add tests covering the boundary between term/type imports and constructor imports, including explicit `ctor` imports and `type T(..)` imports.
-- [ ] Re-check existing prelude fixtures after the import rules are corrected, because some current tests may be passing only because constructor import is too permissive.
+Status note:
+Explicit term/type/constructor import-boundary coverage already exists in the fixture suite, including explicit `ctor` imports and `type T(..)` cases. No separate prelude-import follow-up remains here; future import work should add coverage under section 14.
 
 ## 4. Prelude contents and bootstrap surface
 
@@ -29,12 +29,8 @@ The sections below are the active execution plan. `TODO.md` remains the consolid
 
 ## 5. Appendix T standard harness
 
-- [ ] Stop treating the current harness as Appendix-T-conformant until the missing standard directives are implemented.
-- [ ] Add support for `suite.ktest` and `incremental.ktest`, including suite-level configuration and incremental step execution.
-- [ ] Implement the standard configuration directives from Appendix T: `mode`, `packageMode`, `scriptMode`, `backend`, `entry`, `runArgs`, `stdinFile`, `dumpFormat`, and `requires`.
-- [ ] Use the existing stable diagnostic codes in the harness so `assertDiagnostic`, `assertDiagnosticNext`, `assertDiagnosticAt`, and inline `--!!` markers are actually possible.
-- [ ] Make `assertType` compare elaborated types by definitional equality rather than by token-text equality.
-- [ ] Implement the remaining standard assertions we do not support yet, including file-relative diagnostic assertions, `assertFileDeclKinds`, stage-dump assertions, pipeline-trace assertions, and incremental cross-step assertions.
+- [ ] Finish the remaining Appendix-T gaps without overstating current conformance. Already implemented: `suite.ktest`, `incremental.ktest`, `mode`, `packageMode`, `scriptMode`, `backend`, `entry`, `runArgs`, `stdinFile`, `dumpFormat`, `requires`, `assertDiagnostic*`, `assertType` by definitional equality, `assertFileDeclKinds`, and trace-count assertions.
+- [ ] Implement the remaining standard assertions we still lack, especially stage-dump assertions and any incremental cross-step assertions that are still outside the current harness model.
 - [ ] Keep existing `x-...` directives explicitly marked as extensions rather than letting them silently stand in for missing standard behavior.
 
 ## 6. Milestone 4 (`Effects` + handlers + row polymorphism)
@@ -47,8 +43,7 @@ Current M4 status note: started, not complete. The compiler now has a real effec
 
 ## 7. Symbolic names, spelling, and semantic identity
 
-- [ ] Introduce declaration-level and semantic-object identities beyond `ModuleIdentity`, so resolved declarations, constructors, traits, effect labels, projections, and reified static objects stop falling back to plain `string`.
-  Frontend elaboration and the internal CLR model now store `DeclarationIdentity`, `SemanticObjectIdentity`, `TypeIdentity`, and structured `TraitReference` values directly; the main remaining gap is carrying that identity through `KRuntimeIR` / `KBackendIR` and other target backends instead of collapsing back to runtime text.
+- [ ] Finish propagating declaration-level and semantic-object identities beyond frontend elaboration and the internal CLR model, so `KRuntimeIR`, `KBackendIR`, and other target backends stop collapsing resolved declarations, constructors, traits, effect labels, projections, and reified static objects back to plain `string`.
 - [ ] Replace visible-name environments that collapse declaration kinds into plain `Map<string, ...>` lookup with an explicit binding-group model matching section 2.8.
   Ordinary term lookup and ambiguity now route through `VisibleOrdinaryGroups`, and qualified type/trait/static-object resolution now goes through structured `VisibleStaticGroups`, `VisibleQualifiedTypeFacets`, `VisibleQualifiedTraits`, and `VisibleModulePaths`.
   The remaining gap is the deeper same-spelling binding-group model itself: type/trait/static-object membership is still assembled from split maps instead of one first-class binding-group representation.
@@ -88,8 +83,7 @@ Current M4 status note: started, not complete. The compiler now has a real effec
 - [ ] Remove remaining effect- and static-object lookup tables keyed by rendered dotted text instead of structured identities.
   Current hot spots:
   [SurfaceElaboration.fs](/D:/ws/kappa/src/Kappa.Compiler/SurfaceElaboration.fs) (remaining dotted-name lookups around trait evidence, dictionary naming, and same-spelling import qualification).
-- [ ] Remove fabricated semantic identities such as the `ModuleIdentity.ofSegments [ "__unknown__" ]` fallback that still exists in `SurfaceElaboration.validateFrontendModule`.
-  The `validateFrontendModule` fallback is gone; remaining work is to check for any equivalent fabricated semantic identities in backend/lowering code paths, not just frontend validation.
+- [ ] Remove any remaining fabricated semantic identities in backend/lowering/runtime code paths. The old `SurfaceElaboration.validateFrontendModule` `__unknown__` fallback is already gone.
 - [ ] Preserve canonical module identity casing through all artifact names and backend metadata per section 17.3.4.2.
 - [ ] Keep bridge/host spelling distinct from Kappa semantic identity.
 - [ ] Add regression tests before each refactor slice and keep the symbolic-name validator clean outside the boundary allowlist.
@@ -98,7 +92,7 @@ Current M4 status note: started, not complete. The compiler now has a real effec
 ## 8. Recommended execution order
 
 - [ ] Align the internal architecture: true `KBackendIR`, stronger verifier rules, and post-`KBackendIR` target-lowering checkpoints.
-- [ ] Use the first `zig` slice to pressure-test what still belongs in `KBackendIR` versus what is really target-specific lowering state before expanding the CLR backend further.
+- [ ] Keep using the Zig backend as a pressure test for what belongs in shared `KBackendIR` versus target-specific lowering state before expanding the CLR backend further.
 - [ ] Decide whether section 2.6.2 stays normative for the current milestone or whether the spec needs a bootstrap prelude/profile split.
 - [ ] Bring the test harness up to Appendix T and convert more of the existing suites to the standard directive set.
 
@@ -106,7 +100,7 @@ Current M4 status note: started, not complete. The compiler now has a real effec
 
 - [ ] Remove the remaining string escape hatches from `Diagnostics.fs`, especially `SimpleDiagnosticEvidence.Detail` and `CodeDetailEvidence.Detail`, so compiler phases cannot smuggle raw prose into emitted diagnostics.
 - [x] Finish `Parser.fs` diagnostics conversion by replacing the remaining dynamic raw-string parse failures, especially string-literal decoding and URL module-specifier parsing.
-- [ ] Finish `CoreParsing.fs` diagnostics conversion for the remaining dynamic literal and Unicode decode failures after string-literal decode: character/grapheme/byte decode failures.
+- [x] Finish `CoreParsing.fs` diagnostics conversion for the remaining dynamic literal and Unicode decode failures after string-literal decode: character/grapheme/byte decode failures.
 - [ ] Finish `CoreParsing.fs` diagnostics conversion for the remaining structural frontend paths: queries/comprehensions, handlers, projection bodies, function/local-function headers, record/application/update forms, and expression-tail validation.
 - [ ] Convert `Lexer.fs` diagnostics to typed evidence ADTs with centralized formatting.
 - [ ] Convert elaboration/typechecking diagnostics to typed evidence ADTs with centralized formatting.
@@ -165,7 +159,7 @@ Current M4 status note: started, not complete. The compiler now has a real effec
 
 ## 13. Backend capability model and target backends
 
-- [ ] Either expand `KBackendIR` to model the spec-required runtime/control structures or explicitly narrow the supported backend contract and reflect that restriction in documentation, checkpoints, and capability diagnostics.
+- [ ] Pair section 1's `KBackendIR` work with an explicit backend-capability/profile contract, so any still-unsupported runtime/control structures are rejected early and honestly in documentation, checkpoints, and capability diagnostics.
   References: `TODO.md` §9; `reviews/backend1.md`.
 - [ ] Add a real backend capability model, separate source-name availability from lowering support from target implementation availability, and reject unsupported reachable constructs before target lowering with capability diagnostics.
   References: `TODO.md` §8, §9, §11; `reviews/backend1.md`; `reviews/general1.md`; `reviews/zig1.md`.

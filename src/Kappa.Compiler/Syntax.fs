@@ -1325,15 +1325,11 @@ module SyntaxFacts =
             trimStringQuotes value
             |> tryDecodeOrdinary
 
-    let private tryTrimQuotedLiteralBody prefix (value: string) =
+    let private tryTrimSingleQuotedLiteralBody (value: string) =
         if value.Length >= 2 && value[0] = '\'' && value[value.Length - 1] = '\'' then
             Result.Ok(value.Substring(1, value.Length - 2))
         else
-            Result.Error $"Invalid {prefix} literal."
-
-    let private tryDecodeQuotedLiteralBody prefix (value: string) =
-        tryTrimQuotedLiteralBody prefix value
-        |> Result.bind tryUnescapeStringContent
+            Result.Error()
 
     let private tryDecodeByteLiteralBody (body: string) =
         let bytes = ResizeArray<byte>()
@@ -1341,7 +1337,7 @@ module SyntaxFacts =
         let mutable error = None
 
         let rejectInvalidByteLiteral () =
-            error <- Some "Byte literals must decode to exactly one byte value."
+            error <- Some ByteMustDecodeToExactlyOneByte
 
         let appendByte (value: byte) =
             bytes.Add(value)
@@ -1364,23 +1360,23 @@ module SyntaxFacts =
                     else
                         rejectInvalidByteLiteral ()
                 | None ->
-                    error <- Some $"Invalid Unicode escape '{escapePrefix}'."
+                    error <- Some(ByteInvalidUnicodeEscape escapePrefix)
             | _ ->
-                error <- Some $"Invalid Unicode escape '{escapePrefix}'."
+                error <- Some(ByteInvalidUnicodeEscape escapePrefix)
 
         let appendByteEscape escapePrefix (byteText: string) =
             match Byte.TryParse(byteText, Globalization.NumberStyles.HexNumber, null) with
             | true, value ->
                 appendByte value
             | _ ->
-                error <- Some $"Invalid byte escape '{escapePrefix}'."
+                error <- Some(ByteInvalidEscape escapePrefix)
 
         while index < body.Length && error.IsNone do
             if body[index] <> '\\' then
                 appendRawPrintableAscii body[index]
                 index <- index + 1
             elif index + 1 >= body.Length then
-                error <- Some "Unterminated escape sequence."
+                error <- Some ByteUnterminatedEscapeSequence
             else
                 match body[index + 1] with
                 | '\\' ->
@@ -1415,13 +1411,13 @@ module SyntaxFacts =
                     let closingBrace = body.IndexOf('}', index + 3)
 
                     if closingBrace < 0 then
-                        error <- Some "Unterminated Unicode escape sequence."
+                        error <- Some ByteUnterminatedUnicodeEscapeSequence
                         index <- body.Length
                     else
                         let codePointText = body.Substring(index + 3, closingBrace - (index + 3))
 
                         if String.IsNullOrWhiteSpace(codePointText) || codePointText.Length > 6 then
-                            error <- Some $"Invalid Unicode escape '\\u{{{codePointText}}}'."
+                            error <- Some(ByteInvalidUnicodeEscape $"\\u{{{codePointText}}}")
                         else
                             appendUnicodeEscape ($"\\u{{{codePointText}}}") codePointText
 
@@ -1431,35 +1427,44 @@ module SyntaxFacts =
                     appendUnicodeEscape ($"\\u{codePointText}") codePointText
                     index <- index + 6
                 | other ->
-                    error <- Some $"Unknown escape sequence '\\{other}'."
+                    error <- Some(ByteUnknownEscapeSequence $"\\{other}")
 
         match error with
         | Some message -> Result.Error message
         | None when bytes.Count = 1 -> Result.Ok bytes[0]
-        | None -> Result.Error "Byte literals must decode to exactly one byte value."
+        | None -> Result.Error ByteMustDecodeToExactlyOneByte
 
     let tryDecodeCharacterLiteral (value: string) =
-        tryDecodeQuotedLiteralBody "Unicode scalar" value
+        tryTrimSingleQuotedLiteralBody value
+        |> Result.mapError (fun () -> UnicodeScalarInvalidLiteralForm)
+        |> Result.bind (fun body ->
+            tryUnescapeStringContentDetailed body
+            |> Result.mapError UnicodeScalarTextInvalid)
         |> Result.bind (fun text ->
             match UnicodeText.trySingleScalar text with
             | Some rune ->
                 Result.Ok(rune.ToString())
             | None ->
-                Result.Error "Unicode scalar literals must decode to exactly one valid Unicode scalar."
+                Result.Error UnicodeScalarMustDecodeToExactlyOneScalar
         )
 
     let tryDecodeGraphemeLiteral (value: string) =
-        tryDecodeQuotedLiteralBody "grapheme" value
+        tryTrimSingleQuotedLiteralBody value
+        |> Result.mapError (fun () -> GraphemeInvalidLiteralForm)
+        |> Result.bind (fun body ->
+            tryUnescapeStringContentDetailed body
+            |> Result.mapError GraphemeTextInvalid)
         |> Result.bind (fun text ->
             match UnicodeText.trySingleGrapheme text with
             | Some grapheme ->
                 Result.Ok grapheme
             | None ->
-                Result.Error "Grapheme literals must decode to exactly one extended grapheme cluster."
+                Result.Error GraphemeMustDecodeToExactlyOneExtendedCluster
         )
 
     let tryDecodeByteLiteral (value: string) =
-        tryTrimQuotedLiteralBody "byte" value
+        tryTrimSingleQuotedLiteralBody value
+        |> Result.mapError (fun () -> ByteInvalidLiteralForm)
         |> Result.bind tryDecodeByteLiteralBody
 
     let moduleNameToText (segments: string seq) = String.Join(".", segments)

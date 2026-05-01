@@ -930,6 +930,12 @@ type ParserSyntaxEvidence =
     | InvalidStringLiteral of StringLiteralDecodeError
     | InvalidUrlModuleSpecifier of specifierText: string * UrlModuleSpecifierParseError
 
+type UnicodeScalarLiteralEvidence = UnicodeScalarLiteralDecodeError
+
+type UnicodeGraphemeLiteralEvidence = GraphemeLiteralDecodeError
+
+type UnicodeByteLiteralEvidence = ByteLiteralDecodeError
+
 type QttCardinalityEffect =
     | Discard
     | Duplicate
@@ -1018,6 +1024,9 @@ type DiagnosticFact =
     | ParserSyntaxDiagnostic of ParserSyntaxEvidence
     | CorePatternParsingDiagnostic of CorePatternParsingEvidence
     | CoreExpressionParsingDiagnostic of CoreExpressionParsingEvidence
+    | UnicodeScalarLiteralDiagnostic of UnicodeScalarLiteralEvidence
+    | UnicodeGraphemeLiteralDiagnostic of UnicodeGraphemeLiteralEvidence
+    | UnicodeByteLiteralDiagnostic of UnicodeByteLiteralEvidence
     | QttLinearDropDiagnostic of QttLinearDropEvidence
     | QttLinearOveruseDiagnostic of QttLinearOveruseEvidence
     | QttBorrowConsumeDiagnostic of QttBorrowConsumeEvidence
@@ -1305,6 +1314,15 @@ module DiagnosticFact =
     let coreExpressionParsing evidence =
         CoreExpressionParsingDiagnostic evidence
 
+    let unicodeInvalidScalarLiteral evidence =
+        UnicodeScalarLiteralDiagnostic evidence
+
+    let unicodeInvalidGraphemeLiteral evidence =
+        UnicodeGraphemeLiteralDiagnostic evidence
+
+    let unicodeInvalidByteLiteral evidence =
+        UnicodeByteLiteralDiagnostic evidence
+
     let qttLinearDrop evidence = QttLinearDropDiagnostic evidence
     let qttLinearOveruse evidence = QttLinearOveruseDiagnostic evidence
     let qttBorrowConsume evidence = QttBorrowConsumeDiagnostic evidence
@@ -1453,6 +1471,28 @@ module DiagnosticFact =
     let private numericLiteralParseErrorText error =
         match error with
         | InvalidNumericLiteral tokenText -> tokenText
+
+    let private unicodeScalarLiteralEvidenceTag evidence =
+        match evidence with
+        | UnicodeScalarInvalidLiteralForm -> "invalid-literal-form"
+        | UnicodeScalarTextInvalid error -> stringLiteralDecodeErrorTag error
+        | UnicodeScalarMustDecodeToExactlyOneScalar -> "must-decode-to-exactly-one-scalar"
+
+    let private unicodeGraphemeLiteralEvidenceTag evidence =
+        match evidence with
+        | GraphemeInvalidLiteralForm -> "invalid-literal-form"
+        | GraphemeTextInvalid error -> stringLiteralDecodeErrorTag error
+        | GraphemeMustDecodeToExactlyOneExtendedCluster -> "must-decode-to-exactly-one-extended-cluster"
+
+    let private unicodeByteLiteralEvidenceTag evidence =
+        match evidence with
+        | ByteInvalidLiteralForm -> "invalid-literal-form"
+        | ByteInvalidEscape _ -> "invalid-byte-escape"
+        | ByteInvalidUnicodeEscape _ -> "invalid-unicode-escape"
+        | ByteUnknownEscapeSequence _ -> "unknown-escape-sequence"
+        | ByteUnterminatedEscapeSequence -> "unterminated-escape-sequence"
+        | ByteUnterminatedUnicodeEscapeSequence -> "unterminated-unicode-escape-sequence"
+        | ByteMustDecodeToExactlyOneByte -> "must-decode-to-exactly-one-byte"
 
     let describe fact =
         match fact with
@@ -2305,6 +2345,133 @@ module DiagnosticFact =
                         "core-expression-parsing"
                         ([ field "reason" (DiagnosticPayloadText "invalid-string-text-segment") ]
                          @ stringLiteralDecodeErrorFields error))
+        | UnicodeScalarLiteralDiagnostic evidence ->
+            match evidence with
+            | UnicodeScalarInvalidLiteralForm ->
+                descriptor
+                    DiagnosticCode.UnicodeInvalidScalarLiteral
+                    None
+                    "Unicode scalar literal is not a valid single-quoted literal."
+                    (payload
+                        "unicode-invalid-scalar-literal"
+                        [ field "reason" (DiagnosticPayloadText "invalid-literal-form")
+                          field "unicode-scalar-error" (DiagnosticPayloadText(unicodeScalarLiteralEvidenceTag evidence)) ])
+            | UnicodeScalarTextInvalid error ->
+                descriptor
+                    DiagnosticCode.UnicodeInvalidScalarLiteral
+                    None
+                    $"Unicode scalar literal text is invalid: {stringLiteralDecodeErrorMessage error}."
+                    (payload
+                        "unicode-invalid-scalar-literal"
+                        ([ field "reason" (DiagnosticPayloadText "unicode-scalar-text-invalid")
+                           field "unicode-scalar-error" (DiagnosticPayloadText(unicodeScalarLiteralEvidenceTag evidence)) ]
+                         @ stringLiteralDecodeErrorFields error))
+            | UnicodeScalarMustDecodeToExactlyOneScalar ->
+                descriptor
+                    DiagnosticCode.UnicodeInvalidScalarLiteral
+                    None
+                    "Unicode scalar literal must decode to exactly one valid Unicode scalar value."
+                    (payload
+                        "unicode-invalid-scalar-literal"
+                        [ field "reason" (DiagnosticPayloadText "must-decode-to-exactly-one-scalar")
+                          field "unicode-scalar-error" (DiagnosticPayloadText(unicodeScalarLiteralEvidenceTag evidence)) ])
+        | UnicodeGraphemeLiteralDiagnostic evidence ->
+            match evidence with
+            | GraphemeInvalidLiteralForm ->
+                descriptor
+                    DiagnosticCode.UnicodeInvalidGraphemeLiteral
+                    None
+                    "Grapheme literal is not a valid prefixed single-quoted literal."
+                    (payload
+                        "unicode-invalid-grapheme-literal"
+                        [ field "reason" (DiagnosticPayloadText "invalid-literal-form")
+                          field "unicode-grapheme-error" (DiagnosticPayloadText(unicodeGraphemeLiteralEvidenceTag evidence)) ])
+            | GraphemeTextInvalid error ->
+                descriptor
+                    DiagnosticCode.UnicodeInvalidGraphemeLiteral
+                    None
+                    $"Grapheme literal text is invalid: {stringLiteralDecodeErrorMessage error}."
+                    (payload
+                        "unicode-invalid-grapheme-literal"
+                        ([ field "reason" (DiagnosticPayloadText "grapheme-text-invalid")
+                           field "unicode-grapheme-error" (DiagnosticPayloadText(unicodeGraphemeLiteralEvidenceTag evidence)) ]
+                         @ stringLiteralDecodeErrorFields error))
+            | GraphemeMustDecodeToExactlyOneExtendedCluster ->
+                descriptor
+                    DiagnosticCode.UnicodeInvalidGraphemeLiteral
+                    None
+                    "Grapheme literal must decode to exactly one extended grapheme cluster."
+                    (payload
+                        "unicode-invalid-grapheme-literal"
+                        [ field "reason" (DiagnosticPayloadText "must-decode-to-exactly-one-extended-cluster")
+                          field "unicode-grapheme-error" (DiagnosticPayloadText(unicodeGraphemeLiteralEvidenceTag evidence)) ])
+        | UnicodeByteLiteralDiagnostic evidence ->
+            let bytePayloadFields =
+                [ field "byte-literal-error" (DiagnosticPayloadText(unicodeByteLiteralEvidenceTag evidence)) ]
+
+            match evidence with
+            | ByteInvalidLiteralForm ->
+                descriptor
+                    DiagnosticCode.UnicodeInvalidByteLiteral
+                    None
+                    "Byte literal is not a valid prefixed single-quoted literal."
+                    (payload
+                        "unicode-invalid-byte-literal"
+                        ([ field "reason" (DiagnosticPayloadText "invalid-literal-form") ] @ bytePayloadFields))
+            | ByteInvalidEscape escapeText ->
+                descriptor
+                    DiagnosticCode.UnicodeInvalidByteLiteral
+                    None
+                    $"Byte literal text is invalid: invalid byte escape '{escapeText}'."
+                    (payload
+                        "unicode-invalid-byte-literal"
+                        ([ field "reason" (DiagnosticPayloadText "byte-text-invalid")
+                           field "escape-text" (DiagnosticPayloadText escapeText) ]
+                         @ bytePayloadFields))
+            | ByteInvalidUnicodeEscape escapeText ->
+                descriptor
+                    DiagnosticCode.UnicodeInvalidByteLiteral
+                    None
+                    $"Byte literal text is invalid: invalid Unicode escape '{escapeText}'."
+                    (payload
+                        "unicode-invalid-byte-literal"
+                        ([ field "reason" (DiagnosticPayloadText "byte-text-invalid")
+                           field "escape-text" (DiagnosticPayloadText escapeText) ]
+                         @ bytePayloadFields))
+            | ByteUnknownEscapeSequence escapeText ->
+                descriptor
+                    DiagnosticCode.UnicodeInvalidByteLiteral
+                    None
+                    $"Byte literal text is invalid: unknown escape sequence '{escapeText}'."
+                    (payload
+                        "unicode-invalid-byte-literal"
+                        ([ field "reason" (DiagnosticPayloadText "byte-text-invalid")
+                           field "escape-text" (DiagnosticPayloadText escapeText) ]
+                         @ bytePayloadFields))
+            | ByteUnterminatedEscapeSequence ->
+                descriptor
+                    DiagnosticCode.UnicodeInvalidByteLiteral
+                    None
+                    "Byte literal text is invalid: unterminated escape sequence."
+                    (payload
+                        "unicode-invalid-byte-literal"
+                        ([ field "reason" (DiagnosticPayloadText "byte-text-invalid") ] @ bytePayloadFields))
+            | ByteUnterminatedUnicodeEscapeSequence ->
+                descriptor
+                    DiagnosticCode.UnicodeInvalidByteLiteral
+                    None
+                    "Byte literal text is invalid: unterminated Unicode escape sequence."
+                    (payload
+                        "unicode-invalid-byte-literal"
+                        ([ field "reason" (DiagnosticPayloadText "byte-text-invalid") ] @ bytePayloadFields))
+            | ByteMustDecodeToExactlyOneByte ->
+                descriptor
+                    DiagnosticCode.UnicodeInvalidByteLiteral
+                    None
+                    "Byte literal must decode to exactly one byte value."
+                    (payload
+                        "unicode-invalid-byte-literal"
+                        ([ field "reason" (DiagnosticPayloadText "must-decode-to-exactly-one-byte") ] @ bytePayloadFields))
         | QttLinearDropDiagnostic evidence ->
             match evidence with
             | ShadowedBindingMustConsumePreviousValue shadowedBindingName ->

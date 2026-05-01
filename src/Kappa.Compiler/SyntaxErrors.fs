@@ -3,14 +3,6 @@ namespace Kappa.Compiler
 type NumericLiteralParseError =
     | InvalidNumericLiteral of tokenText: string
 
-type UrlModuleSpecifierParseError =
-    | MissingBaseUrl
-    | EmptyPin
-    | MissingSha256Digest
-    | InvalidSha256Digest of pinText: string
-    | EmptyRefPin
-    | UnsupportedPin of pinText: string
-
 type StringLiteralDecodeError =
     | UnknownEscapeSequence of escapeText: string
     | InvalidUnicodeEscape of escapeText: string
@@ -20,3 +12,30 @@ type StringLiteralDecodeError =
     | MultilineContentIndentationMismatch
     | InvalidRawMultilineStringLiteral
     | InvalidRawStringLiteral
+
+type UnicodeScalarLiteralDecodeError =
+    | UnicodeScalarInvalidLiteralForm
+    | UnicodeScalarTextInvalid of StringLiteralDecodeError
+    | UnicodeScalarMustDecodeToExactlyOneScalar
+
+type GraphemeLiteralDecodeError =
+    | GraphemeInvalidLiteralForm
+    | GraphemeTextInvalid of StringLiteralDecodeError
+    | GraphemeMustDecodeToExactlyOneExtendedCluster
+
+type ByteLiteralDecodeError =
+    | ByteInvalidLiteralForm
+    | ByteInvalidEscape of escapeText: string
+    | ByteInvalidUnicodeEscape of escapeText: string
+    | ByteUnknownEscapeSequence of escapeText: string
+    | ByteUnterminatedEscapeSequence
+    | ByteUnterminatedUnicodeEscapeSequence
+    | ByteMustDecodeToExactlyOneByte
+
+type UrlModuleSpecifierParseError =
+    | MissingBaseUrl
+    | EmptyPin
+    | MissingSha256Digest
+    | InvalidSha256Digest of pinText: string
+    | EmptyRefPin
+    | UnsupportedPin of pinText: string

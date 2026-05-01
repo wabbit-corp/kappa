@@ -747,8 +747,11 @@ type private PatternParser(tokens: Token list, source: SourceText, diagnostics: 
         | CharacterLiteral ->
             match SyntaxFacts.tryDecodeCharacterLiteral token.Text with
             | Result.Ok value -> LiteralPattern(LiteralValue.Character value)
-            | Result.Error message ->
-                diagnostics.AddError(DiagnosticFact.simple SimpleDiagnosticKind.UnicodeInvalidScalarLiteral message, source.GetLocation(token.Span))
+            | Result.Error error ->
+                diagnostics.AddError(
+                    DiagnosticFact.unicodeInvalidScalarLiteral error,
+                    source.GetLocation(token.Span)
+                )
                 LiteralPattern(LiteralValue.Character "\u0000")
         | _ ->
             diagnostics.AddError(DiagnosticFact.corePatternParsing ExpectedLiteralPattern, source.GetLocation(token.Span))
@@ -1400,8 +1403,11 @@ type private ExpressionParser
         match SyntaxFacts.tryDecodeCharacterLiteral token.Text with
         | Result.Ok value ->
             value
-        | Result.Error message ->
-            diagnostics.AddError(DiagnosticFact.simple SimpleDiagnosticKind.UnicodeInvalidScalarLiteral message, source.GetLocation(token.Span))
+        | Result.Error error ->
+            diagnostics.AddError(
+                DiagnosticFact.unicodeInvalidScalarLiteral error,
+                source.GetLocation(token.Span)
+            )
             "\u0000"
 
     member private this.DecodeGraphemeLiteral(prefixToken: Token, token: Token) =
@@ -1411,8 +1417,11 @@ type private ExpressionParser
         match SyntaxFacts.tryDecodeGraphemeLiteral token.Text with
         | Result.Ok value ->
             value
-        | Result.Error message ->
-            diagnostics.AddError(DiagnosticFact.simple SimpleDiagnosticKind.UnicodeInvalidGraphemeLiteral message, location)
+        | Result.Error error ->
+            diagnostics.AddError(
+                DiagnosticFact.unicodeInvalidGraphemeLiteral error,
+                location
+            )
             "\u0000"
 
     member private this.DecodeByteLiteral(prefixToken: Token, token: Token) =
@@ -1422,8 +1431,11 @@ type private ExpressionParser
         match SyntaxFacts.tryDecodeByteLiteral token.Text with
         | Result.Ok value ->
             value
-        | Result.Error message ->
-            diagnostics.AddError(DiagnosticFact.simple SimpleDiagnosticKind.UnicodeInvalidByteLiteral message, location)
+        | Result.Error error ->
+            diagnostics.AddError(
+                DiagnosticFact.unicodeInvalidByteLiteral error,
+                location
+            )
             0uy
 
     member private this.IsAdjacentPrefixedCharacterLiteral(prefix: string) =
