@@ -835,6 +835,8 @@ type CoreExpressionParsingEvidence =
     | ExpectedWhileDo
     | DoBlockMustContainAtLeastOneStatement
     | ExpectedLambdaBodyArrow
+    | PureBlockMustContainExpression of CorePureBlockContext
+    | ExpectedPureBlockFinalExpression of CorePureBlockContext
     | InvalidStringLiteralExpression of StringLiteralDecodeError
     | InvalidNumericLiteralExpression of NumericLiteralParseError
     | InvalidStringTextSegment of StringLiteralDecodeError
@@ -919,6 +921,10 @@ type CoreExpressionParsingEvidence =
 and CoreHeaderContext =
     | TopLevelFunctionHeader
     | LocalFunctionHeader
+
+and CorePureBlockContext =
+    | BlockExpressionBody
+    | LambdaPureBody
 
 type ParserNameExpectationRole =
     | BindingName
@@ -1430,6 +1436,11 @@ module DiagnosticFact =
         match setting with
         | AllowUnhiding -> "allow_unhiding"
         | AllowClarify -> "allow_clarify"
+
+    let private corePureBlockContextPayloadText context =
+        match context with
+        | BlockExpressionBody -> "block-expression"
+        | LambdaPureBody -> "lambda-pure-body"
 
     let private expectDeclarationKindText kind =
         match kind with
@@ -2413,6 +2424,34 @@ module DiagnosticFact =
             | ExpectedLambdaBodyArrow ->
                 descriptor DiagnosticCode.ExpectedSyntaxToken None "Expected '->' after the lambda parameters."
                     (payload "core-expression-parsing" [ field "reason" (DiagnosticPayloadText "expected-lambda-body-arrow") ])
+            | PureBlockMustContainExpression context ->
+                let message =
+                    match context with
+                    | BlockExpressionBody -> "A pure block must contain at least one expression."
+                    | LambdaPureBody -> "A lambda pure block must contain at least one expression."
+
+                descriptor
+                    DiagnosticCode.ExpectedSyntaxToken
+                    None
+                    message
+                    (payload
+                        "core-expression-parsing"
+                        [ field "reason" (DiagnosticPayloadText "pure-block-must-contain-expression")
+                          field "block-context" (DiagnosticPayloadText(corePureBlockContextPayloadText context)) ])
+            | ExpectedPureBlockFinalExpression context ->
+                let message =
+                    match context with
+                    | BlockExpressionBody -> "Expected a sequence of local declarations followed by a final expression in the block."
+                    | LambdaPureBody -> "Expected a sequence of local declarations followed by a final expression in the lambda body."
+
+                descriptor
+                    DiagnosticCode.ExpectedSyntaxToken
+                    None
+                    message
+                    (payload
+                        "core-expression-parsing"
+                        [ field "reason" (DiagnosticPayloadText "expected-pure-block-final-expression")
+                          field "block-context" (DiagnosticPayloadText(corePureBlockContextPayloadText context)) ])
             | InvalidStringLiteralExpression error ->
                 descriptor
                     DiagnosticCode.ExpectedSyntaxToken

@@ -3229,8 +3229,7 @@ type private ExpressionParser
 
     member private this.ParsePureBlockSuite
         (lines: Token list list)
-        (emptyMessage: string)
-        (malformedMessage: string)
+        (context: CorePureBlockContext)
         (errorSpan: TextSpan)
         =
         let tryFindTopLevelEquals tokens =
@@ -3522,7 +3521,10 @@ type private ExpressionParser
 
         match lines with
         | [] ->
-            diagnostics.AddError(DiagnosticFact.simple SimpleDiagnosticKind.ExpectedSyntaxToken emptyMessage, source.GetLocation(errorSpan))
+            diagnostics.AddError(
+                DiagnosticFact.coreExpressionParsing (PureBlockMustContainExpression context),
+                source.GetLocation(errorSpan)
+            )
             Literal LiteralValue.Unit
         | _ ->
             let parsedItems =
@@ -3557,7 +3559,10 @@ type private ExpressionParser
                    && startsStructuredFinalExpression then
                     buildNestedExpression (bindingLines |> List.choose snd) (bodyLines |> List.map fst |> joinIndentedBodyLines)
                 else
-                    diagnostics.AddError(DiagnosticFact.simple SimpleDiagnosticKind.ExpectedSyntaxToken malformedMessage, source.GetLocation(errorSpan))
+                    diagnostics.AddError(
+                        DiagnosticFact.coreExpressionParsing (ExpectedPureBlockFinalExpression context),
+                        source.GetLocation(errorSpan)
+                    )
                     Literal LiteralValue.Unit
 
     member private this.MakeOperatorSection body =
@@ -3942,8 +3947,7 @@ type private ExpressionParser
             |> List.filter (List.isEmpty >> not)
         this.ParsePureBlockSuite
             lines
-            "A pure block must contain at least one expression."
-            "Expected a sequence of local declarations followed by a final expression in the block."
+            BlockExpressionBody
             blockToken.Span
 
     member private this.CollectIndentedLines() =
@@ -4635,8 +4639,7 @@ type private ExpressionParser
 
                     this.ParsePureBlockSuite
                         lines
-                        "A lambda pure block must contain at least one expression."
-                        "Expected a sequence of local declarations followed by a final expression in the lambda body."
+                        LambdaPureBody
                         this.Current.Span
                 else
                     this.Advance() |> ignore

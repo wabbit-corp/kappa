@@ -3793,6 +3793,10 @@ module SmokeTestsShard4 =
         bag.AddError(DiagnosticFact.coreExpressionParsing ExpectedSyntaxQuoteClose)
         bag.AddError(DiagnosticFact.coreExpressionParsing ExpectedSyntaxSpliceClose)
         bag.AddError(DiagnosticFact.coreExpressionParsing ExpectedCodeQuoteClose)
+        bag.AddError(DiagnosticFact.coreExpressionParsing (PureBlockMustContainExpression BlockExpressionBody))
+        bag.AddError(DiagnosticFact.coreExpressionParsing (PureBlockMustContainExpression LambdaPureBody))
+        bag.AddError(DiagnosticFact.coreExpressionParsing (ExpectedPureBlockFinalExpression BlockExpressionBody))
+        bag.AddError(DiagnosticFact.coreExpressionParsing (ExpectedPureBlockFinalExpression LambdaPureBody))
 
         let diagnostics = bag.Items
         let usingDiagnostic =
@@ -4034,6 +4038,22 @@ module SmokeTestsShard4 =
         let codeQuoteCloseDiagnostic =
             diagnostics
             |> List.find (fun item -> item.Message = "Expected '>.' to close the code quote.")
+
+        let pureBlockDiagnostic =
+            diagnostics
+            |> List.find (fun item -> item.Message = "A pure block must contain at least one expression.")
+
+        let lambdaPureBlockDiagnostic =
+            diagnostics
+            |> List.find (fun item -> item.Message = "A lambda pure block must contain at least one expression.")
+
+        let pureBlockFinalDiagnostic =
+            diagnostics
+            |> List.find (fun item -> item.Message = "Expected a sequence of local declarations followed by a final expression in the block.")
+
+        let lambdaPureBlockFinalDiagnostic =
+            diagnostics
+            |> List.find (fun item -> item.Message = "Expected a sequence of local declarations followed by a final expression in the lambda body.")
 
         Assert.Equal("core-expression-parsing", usingDiagnostic.Payload.Kind)
         Assert.Contains(
@@ -4394,6 +4414,30 @@ module SmokeTestsShard4 =
             fun field ->
                 field.Name = "reason"
                 && field.Value = DiagnosticPayloadText "expected-code-quote-close"
+        )
+        Assert.Contains(
+            pureBlockDiagnostic.Payload.Fields,
+            fun field ->
+                field.Name = "block-context"
+                && field.Value = DiagnosticPayloadText "block-expression"
+        )
+        Assert.Contains(
+            lambdaPureBlockDiagnostic.Payload.Fields,
+            fun field ->
+                field.Name = "block-context"
+                && field.Value = DiagnosticPayloadText "lambda-pure-body"
+        )
+        Assert.Contains(
+            pureBlockFinalDiagnostic.Payload.Fields,
+            fun field ->
+                field.Name = "reason"
+                && field.Value = DiagnosticPayloadText "expected-pure-block-final-expression"
+        )
+        Assert.Contains(
+            lambdaPureBlockFinalDiagnostic.Payload.Fields,
+            fun field ->
+                field.Name = "block-context"
+                && field.Value = DiagnosticPayloadText "lambda-pure-body"
         )
 
     [<Fact>]
@@ -5146,6 +5190,30 @@ module SmokeTestsShard4 =
 
         Assert.Equal("qtt-using-explicit-quantity", diagnostic.Payload.Kind)
         Assert.Equal(Some "using-binds-borrowed-pattern", tryFindPayloadText "reason" diagnostic)
+
+    [<Fact>]
+    let ``parser reports structured empty block diagnostics`` () =
+        let sourceText =
+            [
+                "module main"
+                "let x = block"
+            ]
+            |> String.concat "\n"
+
+        let _, lexed, parsed =
+            lexAndParse
+                "main.kp"
+                sourceText
+
+        Assert.Empty(lexed.Diagnostics)
+
+        let diagnostic =
+            parsed.Diagnostics
+            |> List.find (fun diagnostic ->
+                tryFindPayloadText "reason" diagnostic = Some "pure-block-must-contain-expression")
+
+        Assert.Equal("core-expression-parsing", diagnostic.Payload.Kind)
+        Assert.Equal(Some "block-expression", tryFindPayloadText "block-context" diagnostic)
 
     [<Fact>]
     let ``parser reports structured if keyword diagnostics`` () =
