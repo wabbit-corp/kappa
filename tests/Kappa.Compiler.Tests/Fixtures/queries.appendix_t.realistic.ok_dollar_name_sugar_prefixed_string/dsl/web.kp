@@ -9,9 +9,6 @@ data Route : Type =
 data JsonTemplate : Type =
     JsonTemplate (source : String)
 
-summonDict : (c : Constraint) -> (@v : c) -> Dict c
-let summonDict c @v = v
-
 instance InterpolatedMacro Html =
     let buildInterpolated fragments =
         pure '{ Html "compiled-html-template" }
@@ -24,14 +21,14 @@ instance InterpolatedMacro JsonTemplate =
     let buildInterpolated fragments =
         pure '{ JsonTemplate "compiled-json-template" }
 
-html : Elab (Dict (InterpolatedMacro Html))
+html : Elab (InterpolatedMacro Html)
 let html =
-    pure (summonDict (InterpolatedMacro Html))
+    pure (summon (InterpolatedMacro Html))
 
-route : Elab (Dict (InterpolatedMacro Route))
+route : Elab (InterpolatedMacro Route)
 let route =
-    pure (summonDict (InterpolatedMacro Route))
+    pure (summon (InterpolatedMacro Route))
 
-json : Elab (Dict (InterpolatedMacro JsonTemplate))
+json : Elab (InterpolatedMacro JsonTemplate)
 let json =
-    pure (summonDict (InterpolatedMacro JsonTemplate))
+    pure (summon (InterpolatedMacro JsonTemplate))

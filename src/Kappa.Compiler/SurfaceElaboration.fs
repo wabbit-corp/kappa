@@ -6270,17 +6270,6 @@ module SurfaceElaboration =
         | TypeName(nameSegments, [ resultType ]) when
             matchesKnownType CompilerKnownSymbols.InterpolatedMacroType nameSegments ->
             Some resultType
-        | TypeName(nameSegments, [ dictionaryConstraint ]) when
-            matchesKnownType CompilerKnownSymbols.DictType nameSegments ->
-            match normalize dictionaryConstraint with
-            | TypeName(innerNameSegments, [ resultType ]) when
-                matchesKnownType CompilerKnownSymbols.InterpolatedMacroType innerNameSegments ->
-                Some resultType
-            | _ ->
-                None
-        | TypeName([ dictionaryTypeName ], [ resultType ])
-            when String.Equals(dictionaryTypeName, TraitRuntime.dictionaryTypeName "InterpolatedMacro", StringComparison.Ordinal) ->
-            Some resultType
         | _ ->
             None
 
@@ -6298,20 +6287,12 @@ module SurfaceElaboration =
         (localTypes: Map<string, TypeExpr>)
         prefix
         =
-        let tryResolve allowPlainDictionary resolvedType =
-            tryElabInterpolatedMacroResultType environment.VisibleTypeAliases resolvedType
-            |> Option.orElseWith (fun () ->
-                if allowPlainDictionary then
-                    tryInterpolatedMacroResultType environment.VisibleTypeAliases resolvedType
-                else
-                    None)
-
         match localTypes |> Map.tryFind prefix with
         | Some localType ->
-            tryResolve false localType
+            tryElabInterpolatedMacroResultType environment.VisibleTypeAliases localType
         | None ->
             instantiateVisibleBindingResultType environment freshCounter prefix
-            |> Option.bind (tryResolve (Set.contains prefix environment.ElaborationAvailableBindings))
+            |> Option.bind (tryElabInterpolatedMacroResultType environment.VisibleTypeAliases)
 
     let private tryInferVisibleAppliedType
         (aliases: Map<string, TypeAliasInfo>)
@@ -12045,10 +12026,19 @@ module SurfaceElaboration =
                 match current with
                 | Apply(Name [ "pure" ], [ inner ]) ->
                     loop inner
+                | Apply(Name [ "summon" ], [ argument ]) ->
+                    tryParseTypeLikeSurfaceExpression argument
+                    |> Option.bind (function
+                        | TypeName(nameSegments, [ resultType ]) when
+                            matchesKnownType CompilerKnownSymbols.InterpolatedMacroType nameSegments ->
+                            Some resultType
+                        | _ ->
+                            None)
                 | Apply(Name [ "summonDict" ], [ argument ]) ->
                     tryParseTypeLikeSurfaceExpression argument
                     |> Option.bind (function
-                        | TypeName(nameSegments, [ resultType ]) when nameSegments |> List.tryLast = Some "InterpolatedMacro" ->
+                        | TypeName(nameSegments, [ resultType ]) when
+                            matchesKnownType CompilerKnownSymbols.InterpolatedMacroType nameSegments ->
                             Some resultType
                         | _ ->
                             None)
@@ -12681,16 +12671,8 @@ module SurfaceElaboration =
 
             match prefixType with
             | Some resolvedType ->
-                let allowPlainDictionary =
-                    not (Map.containsKey prefix locals) && Set.contains prefix environment.ElaborationAvailableBindings
-
                 let resolvedResultType =
                     tryElabInterpolatedMacroResultType environment.VisibleTypeAliases resolvedType
-                    |> Option.orElseWith (fun () ->
-                        if allowPlainDictionary then
-                            tryInterpolatedMacroResultType environment.VisibleTypeAliases resolvedType
-                        else
-                            None)
 
                 match resolvedResultType with
                 | Some _ -> []

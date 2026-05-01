@@ -10226,6 +10226,47 @@ module SmokeTestsShard6 =
         Assert.True(workspace.HasErrors, "Expected runtime trait evidence parameters to be rejected as prefixed-string handlers.")
         Assert.Contains(workspace.Diagnostics, fun diagnostic -> diagnostic.Code = DiagnosticCode.TypeEqualityMismatch && diagnostic.Message.Contains("Elab", StringComparison.Ordinal))
 
+    [<Fact>]
+    let ``prefixed strings surface failElabWith from direct trait evidence handlers`` () =
+        let workspace =
+            compileInMemoryWorkspace
+                "memory-prefixed-string-direct-trait-evidence-root"
+                [
+                    "main.kp",
+                    [
+                        "module main"
+                        ""
+                        "data StrictSql : Type ="
+                        "    StrictSql"
+                        ""
+                        "instance InterpolatedMacro StrictSql ="
+                        "    let buildInterpolated fragments ="
+                        "        do"
+                        "            let origin <- syntaxOrigin '{ () }"
+                        "            failElabWith \"KAPPA-SQL-FORMAT\" \"unsupported SQL interpolation format; use :param or :ident\" (origin :: Nil)"
+                        ""
+                        "strictSql : Elab (InterpolatedMacro StrictSql)"
+                        "let strictSql ="
+                        "    pure (summon (InterpolatedMacro StrictSql))"
+                        ""
+                        "bad : StrictSql"
+                        "let bad ="
+                        "    strictSql\"select * from users where name = ${\"Ada\" : raw}\""
+                    ]
+                    |> String.concat "\n"
+                ]
+
+        let diagnostic =
+            workspace.Diagnostics
+            |> List.tryFind (fun item ->
+                item.Code = DiagnosticCode.ElaborationFailed
+                && tryFindPayloadText "reason" item = Some "elaboration-failure-from-fail-elab-with")
+
+        Assert.True(workspace.HasErrors, "Expected direct trait-evidence prefixed-string handlers to surface failElabWith diagnostics.")
+        Assert.True(diagnostic.IsSome, $"Expected KAPPA-SQL-FORMAT diagnostic, got:{Environment.NewLine}{diagnosticsSummary workspace.Diagnostics}")
+        Assert.Equal(Some "KAPPA-SQL-FORMAT", diagnostic |> Option.bind (tryFindPayloadText "error-code"))
+        Assert.Equal(Some "unsupported SQL interpolation format; use :param or :ident", diagnostic |> Option.bind (tryFindPayloadText "elaboration-message"))
+
 
     [<Fact>]
     let ``compile time shape helpers typecheck with leading forall binders and inspectAdt`` () =

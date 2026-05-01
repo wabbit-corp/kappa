@@ -3,12 +3,9 @@ module main
 import model.data.*
 import dsl.sql.*
 
-summonDict : (c : Constraint) -> (@v : c) -> Dict c
-let summonDict c @v = v
-
-runtimeSql : Dict (InterpolatedMacro (PreparedSql User))
+runtimeSql : InterpolatedMacro (PreparedSql User)
 let runtimeSql =
-    summonDict (InterpolatedMacro (PreparedSql User))
+    summon (InterpolatedMacro (PreparedSql User))
 
 bad : PreparedSql User
 let bad =
