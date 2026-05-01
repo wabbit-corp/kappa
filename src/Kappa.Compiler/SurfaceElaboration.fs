@@ -20855,6 +20855,14 @@ module SurfaceElaboration =
                         []
                         (DiagnosticFact.nameUnresolved name)
 
+                let makeSurfaceElaborationDiagnostic evidence =
+                    Diagnostics.errorFact
+                        "KFrontIR"
+                        (Some(KFrontIRPhase.phaseName CORE_LOWERING))
+                        None
+                        []
+                        (DiagnosticFact.surfaceElaboration evidence)
+
                 let _, sourceBindingInfosByName =
                     buildSourceBindingInfosByName moduleIdentity frontendModule.Declarations
 
@@ -22228,9 +22236,11 @@ module SurfaceElaboration =
                             |> Seq.choose (fun referencedName ->
                                 if Set.contains referencedName forbiddenNames then
                                     Some(
-                                        makeDiagnostic
-                                            SimpleDiagnosticKind.NameUnresolved
-                                            $"Default expression for constructor parameter '{parameterName}' cannot reference '{referencedName}' before it is bound."
+                                        makeSurfaceElaborationDiagnostic
+                                            (ConstructorDefaultReferencesUnavailableBinder(
+                                                parameterName,
+                                                referencedName
+                                            ))
                                     )
                                 elif not (Set.contains referencedName visibleNames) then
                                     Some(makeNameUnresolvedDiagnostic referencedName)
@@ -22246,13 +22256,15 @@ module SurfaceElaboration =
                                         (normalizeTypeAliases environment.VisibleTypeAliases expectedType)
                                         (normalizeTypeAliases environment.VisibleTypeAliases actualType)
                                 ) ->
-                                [ makeDiagnostic
-                                    SimpleDiagnosticKind.TypeEqualityMismatch
-                                    $"Default expression for constructor parameter '{parameterName}' has type '{TypeSignatures.toText actualType}', but '{TypeSignatures.toText expectedType}' was expected." ]
+                                [ makeSurfaceElaborationDiagnostic
+                                    (ConstructorDefaultTypeMismatch(
+                                        parameterName,
+                                        TypeSignatures.toText actualType,
+                                        TypeSignatures.toText expectedType
+                                    )) ]
                             | Some _, None when List.isEmpty nameDiagnostics ->
-                                [ makeDiagnostic
-                                    SimpleDiagnosticKind.TypeEqualityMismatch
-                                    $"Default expression for constructor parameter '{parameterName}' could not be checked against its declared type." ]
+                                [ makeSurfaceElaborationDiagnostic
+                                    (ConstructorDefaultCouldNotBeChecked parameterName) ]
                             | _ ->
                                 []
 

@@ -3139,6 +3139,36 @@ module SmokeTestsShard3 =
         Assert.Equal(Some "Ask", tryFindPayloadText "effect-name" diagnostic)
         Assert.Equal(Some "ask", tryFindPayloadText "operation-name" diagnostic)
 
+    [<Fact>]
+    let ``source compilation reports constructor default scope payloads`` () =
+        let workspace =
+            compileInMemoryWorkspace
+                "memory-constructor-default-scope-root"
+                [
+                    "main.kp",
+                    [
+                        "module main"
+                        "data User : Type ="
+                        "    User {"
+                        "        name : String = title,"
+                        "        title : String"
+                        "    }"
+                    ]
+                    |> String.concat "\n"
+                ]
+
+        Assert.True(workspace.HasErrors, "Expected constructor defaults to reject later parameter references.")
+
+        let diagnostic =
+            workspace.Diagnostics
+            |> List.find (fun item ->
+                item.Code = DiagnosticCode.NameUnresolved
+                && tryFindPayloadText "reason" item = Some "constructor-default-references-unavailable-binder")
+
+        Assert.Equal("surface-elaboration-diagnostic", diagnostic.Payload.Kind)
+        Assert.Equal(Some "name", tryFindPayloadText "parameter-name" diagnostic)
+        Assert.Equal(Some "title", tryFindPayloadText "referenced-name" diagnostic)
+
 
     [<Fact>]
     let ``lexer reports malformed prefixed numeric literals directly`` () =
@@ -4173,6 +4203,9 @@ module SmokeTestsShard4 =
         bag.AddError(DiagnosticFact.surfaceElaboration (HandlerUnexpectedOperationClause("Ask", "reply")))
         bag.AddError(DiagnosticFact.surfaceElaboration (HandlerOperationClauseArityMismatch("ask", 1, 2)))
         bag.AddError(DiagnosticFact.surfaceElaboration (HandlerRelevantResumptionUnused("ask", "k")))
+        bag.AddError(DiagnosticFact.surfaceElaboration (ConstructorDefaultReferencesUnavailableBinder("name", "title")))
+        bag.AddError(DiagnosticFact.surfaceElaboration (ConstructorDefaultTypeMismatch("active", "Int", "Bool")))
+        bag.AddError(DiagnosticFact.surfaceElaboration (ConstructorDefaultCouldNotBeChecked "active"))
         bag.AddError(DiagnosticFact.surfaceElaboration (TraitConstraintUnresolved "Eq Int"))
         bag.AddError(DiagnosticFact.surfaceElaboration (ImplicitTraitConstraintUnresolved "Show Int"))
         bag.AddError(DiagnosticFact.surfaceElaboration (TraitConstraintAmbiguous("Score Int", [ "left.ScoreInt"; "right.ScoreInt" ])))
@@ -4502,6 +4535,24 @@ module SmokeTestsShard4 =
                 item.Code = DiagnosticCode.QttLinearDrop
                 && tryFindPayloadText "reason" item = Some "handler-relevant-resumption-unused")
 
+        let constructorDefaultScopeDiagnostic =
+            diagnostics
+            |> List.find (fun item ->
+                item.Code = DiagnosticCode.NameUnresolved
+                && tryFindPayloadText "reason" item = Some "constructor-default-references-unavailable-binder")
+
+        let constructorDefaultTypeDiagnostic =
+            diagnostics
+            |> List.find (fun item ->
+                item.Code = DiagnosticCode.TypeEqualityMismatch
+                && tryFindPayloadText "reason" item = Some "constructor-default-type-mismatch")
+
+        let constructorDefaultUncheckedDiagnostic =
+            diagnostics
+            |> List.find (fun item ->
+                item.Code = DiagnosticCode.TypeEqualityMismatch
+                && tryFindPayloadText "reason" item = Some "constructor-default-could-not-be-checked")
+
         let unresolvedConstraintDiagnostic =
             diagnostics
             |> List.find (fun item ->
@@ -4680,6 +4731,12 @@ module SmokeTestsShard4 =
         Assert.Equal(Some "2", tryFindPayloadText "expected-argument-count" handlerArityDiagnostic)
         Assert.Equal(Some "ask", tryFindPayloadText "operation-name" handlerResumptionDiagnostic)
         Assert.Equal(Some "k", tryFindPayloadText "resumption-name" handlerResumptionDiagnostic)
+        Assert.Equal(Some "name", tryFindPayloadText "parameter-name" constructorDefaultScopeDiagnostic)
+        Assert.Equal(Some "title", tryFindPayloadText "referenced-name" constructorDefaultScopeDiagnostic)
+        Assert.Equal(Some "active", tryFindPayloadText "parameter-name" constructorDefaultTypeDiagnostic)
+        Assert.Equal(Some "Int", tryFindPayloadText "actual-type-text" constructorDefaultTypeDiagnostic)
+        Assert.Equal(Some "Bool", tryFindPayloadText "expected-type-text" constructorDefaultTypeDiagnostic)
+        Assert.Equal(Some "active", tryFindPayloadText "parameter-name" constructorDefaultUncheckedDiagnostic)
         Assert.Equal("Trait constraint 'Eq Int' could not be resolved.", unresolvedConstraintDiagnostic.Message)
         Assert.Equal("Implicit trait constraint 'Show Int' could not be resolved.", unresolvedImplicitConstraintDiagnostic.Message)
         Assert.Equal(Some "Score Int", tryFindPayloadText "constraint-text" ambiguousConstraintDiagnostic)

@@ -912,6 +912,9 @@ type SurfaceElaborationDiagnosticEvidence =
     | HandlerUnexpectedOperationClause of effectName: string * operationName: string
     | HandlerOperationClauseArityMismatch of operationName: string * actualArgumentCount: int * expectedArgumentCount: int
     | HandlerRelevantResumptionUnused of operationName: string * resumptionName: string
+    | ConstructorDefaultReferencesUnavailableBinder of parameterName: string * referencedName: string
+    | ConstructorDefaultTypeMismatch of parameterName: string * actualTypeText: string * expectedTypeText: string
+    | ConstructorDefaultCouldNotBeChecked of parameterName: string
     | TraitConstraintUnresolved of constraintText: string
     | ImplicitTraitConstraintUnresolved of constraintText: string
     | TraitConstraintAmbiguous of constraintText: string * candidateTexts: string list
@@ -2933,6 +2936,36 @@ module DiagnosticFact =
                         [ field "reason" (DiagnosticPayloadText "handler-relevant-resumption-unused")
                           field "operation-name" (DiagnosticPayloadText operationName)
                           field "resumption-name" (DiagnosticPayloadText resumptionName) ])
+            | ConstructorDefaultReferencesUnavailableBinder(parameterName, referencedName) ->
+                descriptor
+                    DiagnosticCode.NameUnresolved
+                    None
+                    $"Default expression for constructor parameter '{parameterName}' cannot reference '{referencedName}' before it is bound."
+                    (payload
+                        "surface-elaboration-diagnostic"
+                        [ field "reason" (DiagnosticPayloadText "constructor-default-references-unavailable-binder")
+                          field "parameter-name" (DiagnosticPayloadText parameterName)
+                          field "referenced-name" (DiagnosticPayloadText referencedName) ])
+            | ConstructorDefaultTypeMismatch(parameterName, actualTypeText, expectedTypeText) ->
+                descriptor
+                    DiagnosticCode.TypeEqualityMismatch
+                    None
+                    $"Default expression for constructor parameter '{parameterName}' has type '{actualTypeText}', but '{expectedTypeText}' was expected."
+                    (payload
+                        "surface-elaboration-diagnostic"
+                        [ field "reason" (DiagnosticPayloadText "constructor-default-type-mismatch")
+                          field "parameter-name" (DiagnosticPayloadText parameterName)
+                          field "actual-type-text" (DiagnosticPayloadText actualTypeText)
+                          field "expected-type-text" (DiagnosticPayloadText expectedTypeText) ])
+            | ConstructorDefaultCouldNotBeChecked parameterName ->
+                descriptor
+                    DiagnosticCode.TypeEqualityMismatch
+                    None
+                    $"Default expression for constructor parameter '{parameterName}' could not be checked against its declared type."
+                    (payload
+                        "surface-elaboration-diagnostic"
+                        [ field "reason" (DiagnosticPayloadText "constructor-default-could-not-be-checked")
+                          field "parameter-name" (DiagnosticPayloadText parameterName) ])
             | TraitConstraintUnresolved constraintText ->
                 descriptor
                     DiagnosticCode.TypeEqualityMismatch
