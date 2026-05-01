@@ -4444,7 +4444,8 @@ type private ExpressionParser
                             | head :: _ -> head.Span
                             | [] -> usingToken.Span
 
-                        diagnostics.AddError(DiagnosticFact.simple SimpleDiagnosticKind.QttUsingExplicitQuantity "'using' binds its pattern at borrowed quantity '&'; explicit quantity markers are not permitted.",
+                        diagnostics.AddError(
+                            DiagnosticFact.qttUsingExplicitQuantity UsingBindsBorrowedPattern,
                             source.GetLocation(location)
                         )
 

@@ -3465,8 +3465,20 @@ module SmokeTestsShard4 =
             DiagnosticFact.qttLinearOveruse
                 (QuantityCannotSatisfyParameterDemand("1", "&", Available))
         )
+        bag.AddError(
+            DiagnosticFact.qttUsingExplicitQuantity
+                UsingBindsBorrowedPattern
+        )
 
-        let diagnostic = Assert.Single(bag.Items)
+        let diagnostics = bag.Items
+        let diagnostic =
+            diagnostics
+            |> List.find (fun item -> item.Code = DiagnosticCode.QttLinearOveruse)
+
+        let usingDiagnostic =
+            diagnostics
+            |> List.find (fun item -> item.Code = DiagnosticCode.QttUsingExplicitQuantity)
+
         Assert.Equal(DiagnosticCode.QttLinearOveruse, diagnostic.Code)
         Assert.Equal("An argument available at quantity '1' cannot satisfy parameter demand '&'.", diagnostic.Message)
         Assert.Equal("qtt-linear-overuse", diagnostic.Payload.Kind)
@@ -3475,6 +3487,14 @@ module SmokeTestsShard4 =
             fun field ->
                 field.Name = "reason"
                 && field.Value = DiagnosticPayloadText "quantity-cannot-satisfy-parameter-demand"
+        )
+        Assert.Equal("'using' binds its pattern at borrowed quantity '&'; explicit quantity markers are not permitted.", usingDiagnostic.Message)
+        Assert.Equal("qtt-using-explicit-quantity", usingDiagnostic.Payload.Kind)
+        Assert.Contains(
+            usingDiagnostic.Payload.Fields,
+            fun field ->
+                field.Name = "reason"
+                && field.Value = DiagnosticPayloadText "using-binds-borrowed-pattern"
         )
 
     [<Fact>]
@@ -4938,6 +4958,30 @@ module SmokeTestsShard4 =
         Assert.Equal("core-expression-parsing", localLetEqualsDiagnostic.Payload.Kind)
         Assert.Equal("core-expression-parsing", expressionCloseParenthesisDiagnostic.Payload.Kind)
         Assert.Equal("core-expression-parsing", expressionDiagnostic.Payload.Kind)
+
+    [<Fact>]
+    let ``parser reports structured using explicit quantity diagnostics`` () =
+        let sourceText =
+            [
+                "module main"
+                "let demo = do"
+                "    using 1 x <- acquire"
+            ]
+            |> String.concat "\n"
+
+        let _, lexed, parsed =
+            lexAndParse
+                "main.kp"
+                sourceText
+
+        Assert.Empty(lexed.Diagnostics)
+
+        let diagnostic =
+            parsed.Diagnostics
+            |> List.find (fun item -> item.Code = DiagnosticCode.QttUsingExplicitQuantity)
+
+        Assert.Equal("qtt-using-explicit-quantity", diagnostic.Payload.Kind)
+        Assert.Equal(Some "using-binds-borrowed-pattern", tryFindPayloadText "reason" diagnostic)
 
     [<Fact>]
     let ``parser reports structured interpolated string recovery diagnostics`` () =

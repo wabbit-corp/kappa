@@ -99,6 +99,7 @@ Current M4 status note: started, not complete. The compiler now has a real effec
 ## 9. Structured diagnostics only
 
 - [ ] Remove the remaining string escape hatches from `Diagnostics.fs`, especially `SimpleDiagnosticEvidence.Detail` and `CodeDetailEvidence.Detail`, so compiler phases cannot smuggle raw prose into emitted diagnostics.
+  The parser-side `QttUsingExplicitQuantity` case now uses a dedicated typed fact instead of `SimpleDiagnosticEvidence.Detail`.
 - [x] Finish `Parser.fs` diagnostics conversion by replacing the remaining dynamic raw-string parse failures, especially string-literal decoding and URL module-specifier parsing.
 - [x] Finish `CoreParsing.fs` diagnostics conversion for the remaining dynamic literal and Unicode decode failures after string-literal decode: character/grapheme/byte decode failures.
 - [ ] Finish `CoreParsing.fs` diagnostics conversion for the remaining projection and selector structural paths.

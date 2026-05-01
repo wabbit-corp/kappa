@@ -1059,6 +1059,9 @@ type QttErasedRuntimeUseEvidence =
     | RuntimeClosureCapturesErasedBinding of bindingName: string
     | MatchScrutineeUsesErasedValue
 
+type QttUsingExplicitQuantityEvidence =
+    | UsingBindsBorrowedPattern
+
 type QttInoutMarkerRequiredEvidence =
     | InoutMarkerRequired
 
@@ -1105,6 +1108,7 @@ type DiagnosticFact =
     | QttBorrowOverlapDiagnostic of QttBorrowOverlapEvidence
     | QttBorrowEscapeDiagnostic of QttBorrowEscapeEvidence
     | QttErasedRuntimeUseDiagnostic of QttErasedRuntimeUseEvidence
+    | QttUsingExplicitQuantityDiagnostic of QttUsingExplicitQuantityEvidence
     | QttInoutMarkerRequiredDiagnostic of QttInoutMarkerRequiredEvidence
     | QttInoutMarkerUnexpectedDiagnostic of QttInoutMarkerUnexpectedEvidence
     | QttInoutThreadedFieldMissingDiagnostic of QttInoutThreadedFieldMissingEvidence
@@ -1401,6 +1405,7 @@ module DiagnosticFact =
     let qttBorrowOverlap evidence = QttBorrowOverlapDiagnostic evidence
     let qttBorrowEscape evidence = QttBorrowEscapeDiagnostic evidence
     let qttErasedRuntimeUse evidence = QttErasedRuntimeUseDiagnostic evidence
+    let qttUsingExplicitQuantity evidence = QttUsingExplicitQuantityDiagnostic evidence
     let qttInoutMarkerRequired evidence = QttInoutMarkerRequiredDiagnostic evidence
     let qttInoutMarkerUnexpected evidence = QttInoutMarkerUnexpectedDiagnostic evidence
     let qttInoutThreadedFieldMissing evidence = QttInoutThreadedFieldMissingDiagnostic evidence
@@ -3105,6 +3110,14 @@ module DiagnosticFact =
                     (payload
                         "qtt-erased-runtime-use"
                         [ field "reason" (DiagnosticPayloadText "match-scrutinee-uses-erased-value") ])
+        | QttUsingExplicitQuantityDiagnostic UsingBindsBorrowedPattern ->
+            descriptor
+                DiagnosticCode.QttUsingExplicitQuantity
+                None
+                "'using' binds its pattern at borrowed quantity '&'; explicit quantity markers are not permitted."
+                (payload
+                    "qtt-using-explicit-quantity"
+                    [ field "reason" (DiagnosticPayloadText "using-binds-borrowed-pattern") ])
         | QttInoutMarkerRequiredDiagnostic InoutMarkerRequired ->
             descriptor
                 DiagnosticCode.QttInoutMarkerRequired
