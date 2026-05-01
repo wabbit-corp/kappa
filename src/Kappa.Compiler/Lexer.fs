@@ -74,7 +74,10 @@ module Lexer =
                 spaces <- spaces + 1
                 index <- index + 1
             | '\t' ->
-                diagnostics.AddError(DiagnosticFact.simple SimpleDiagnosticKind.TabCharacterNotPermitted "Tabs are not permitted in indentation.", source.GetLocation(TextSpan.FromBounds(lineStart + index, lineStart + index + 1)))
+                diagnostics.AddError(
+                    DiagnosticFact.lexer (LexerDiagnosticEvidence.TabCharacterNotPermitted true),
+                    source.GetLocation(TextSpan.FromBounds(lineStart + index, lineStart + index + 1))
+                )
                 index <- index + 1
             | _ ->
                 index <- lineText.Length
@@ -104,7 +107,7 @@ module Lexer =
                 keepPopping <- indent < indentStack.Peek()
 
             if indent <> indentStack.Peek() then
-                diagnostics.AddError(DiagnosticFact.simple SimpleDiagnosticKind.UnexpectedIndentation $"Unexpected indentation level {indent}; expected one of the previous block levels.",
+                diagnostics.AddError(DiagnosticFact.lexer (LexerDiagnosticEvidence.UnexpectedIndentation indent),
                     source.GetLocation(TextSpan.FromBounds(lineStart, lineStart + indent))
                 )
 
@@ -351,7 +354,7 @@ module Lexer =
                         | '\r' ->
                             currentAbsoluteIndex <- currentAbsoluteIndex + 1
                         | '\t' ->
-                            diagnostics.AddError(DiagnosticFact.simple SimpleDiagnosticKind.TabCharacterNotPermitted "Tabs are not permitted.",
+                            diagnostics.AddError(DiagnosticFact.lexer (LexerDiagnosticEvidence.TabCharacterNotPermitted false),
                                 source.GetLocation(TextSpan.FromBounds(currentAbsoluteIndex, currentAbsoluteIndex + 1))
                             )
 
@@ -507,7 +510,7 @@ module Lexer =
                             emitAbsolute Operator (text.Substring(currentAbsoluteIndex, endIndex - currentAbsoluteIndex)) currentAbsoluteIndex
                             currentAbsoluteIndex <- endIndex
                         | _ ->
-                            diagnostics.AddError(DiagnosticFact.simple SimpleDiagnosticKind.UnrecognizedCharacter $"Unrecognized character '{current}'.",
+                            diagnostics.AddError(DiagnosticFact.lexer (LexerDiagnosticEvidence.UnrecognizedCharacter(string current)),
                                 source.GetLocation(TextSpan.FromBounds(currentAbsoluteIndex, currentAbsoluteIndex + 1))
                             )
 
@@ -829,7 +832,7 @@ module Lexer =
                     | ' ' ->
                         currentIndex <- currentIndex + 1
                     | '\t' ->
-                        diagnostics.AddError(DiagnosticFact.simple SimpleDiagnosticKind.TabCharacterNotPermitted "Tabs are not permitted.",
+                        diagnostics.AddError(DiagnosticFact.lexer (LexerDiagnosticEvidence.TabCharacterNotPermitted false),
                             source.GetLocation(TextSpan.FromBounds(lineStart + currentIndex, lineStart + currentIndex + 1))
                         )
 
@@ -936,7 +939,7 @@ module Lexer =
                     | _ when SyntaxFacts.isOperatorCharacter current ->
                         currentIndex <- scanOperator currentIndex
                     | _ ->
-                        diagnostics.AddError(DiagnosticFact.simple SimpleDiagnosticKind.UnrecognizedCharacter $"Unrecognized character '{current}'.",
+                        diagnostics.AddError(DiagnosticFact.lexer (LexerDiagnosticEvidence.UnrecognizedCharacter(string current)),
                             source.GetLocation(TextSpan.FromBounds(lineStart + currentIndex, lineStart + currentIndex + 1))
                         )
 
@@ -967,7 +970,10 @@ module Lexer =
                 | ' ' ->
                     index <- index + 1
                 | '\t' ->
-                    diagnostics.AddError(DiagnosticFact.simple SimpleDiagnosticKind.TabCharacterNotPermitted "Tabs are not permitted.", source.GetLocation(TextSpan.FromBounds(lineStart + index, lineStart + index + 1)))
+                    diagnostics.AddError(
+                        DiagnosticFact.lexer (LexerDiagnosticEvidence.TabCharacterNotPermitted false),
+                        source.GetLocation(TextSpan.FromBounds(lineStart + index, lineStart + index + 1))
+                    )
                     index <- index + 1
                 | '-' when isLineComment lineText index ->
                     index <- lineText.Length
@@ -1077,7 +1083,7 @@ module Lexer =
                 | _ when SyntaxFacts.isOperatorCharacter current ->
                     index <- scanOperator index
                 | _ ->
-                    diagnostics.AddError(DiagnosticFact.simple SimpleDiagnosticKind.UnrecognizedCharacter $"Unrecognized character '{current}'.",
+                    diagnostics.AddError(DiagnosticFact.lexer (LexerDiagnosticEvidence.UnrecognizedCharacter(string current)),
                         source.GetLocation(TextSpan.FromBounds(lineStart + index, lineStart + index + 1))
                     )
                     tokens.Add(token BadToken (string current) (lineStart + index))

@@ -1027,6 +1027,9 @@ type UnicodeGraphemeLiteralEvidence = GraphemeLiteralDecodeError
 type UnicodeByteLiteralEvidence = ByteLiteralDecodeError
 
 type LexerDiagnosticEvidence =
+    | TabCharacterNotPermitted of inIndentation: bool
+    | UnexpectedIndentation of indent: int
+    | UnrecognizedCharacter of character: string
     | UnterminatedStringLiteral of isPrefixed: bool
     | UnterminatedCharacterLiteral
     | UnterminatedBacktickIdentifier
@@ -2970,6 +2973,42 @@ module DiagnosticFact =
                         ([ field "reason" (DiagnosticPayloadText "must-decode-to-exactly-one-byte") ] @ bytePayloadFields))
         | LexerDiagnostic evidence ->
             match evidence with
+            | TabCharacterNotPermitted inIndentation ->
+                let message =
+                    if inIndentation then
+                        "Tabs are not permitted in indentation."
+                    else
+                        "Tabs are not permitted."
+
+                let context =
+                    if inIndentation then "indentation" else "general"
+
+                descriptor
+                    DiagnosticCode.TabCharacterNotPermitted
+                    None
+                    message
+                    (payload
+                        "tab-character-not-permitted"
+                        [ field "reason" (DiagnosticPayloadText "tab-character-not-permitted")
+                          field "tab-context" (DiagnosticPayloadText context) ])
+            | UnexpectedIndentation indent ->
+                descriptor
+                    DiagnosticCode.UnexpectedIndentation
+                    None
+                    $"Unexpected indentation level {indent}; expected one of the previous block levels."
+                    (payload
+                        "unexpected-indentation"
+                        [ field "reason" (DiagnosticPayloadText "unexpected-indentation")
+                          field "indent" (DiagnosticPayloadText(string indent)) ])
+            | UnrecognizedCharacter character ->
+                descriptor
+                    DiagnosticCode.UnrecognizedCharacter
+                    None
+                    $"Unrecognized character '{character}'."
+                    (payload
+                        "unrecognized-character"
+                        [ field "reason" (DiagnosticPayloadText "unrecognized-character")
+                          field "character" (DiagnosticPayloadText character) ])
             | UnterminatedStringLiteral isPrefixed ->
                 let message =
                     if isPrefixed then

@@ -4535,6 +4535,10 @@ module SmokeTestsShard4 =
     [<Fact>]
     let ``lexer diagnostics render from typed evidence`` () =
         let bag = DiagnosticBag()
+        bag.AddError(DiagnosticFact.lexer (LexerDiagnosticEvidence.TabCharacterNotPermitted true))
+        bag.AddError(DiagnosticFact.lexer (LexerDiagnosticEvidence.TabCharacterNotPermitted false))
+        bag.AddError(DiagnosticFact.lexer (LexerDiagnosticEvidence.UnexpectedIndentation 3))
+        bag.AddError(DiagnosticFact.lexer (LexerDiagnosticEvidence.UnrecognizedCharacter "§"))
         bag.AddError(DiagnosticFact.lexer (LexerDiagnosticEvidence.UnterminatedStringLiteral false))
         bag.AddError(DiagnosticFact.lexer (LexerDiagnosticEvidence.UnterminatedStringLiteral true))
         bag.AddError(DiagnosticFact.lexer LexerDiagnosticEvidence.UnterminatedCharacterLiteral)
@@ -4543,6 +4547,26 @@ module SmokeTestsShard4 =
         bag.AddError(DiagnosticFact.lexer LexerDiagnosticEvidence.UnterminatedBlockComment)
 
         let diagnostics = bag.Items
+
+        let indentationTabDiagnostic =
+            diagnostics
+            |> List.find (fun item ->
+                item.Code = DiagnosticCode.TabCharacterNotPermitted
+                && tryFindPayloadText "tab-context" item = Some "indentation")
+
+        let generalTabDiagnostic =
+            diagnostics
+            |> List.find (fun item ->
+                item.Code = DiagnosticCode.TabCharacterNotPermitted
+                && tryFindPayloadText "tab-context" item = Some "general")
+
+        let indentationDiagnostic =
+            diagnostics
+            |> List.find (fun item -> item.Code = DiagnosticCode.UnexpectedIndentation)
+
+        let unrecognizedCharacterDiagnostic =
+            diagnostics
+            |> List.find (fun item -> item.Code = DiagnosticCode.UnrecognizedCharacter)
 
         let stringDiagnostic =
             diagnostics
@@ -4571,6 +4595,25 @@ module SmokeTestsShard4 =
         let blockCommentDiagnostic =
             diagnostics
             |> List.find (fun item -> item.Code = DiagnosticCode.UnterminatedBlockComment)
+
+        Assert.Equal("Tabs are not permitted in indentation.", indentationTabDiagnostic.Message)
+        Assert.Equal("tab-character-not-permitted", indentationTabDiagnostic.Payload.Kind)
+        Assert.Equal(Some "tab-character-not-permitted", tryFindPayloadText "reason" indentationTabDiagnostic)
+        Assert.Equal(Some "indentation", tryFindPayloadText "tab-context" indentationTabDiagnostic)
+
+        Assert.Equal("Tabs are not permitted.", generalTabDiagnostic.Message)
+        Assert.Equal("tab-character-not-permitted", generalTabDiagnostic.Payload.Kind)
+        Assert.Equal(Some "general", tryFindPayloadText "tab-context" generalTabDiagnostic)
+
+        Assert.Equal("Unexpected indentation level 3; expected one of the previous block levels.", indentationDiagnostic.Message)
+        Assert.Equal("unexpected-indentation", indentationDiagnostic.Payload.Kind)
+        Assert.Equal(Some "unexpected-indentation", tryFindPayloadText "reason" indentationDiagnostic)
+        Assert.Equal(Some "3", tryFindPayloadText "indent" indentationDiagnostic)
+
+        Assert.Equal("Unrecognized character '§'.", unrecognizedCharacterDiagnostic.Message)
+        Assert.Equal("unrecognized-character", unrecognizedCharacterDiagnostic.Payload.Kind)
+        Assert.Equal(Some "unrecognized-character", tryFindPayloadText "reason" unrecognizedCharacterDiagnostic)
+        Assert.Equal(Some "§", tryFindPayloadText "character" unrecognizedCharacterDiagnostic)
 
         Assert.Equal("Unterminated string literal.", stringDiagnostic.Message)
         Assert.Equal("unterminated-string-literal", stringDiagnostic.Payload.Kind)
@@ -4680,6 +4723,45 @@ module SmokeTestsShard4 =
             "unterminated-block-comment"
             (fun diagnostic -> Assert.Equal("unterminated-block-comment", diagnostic.Payload.Kind))
             "{- unclosed"
+
+    [<Fact>]
+    let ``lexer reports structured layout and character diagnostics`` () =
+        let expectDiagnostic sourceText code reason payloadAssertions =
+            let source = createSource "__lexer_layout__.kp" sourceText
+            let lexed = Lexer.tokenize source
+
+            let diagnostic =
+                lexed.Diagnostics
+                |> List.find (fun item -> item.Code = code)
+
+            Assert.Equal(reason, tryFindPayloadText "reason" diagnostic |> Option.defaultValue "")
+            payloadAssertions diagnostic
+
+        expectDiagnostic
+            "\tlet x = 1"
+            DiagnosticCode.TabCharacterNotPermitted
+            "tab-character-not-permitted"
+            (fun diagnostic ->
+                Assert.Equal("tab-character-not-permitted", diagnostic.Payload.Kind)
+                Assert.Equal(Some "indentation", tryFindPayloadText "tab-context" diagnostic))
+
+        expectDiagnostic
+            "let x =\t1"
+            DiagnosticCode.TabCharacterNotPermitted
+            "tab-character-not-permitted"
+            (fun diagnostic -> Assert.Equal(Some "general", tryFindPayloadText "tab-context" diagnostic))
+
+        expectDiagnostic
+            ([ "let x = 1"; "  let y = 2"; " let z = 3" ] |> String.concat "\n")
+            DiagnosticCode.UnexpectedIndentation
+            "unexpected-indentation"
+            (fun diagnostic -> Assert.Equal(Some "1", tryFindPayloadText "indent" diagnostic))
+
+        expectDiagnostic
+            "let x = §"
+            DiagnosticCode.UnrecognizedCharacter
+            "unrecognized-character"
+            (fun diagnostic -> Assert.Equal(Some "§", tryFindPayloadText "character" diagnostic))
 
     [<Fact>]
     let ``parser reports structured unicode literal diagnostics`` () =
