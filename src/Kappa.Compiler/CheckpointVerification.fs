@@ -77,6 +77,15 @@ module CheckpointVerification =
             Location = location
             RelatedLocations = moduleOriginRelatedLocations documents origin.ModuleIdentity origin.FilePath }
 
+    let private makeStructuredOriginDiagnostic (documents: ParsedDocument list) (origin: KCoreOrigin) evidence =
+        let location =
+            provenancePrimaryLocation documents origin
+            |> Option.orElseWith (fun () -> fileOriginLocation documents origin.FilePath)
+
+        { makeStructuredDiagnostic evidence with
+            Location = location
+            RelatedLocations = moduleOriginRelatedLocations documents origin.ModuleIdentity origin.FilePath }
+
     let private makeDuplicateLocationDiagnostic message role locations =
         match locations with
         | head :: tail ->
@@ -269,7 +278,10 @@ module CheckpointVerification =
             | KRuntimeNamePattern name ->
                 if Set.contains name locals then
                     locals,
-                    [ makeOriginDiagnostic documents bindingOrigin $"Checkpoint '{checkpoint}' requires unique pattern binder names within '{bindingLabel}', but '{name}' was duplicated." ]
+                    [ makeStructuredOriginDiagnostic
+                          documents
+                          bindingOrigin
+                          (DuplicateRuntimePatternBinder(checkpoint, bindingLabel, name)) ]
                 else
                     Set.add name locals, []
             | KRuntimeOrPattern alternatives ->
@@ -359,7 +371,10 @@ module CheckpointVerification =
                     |> List.countBy id
                     |> List.filter (fun (_, count) -> count > 1)
                     |> List.map (fun (name, _) ->
-                        makeOriginDiagnostic documents bindingOrigin $"Checkpoint '{checkpoint}' requires closures in '{bindingLabel}' to have unique parameter names, but '{name}' was duplicated.")
+                        makeStructuredOriginDiagnostic
+                            documents
+                            bindingOrigin
+                            (DuplicateRuntimeClosureParameter(checkpoint, bindingLabel, name)))
 
                 let extendedLocals =
                     parameters
@@ -385,7 +400,10 @@ module CheckpointVerification =
 
                 let deepHandlerDiagnostics =
                     if isDeep then
-                        [ makeOriginDiagnostic documents bindingOrigin $"Checkpoint '{checkpoint}' requires direct deep-handle runtime nodes in '{bindingLabel}' to be desugared into the recursive shallow-handler driver before KRuntimeIR verification." ]
+                        [ makeStructuredOriginDiagnostic
+                              documents
+                              bindingOrigin
+                              (DeepRuntimeHandlerMustBeDesugared(checkpoint, bindingLabel)) ]
                     else
                         []
 
@@ -504,6 +522,8 @@ module CheckpointVerification =
         let isGeneratedHostBinding provenance =
             String.Equals(provenance.IntroductionKind, "host-binding", StringComparison.Ordinal)
 
+        let backendProfile = BackendProfile.toPortableName workspace.Backend
+
         let runtimeModules =
             workspace.KRuntimeIR
             |> List.sortBy (fun (moduleDump: KRuntimeModule) -> moduleDump.SourceFile)
@@ -521,11 +541,11 @@ module CheckpointVerification =
                     match importedModuleName spec with
                     | Some importedName when not (moduleMap.ContainsKey importedName) ->
                         yield
-                            makeModuleDiagnostic
+                            makeStructuredModuleDiagnostic
                                 workspace.Documents
                                 (renderedModuleIdentity moduleDump.Name)
                                 moduleDump.SourceFile
-                                $"Checkpoint 'KRuntimeIR' requires imported runtime module '{importedName}' to be present for module '{moduleDump.Name}'."
+                                (MissingImportedRuntimeModule("KRuntimeIR", moduleDump.Name, importedName))
                     | _ ->
                         ()
 
@@ -540,8 +560,8 @@ module CheckpointVerification =
                         |> List.choose (fun binding -> provenancePrimaryLocation workspace.Documents binding.Provenance)
 
                     yield
-                        makeDuplicateLocationDiagnostic
-                            $"Checkpoint 'KRuntimeIR' requires unique binding identities within module '{moduleDump.Name}', but '{bindingName}' was duplicated."
+                        makeStructuredDuplicateLocationDiagnostic
+                            (DuplicateRuntimeBindingIdentity("KRuntimeIR", moduleDump.Name, bindingName))
                             "also declared here"
                             locations
 
@@ -556,53 +576,57 @@ module CheckpointVerification =
                         |> List.choose (fun constructor -> provenancePrimaryLocation workspace.Documents constructor.Provenance)
 
                     yield
-                        makeDuplicateLocationDiagnostic
-                            $"Checkpoint 'KRuntimeIR' requires unique constructor identities within module '{moduleDump.Name}', but '{constructorName}' was duplicated."
+                        makeStructuredDuplicateLocationDiagnostic
+                            (DuplicateRuntimeConstructorIdentity("KRuntimeIR", moduleDump.Name, constructorName))
                             "also declared here"
                             locations
 
                 let supportedIntrinsics = availableIntrinsicTerms workspace.Backend workspace.AllowUnsafeConsume moduleDump.Name
+                let unsupportedIntrinsicTerms = moduleDump.IntrinsicTerms |> List.filter (fun intrinsicName -> not (supportedIntrinsics.Contains intrinsicName))
+                let unsupportedIntrinsicTermSet = unsupportedIntrinsicTerms |> Set.ofList
 
-                for intrinsicName in moduleDump.IntrinsicTerms do
-                    if not (supportedIntrinsics.Contains intrinsicName) then
-                        yield
-                            makeModuleDiagnostic
-                                workspace.Documents
-                                (renderedModuleIdentity moduleDump.Name)
-                                moduleDump.SourceFile
-                                $"Checkpoint 'KRuntimeIR' requires intrinsic term '{intrinsicName}' in module '{moduleDump.Name}' to be provided by backend profile '{BackendProfile.toPortableName workspace.Backend}'."
+                for intrinsicName in unsupportedIntrinsicTerms do
+                    yield
+                        makeStructuredModuleDiagnostic
+                            workspace.Documents
+                            (renderedModuleIdentity moduleDump.Name)
+                            moduleDump.SourceFile
+                            (UnsupportedRuntimeIntrinsicTerm("KRuntimeIR", moduleDump.Name, intrinsicName, backendProfile))
 
                 for binding in moduleDump.Bindings do
                     if binding.Intrinsic then
                         if binding.Body.IsSome then
                             yield
-                                makeOriginDiagnostic
+                                makeStructuredOriginDiagnostic
                                     workspace.Documents
                                     binding.Provenance
-                                    $"Checkpoint 'KRuntimeIR' requires intrinsic binding '{moduleDump.Name}.{binding.Name}' to omit a body."
+                                    (IntrinsicBindingMustOmitBody("KRuntimeIR", moduleDump.Name, binding.Name))
 
                         if not (List.contains binding.Name moduleDump.IntrinsicTerms) then
                             yield
-                                makeOriginDiagnostic
+                                makeStructuredOriginDiagnostic
                                     workspace.Documents
                                     binding.Provenance
-                                    $"Checkpoint 'KRuntimeIR' requires intrinsic binding '{moduleDump.Name}.{binding.Name}' to be listed in module intrinsic terms."
+                                    (IntrinsicBindingMustBeListedInModuleIntrinsicTerms("KRuntimeIR", moduleDump.Name, binding.Name))
 
-                        if not (supportedIntrinsics.Contains binding.Name) then
+                        if
+                            not (supportedIntrinsics.Contains binding.Name)
+                            && not (Set.contains binding.Name unsupportedIntrinsicTermSet)
+                        then
                             yield
-                                makeOriginDiagnostic
+                                makeStructuredOriginDiagnostic
                                     workspace.Documents
                                     binding.Provenance
-                                    $"Checkpoint 'KRuntimeIR' requires intrinsic term '{binding.Name}' in module '{moduleDump.Name}' to be provided by backend profile '{BackendProfile.toPortableName workspace.Backend}'."
+                                    (UnsupportedRuntimeIntrinsicBinding("KRuntimeIR", moduleDump.Name, binding.Name, backendProfile))
                     else
                         match binding.Body with
                         | None ->
                             if not (isGeneratedHostBinding binding.Provenance) then
                                 yield
-                                    makeOriginDiagnostic
+                                    makeStructuredOriginDiagnostic
                                         workspace.Documents
                                         binding.Provenance
-                                        $"Checkpoint 'KRuntimeIR' requires runtime binding '{moduleDump.Name}.{binding.Name}' to have a body."
+                                        (RuntimeBindingMustHaveBody("KRuntimeIR", moduleDump.Name, binding.Name))
                         | Some body ->
                             let bindingLabel = $"{moduleDump.Name}.{binding.Name}"
                             yield! verifyRuntimeExpression workspace.Documents "KRuntimeIR" bindingLabel binding.Provenance body

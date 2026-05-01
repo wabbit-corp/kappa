@@ -874,6 +874,17 @@ type CheckpointVerificationEvidence =
     | ResolvedPhaseSetMismatch of checkpoint: string * filePath: string * expectedPhases: string list * actualPhases: string list
     | OwnershipFactsExposedBeforeBodyResolve of checkpoint: string * filePath: string
     | DuplicateModuleIdentity of checkpoint: string * moduleName: string
+    | MissingImportedRuntimeModule of checkpoint: string * moduleName: string * importedModuleName: string
+    | DuplicateRuntimeBindingIdentity of checkpoint: string * moduleName: string * bindingName: string
+    | DuplicateRuntimeConstructorIdentity of checkpoint: string * moduleName: string * constructorName: string
+    | UnsupportedRuntimeIntrinsicTerm of checkpoint: string * moduleName: string * intrinsicName: string * backendProfile: string
+    | IntrinsicBindingMustOmitBody of checkpoint: string * moduleName: string * bindingName: string
+    | IntrinsicBindingMustBeListedInModuleIntrinsicTerms of checkpoint: string * moduleName: string * bindingName: string
+    | UnsupportedRuntimeIntrinsicBinding of checkpoint: string * moduleName: string * bindingName: string * backendProfile: string
+    | RuntimeBindingMustHaveBody of checkpoint: string * moduleName: string * bindingName: string
+    | DuplicateRuntimePatternBinder of checkpoint: string * bindingLabel: string * binderName: string
+    | DuplicateRuntimeClosureParameter of checkpoint: string * bindingLabel: string * parameterName: string
+    | DeepRuntimeHandlerMustBeDesugared of checkpoint: string * bindingLabel: string
 
 type SurfaceRecordContext =
     | RecordTypeTelescope
@@ -2583,6 +2594,128 @@ module DiagnosticFact =
                         [ field "reason" (DiagnosticPayloadText "duplicate-module-identity")
                           field "checkpoint" (DiagnosticPayloadText checkpoint)
                           field "module-name" (DiagnosticPayloadText moduleName) ])
+            | MissingImportedRuntimeModule(checkpoint, moduleName, importedModuleName) ->
+                descriptor
+                    DiagnosticCode.CheckpointVerification
+                    None
+                    $"Checkpoint '{checkpoint}' requires imported runtime module '{importedModuleName}' to be present for module '{moduleName}'."
+                    (payload
+                        "checkpoint-verification-diagnostic"
+                        [ field "reason" (DiagnosticPayloadText "missing-imported-runtime-module")
+                          field "checkpoint" (DiagnosticPayloadText checkpoint)
+                          field "module-name" (DiagnosticPayloadText moduleName)
+                          field "imported-module-name" (DiagnosticPayloadText importedModuleName) ])
+            | DuplicateRuntimeBindingIdentity(checkpoint, moduleName, bindingName) ->
+                descriptor
+                    DiagnosticCode.CheckpointVerification
+                    None
+                    $"Checkpoint '{checkpoint}' requires unique binding identities within module '{moduleName}', but '{bindingName}' was duplicated."
+                    (payload
+                        "checkpoint-verification-diagnostic"
+                        [ field "reason" (DiagnosticPayloadText "duplicate-runtime-binding-identity")
+                          field "checkpoint" (DiagnosticPayloadText checkpoint)
+                          field "module-name" (DiagnosticPayloadText moduleName)
+                          field "binding-name" (DiagnosticPayloadText bindingName) ])
+            | DuplicateRuntimeConstructorIdentity(checkpoint, moduleName, constructorName) ->
+                descriptor
+                    DiagnosticCode.CheckpointVerification
+                    None
+                    $"Checkpoint '{checkpoint}' requires unique constructor identities within module '{moduleName}', but '{constructorName}' was duplicated."
+                    (payload
+                        "checkpoint-verification-diagnostic"
+                        [ field "reason" (DiagnosticPayloadText "duplicate-runtime-constructor-identity")
+                          field "checkpoint" (DiagnosticPayloadText checkpoint)
+                          field "module-name" (DiagnosticPayloadText moduleName)
+                          field "constructor-name" (DiagnosticPayloadText constructorName) ])
+            | UnsupportedRuntimeIntrinsicTerm(checkpoint, moduleName, intrinsicName, backendProfile) ->
+                descriptor
+                    DiagnosticCode.CheckpointVerification
+                    None
+                    $"Checkpoint '{checkpoint}' requires intrinsic term '{intrinsicName}' in module '{moduleName}' to be provided by backend profile '{backendProfile}'."
+                    (payload
+                        "checkpoint-verification-diagnostic"
+                        [ field "reason" (DiagnosticPayloadText "unsupported-runtime-intrinsic-term")
+                          field "checkpoint" (DiagnosticPayloadText checkpoint)
+                          field "module-name" (DiagnosticPayloadText moduleName)
+                          field "intrinsic-name" (DiagnosticPayloadText intrinsicName)
+                          field "backend-profile" (DiagnosticPayloadText backendProfile) ])
+            | IntrinsicBindingMustOmitBody(checkpoint, moduleName, bindingName) ->
+                descriptor
+                    DiagnosticCode.CheckpointVerification
+                    None
+                    $"Checkpoint '{checkpoint}' requires intrinsic binding '{moduleName}.{bindingName}' to omit a body."
+                    (payload
+                        "checkpoint-verification-diagnostic"
+                        [ field "reason" (DiagnosticPayloadText "intrinsic-binding-must-omit-body")
+                          field "checkpoint" (DiagnosticPayloadText checkpoint)
+                          field "module-name" (DiagnosticPayloadText moduleName)
+                          field "binding-name" (DiagnosticPayloadText bindingName) ])
+            | IntrinsicBindingMustBeListedInModuleIntrinsicTerms(checkpoint, moduleName, bindingName) ->
+                descriptor
+                    DiagnosticCode.CheckpointVerification
+                    None
+                    $"Checkpoint '{checkpoint}' requires intrinsic binding '{moduleName}.{bindingName}' to be listed in module intrinsic terms."
+                    (payload
+                        "checkpoint-verification-diagnostic"
+                        [ field "reason" (DiagnosticPayloadText "intrinsic-binding-must-be-listed-in-module-intrinsic-terms")
+                          field "checkpoint" (DiagnosticPayloadText checkpoint)
+                          field "module-name" (DiagnosticPayloadText moduleName)
+                          field "binding-name" (DiagnosticPayloadText bindingName) ])
+            | UnsupportedRuntimeIntrinsicBinding(checkpoint, moduleName, bindingName, backendProfile) ->
+                descriptor
+                    DiagnosticCode.CheckpointVerification
+                    None
+                    $"Checkpoint '{checkpoint}' requires intrinsic term '{bindingName}' in module '{moduleName}' to be provided by backend profile '{backendProfile}'."
+                    (payload
+                        "checkpoint-verification-diagnostic"
+                        [ field "reason" (DiagnosticPayloadText "unsupported-runtime-intrinsic-binding")
+                          field "checkpoint" (DiagnosticPayloadText checkpoint)
+                          field "module-name" (DiagnosticPayloadText moduleName)
+                          field "binding-name" (DiagnosticPayloadText bindingName)
+                          field "backend-profile" (DiagnosticPayloadText backendProfile) ])
+            | RuntimeBindingMustHaveBody(checkpoint, moduleName, bindingName) ->
+                descriptor
+                    DiagnosticCode.CheckpointVerification
+                    None
+                    $"Checkpoint '{checkpoint}' requires runtime binding '{moduleName}.{bindingName}' to have a body."
+                    (payload
+                        "checkpoint-verification-diagnostic"
+                        [ field "reason" (DiagnosticPayloadText "runtime-binding-must-have-body")
+                          field "checkpoint" (DiagnosticPayloadText checkpoint)
+                          field "module-name" (DiagnosticPayloadText moduleName)
+                          field "binding-name" (DiagnosticPayloadText bindingName) ])
+            | DuplicateRuntimePatternBinder(checkpoint, bindingLabel, binderName) ->
+                descriptor
+                    DiagnosticCode.CheckpointVerification
+                    None
+                    $"Checkpoint '{checkpoint}' requires unique pattern binder names within '{bindingLabel}', but '{binderName}' was duplicated."
+                    (payload
+                        "checkpoint-verification-diagnostic"
+                        [ field "reason" (DiagnosticPayloadText "duplicate-runtime-pattern-binder")
+                          field "checkpoint" (DiagnosticPayloadText checkpoint)
+                          field "binding-label" (DiagnosticPayloadText bindingLabel)
+                          field "binder-name" (DiagnosticPayloadText binderName) ])
+            | DuplicateRuntimeClosureParameter(checkpoint, bindingLabel, parameterName) ->
+                descriptor
+                    DiagnosticCode.CheckpointVerification
+                    None
+                    $"Checkpoint '{checkpoint}' requires closures in '{bindingLabel}' to have unique parameter names, but '{parameterName}' was duplicated."
+                    (payload
+                        "checkpoint-verification-diagnostic"
+                        [ field "reason" (DiagnosticPayloadText "duplicate-runtime-closure-parameter")
+                          field "checkpoint" (DiagnosticPayloadText checkpoint)
+                          field "binding-label" (DiagnosticPayloadText bindingLabel)
+                          field "parameter-name" (DiagnosticPayloadText parameterName) ])
+            | DeepRuntimeHandlerMustBeDesugared(checkpoint, bindingLabel) ->
+                descriptor
+                    DiagnosticCode.CheckpointVerification
+                    None
+                    $"Checkpoint '{checkpoint}' requires direct deep-handle runtime nodes in '{bindingLabel}' to be desugared into the recursive shallow-handler driver before KRuntimeIR verification."
+                    (payload
+                        "checkpoint-verification-diagnostic"
+                        [ field "reason" (DiagnosticPayloadText "deep-runtime-handler-must-be-desugared")
+                          field "checkpoint" (DiagnosticPayloadText checkpoint)
+                          field "binding-label" (DiagnosticPayloadText bindingLabel) ])
         | SurfaceRecordDiagnostic evidence ->
             match evidence with
             | RecordFieldDeclaredMoreThanOnce fieldName ->

@@ -4525,6 +4525,125 @@ module SmokeTestsShard4 =
         Assert.Equal(Some "std.prelude", tryFindPayloadText "module-name" duplicateModuleDiagnostic)
 
     [<Fact>]
+    let ``runtime checkpoint verification diagnostics render from typed evidence`` () =
+        let bag = DiagnosticBag()
+
+        bag.AddError(
+            DiagnosticFact.checkpointVerification (
+                MissingImportedRuntimeModule("KRuntimeIR", "main", "std.io")
+            )
+        )
+
+        bag.AddError(
+            DiagnosticFact.checkpointVerification (
+                DuplicateRuntimeBindingIdentity("KRuntimeIR", "main", "answer")
+            )
+        )
+
+        bag.AddError(
+            DiagnosticFact.checkpointVerification (
+                UnsupportedRuntimeIntrinsicTerm("KRuntimeIR", "main", "printInt", "zig")
+            )
+        )
+
+        bag.AddError(
+            DiagnosticFact.checkpointVerification (
+                RuntimeBindingMustHaveBody("KRuntimeIR", "main", "answer")
+            )
+        )
+
+        bag.AddError(
+            DiagnosticFact.checkpointVerification (
+                DuplicateRuntimePatternBinder("KRuntimeIR", "main.answer", "value")
+            )
+        )
+
+        bag.AddError(
+            DiagnosticFact.checkpointVerification (
+                DuplicateRuntimeClosureParameter("KRuntimeIR", "main.answer", "x")
+            )
+        )
+
+        bag.AddError(
+            DiagnosticFact.checkpointVerification (
+                DeepRuntimeHandlerMustBeDesugared("KRuntimeIR", "main.answer")
+            )
+        )
+
+        let diagnostics = bag.Items
+
+        let missingImportDiagnostic =
+            diagnostics
+            |> List.find (fun item ->
+                item.Code = DiagnosticCode.CheckpointVerification
+                && tryFindPayloadText "reason" item = Some "missing-imported-runtime-module")
+
+        let duplicateBindingDiagnostic =
+            diagnostics
+            |> List.find (fun item ->
+                item.Code = DiagnosticCode.CheckpointVerification
+                && tryFindPayloadText "reason" item = Some "duplicate-runtime-binding-identity")
+
+        let unsupportedIntrinsicDiagnostic =
+            diagnostics
+            |> List.find (fun item ->
+                item.Code = DiagnosticCode.CheckpointVerification
+                && tryFindPayloadText "reason" item = Some "unsupported-runtime-intrinsic-term")
+
+        let missingBodyDiagnostic =
+            diagnostics
+            |> List.find (fun item ->
+                item.Code = DiagnosticCode.CheckpointVerification
+                && tryFindPayloadText "reason" item = Some "runtime-binding-must-have-body")
+
+        let duplicatePatternBinderDiagnostic =
+            diagnostics
+            |> List.find (fun item ->
+                item.Code = DiagnosticCode.CheckpointVerification
+                && tryFindPayloadText "reason" item = Some "duplicate-runtime-pattern-binder")
+
+        let duplicateClosureParameterDiagnostic =
+            diagnostics
+            |> List.find (fun item ->
+                item.Code = DiagnosticCode.CheckpointVerification
+                && tryFindPayloadText "reason" item = Some "duplicate-runtime-closure-parameter")
+
+        let deepHandlerDiagnostic =
+            diagnostics
+            |> List.find (fun item ->
+                item.Code = DiagnosticCode.CheckpointVerification
+                && tryFindPayloadText "reason" item = Some "deep-runtime-handler-must-be-desugared")
+
+        Assert.Equal("checkpoint-verification-diagnostic", missingImportDiagnostic.Payload.Kind)
+        Assert.Equal(Some "KRuntimeIR", tryFindPayloadText "checkpoint" missingImportDiagnostic)
+        Assert.Equal(Some "main", tryFindPayloadText "module-name" missingImportDiagnostic)
+        Assert.Equal(Some "std.io", tryFindPayloadText "imported-module-name" missingImportDiagnostic)
+
+        Assert.Equal("checkpoint-verification-diagnostic", duplicateBindingDiagnostic.Payload.Kind)
+        Assert.Equal(Some "main", tryFindPayloadText "module-name" duplicateBindingDiagnostic)
+        Assert.Equal(Some "answer", tryFindPayloadText "binding-name" duplicateBindingDiagnostic)
+
+        Assert.Equal("checkpoint-verification-diagnostic", unsupportedIntrinsicDiagnostic.Payload.Kind)
+        Assert.Equal(Some "main", tryFindPayloadText "module-name" unsupportedIntrinsicDiagnostic)
+        Assert.Equal(Some "printInt", tryFindPayloadText "intrinsic-name" unsupportedIntrinsicDiagnostic)
+        Assert.Equal(Some "zig", tryFindPayloadText "backend-profile" unsupportedIntrinsicDiagnostic)
+
+        Assert.Equal("checkpoint-verification-diagnostic", missingBodyDiagnostic.Payload.Kind)
+        Assert.Equal(Some "main", tryFindPayloadText "module-name" missingBodyDiagnostic)
+        Assert.Equal(Some "answer", tryFindPayloadText "binding-name" missingBodyDiagnostic)
+
+        Assert.Equal("checkpoint-verification-diagnostic", duplicatePatternBinderDiagnostic.Payload.Kind)
+        Assert.Equal(Some "main.answer", tryFindPayloadText "binding-label" duplicatePatternBinderDiagnostic)
+        Assert.Equal(Some "value", tryFindPayloadText "binder-name" duplicatePatternBinderDiagnostic)
+
+        Assert.Equal("checkpoint-verification-diagnostic", duplicateClosureParameterDiagnostic.Payload.Kind)
+        Assert.Equal(Some "main.answer", tryFindPayloadText "binding-label" duplicateClosureParameterDiagnostic)
+        Assert.Equal(Some "x", tryFindPayloadText "parameter-name" duplicateClosureParameterDiagnostic)
+
+        Assert.Equal("checkpoint-verification-diagnostic", deepHandlerDiagnostic.Payload.Kind)
+        Assert.Equal(Some "main.answer", tryFindPayloadText "binding-label" deepHandlerDiagnostic)
+
+    [<Fact>]
     let ``surface record diagnostics render from typed evidence`` () =
         let bag = DiagnosticBag()
         bag.AddError(DiagnosticFact.surfaceRecord (RecordFieldDeclaredMoreThanOnce "name"))
