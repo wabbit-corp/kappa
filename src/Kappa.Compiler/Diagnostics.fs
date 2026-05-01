@@ -835,6 +835,11 @@ type SurfaceElaborationDiagnosticEvidence =
     | SealProjectionWouldExposeOpaqueDependentMember of rootName: string * memberName: string
     | RecordLiteralCannotBeCheckedDirectlyAgainstSignatureType
     | SealAscriptionMustBeClosedRecordType
+    | ProjectionDescriptorRootsMustBeStablePlaces
+    | ProjectionDescriptorApplicationRequiresAtLeastOneRoot
+    | ProjectionDescriptorRootsPackFieldsMustMatchBindersExactly
+    | MultiRootProjectionDescriptorRequiresRecordLiteralRootsPack
+    | FullyAppliedProjectionProducesProjectedFocusNotDescriptorValue
     | StaticConstructorRequiresPreservedStaticObjectIdentity of memberName: string
     | PatternHeadResolvedToOrdinaryTerm of headName: string
     | ActivePatternLinearlyConsumesScrutineeInRefutableContext of patternName: string * context: string
@@ -2330,6 +2335,46 @@ module DiagnosticFact =
                     (payload
                         "surface-elaboration-diagnostic"
                         [ field "reason" (DiagnosticPayloadText "seal-ascription-must-be-closed-record-type") ])
+            | ProjectionDescriptorRootsMustBeStablePlaces ->
+                descriptor
+                    DiagnosticCode.ProjectionRootInvalid
+                    None
+                    "Projector descriptor roots must be stable places or selector-computed places."
+                    (payload
+                        "surface-elaboration-diagnostic"
+                        [ field "reason" (DiagnosticPayloadText "projection-descriptor-roots-must-be-stable-places") ])
+            | ProjectionDescriptorApplicationRequiresAtLeastOneRoot ->
+                descriptor
+                    DiagnosticCode.ProjectionDescriptorRootMissing
+                    None
+                    "A projector descriptor application must still have at least one root."
+                    (payload
+                        "surface-elaboration-diagnostic"
+                        [ field "reason" (DiagnosticPayloadText "projection-descriptor-application-requires-at-least-one-root") ])
+            | ProjectionDescriptorRootsPackFieldsMustMatchBindersExactly ->
+                descriptor
+                    DiagnosticCode.ProjectionRootsPackMismatch
+                    None
+                    "Projector descriptor roots pack fields must match the projector root binders exactly."
+                    (payload
+                        "surface-elaboration-diagnostic"
+                        [ field "reason" (DiagnosticPayloadText "projection-descriptor-roots-pack-fields-must-match-binders-exactly") ])
+            | MultiRootProjectionDescriptorRequiresRecordLiteralRootsPack ->
+                descriptor
+                    DiagnosticCode.ProjectionDescriptorRootsLiteralRequired
+                    None
+                    "Multi-root projector descriptors must be applied to a record literal roots pack."
+                    (payload
+                        "surface-elaboration-diagnostic"
+                        [ field "reason" (DiagnosticPayloadText "multi-root-projection-descriptor-requires-record-literal-roots-pack") ])
+            | FullyAppliedProjectionProducesProjectedFocusNotDescriptorValue ->
+                descriptor
+                    DiagnosticCode.ProjectionDescriptorValueExpected
+                    None
+                    "A fully applied projection produces the projected focus, not a projector descriptor value."
+                    (payload
+                        "surface-elaboration-diagnostic"
+                        [ field "reason" (DiagnosticPayloadText "fully-applied-projection-produces-projected-focus-not-descriptor-value") ])
             | StaticConstructorRequiresPreservedStaticObjectIdentity memberName ->
                 descriptor
                     DiagnosticCode.StaticObjectUnresolved

@@ -15520,10 +15520,13 @@ module SurfaceElaboration =
                                             )
                                         | false, InoutArgument _ ->
                                             diagnostics.Add(
-                                                makeLocatedDiagnostic
-                                                    SimpleDiagnosticKind.QttInoutMarkerUnexpected
-                                                    "The '~' marker can only be used for an 'inout' parameter."
-                                                    (tryFindArgumentLocation bindingInfo.Name nextArgument)
+                                                { (Diagnostics.errorFact
+                                                    "KFrontIR"
+                                                    (Some(KFrontIRPhase.phaseName CORE_LOWERING))
+                                                    None
+                                                    []
+                                                    (DiagnosticFact.qttInoutMarkerUnexpected InoutMarkerUnexpected)) with
+                                                    Location = tryFindArgumentLocation bindingInfo.Name nextArgument }
                                             )
                                         | false, _ ->
                                             ()
@@ -19879,7 +19882,14 @@ module SurfaceElaboration =
                     if insideDo then
                         []
                     else
-                        [ makeDiagnostic SimpleDiagnosticKind.QttInoutMarkerUnexpected "The '~' inout marker is only valid inside do blocks." ]
+                        [
+                            Diagnostics.errorFact
+                                "KFrontIR"
+                                (Some(KFrontIRPhase.phaseName CORE_LOWERING))
+                                None
+                                []
+                                (DiagnosticFact.qttInoutMarkerUnexpected InoutMarkerUnexpected)
+                        ]
 
                 markerDiagnostics @ recurse inner
             | TypeSyntaxTokens _ ->
@@ -20038,11 +20048,25 @@ module SurfaceElaboration =
                     if isStableDescriptorPlace expression then
                         None
                     else
-                        Some(makeDiagnostic SimpleDiagnosticKind.ProjectionRootInvalid "Projector descriptor roots must be stable places or selector-computed places."))
+                        Some(
+                            Diagnostics.errorFact
+                                "KFrontIR"
+                                (Some(KFrontIRPhase.phaseName CORE_LOWERING))
+                                None
+                                []
+                                (DiagnosticFact.surfaceElaboration ProjectionDescriptorRootsMustBeStablePlaces)
+                        ))
 
             match remainingPlaceBinders with
             | [] ->
-                [ makeDiagnostic SimpleDiagnosticKind.ProjectionDescriptorRootMissing "A projector descriptor application must still have at least one root." ]
+                [
+                    Diagnostics.errorFact
+                        "KFrontIR"
+                        (Some(KFrontIRPhase.phaseName CORE_LOWERING))
+                        None
+                        []
+                        (DiagnosticFact.surfaceElaboration ProjectionDescriptorApplicationRequiresAtLeastOneRoot)
+                ]
             | [ binder ] ->
                 match rootsArgument with
                 | RecordLiteral fields when fields |> List.exists (fun field -> String.Equals(field.Name, binder.Name, StringComparison.Ordinal)) ->
@@ -20051,11 +20075,25 @@ module SurfaceElaboration =
                     let expectedNames = Set.singleton binder.Name
 
                     if fieldNames <> expectedNames then
-                        [ makeDiagnostic SimpleDiagnosticKind.ProjectionRootsPackMismatch "Projector descriptor roots pack fields must match the projector root binders exactly." ]
+                        [
+                            Diagnostics.errorFact
+                                "KFrontIR"
+                                (Some(KFrontIRPhase.phaseName CORE_LOWERING))
+                                None
+                                []
+                                (DiagnosticFact.surfaceElaboration ProjectionDescriptorRootsPackFieldsMustMatchBindersExactly)
+                        ]
                     else
                         fieldMap |> Map.find binder.Name |> List.singleton |> unstableRootDiagnostics
                 | RecordLiteral _ ->
-                    [ makeDiagnostic SimpleDiagnosticKind.ProjectionRootsPackMismatch "Projector descriptor roots pack fields must match the projector root binders exactly." ]
+                    [
+                        Diagnostics.errorFact
+                            "KFrontIR"
+                            (Some(KFrontIRPhase.phaseName CORE_LOWERING))
+                            None
+                            []
+                            (DiagnosticFact.surfaceElaboration ProjectionDescriptorRootsPackFieldsMustMatchBindersExactly)
+                    ]
                 | _ ->
                     unstableRootDiagnostics [ rootsArgument ]
             | binders ->
@@ -20066,13 +20104,27 @@ module SurfaceElaboration =
                     let expectedNames = binders |> List.map (fun binder -> binder.Name) |> Set.ofList
 
                     if fieldNames <> expectedNames then
-                        [ makeDiagnostic SimpleDiagnosticKind.ProjectionRootsPackMismatch "Projector descriptor roots pack fields must match the projector root binders exactly." ]
+                        [
+                            Diagnostics.errorFact
+                                "KFrontIR"
+                                (Some(KFrontIRPhase.phaseName CORE_LOWERING))
+                                None
+                                []
+                                (DiagnosticFact.surfaceElaboration ProjectionDescriptorRootsPackFieldsMustMatchBindersExactly)
+                        ]
                     else
                         binders
                         |> List.map (fun binder -> fieldMap |> Map.find binder.Name)
                         |> unstableRootDiagnostics
                 | _ ->
-                    [ makeDiagnostic SimpleDiagnosticKind.ProjectionDescriptorRootsLiteralRequired "Multi-root projector descriptors must be applied to a record literal roots pack." ]
+                    [
+                        Diagnostics.errorFact
+                            "KFrontIR"
+                            (Some(KFrontIRPhase.phaseName CORE_LOWERING))
+                            None
+                            []
+                            (DiagnosticFact.surfaceElaboration MultiRootProjectionDescriptorRequiresRecordLiteralRootsPack)
+                    ]
 
         let fullyAppliedProjectionReturningDescriptorDiagnostic body =
             let returnTypeIsProjector =
@@ -20089,7 +20141,14 @@ module SurfaceElaboration =
                 |> Map.tryFind projectionName
                 |> Option.filter (fun projectionInfo -> List.length projectionInfo.Binders = List.length arguments)
                 |> Option.map (fun _ ->
-                    [ makeDiagnostic SimpleDiagnosticKind.ProjectionDescriptorValueExpected "A fully applied projection produces the projected focus, not a projector descriptor value." ])
+                    [
+                        Diagnostics.errorFact
+                            "KFrontIR"
+                            (Some(KFrontIRPhase.phaseName CORE_LOWERING))
+                            None
+                            []
+                            (DiagnosticFact.surfaceElaboration FullyAppliedProjectionProducesProjectedFocusNotDescriptorValue)
+                    ])
                 |> Option.defaultValue []
             | _ ->
                 []

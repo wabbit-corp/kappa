@@ -3491,6 +3491,10 @@ module SmokeTestsShard4 =
             DiagnosticFact.qttUsingExplicitQuantity
                 UsingBindsBorrowedPattern
         )
+        bag.AddError(
+            DiagnosticFact.qttInoutMarkerUnexpected
+                InoutMarkerUnexpected
+        )
 
         let diagnostics = bag.Items
         let diagnostic =
@@ -3500,6 +3504,10 @@ module SmokeTestsShard4 =
         let usingDiagnostic =
             diagnostics
             |> List.find (fun item -> item.Code = DiagnosticCode.QttUsingExplicitQuantity)
+
+        let inoutUnexpectedDiagnostic =
+            diagnostics
+            |> List.find (fun item -> item.Code = DiagnosticCode.QttInoutMarkerUnexpected)
 
         Assert.Equal(DiagnosticCode.QttLinearOveruse, diagnostic.Code)
         Assert.Equal("An argument available at quantity '1' cannot satisfy parameter demand '&'.", diagnostic.Message)
@@ -3517,6 +3525,14 @@ module SmokeTestsShard4 =
             fun field ->
                 field.Name = "reason"
                 && field.Value = DiagnosticPayloadText "using-binds-borrowed-pattern"
+        )
+        Assert.Equal("The '~' marker can only be used for an 'inout' parameter.", inoutUnexpectedDiagnostic.Message)
+        Assert.Equal("qtt-inout-marker-unexpected", inoutUnexpectedDiagnostic.Payload.Kind)
+        Assert.Contains(
+            inoutUnexpectedDiagnostic.Payload.Fields,
+            fun field ->
+                field.Name = "reason"
+                && field.Value = DiagnosticPayloadText "inout-marker-unexpected"
         )
 
     [<Fact>]
@@ -3778,6 +3794,11 @@ module SmokeTestsShard4 =
         bag.AddError(DiagnosticFact.surfaceElaboration (SealProjectionWouldExposeOpaqueDependentMember("box", "value")))
         bag.AddError(DiagnosticFact.surfaceElaboration RecordLiteralCannotBeCheckedDirectlyAgainstSignatureType)
         bag.AddError(DiagnosticFact.surfaceElaboration SealAscriptionMustBeClosedRecordType)
+        bag.AddError(DiagnosticFact.surfaceElaboration ProjectionDescriptorRootsMustBeStablePlaces)
+        bag.AddError(DiagnosticFact.surfaceElaboration ProjectionDescriptorApplicationRequiresAtLeastOneRoot)
+        bag.AddError(DiagnosticFact.surfaceElaboration ProjectionDescriptorRootsPackFieldsMustMatchBindersExactly)
+        bag.AddError(DiagnosticFact.surfaceElaboration MultiRootProjectionDescriptorRequiresRecordLiteralRootsPack)
+        bag.AddError(DiagnosticFact.surfaceElaboration FullyAppliedProjectionProducesProjectedFocusNotDescriptorValue)
 
         let diagnostics = bag.Items
         let staticObjectDiagnostic = diagnostics |> List.find (fun item -> item.Code = DiagnosticCode.StaticObjectUnresolved)
@@ -3864,6 +3885,11 @@ module SmokeTestsShard4 =
         let opaqueUnfoldingDiagnostic = diagnostics |> List.find (fun item -> item.Code = DiagnosticCode.SealOpaqueUnfolding)
         let directLiteralDiagnostic = diagnostics |> List.find (fun item -> item.Code = DiagnosticCode.SealDirectLiteralForSignature)
         let openRecordSealDiagnostic = diagnostics |> List.find (fun item -> item.Code = DiagnosticCode.SealOpenRecordAscription)
+        let unstableRootDiagnostic = diagnostics |> List.find (fun item -> item.Code = DiagnosticCode.ProjectionRootInvalid)
+        let missingRootDiagnostic = diagnostics |> List.find (fun item -> item.Code = DiagnosticCode.ProjectionDescriptorRootMissing)
+        let rootsPackMismatchDiagnostic = diagnostics |> List.find (fun item -> item.Code = DiagnosticCode.ProjectionRootsPackMismatch)
+        let rootsLiteralRequiredDiagnostic = diagnostics |> List.find (fun item -> item.Code = DiagnosticCode.ProjectionDescriptorRootsLiteralRequired)
+        let descriptorValueExpectedDiagnostic = diagnostics |> List.find (fun item -> item.Code = DiagnosticCode.ProjectionDescriptorValueExpected)
 
         Assert.Equal("surface-elaboration-diagnostic", staticObjectDiagnostic.Payload.Kind)
         Assert.Equal(Some "Some", tryFindPayloadText "member-name" staticObjectDiagnostic)
@@ -3896,6 +3922,11 @@ module SmokeTestsShard4 =
         Assert.Equal(Some "value", tryFindPayloadText "member-name" opaqueUnfoldingDiagnostic)
         Assert.Equal(Some "record-literal-cannot-be-checked-directly-against-signature-type", tryFindPayloadText "reason" directLiteralDiagnostic)
         Assert.Equal(Some "seal-ascription-must-be-closed-record-type", tryFindPayloadText "reason" openRecordSealDiagnostic)
+        Assert.Equal(Some "projection-descriptor-roots-must-be-stable-places", tryFindPayloadText "reason" unstableRootDiagnostic)
+        Assert.Equal(Some "projection-descriptor-application-requires-at-least-one-root", tryFindPayloadText "reason" missingRootDiagnostic)
+        Assert.Equal(Some "projection-descriptor-roots-pack-fields-must-match-binders-exactly", tryFindPayloadText "reason" rootsPackMismatchDiagnostic)
+        Assert.Equal(Some "multi-root-projection-descriptor-requires-record-literal-roots-pack", tryFindPayloadText "reason" rootsLiteralRequiredDiagnostic)
+        Assert.Equal(Some "fully-applied-projection-produces-projected-focus-not-descriptor-value", tryFindPayloadText "reason" descriptorValueExpectedDiagnostic)
 
     [<Fact>]
     let ``parser syntax diagnostics render from typed evidence`` () =
@@ -7749,6 +7780,38 @@ module SmokeTestsShard6 =
         Assert.Equal(Some "box", tryFindPayloadText "root-name" opaqueUnfoldingDiagnostic)
         Assert.Equal(Some "value", tryFindPayloadText "member-name" opaqueUnfoldingDiagnostic)
         Assert.Equal(Some "secret", tryFindPayloadText "field-name" hiddenFieldDiagnostic)
+
+    [<Fact>]
+    let ``source compilation rejects unexpected inout markers with structured diagnostics`` () =
+        let workspace =
+            compileInMemoryWorkspace
+                "memory-unexpected-inout-marker-root"
+                [
+                    "main.kp",
+                    [
+                        "module main"
+                        ""
+                        "data File : Type ="
+                        "    Handle Int"
+                        ""
+                        "consume : File -> Int"
+                        "let consume file = 0"
+                        ""
+                        "let main ="
+                        "    let file = Handle 1"
+                        "    consume ~file"
+                    ]
+                    |> String.concat "\n"
+                ]
+
+        Assert.True(workspace.HasErrors, "Expected '~' on a non-inout parameter to be rejected.")
+
+        let diagnostic =
+            workspace.Diagnostics
+            |> List.find (fun item -> item.Code = DiagnosticCode.QttInoutMarkerUnexpected)
+
+        Assert.Equal("qtt-inout-marker-unexpected", diagnostic.Payload.Kind)
+        Assert.Equal(Some "inout-marker-unexpected", tryFindPayloadText "reason" diagnostic)
 
     [<Fact>]
     let ``source compilation reports structured projection definition diagnostics`` () =
