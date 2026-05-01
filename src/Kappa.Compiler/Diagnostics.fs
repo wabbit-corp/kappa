@@ -800,6 +800,23 @@ type TypecheckingDiagnosticEvidence =
     | DeferredActionContainsAbruptOuterEscape
     | DefinitionBodyResultTypeMismatch
 
+type SurfaceRecordContext =
+    | RecordTypeTelescope
+    | RecordLiteralFields
+
+type SurfaceRecordDiagnosticEvidence =
+    | RecordFieldDeclaredMoreThanOnce of fieldName: string
+    | RecordFieldDependsOnUnknownField of fieldName: string * referencedField: string
+    | RecordDependenciesMustBeAcyclic of context: SurfaceRecordContext
+    | RecordPatchPathDeclaredMoreThanOnce of pathText: string
+    | RecordPatchPathStrictPrefixConflict of prefixPath: string * fullPath: string
+    | RowExtensionLabelDeclaredMoreThanOnce of labelName: string
+    | RowExtensionLabelAlreadyExists of labelName: string
+    | RowExtensionLabelMissingLacksConstraint of labelName: string * rowName: string
+    | RecordPatchUnknownField of fieldName: string
+    | RecordPatchContinuesThroughNonRecordField of fieldName: string
+    | ProjectionSectionUpdateTargetUnsupported
+
 type CorePatternParsingEvidence =
     | UnsupportedParameterBinderSyntax
     | ExpectedParameterBinder
@@ -1136,6 +1153,7 @@ type DiagnosticFact =
     | UrlImportPackageModeDiagnostic of UrlImportPackageModeEvidence
     | TypeEqualityMismatchDiagnostic of TypeEqualityMismatchEvidence
     | TypecheckingDiagnostic of TypecheckingDiagnosticEvidence
+    | SurfaceRecordDiagnostic of SurfaceRecordDiagnosticEvidence
     | ParserSyntaxDiagnostic of ParserSyntaxEvidence
     | CorePatternParsingDiagnostic of CorePatternParsingEvidence
     | CoreExpressionParsingDiagnostic of CoreExpressionParsingEvidence
@@ -1425,6 +1443,9 @@ module DiagnosticFact =
     let typechecking evidence =
         TypecheckingDiagnostic evidence
 
+    let surfaceRecord evidence =
+        SurfaceRecordDiagnostic evidence
+
     let parserSyntax evidence =
         ParserSyntaxDiagnostic evidence
 
@@ -1612,6 +1633,16 @@ module DiagnosticFact =
         | BinaryBase -> "binary"
         | OctalBase -> "octal"
         | HexadecimalBase -> "hexadecimal"
+
+    let private surfaceRecordContextText context =
+        match context with
+        | RecordTypeTelescope -> "record type"
+        | RecordLiteralFields -> "record literal"
+
+    let private surfaceRecordContextPayloadText context =
+        match context with
+        | RecordTypeTelescope -> "record-type-telescope"
+        | RecordLiteralFields -> "record-literal-fields"
 
     let private numericLiteralParseErrorText error =
         match error with
@@ -1992,6 +2023,109 @@ module DiagnosticFact =
                     (payload
                         "typechecking-diagnostic"
                         [ field "reason" (DiagnosticPayloadText "definition-body-result-type-mismatch") ])
+        | SurfaceRecordDiagnostic evidence ->
+            match evidence with
+            | RecordFieldDeclaredMoreThanOnce fieldName ->
+                descriptor
+                    DiagnosticCode.RecordDuplicateField
+                    None
+                    $"Record field '{fieldName}' is declared more than once."
+                    (payload
+                        "surface-record-diagnostic"
+                        [ field "reason" (DiagnosticPayloadText "record-field-declared-more-than-once")
+                          field "field-name" (DiagnosticPayloadText fieldName) ])
+            | RecordFieldDependsOnUnknownField(fieldName, referencedField) ->
+                descriptor
+                    DiagnosticCode.RecordDependencyInvalid
+                    None
+                    $"Record field '{fieldName}' depends on field '{referencedField}', which is not in the explicit record telescope."
+                    (payload
+                        "surface-record-diagnostic"
+                        [ field "reason" (DiagnosticPayloadText "record-field-depends-on-unknown-field")
+                          field "field-name" (DiagnosticPayloadText fieldName)
+                          field "referenced-field" (DiagnosticPayloadText referencedField) ])
+            | RecordDependenciesMustBeAcyclic context ->
+                descriptor
+                    DiagnosticCode.RecordDependencyCycle
+                    None
+                    $"{surfaceRecordContextText context} field dependencies must be acyclic."
+                    (payload
+                        "surface-record-diagnostic"
+                        [ field "reason" (DiagnosticPayloadText "record-dependencies-must-be-acyclic")
+                          field "record-context" (DiagnosticPayloadText(surfaceRecordContextPayloadText context)) ])
+            | RecordPatchPathDeclaredMoreThanOnce pathText ->
+                descriptor
+                    DiagnosticCode.RecordPatchDuplicatePath
+                    None
+                    $"Record patch updates path '{pathText}' more than once."
+                    (payload
+                        "surface-record-diagnostic"
+                        [ field "reason" (DiagnosticPayloadText "record-patch-path-declared-more-than-once")
+                          field "path-text" (DiagnosticPayloadText pathText) ])
+            | RecordPatchPathStrictPrefixConflict(prefixPath, fullPath) ->
+                descriptor
+                    DiagnosticCode.RecordPatchPrefixConflict
+                    None
+                    $"Record patch path '{prefixPath}' is a strict prefix of '{fullPath}'."
+                    (payload
+                        "surface-record-diagnostic"
+                        [ field "reason" (DiagnosticPayloadText "record-patch-path-strict-prefix-conflict")
+                          field "prefix-path" (DiagnosticPayloadText prefixPath)
+                          field "full-path" (DiagnosticPayloadText fullPath) ])
+            | RowExtensionLabelDeclaredMoreThanOnce labelName ->
+                descriptor
+                    DiagnosticCode.RowExtensionDuplicateLabel
+                    None
+                    $"Row extension label '{labelName}' appears more than once."
+                    (payload
+                        "surface-record-diagnostic"
+                        [ field "reason" (DiagnosticPayloadText "row-extension-label-declared-more-than-once")
+                          field "label-name" (DiagnosticPayloadText labelName) ])
+            | RowExtensionLabelAlreadyExists labelName ->
+                descriptor
+                    DiagnosticCode.RowExtensionExistingField
+                    None
+                    $"Row extension label '{labelName}' already exists in the receiver record."
+                    (payload
+                        "surface-record-diagnostic"
+                        [ field "reason" (DiagnosticPayloadText "row-extension-label-already-exists")
+                          field "label-name" (DiagnosticPayloadText labelName) ])
+            | RowExtensionLabelMissingLacksConstraint(labelName, rowName) ->
+                descriptor
+                    DiagnosticCode.RowExtensionMissingLacksConstraint
+                    None
+                    $"Row extension label '{labelName}' for row '{rowName}' requires a matching LacksRec constraint."
+                    (payload
+                        "surface-record-diagnostic"
+                        [ field "reason" (DiagnosticPayloadText "row-extension-label-missing-lacks-constraint")
+                          field "label-name" (DiagnosticPayloadText labelName)
+                          field "row-name" (DiagnosticPayloadText rowName) ])
+            | RecordPatchUnknownField fieldName ->
+                descriptor
+                    DiagnosticCode.RecordPatchUnknownPath
+                    None
+                    $"Record patch path contains unknown field '{fieldName}'."
+                    (payload
+                        "surface-record-diagnostic"
+                        [ field "reason" (DiagnosticPayloadText "record-patch-unknown-field")
+                          field "field-name" (DiagnosticPayloadText fieldName) ])
+            | RecordPatchContinuesThroughNonRecordField fieldName ->
+                descriptor
+                    DiagnosticCode.RecordPatchUnknownPath
+                    None
+                    $"Record patch path continues through non-record field '{fieldName}'."
+                    (payload
+                        "surface-record-diagnostic"
+                        [ field "reason" (DiagnosticPayloadText "record-patch-continues-through-non-record-field")
+                          field "field-name" (DiagnosticPayloadText fieldName) ])
+            | ProjectionSectionUpdateTargetUnsupported ->
+                descriptor
+                    DiagnosticCode.ProjectionUpdateTargetUnsupported
+                    None
+                    "Projection-section update requires an accessor/setter or selector projection."
+                    (payload
+                        "surface-record-diagnostic"
+                        [ field "reason" (DiagnosticPayloadText "projection-section-update-target-unsupported") ])
         | ParserSyntaxDiagnostic evidence ->
             match evidence with
             | ExpectedKeyword keyword ->

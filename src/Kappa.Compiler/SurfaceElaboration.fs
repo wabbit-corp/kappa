@@ -14041,7 +14041,7 @@ module SurfaceElaboration =
                 |> List.countBy (fun field -> field.Name)
                 |> List.choose (fun (name, count) ->
                     if count > 1 then
-                        Some(makeDiagnostic SimpleDiagnosticKind.RecordDuplicateField $"Record field '{name}' is declared more than once.")
+                        Some(Diagnostics.errorFact "KFrontIR" (Some(KFrontIRPhase.phaseName CORE_LOWERING)) None [] (DiagnosticFact.surfaceRecord (RecordFieldDeclaredMoreThanOnce name)))
                     else
                         None)
 
@@ -14056,9 +14056,12 @@ module SurfaceElaboration =
                             None
                         else
                             Some(
-                                makeDiagnostic
-                                    SimpleDiagnosticKind.RecordDependencyInvalid
-                                    $"Record field '{field.Name}' depends on field '{referencedField}', which is not in the explicit record telescope."
+                                Diagnostics.errorFact
+                                    "KFrontIR"
+                                    (Some(KFrontIRPhase.phaseName CORE_LOWERING))
+                                    None
+                                    []
+                                    (DiagnosticFact.surfaceRecord (RecordFieldDependsOnUnknownField(field.Name, referencedField)))
                             )))
 
             let cycleDiagnostics =
@@ -14074,7 +14077,7 @@ module SurfaceElaboration =
                     |> Map.ofList
 
                 if hasCycle dependencyMap then
-                    [ makeDiagnostic SimpleDiagnosticKind.RecordDependencyCycle "Record type field dependencies must be acyclic." ]
+                    [ Diagnostics.errorFact "KFrontIR" (Some(KFrontIRPhase.phaseName CORE_LOWERING)) None [] (DiagnosticFact.surfaceRecord (RecordDependenciesMustBeAcyclic RecordTypeTelescope)) ]
                 else
                     []
 
@@ -14151,7 +14154,7 @@ module SurfaceElaboration =
                 |> List.countBy pathKey
                 |> List.choose (fun (path, count) ->
                     if count > 1 then
-                        Some(makeDiagnostic SimpleDiagnosticKind.RecordPatchDuplicatePath $"Record patch updates path '{path}' more than once.")
+                        Some(Diagnostics.errorFact "KFrontIR" (Some(KFrontIRPhase.phaseName CORE_LOWERING)) None [] (DiagnosticFact.surfaceRecord (RecordPatchPathDeclaredMoreThanOnce path)))
                     else
                         None)
 
@@ -14161,9 +14164,12 @@ module SurfaceElaboration =
                 |> List.choose (fun (left, right) ->
                     if isStrictPrefix left.Path right.Path then
                         Some(
-                            makeDiagnostic
-                                SimpleDiagnosticKind.RecordPatchPrefixConflict
-                                $"Record patch path '{pathKey left}' is a strict prefix of '{pathKey right}'."
+                            Diagnostics.errorFact
+                                "KFrontIR"
+                                (Some(KFrontIRPhase.phaseName CORE_LOWERING))
+                                None
+                                []
+                                (DiagnosticFact.surfaceRecord (RecordPatchPathStrictPrefixConflict(pathKey left, pathKey right)))
                         )
                     else
                         None)
@@ -14174,7 +14180,7 @@ module SurfaceElaboration =
                 |> List.countBy (fun field -> field.Name)
                 |> List.choose (fun (name, count) ->
                     if count > 1 then
-                        Some(makeDiagnostic SimpleDiagnosticKind.RowExtensionDuplicateLabel $"Row extension label '{name}' appears more than once.")
+                        Some(Diagnostics.errorFact "KFrontIR" (Some(KFrontIRPhase.phaseName CORE_LOWERING)) None [] (DiagnosticFact.surfaceRecord (RowExtensionLabelDeclaredMoreThanOnce name)))
                     else
                         None)
 
@@ -14188,14 +14194,17 @@ module SurfaceElaboration =
                     extensionFields
                     |> List.choose (fun field ->
                         if Set.contains field.Name explicitFields then
-                            Some(makeDiagnostic SimpleDiagnosticKind.RowExtensionExistingField $"Row extension label '{field.Name}' already exists in the receiver record.")
+                            Some(Diagnostics.errorFact "KFrontIR" (Some(KFrontIRPhase.phaseName CORE_LOWERING)) None [] (DiagnosticFact.surfaceRecord (RowExtensionLabelAlreadyExists field.Name)))
                         else
                             match recordInfo.RowTail with
                             | Some rowName when not (hasLacksConstraint rowName field.Name) ->
                                 Some(
-                                    makeDiagnostic
-                                        SimpleDiagnosticKind.RowExtensionMissingLacksConstraint
-                                        $"Row extension label '{field.Name}' for row '{rowName}' requires a matching LacksRec constraint."
+                                    Diagnostics.errorFact
+                                        "KFrontIR"
+                                        (Some(KFrontIRPhase.phaseName CORE_LOWERING))
+                                        None
+                                        []
+                                        (DiagnosticFact.surfaceRecord (RowExtensionLabelMissingLacksConstraint(field.Name, rowName)))
                                 )
                             | _ ->
                                 None)
@@ -14210,14 +14219,14 @@ module SurfaceElaboration =
                     | segment :: rest ->
                         match currentRecordInfo.Fields |> List.tryFind (fun (field: RecordSurfaceFieldInfo) -> String.Equals(field.Name, segment.Name, StringComparison.Ordinal)) with
                         | None ->
-                            [ makeDiagnostic SimpleDiagnosticKind.RecordPatchUnknownPath $"Record patch path contains unknown field '{segment.Name}'." ]
+                            [ Diagnostics.errorFact "KFrontIR" (Some(KFrontIRPhase.phaseName CORE_LOWERING)) None [] (DiagnosticFact.surfaceRecord (RecordPatchUnknownField segment.Name)) ]
                         | Some field when List.isEmpty rest ->
                             []
                         | Some field ->
                             match tryRecordInfoFromTypeTokens field.TypeTokens with
                             | Some nestedRecordInfo -> validatePath nestedRecordInfo rest
                             | None ->
-                                [ makeDiagnostic SimpleDiagnosticKind.RecordPatchUnknownPath $"Record patch path continues through non-record field '{field.Name}'." ]
+                                [ Diagnostics.errorFact "KFrontIR" (Some(KFrontIRPhase.phaseName CORE_LOWERING)) None [] (DiagnosticFact.surfaceRecord (RecordPatchContinuesThroughNonRecordField field.Name)) ]
 
                 match receiverRecordInfo with
                 | Some recordInfo ->
@@ -14237,7 +14246,7 @@ module SurfaceElaboration =
                         if projectionSupportsSet projectionInfo then
                             None
                         else
-                            Some(makeDiagnostic SimpleDiagnosticKind.ProjectionUpdateTargetUnsupported "Projection-section update requires an accessor/setter or selector projection.")))
+                            Some(Diagnostics.errorFact "KFrontIR" (Some(KFrontIRPhase.phaseName CORE_LOWERING)) None [] (DiagnosticFact.surfaceRecord ProjectionSectionUpdateTargetUnsupported))))
 
             duplicatePathDiagnostics
             @ prefixDiagnostics
@@ -14259,7 +14268,7 @@ module SurfaceElaboration =
                 |> Map.ofList
 
             if hasCycle dependencyMap then
-                [ makeDiagnostic SimpleDiagnosticKind.RecordDependencyCycle "Record literal field dependencies must be acyclic." ]
+                [ Diagnostics.errorFact "KFrontIR" (Some(KFrontIRPhase.phaseName CORE_LOWERING)) None [] (DiagnosticFact.surfaceRecord (RecordDependenciesMustBeAcyclic RecordLiteralFields)) ]
             else
                 []
 

@@ -3669,6 +3669,76 @@ module SmokeTestsShard4 =
         Assert.Equal(Some "definition-body-result-type-mismatch", tryFindPayloadText "reason" definitionMismatchDiagnostic)
 
     [<Fact>]
+    let ``surface record diagnostics render from typed evidence`` () =
+        let bag = DiagnosticBag()
+        bag.AddError(DiagnosticFact.surfaceRecord (RecordFieldDeclaredMoreThanOnce "name"))
+        bag.AddError(DiagnosticFact.surfaceRecord (RecordFieldDependsOnUnknownField("payload", "missing")))
+        bag.AddError(DiagnosticFact.surfaceRecord (RecordDependenciesMustBeAcyclic RecordTypeTelescope))
+        bag.AddError(DiagnosticFact.surfaceRecord (RecordDependenciesMustBeAcyclic RecordLiteralFields))
+        bag.AddError(DiagnosticFact.surfaceRecord (RecordPatchPathDeclaredMoreThanOnce "person.name"))
+        bag.AddError(DiagnosticFact.surfaceRecord (RecordPatchPathStrictPrefixConflict("person", "person.name")))
+        bag.AddError(DiagnosticFact.surfaceRecord (RowExtensionLabelDeclaredMoreThanOnce "age"))
+        bag.AddError(DiagnosticFact.surfaceRecord (RowExtensionLabelAlreadyExists "name"))
+        bag.AddError(DiagnosticFact.surfaceRecord (RowExtensionLabelMissingLacksConstraint("age", "r")))
+        bag.AddError(DiagnosticFact.surfaceRecord (RecordPatchUnknownField "unknown"))
+        bag.AddError(DiagnosticFact.surfaceRecord (RecordPatchContinuesThroughNonRecordField "name"))
+        bag.AddError(DiagnosticFact.surfaceRecord ProjectionSectionUpdateTargetUnsupported)
+
+        let diagnostics = bag.Items
+        let duplicateFieldDiagnostic = diagnostics |> List.find (fun item -> item.Code = DiagnosticCode.RecordDuplicateField)
+        let dependencyDiagnostic = diagnostics |> List.find (fun item -> item.Code = DiagnosticCode.RecordDependencyInvalid)
+
+        let telescopeCycleDiagnostic =
+            diagnostics
+            |> List.find (fun item ->
+                item.Code = DiagnosticCode.RecordDependencyCycle
+                && tryFindPayloadText "record-context" item = Some "record-type-telescope")
+
+        let literalCycleDiagnostic =
+            diagnostics
+            |> List.find (fun item ->
+                item.Code = DiagnosticCode.RecordDependencyCycle
+                && tryFindPayloadText "record-context" item = Some "record-literal-fields")
+
+        let duplicatePathDiagnostic = diagnostics |> List.find (fun item -> item.Code = DiagnosticCode.RecordPatchDuplicatePath)
+        let prefixConflictDiagnostic = diagnostics |> List.find (fun item -> item.Code = DiagnosticCode.RecordPatchPrefixConflict)
+        let duplicateLabelDiagnostic = diagnostics |> List.find (fun item -> item.Code = DiagnosticCode.RowExtensionDuplicateLabel)
+        let existingFieldDiagnostic = diagnostics |> List.find (fun item -> item.Code = DiagnosticCode.RowExtensionExistingField)
+        let lacksConstraintDiagnostic = diagnostics |> List.find (fun item -> item.Code = DiagnosticCode.RowExtensionMissingLacksConstraint)
+
+        let unknownFieldDiagnostic =
+            diagnostics
+            |> List.find (fun item ->
+                item.Code = DiagnosticCode.RecordPatchUnknownPath
+                && tryFindPayloadText "reason" item = Some "record-patch-unknown-field")
+
+        let nonRecordFieldDiagnostic =
+            diagnostics
+            |> List.find (fun item ->
+                item.Code = DiagnosticCode.RecordPatchUnknownPath
+                && tryFindPayloadText "reason" item = Some "record-patch-continues-through-non-record-field")
+
+        let projectionUpdateDiagnostic = diagnostics |> List.find (fun item -> item.Code = DiagnosticCode.ProjectionUpdateTargetUnsupported)
+
+        Assert.Equal("surface-record-diagnostic", duplicateFieldDiagnostic.Payload.Kind)
+        Assert.Equal(Some "name", tryFindPayloadText "field-name" duplicateFieldDiagnostic)
+        Assert.Equal(Some "payload", tryFindPayloadText "field-name" dependencyDiagnostic)
+        Assert.Equal(Some "missing", tryFindPayloadText "referenced-field" dependencyDiagnostic)
+        Assert.Equal(Some "record-dependencies-must-be-acyclic", tryFindPayloadText "reason" telescopeCycleDiagnostic)
+        Assert.Equal(Some "record-type-telescope", tryFindPayloadText "record-context" telescopeCycleDiagnostic)
+        Assert.Equal(Some "record-literal-fields", tryFindPayloadText "record-context" literalCycleDiagnostic)
+        Assert.Equal(Some "person.name", tryFindPayloadText "path-text" duplicatePathDiagnostic)
+        Assert.Equal(Some "person", tryFindPayloadText "prefix-path" prefixConflictDiagnostic)
+        Assert.Equal(Some "person.name", tryFindPayloadText "full-path" prefixConflictDiagnostic)
+        Assert.Equal(Some "age", tryFindPayloadText "label-name" duplicateLabelDiagnostic)
+        Assert.Equal(Some "name", tryFindPayloadText "label-name" existingFieldDiagnostic)
+        Assert.Equal(Some "age", tryFindPayloadText "label-name" lacksConstraintDiagnostic)
+        Assert.Equal(Some "r", tryFindPayloadText "row-name" lacksConstraintDiagnostic)
+        Assert.Equal(Some "unknown", tryFindPayloadText "field-name" unknownFieldDiagnostic)
+        Assert.Equal(Some "name", tryFindPayloadText "field-name" nonRecordFieldDiagnostic)
+        Assert.Equal(Some "projection-section-update-target-unsupported", tryFindPayloadText "reason" projectionUpdateDiagnostic)
+
+    [<Fact>]
     let ``parser syntax diagnostics render from typed evidence`` () =
         let bag = DiagnosticBag()
         bag.AddError(DiagnosticFact.parserSyntax (ExpectedListComma ImportItemList))
