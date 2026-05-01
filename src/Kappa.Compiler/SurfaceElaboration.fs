@@ -168,8 +168,8 @@ module SurfaceElaboration =
           SurfaceIndex: Map<ModuleIdentity, ModuleSurfaceInfo>
           VisibleTypeAliases: Map<string, TypeAliasInfo>
           VisibleTypeFacets: Map<string, TypeFacetInfo>
-          VisibleStaticObjects: Map<string, StaticObjectInfo>
-          VisibleModules: Set<string>
+          VisibleStaticObjects: Map<string list, StaticObjectInfo>
+          VisibleModules: Map<string, ModuleIdentity>
           VisibleRecordTypes: Map<string, RecordSurfaceInfo>
           VisibleBindings: Map<string, BindingSchemeInfo>
           VisibleConstructors: Map<string, BindingSchemeInfo>
@@ -279,6 +279,9 @@ module SurfaceElaboration =
 
     let private semanticObjectIdentity declarationIdentity kind =
         SemanticObjectIdentity.create declarationIdentity kind
+
+    let private tryFindVisibleStaticObject (environment: BindingLoweringEnvironment) nameSegments =
+        environment.VisibleStaticObjects |> Map.tryFind nameSegments
 
     let private bindingIdentity moduleIdentity name =
         topLevelDeclarationIdentity moduleIdentity name TermDeclaration
@@ -1170,15 +1173,12 @@ module SurfaceElaboration =
         | KindQualifiedName(ModuleKind, nameSegments) ->
             let moduleName = SyntaxFacts.moduleNameToText nameSegments
 
-            if environment.VisibleModules.Contains moduleName then
+            if environment.VisibleModules.ContainsKey moduleName then
                 Some(staticObjectInfo (semanticObjectIdentity (moduleDeclarationIdentity (moduleIdentityOfSegments nameSegments)) ModuleObject) nameSegments None None None)
             else
                 None
         | Name nameSegments when not (List.isEmpty nameSegments) ->
-            let aliasName = SyntaxFacts.moduleNameToText nameSegments
-
-            environment.VisibleStaticObjects
-            |> Map.tryFind aliasName
+            tryFindVisibleStaticObject environment nameSegments
             |> Option.orElseWith (fun () ->
                 match nameSegments with
                 | [ root ]
@@ -1202,10 +1202,7 @@ module SurfaceElaboration =
         =
         match expression with
         | Name nameSegments when not (List.isEmpty nameSegments) ->
-            let aliasName = SyntaxFacts.moduleNameToText nameSegments
-
-            environment.VisibleStaticObjects
-            |> Map.tryFind aliasName
+            tryFindVisibleStaticObject environment nameSegments
             |> Option.orElseWith (fun () ->
                 match nameSegments with
                 | [ root ] ->
@@ -4039,22 +4036,22 @@ module SurfaceElaboration =
                 bindings, constructors, modules, ambiguities
             | [ OrdinaryVisibleConstructorCandidate(_, info) ] ->
                 bindings, Map.add localName info constructors, modules, ambiguities
-            | [ OrdinaryVisibleModuleCandidate _ ] ->
-                bindings, constructors, Set.add localName modules, ambiguities
+            | [ OrdinaryVisibleModuleCandidate(_, moduleIdentity) ] ->
+                bindings, constructors, Map.add localName moduleIdentity modules, ambiguities
             | _ ->
                 bindings, constructors, modules, Map.add localName candidates ambiguities)
-            (Map.empty, Map.empty, Set.empty, Map.empty)
+            (Map.empty, Map.empty, Map.empty, Map.empty)
 
     let private shadowAmbiguousVisibleTermCandidates
         (visibleBindings: Map<string, BindingSchemeInfo>)
         (visibleConstructors: Map<string, BindingSchemeInfo>)
-        (visibleModules: Set<string>)
+        (visibleModules: Map<string, ModuleIdentity>)
         (ambiguities: Map<string, OrdinaryVisibleTermCandidate list>)
         =
         let shadowingNames =
             [ visibleBindings |> Map.keys |> Set.ofSeq
               visibleConstructors |> Map.keys |> Set.ofSeq
-              visibleModules ]
+              visibleModules |> Map.keys |> Set.ofSeq ]
             |> Set.unionMany
 
         ambiguities
@@ -4282,7 +4279,7 @@ module SurfaceElaboration =
         let importedTermCandidates = collectImportedOrdinaryTermCandidates surfaceIndex moduleIdentity
         let _, _, importedModules, _ = partitionImportedOrdinaryTermCandidates importedTermCandidates
 
-        Set.add (ModuleIdentity.text moduleIdentity) importedModules
+        Map.add (ModuleIdentity.text moduleIdentity) moduleIdentity importedModules
 
     let private mergeAmbiguousVisibleOrdinaryTerms (surfaceIndex: Map<ModuleIdentity, ModuleSurfaceInfo>) moduleIdentity =
         let importedTermCandidates = collectImportedOrdinaryTermCandidates surfaceIndex moduleIdentity
@@ -4325,7 +4322,7 @@ module SurfaceElaboration =
             |> Map.fold (fun state name info -> Map.add name info state) importedConstructors
             |> fun state -> moduleConstructors |> Map.fold (fun current name info -> Map.add name info current) state
 
-        let visibleModules = Set.add (ModuleIdentity.text moduleIdentity) importedModules
+        let visibleModules = Map.add (ModuleIdentity.text moduleIdentity) moduleIdentity importedModules
 
         shadowAmbiguousVisibleTermCandidates visibleBindings visibleConstructors visibleModules importedAmbiguities
 
@@ -4436,8 +4433,6 @@ module SurfaceElaboration =
         (environment: BindingLoweringEnvironment)
         (declarations: TopLevelDeclaration list)
         =
-        let aliasKey segments = SyntaxFacts.moduleNameToText segments
-
         let transparentSealFields ascriptionTokens =
             match tryParseRecordSurfaceInfo ascriptionTokens with
             | Some recordInfo ->
@@ -4463,24 +4458,21 @@ module SurfaceElaboration =
             (sourcePrefix: string list)
             (targetPrefix: string list)
             (fieldFilter: string -> bool)
-            (aliases: Map<string, StaticObjectInfo>)
+            (aliases: Map<string list, StaticObjectInfo>)
             =
-            let sourceKey = aliasKey sourcePrefix
-            let sourceNestedPrefix = sourceKey + "."
-
             aliases
             |> Map.toList
-            |> List.filter (fun ((key: string), _) ->
-                if key.StartsWith(sourceNestedPrefix, StringComparison.Ordinal) then
-                    let suffix = key.Substring(sourceNestedPrefix.Length)
-                    let firstSegment = suffix.Split('.')[0]
-
-                    fieldFilter firstSegment
-                else
+            |> List.filter (fun (segments, _) ->
+                match List.tryItem sourcePrefix.Length segments with
+                | Some firstSuffixSegment
+                    when List.length segments > sourcePrefix.Length
+                         && List.take sourcePrefix.Length segments = sourcePrefix ->
+                    fieldFilter firstSuffixSegment
+                | _ ->
                     false)
-            |> List.fold (fun (current: Map<string, StaticObjectInfo>) ((key: string), staticObject) ->
-                let suffix = key.Substring(sourceNestedPrefix.Length)
-                Map.add (aliasKey targetPrefix + "." + suffix) staticObject current) aliases
+            |> List.fold (fun (current: Map<string list, StaticObjectInfo>) (segments, staticObject) ->
+                let suffixSegments = segments |> List.skip sourcePrefix.Length
+                Map.add (targetPrefix @ suffixSegments) staticObject current) aliases
 
         let copyNestedAliases sourcePrefix targetPrefix aliases =
             copyNestedAliasesFiltered sourcePrefix targetPrefix (fun _ -> true) aliases
@@ -4489,7 +4481,7 @@ module SurfaceElaboration =
             (environment: BindingLoweringEnvironment)
             (prefix: string list)
             (expression: SurfaceExpression)
-            (aliases: Map<string, StaticObjectInfo>)
+            (aliases: Map<string list, StaticObjectInfo>)
             =
             let aliasEnvironment =
                 { environment with
@@ -4497,7 +4489,7 @@ module SurfaceElaboration =
 
             match tryResolveStaticObject aliasEnvironment expression with
             | Some staticObject ->
-                let aliases = Map.add (aliasKey prefix) staticObject aliases
+                let aliases = Map.add prefix staticObject aliases
 
                 match expression with
                 | Name sourcePrefix -> copyNestedAliases sourcePrefix prefix aliases
@@ -5230,7 +5222,7 @@ module SurfaceElaboration =
                 | Some declaration, _ ->
                     TypeName(scopedEffectInterfaceNameSegments declaration, arguments |> List.map loop)
                 | None, [ name ] ->
-                    match environment.VisibleStaticObjects |> Map.tryFind name with
+                    match environment.VisibleStaticObjects |> Map.tryFind [ name ] with
                     | Some staticObject when staticObject.ObjectKind = TypeObject ->
                         TypeName(staticObject.NameSegments, arguments |> List.map loop)
                     | _ when environment.VisibleTypeFacets.ContainsKey(name) ->
@@ -7162,56 +7154,52 @@ module SurfaceElaboration =
             constraintInfo.Arguments
             |> List.map (normalizeTypeAliases environment.VisibleTypeAliases)
 
-        let canonicalArgumentTexts, moduleName, instancePrefix =
+        let canonicalArgumentTexts, moduleIdentity, instancePrefix =
             match constraintInfo.TraitName, normalizedArguments with
             | "IsTrait", [ argumentType ] ->
                 (if supportsIntrinsicTraitEvidenceType argumentType then
                      Some [ TypeSignatures.toText argumentType ]
                  else
                      None),
-                Stdlib.PreludeModuleText,
+                Some Stdlib.PreludeModuleIdentity,
                 "builtin-prelude"
             | CompilerKnownSymbols.KnownTypeNames.IsProp, [ argumentType ] ->
                 (if supportsIntrinsicTraitEvidenceType argumentType then
                      Some [ TypeSignatures.toText argumentType ]
                  else
                      None),
-                Stdlib.PreludeModuleText,
+                Some Stdlib.PreludeModuleIdentity,
                 "builtin-prelude"
             | "Eq", [ argumentType ] ->
                 IntrinsicCatalog.tryCanonicalBuiltinPreludeEqHeadTypeText argumentType
                 |> Option.map List.singleton,
-                Stdlib.PreludeModuleText,
+                Some Stdlib.PreludeModuleIdentity,
                 "builtin-prelude"
             | "Ord", [ argumentType ] ->
                 IntrinsicCatalog.tryCanonicalBuiltinPreludeOrdHeadTypeText argumentType
                 |> Option.map List.singleton,
-                Stdlib.PreludeModuleText,
+                Some Stdlib.PreludeModuleIdentity,
                 "builtin-prelude"
             | "Show", [ argumentType ] ->
                 IntrinsicCatalog.tryCanonicalBuiltinPreludeShowHeadTypeText argumentType
                 |> Option.map List.singleton,
-                Stdlib.PreludeModuleText,
+                Some Stdlib.PreludeModuleIdentity,
                 "builtin-prelude"
             | "Rangeable", [ argumentType ] ->
                 IntrinsicCatalog.tryCanonicalBuiltinPreludeRangeableHeadTypeText argumentType
                 |> Option.map List.singleton,
-                Stdlib.PreludeModuleText,
+                Some Stdlib.PreludeModuleIdentity,
                 "builtin-prelude"
             | _ ->
-                None, "", ""
+                None, None, ""
 
-        match canonicalArgumentTexts with
-        | None ->
-            None
-        | Some canonicalArgumentTexts ->
+        match canonicalArgumentTexts, moduleIdentity with
+        | Some canonicalArgumentTexts, Some moduleIdentity ->
             let normalizedArgumentText =
                 canonicalArgumentTexts |> String.concat ","
 
             let instanceKey =
                 $"{instancePrefix}:{constraintInfo.TraitName}:{normalizedArgumentText}"
-
-            let moduleIdentity = ModuleIdentity.ofDottedTextUnchecked moduleName
 
             Some
                 { ModuleIdentity = moduleIdentity
@@ -7220,6 +7208,8 @@ module SurfaceElaboration =
                   Constraints = []
                   HeadTypes = normalizedArguments
                   Members = Map.empty }
+        | _ ->
+            None
 
     let private tryLowerCompilerIssuedTraitEvidence
         (environment: BindingLoweringEnvironment)
@@ -7825,10 +7815,7 @@ module SurfaceElaboration =
 
                 match normalizedCurrent with
                 | TypeName(nameSegments, []) ->
-                    let aliasName = SyntaxFacts.moduleNameToText nameSegments
-
-                    environment.VisibleStaticObjects
-                    |> Map.tryFind aliasName
+                    tryFindVisibleStaticObject environment nameSegments
                     |> Option.bind (fun staticObject ->
                         match staticObject.ObjectKind with
                         | TypeObject ->
@@ -10742,7 +10729,7 @@ module SurfaceElaboration =
               explicitSignatureNames
               environment.VisibleProjections |> Map.keys |> Set.ofSeq ]
             |> Set.unionMany
-            |> fun names -> Set.difference names environment.VisibleModules
+            |> fun names -> Set.difference names (environment.VisibleModules |> Map.keys |> Set.ofSeq)
             |> Set.remove "<anonymous>"
 
         let makeDiagnostic kind message =
@@ -12160,6 +12147,7 @@ module SurfaceElaboration =
         let isVisibleQualifiedRootName locals lexicalNames name =
             let isVisibleModuleRoot =
                 environment.VisibleModules
+                |> Map.keys
                 |> Seq.exists (fun visibleModule ->
                     String.Equals(visibleModule, name, StringComparison.Ordinal)
                     || visibleModule.StartsWith(name + ".", StringComparison.Ordinal))
@@ -12170,7 +12158,7 @@ module SurfaceElaboration =
             || String.Equals(name, "this", StringComparison.Ordinal)
             || isVisibleModuleRoot
             || environment.VisibleTypeFacets.ContainsKey(name)
-            || environment.VisibleStaticObjects.ContainsKey(name)
+            || environment.VisibleStaticObjects.ContainsKey([ name ])
             || isTopLevelManifestStaticObjectRoot name
             || (tryResolveScopedStaticObject environment (Name [ name ]) |> Option.isSome)
 
@@ -12179,6 +12167,7 @@ module SurfaceElaboration =
 
             let isVisibleQualifiedModule =
                 environment.VisibleModules
+                |> Map.keys
                 |> Seq.exists (fun visibleModule ->
                     String.Equals(visibleModule, qualifiedName, StringComparison.Ordinal)
                     || visibleModule.StartsWith(qualifiedName + ".", StringComparison.Ordinal))
@@ -12345,10 +12334,7 @@ module SurfaceElaboration =
 
         let aliasesAsVisibleStaticObjects (aliases: Map<string list, StaticObjectInfo>) =
             aliases
-            |> Map.fold
-                (fun current segments staticObject ->
-                    Map.add (SyntaxFacts.moduleNameToText segments) staticObject current)
-                environment.VisibleStaticObjects
+            |> Map.fold (fun current segments staticObject -> Map.add segments staticObject current) environment.VisibleStaticObjects
 
         let tryResolveWithLocalAliases aliases expression =
             let aliasEnvironment =
@@ -12363,24 +12349,18 @@ module SurfaceElaboration =
             fieldFilter
             (aliases: Map<string list, StaticObjectInfo>)
             =
-            let sourceKey = SyntaxFacts.moduleNameToText sourcePrefix
-            let sourceNestedPrefix = sourceKey + "."
-
             aliasesAsVisibleStaticObjects aliases
             |> Map.toList
-            |> List.filter (fun ((key: string), _) ->
-                if key.StartsWith(sourceNestedPrefix, StringComparison.Ordinal) then
-                    let suffix = key.Substring(sourceNestedPrefix.Length)
-                    let firstSegment = suffix.Split('.')[0]
-
-                    fieldFilter firstSegment
-                else
+            |> List.filter (fun (segments, _) ->
+                match List.tryItem sourcePrefix.Length segments with
+                | Some firstSuffixSegment
+                    when List.length segments > sourcePrefix.Length
+                         && List.take sourcePrefix.Length segments = sourcePrefix ->
+                    fieldFilter firstSuffixSegment
+                | _ ->
                     false)
-            |> List.fold (fun current ((key: string), staticObject) ->
-                let suffixSegments =
-                    key.Substring(sourceNestedPrefix.Length).Split('.', StringSplitOptions.RemoveEmptyEntries)
-                    |> Array.toList
-
+            |> List.fold (fun current (segments, staticObject) ->
+                let suffixSegments = segments |> List.skip sourcePrefix.Length
                 Map.add (targetPrefix @ suffixSegments) staticObject current) aliases
 
         let rec collectExpressionStaticAliases prefix expression aliases =
@@ -14062,7 +14042,7 @@ module SurfaceElaboration =
                          && not (environment.VisibleBindings.ContainsKey name)
                          && not (environment.VisibleConstructors.ContainsKey name)
                          && (environment.VisibleTypeFacets.ContainsKey name
-                             || environment.VisibleStaticObjects.ContainsKey name) ->
+                             || environment.VisibleStaticObjects.ContainsKey [ name ]) ->
                     match tryResolveScopedStaticObject environment body with
                     | Some _ ->
                         []
@@ -16962,7 +16942,7 @@ module SurfaceElaboration =
                     let rootPreservesStaticObjectIdentity =
                         isTopLevelManifestStaticObjectRoot root
                         || environment.VisibleTypeFacets.ContainsKey(root)
-                        || environment.VisibleStaticObjects.ContainsKey(root)
+                        || environment.VisibleStaticObjects.ContainsKey([ root ])
                         || (tryResolveScopedStaticObject environment (Name [ root ]) |> Option.isSome)
 
                     if allowUnresolvedCallDiagnostics
@@ -20194,7 +20174,7 @@ module SurfaceElaboration =
                                 |> EffectSemantics.ensureTopLevel moduleIdentity
                                 |> EffectSemantics.toSemantic (Some(topLevelDeclarationIdentity moduleIdentity declaration.Name EffectDeclaration))
 
-                            Map.add declaration.Name (scopedEffectLabelStaticObject semanticDeclaration) current) localAliases
+                            Map.add (declaration.Name.Split('.', StringSplitOptions.RemoveEmptyEntries) |> Array.toList) (scopedEffectLabelStaticObject semanticDeclaration) current) localAliases
 
                     { baseEnvironment with
                         VisibleStaticObjects = staticObjectAliases }
@@ -20256,8 +20236,8 @@ module SurfaceElaboration =
                       environment.VisibleBindings |> Map.keys |> Set.ofSeq
                       environment.VisibleConstructors |> Map.keys |> Set.ofSeq
                       collectImportedOrdinarySurfaceNames surfaceIndex moduleIdentity
-                      environment.VisibleModules
-                      environment.VisibleStaticObjects |> Map.keys |> Set.ofSeq
+                      (environment.VisibleModules |> Map.keys |> Set.ofSeq)
+                      (environment.VisibleStaticObjects |> Map.keys |> Seq.map SyntaxFacts.moduleNameToText |> Set.ofSeq)
                       environment.VisibleTypeFacets |> Map.keys |> Set.ofSeq
                       environment.VisibleTraits |> Map.keys |> Set.ofSeq
                       visibleTraitMemberNames
@@ -21383,8 +21363,8 @@ module SurfaceElaboration =
                           Set.ofList Stdlib.FixedPreludeConstructors
                           environment.VisibleBindings |> Map.keys |> Set.ofSeq
                           environment.VisibleConstructors |> Map.keys |> Set.ofSeq
-                          environment.VisibleModules
-                          environment.VisibleStaticObjects |> Map.keys |> Set.ofSeq
+                          (environment.VisibleModules |> Map.keys |> Set.ofSeq)
+                          (environment.VisibleStaticObjects |> Map.keys |> Seq.map SyntaxFacts.moduleNameToText |> Set.ofSeq)
                           environment.VisibleTypeFacets |> Map.keys |> Set.ofSeq
                           environment.VisibleTraits |> Map.keys |> Set.ofSeq ]
                         |> Set.unionMany
@@ -27179,7 +27159,7 @@ module SurfaceElaboration =
                                     |> EffectSemantics.ensureTopLevel moduleIdentity
                                     |> EffectSemantics.toSemantic (Some(topLevelDeclarationIdentity moduleIdentity declaration.Name EffectDeclaration))
 
-                                Map.add declaration.Name (scopedEffectLabelStaticObject semanticDeclaration) current) localAliases
+                                Map.add (declaration.Name.Split('.', StringSplitOptions.RemoveEmptyEntries) |> Array.toList) (scopedEffectLabelStaticObject semanticDeclaration) current) localAliases
 
                         { baseEnvironment with
                             VisibleStaticObjects = staticObjectAliases }

@@ -102,19 +102,18 @@ let ``Effect semantics preserve declaration identity and reified object identiti
     let declarationIdentity =
         DeclarationIdentity.topLevel (ModuleIdentity.ofSegments [ "Example" ]) "State" EffectDeclaration
 
-    let declaration =
-        { EffectInterfaceId = Some "effect-interface:test"
-          EffectLabelId = Some "effect-label:test"
-          Visibility = None
-          Name = "State"
+    let semanticDeclaration =
+        { Identity = Some declarationIdentity
+          VisibleName = "State"
+          InterfaceId = "effect-interface:test"
+          LabelId = "effect-label:test"
           HeaderTokens = []
           Operations =
-            [ { OperationId = Some "effect-op:get"
+            [ { OperationId = "effect-op:get"
                 Name = "get"
                 ResumptionQuantity = None
-                SignatureTokens = [] } ] }
-
-    let semanticDeclaration = EffectSemantics.toSemantic (Some declarationIdentity) declaration
+                SignatureTokens = []
+                ParameterArity = 0 } ] }
 
     Assert.Equal(Some declarationIdentity, semanticDeclaration.Identity)
     Assert.Equal(

@@ -2955,10 +2955,10 @@ module ResourceChecking =
         let groupedDocuments =
             documents
             |> List.choose (fun document ->
-                document.ModuleName
-                |> Option.map (fun moduleName -> SyntaxFacts.moduleNameToText moduleName, document))
+                document.ModuleIdentity
+                |> Option.map (fun moduleIdentity -> moduleIdentity, document))
             |> List.groupBy fst
-            |> List.map (fun (moduleName, entries) -> moduleName, entries |> List.map snd)
+            |> List.map (fun (moduleIdentity, entries) -> moduleIdentity, entries |> List.map snd)
             |> Map.ofList
 
         let localEffectDeclarationsByModule =
@@ -2988,17 +2988,13 @@ module ResourceChecking =
         localEffectDeclarationsByModule, exportedEffectDeclarationsByModule
 
     let private visibleTopLevelEffectDeclarations
-        (localEffectDeclarationsByModule: Map<string, EffectSemanticDeclaration list>)
-        (exportedEffectDeclarationsByModule: Map<string, EffectSemanticDeclaration list>)
+        (localEffectDeclarationsByModule: Map<ModuleIdentity, EffectSemanticDeclaration list>)
+        (exportedEffectDeclarationsByModule: Map<ModuleIdentity, EffectSemanticDeclaration list>)
         (document: ParsedDocument)
         =
-        let moduleName =
-            document.ModuleName
-            |> Option.map SyntaxFacts.moduleNameToText
-
         let localEffects =
-            moduleName
-            |> Option.bind (fun currentModuleName -> Map.tryFind currentModuleName localEffectDeclarationsByModule)
+            document.ModuleIdentity
+            |> Option.bind (fun currentModuleIdentity -> Map.tryFind currentModuleIdentity localEffectDeclarationsByModule)
             |> Option.defaultValue []
 
         let importedEffects =
@@ -3012,10 +3008,11 @@ module ResourceChecking =
                 | Url _ ->
                     []
                 | Dotted moduleSegments ->
-                    let importedModuleName = SyntaxFacts.moduleNameToText moduleSegments
+                    let importedModuleIdentity = ModuleIdentity.ofSegments moduleSegments
+                    let importedModuleName = ModuleIdentity.text importedModuleIdentity
 
                     exportedEffectDeclarationsByModule
-                    |> Map.tryFind importedModuleName
+                    |> Map.tryFind importedModuleIdentity
                     |> Option.defaultValue []
                     |> List.choose (fun declaration ->
                         let importedName =
@@ -3027,7 +3024,7 @@ module ResourceChecking =
                                 selectionImportedName
                                     ImportNamespace.Type
                                     (exportedEffectDeclarationsByModule
-                                     |> Map.tryFind importedModuleName
+                                     |> Map.tryFind importedModuleIdentity
                                      |> Option.defaultValue []
                                      |> List.map (fun effect -> effect.VisibleName)
                                      |> Set.ofList)
@@ -5753,26 +5750,28 @@ module ResourceChecking =
 
                     checkComprehensionClauses nextLocals nextState comprehension rest
 
-        let aliasKey segments = SyntaxFacts.moduleNameToText segments
+        let hasHeadSegment expected segments =
+            match segments with
+            | head :: _ -> head = expected
+            | [] -> false
 
-        let copyNestedEffectLabelAliases sourcePrefix targetPrefix (aliases: Map<string, EffectSemanticDeclaration>) =
-            let sourceKey = aliasKey sourcePrefix
-            let sourceNestedPrefix = sourceKey + "."
-
+        let copyNestedEffectLabelAliases sourcePrefix targetPrefix (aliases: Map<string list, EffectSemanticDeclaration>) =
             aliases
             |> Map.toList
-            |> List.filter (fun (key, _) -> key.StartsWith(sourceNestedPrefix, StringComparison.Ordinal))
-            |> List.fold (fun current (key, declaration) ->
-                let suffix = key.Substring(sourceNestedPrefix.Length)
-                Map.add (aliasKey targetPrefix + "." + suffix) declaration current) aliases
+            |> List.filter (fun (segments, _) ->
+                List.length segments > List.length sourcePrefix
+                && List.take sourcePrefix.Length segments = sourcePrefix)
+            |> List.fold (fun current (segments, declaration) ->
+                let suffix = segments |> List.skip sourcePrefix.Length
+                Map.add (targetPrefix @ suffix) declaration current) aliases
 
         let rec collectEffectLabelAliases
             (prefix: string list)
             (expression: SurfaceExpression)
-            (aliases: Map<string, EffectSemanticDeclaration>)
+            (aliases: Map<string list, EffectSemanticDeclaration>)
             =
             let addDirect declaration current =
-                let current = Map.add (aliasKey prefix) declaration current
+                let current = Map.add prefix declaration current
 
                 match expression with
                 | Name sourcePrefix ->
@@ -5801,7 +5800,7 @@ module ResourceChecking =
             | _ ->
                 aliases
 
-        let rec rewriteEffectLabelAliasUses (aliases: Map<string, EffectSemanticDeclaration>) current =
+        let rec rewriteEffectLabelAliasUses (aliases: Map<string list, EffectSemanticDeclaration>) current =
             let rewrite = rewriteEffectLabelAliasUses aliases
 
             match current with
@@ -5813,7 +5812,7 @@ module ResourceChecking =
                         let suffix = nameSegments |> List.skip prefixLength
 
                         aliases
-                        |> Map.tryFind (aliasKey prefix)
+                        |> Map.tryFind prefix
                         |> Option.map (fun declaration ->
                             if List.isEmpty suffix then
                                 KindQualifiedName(EffectLabelKind, EffectSemantics.labelNameSegments declaration)
@@ -5852,18 +5851,18 @@ module ResourceChecking =
                     collectPatternNames binding.Pattern
                     |> List.fold (fun current name ->
                         current
-                        |> Map.remove name
+                        |> Map.remove [ name ]
                         |> Map.filter (fun key _ ->
-                            not (key.StartsWith(name + ".", StringComparison.Ordinal))))
+                            not (hasHeadSegment name key)))
                         aliases
 
                 LocalLet(binding, rewrite value, rewriteEffectLabelAliasUses shadowedAliases body)
             | LocalSignature(declaration, body) ->
                 let shadowedAliases =
                     aliases
-                    |> Map.remove declaration.Name
+                    |> Map.remove [ declaration.Name ]
                     |> Map.filter (fun key _ ->
-                        not (key.StartsWith(declaration.Name + ".", StringComparison.Ordinal)))
+                        not (hasHeadSegment declaration.Name key))
 
                 LocalSignature(declaration, rewriteEffectLabelAliasUses shadowedAliases body)
             | LocalTypeAlias(declaration, body) ->
@@ -5871,9 +5870,9 @@ module ResourceChecking =
             | LocalScopedEffect(declaration, body) ->
                 let shadowedAliases =
                     aliases
-                    |> Map.remove declaration.Name
+                    |> Map.remove [ declaration.Name ]
                     |> Map.filter (fun key _ ->
-                        not (key.StartsWith(declaration.Name + ".", StringComparison.Ordinal)))
+                        not (hasHeadSegment declaration.Name key))
 
                 LocalScopedEffect(declaration, rewriteEffectLabelAliasUses shadowedAliases body)
             | Lambda(parameters, body) ->
@@ -5881,9 +5880,9 @@ module ResourceChecking =
                     parameters
                     |> List.fold (fun current parameter ->
                         current
-                        |> Map.remove parameter.Name
+                        |> Map.remove [ parameter.Name ]
                         |> Map.filter (fun key _ ->
-                            not (key.StartsWith(parameter.Name + ".", StringComparison.Ordinal))))
+                            not (hasHeadSegment parameter.Name key)))
                         aliases
 
                 Lambda(parameters, rewriteEffectLabelAliasUses shadowedAliases body)
@@ -5898,9 +5897,9 @@ module ResourceChecking =
                             collectPatternNames caseClause.Pattern
                             |> List.fold (fun current name ->
                                 current
-                                |> Map.remove name
+                                |> Map.remove [ name ]
                                 |> Map.filter (fun key _ ->
-                                    not (key.StartsWith(name + ".", StringComparison.Ordinal))))
+                                    not (hasHeadSegment name key)))
                                 aliases
 
                         { caseClause with
