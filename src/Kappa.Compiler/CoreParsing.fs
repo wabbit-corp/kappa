@@ -2135,12 +2135,14 @@ type private ExpressionParser
                               IsImplicit = false
                               Value = this.ParseStandaloneExpression(valueTokens) }
                     | _ ->
-                        diagnostics.AddError(DiagnosticFact.simple SimpleDiagnosticKind.ExpectedSyntaxToken "Expected a named aggregation of the form 'name = expr' in the group clause.",
+                        diagnostics.AddError(
+                            DiagnosticFact.coreExpressionParsing ExpectedNamedGroupAggregation,
                             source.GetLocation((trimmed |> List.tryHead |> Option.defaultValue { Kind = EndOfFile; Text = ""; Span = eofSpan }).Span)
                         )
                         None
                 | _ ->
-                    diagnostics.AddError(DiagnosticFact.simple SimpleDiagnosticKind.ExpectedSyntaxToken "Expected '=' in the group aggregation.",
+                    diagnostics.AddError(
+                        DiagnosticFact.coreExpressionParsing ExpectedGroupAggregationEquals,
                         source.GetLocation((trimmed |> List.tryHead |> Option.defaultValue { Kind = EndOfFile; Text = ""; Span = eofSpan }).Span)
                     )
                     None
@@ -2195,7 +2197,10 @@ type private ExpressionParser
                     )
                 )
             | None ->
-                diagnostics.AddError(DiagnosticFact.simple SimpleDiagnosticKind.ExpectedSyntaxToken "Expected 'in' in the comprehension generator.", source.GetLocation(generatorToken.Span))
+                diagnostics.AddError(
+                    DiagnosticFact.coreExpressionParsing ExpectedComprehensionGeneratorIn,
+                    source.GetLocation(generatorToken.Span)
+                )
                 None
 
         let parseYieldClause (remainingTokens: Token list) =
@@ -2230,12 +2235,14 @@ type private ExpressionParser
                 | Some nameSegments ->
                     Some(Choice2Of3(CombineUsing nameSegments))
                 | None ->
-                    diagnostics.AddError(DiagnosticFact.simple SimpleDiagnosticKind.ExpectedSyntaxToken "Expected a qualified name after 'on conflict combine using'.",
+                    diagnostics.AddError(
+                        DiagnosticFact.coreExpressionParsing ExpectedConflictCombineUsingQualifiedName,
                         source.GetLocation(startToken.Span)
                     )
                     None
             | _ ->
-                diagnostics.AddError(DiagnosticFact.simple SimpleDiagnosticKind.ExpectedSyntaxToken "Expected 'on conflict keep last', 'on conflict keep first', 'on conflict combine using <name>', or 'on conflict combine with <expr>'.",
+                diagnostics.AddError(
+                    DiagnosticFact.coreExpressionParsing ExpectedConflictClauseForm,
                     source.GetLocation(startToken.Span)
                 )
                 None
@@ -2256,7 +2263,10 @@ type private ExpressionParser
                     let valueTokens = tokenArray[equalsIndex + 1 ..] |> Array.toList
                     Some(Choice3Of3(LetClause(false, this.ParseBindPatternFromTokens bindingTokens, this.ParseStandaloneExpression(valueTokens))))
                 | None ->
-                    diagnostics.AddError(DiagnosticFact.simple SimpleDiagnosticKind.ExpectedSyntaxToken "Expected '=' in the comprehension let clause.", source.GetLocation(letToken.Span))
+                    diagnostics.AddError(
+                        DiagnosticFact.coreExpressionParsing ExpectedComprehensionLetEquals,
+                        source.GetLocation(letToken.Span)
+                    )
                     None
             | ifToken :: rest when Token.isKeyword Keyword.If ifToken ->
                 Some(Choice3Of3(IfClause(this.ParseStandaloneExpression(rest))))
@@ -2281,7 +2291,8 @@ type private ExpressionParser
                         )
                     )
                 | _ ->
-                    diagnostics.AddError(DiagnosticFact.simple SimpleDiagnosticKind.ExpectedSyntaxToken "Expected 'join <pat> in <source> on <condition>' in the comprehension clause.",
+                    diagnostics.AddError(
+                        DiagnosticFact.coreExpressionParsing ExpectedComprehensionJoinClause,
                         source.GetLocation(joinToken.Span)
                     )
                     None
@@ -2311,17 +2322,20 @@ type private ExpressionParser
                                 )
                             )
                         | _ ->
-                            diagnostics.AddError(DiagnosticFact.simple SimpleDiagnosticKind.ExpectedSyntaxToken "Expected 'into <name>' after the group aggregation block.",
+                            diagnostics.AddError(
+                                DiagnosticFact.coreExpressionParsing ExpectedGroupByIntoName,
                                 source.GetLocation(groupToken.Span)
                             )
                             None
                     | None ->
-                        diagnostics.AddError(DiagnosticFact.simple SimpleDiagnosticKind.ExpectedSyntaxToken "Expected '}' to close the group aggregation block.",
+                        diagnostics.AddError(
+                            DiagnosticFact.coreExpressionParsing ExpectedGroupAggregationBlockClose,
                             source.GetLocation(groupToken.Span)
                         )
                         None
                 | None ->
-                    diagnostics.AddError(DiagnosticFact.simple SimpleDiagnosticKind.ExpectedSyntaxToken "Expected '{ ... }' after 'group by <expr>'.",
+                    diagnostics.AddError(
+                        DiagnosticFact.coreExpressionParsing ExpectedGroupAggregationBlock,
                         source.GetLocation(groupToken.Span)
                     )
                     None
@@ -2370,19 +2384,24 @@ type private ExpressionParser
                             )
                         )
                     | _ ->
-                        diagnostics.AddError(DiagnosticFact.simple SimpleDiagnosticKind.ExpectedSyntaxToken "Expected a single binder name after 'into' in the left-join clause.",
+                        diagnostics.AddError(
+                            DiagnosticFact.coreExpressionParsing ExpectedLeftJoinIntoName,
                             source.GetLocation(leftToken.Span)
                         )
                         None
                 | _ ->
-                    diagnostics.AddError(DiagnosticFact.simple SimpleDiagnosticKind.ExpectedSyntaxToken "Expected 'left join <pat> in <source> on <condition> into <name>' in the comprehension clause.",
+                    diagnostics.AddError(
+                        DiagnosticFact.coreExpressionParsing ExpectedLeftJoinClause,
                         source.GetLocation(leftToken.Span)
                     )
                     None
             | onToken :: conflictToken :: rest when isContextualName "on" onToken && isContextualName "conflict" conflictToken ->
                 parseConflictClause onToken rest
             | token :: _ ->
-                diagnostics.AddError(DiagnosticFact.simple SimpleDiagnosticKind.ExpectedSyntaxToken "Unsupported comprehension clause.", source.GetLocation(token.Span))
+                diagnostics.AddError(
+                    DiagnosticFact.coreExpressionParsing UnsupportedComprehensionClause,
+                    source.GetLocation(token.Span)
+                )
                 None
             | [] ->
                 None
@@ -2627,7 +2646,8 @@ type private ExpressionParser
                 |> Option.defaultValue { Kind = Keyword Keyword.Skip; Text = "skip"; Span = eofSpan }
 
             if orderedness = KnownUnordered then
-                diagnostics.AddError(DiagnosticFact.simple SimpleDiagnosticKind.ExpectedSyntaxToken "skip and take require an ordered query pipeline; the current pipeline is unordered.",
+                diagnostics.AddError(
+                    DiagnosticFact.coreExpressionParsing (QueryPagingRequiresOrderedPipeline "skip"),
                     source.GetLocation(skipToken.Span)
                 )
 
@@ -2668,7 +2688,8 @@ type private ExpressionParser
                 |> Option.defaultValue { Kind = Keyword Keyword.Take; Text = "take"; Span = eofSpan }
 
             if orderedness = KnownUnordered then
-                diagnostics.AddError(DiagnosticFact.simple SimpleDiagnosticKind.ExpectedSyntaxToken "skip and take require an ordered query pipeline; the current pipeline is unordered.",
+                diagnostics.AddError(
+                    DiagnosticFact.coreExpressionParsing (QueryPagingRequiresOrderedPipeline "take"),
                     source.GetLocation(takeToken.Span)
                 )
 
@@ -3001,7 +3022,10 @@ type private ExpressionParser
                       ConflictPolicy = conflictPolicy
                       Lowered = lowered }
             | _ ->
-                diagnostics.AddError(DiagnosticFact.simple SimpleDiagnosticKind.ExpectedSyntaxToken "A comprehension must end with a yield clause.", source.GetLocation(eofSpan))
+                diagnostics.AddError(
+                    DiagnosticFact.coreExpressionParsing ComprehensionMustEndWithYieldClause,
+                    source.GetLocation(eofSpan)
+                )
 
                 match kind with
                 | ListCollection -> listNil

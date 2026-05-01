@@ -838,6 +838,21 @@ type CoreExpressionParsingEvidence =
     | InvalidStringLiteralExpression of StringLiteralDecodeError
     | InvalidNumericLiteralExpression of NumericLiteralParseError
     | InvalidStringTextSegment of StringLiteralDecodeError
+    | ExpectedNamedGroupAggregation
+    | ExpectedGroupAggregationEquals
+    | ExpectedComprehensionGeneratorIn
+    | ExpectedConflictCombineUsingQualifiedName
+    | ExpectedConflictClauseForm
+    | ExpectedComprehensionLetEquals
+    | ExpectedComprehensionJoinClause
+    | ExpectedGroupByIntoName
+    | ExpectedGroupAggregationBlockClose
+    | ExpectedGroupAggregationBlock
+    | ExpectedLeftJoinIntoName
+    | ExpectedLeftJoinClause
+    | UnsupportedComprehensionClause
+    | QueryPagingRequiresOrderedPipeline of operationKind: string
+    | ComprehensionMustEndWithYieldClause
 
 type ParserNameExpectationRole =
     | BindingName
@@ -2345,6 +2360,54 @@ module DiagnosticFact =
                         "core-expression-parsing"
                         ([ field "reason" (DiagnosticPayloadText "invalid-string-text-segment") ]
                          @ stringLiteralDecodeErrorFields error))
+            | ExpectedNamedGroupAggregation ->
+                descriptor DiagnosticCode.ExpectedSyntaxToken None "Expected a named aggregation of the form 'name = expr' in the group clause."
+                    (payload "core-expression-parsing" [ field "reason" (DiagnosticPayloadText "expected-named-group-aggregation") ])
+            | ExpectedGroupAggregationEquals ->
+                descriptor DiagnosticCode.ExpectedSyntaxToken None "Expected '=' in the group aggregation."
+                    (payload "core-expression-parsing" [ field "reason" (DiagnosticPayloadText "expected-group-aggregation-equals") ])
+            | ExpectedComprehensionGeneratorIn ->
+                descriptor DiagnosticCode.ExpectedSyntaxToken None "Expected 'in' in the comprehension generator."
+                    (payload "core-expression-parsing" [ field "reason" (DiagnosticPayloadText "expected-comprehension-generator-in") ])
+            | ExpectedConflictCombineUsingQualifiedName ->
+                descriptor DiagnosticCode.ExpectedSyntaxToken None "Expected a qualified name after 'on conflict combine using'."
+                    (payload "core-expression-parsing" [ field "reason" (DiagnosticPayloadText "expected-conflict-combine-using-qualified-name") ])
+            | ExpectedConflictClauseForm ->
+                descriptor DiagnosticCode.ExpectedSyntaxToken None "Expected 'on conflict keep last', 'on conflict keep first', 'on conflict combine using <name>', or 'on conflict combine with <expr>'."
+                    (payload "core-expression-parsing" [ field "reason" (DiagnosticPayloadText "expected-conflict-clause-form") ])
+            | ExpectedComprehensionLetEquals ->
+                descriptor DiagnosticCode.ExpectedSyntaxToken None "Expected '=' in the comprehension let clause."
+                    (payload "core-expression-parsing" [ field "reason" (DiagnosticPayloadText "expected-comprehension-let-equals") ])
+            | ExpectedComprehensionJoinClause ->
+                descriptor DiagnosticCode.ExpectedSyntaxToken None "Expected 'join <pat> in <source> on <condition>' in the comprehension clause."
+                    (payload "core-expression-parsing" [ field "reason" (DiagnosticPayloadText "expected-comprehension-join-clause") ])
+            | ExpectedGroupByIntoName ->
+                descriptor DiagnosticCode.ExpectedSyntaxToken None "Expected 'into <name>' after the group aggregation block."
+                    (payload "core-expression-parsing" [ field "reason" (DiagnosticPayloadText "expected-group-by-into-name") ])
+            | ExpectedGroupAggregationBlockClose ->
+                descriptor DiagnosticCode.ExpectedSyntaxToken None "Expected '}' to close the group aggregation block."
+                    (payload "core-expression-parsing" [ field "reason" (DiagnosticPayloadText "expected-group-aggregation-block-close") ])
+            | ExpectedGroupAggregationBlock ->
+                descriptor DiagnosticCode.ExpectedSyntaxToken None "Expected '{ ... }' after 'group by <expr>'."
+                    (payload "core-expression-parsing" [ field "reason" (DiagnosticPayloadText "expected-group-aggregation-block") ])
+            | ExpectedLeftJoinIntoName ->
+                descriptor DiagnosticCode.ExpectedSyntaxToken None "Expected a single binder name after 'into' in the left-join clause."
+                    (payload "core-expression-parsing" [ field "reason" (DiagnosticPayloadText "expected-left-join-into-name") ])
+            | ExpectedLeftJoinClause ->
+                descriptor DiagnosticCode.ExpectedSyntaxToken None "Expected 'left join <pat> in <source> on <condition> into <name>' in the comprehension clause."
+                    (payload "core-expression-parsing" [ field "reason" (DiagnosticPayloadText "expected-left-join-clause") ])
+            | UnsupportedComprehensionClause ->
+                descriptor DiagnosticCode.ExpectedSyntaxToken None "Unsupported comprehension clause."
+                    (payload "core-expression-parsing" [ field "reason" (DiagnosticPayloadText "unsupported-comprehension-clause") ])
+            | QueryPagingRequiresOrderedPipeline operationKind ->
+                descriptor DiagnosticCode.ExpectedSyntaxToken None "skip and take require an ordered query pipeline; the current pipeline is unordered."
+                    (payload
+                        "core-expression-parsing"
+                        [ field "reason" (DiagnosticPayloadText "query-paging-requires-ordered-pipeline")
+                          field "operation-kind" (DiagnosticPayloadText operationKind) ])
+            | ComprehensionMustEndWithYieldClause ->
+                descriptor DiagnosticCode.ExpectedSyntaxToken None "A comprehension must end with a yield clause."
+                    (payload "core-expression-parsing" [ field "reason" (DiagnosticPayloadText "comprehension-must-end-with-yield-clause") ])
         | UnicodeScalarLiteralDiagnostic evidence ->
             match evidence with
             | UnicodeScalarInvalidLiteralForm ->

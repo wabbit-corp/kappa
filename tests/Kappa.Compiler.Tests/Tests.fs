@@ -3718,6 +3718,9 @@ module SmokeTestsShard4 =
         bag.AddError(DiagnosticFact.coreExpressionParsing UnexpectedIndentationInIndentedCaseBody)
         bag.AddError(DiagnosticFact.coreExpressionParsing (InvalidNumericLiteralExpression(InvalidNumericLiteral "1e+")))
         bag.AddError(DiagnosticFact.coreExpressionParsing (InvalidStringTextSegment(UnknownEscapeSequence "\\q")))
+        bag.AddError(DiagnosticFact.coreExpressionParsing ExpectedComprehensionGeneratorIn)
+        bag.AddError(DiagnosticFact.coreExpressionParsing (QueryPagingRequiresOrderedPipeline "skip"))
+        bag.AddError(DiagnosticFact.coreExpressionParsing ComprehensionMustEndWithYieldClause)
 
         let diagnostics = bag.Items
         let usingDiagnostic =
@@ -3739,6 +3742,18 @@ module SmokeTestsShard4 =
         let invalidStringSegmentDiagnostic =
             diagnostics
             |> List.find (fun item -> item.Message = "String text segment is invalid: unknown escape sequence '\\q'.")
+
+        let generatorDiagnostic =
+            diagnostics
+            |> List.find (fun item -> item.Message = "Expected 'in' in the comprehension generator.")
+
+        let pagingDiagnostic =
+            diagnostics
+            |> List.find (fun item -> item.Message = "skip and take require an ordered query pipeline; the current pipeline is unordered.")
+
+        let yieldDiagnostic =
+            diagnostics
+            |> List.find (fun item -> item.Message = "A comprehension must end with a yield clause.")
 
         Assert.Equal("core-expression-parsing", usingDiagnostic.Payload.Kind)
         Assert.Contains(
@@ -3769,6 +3784,24 @@ module SmokeTestsShard4 =
             fun field ->
                 field.Name = "string-literal-error"
                 && field.Value = DiagnosticPayloadText "unknown-escape-sequence"
+        )
+        Assert.Contains(
+            generatorDiagnostic.Payload.Fields,
+            fun field ->
+                field.Name = "reason"
+                && field.Value = DiagnosticPayloadText "expected-comprehension-generator-in"
+        )
+        Assert.Contains(
+            pagingDiagnostic.Payload.Fields,
+            fun field ->
+                field.Name = "operation-kind"
+                && field.Value = DiagnosticPayloadText "skip"
+        )
+        Assert.Contains(
+            yieldDiagnostic.Payload.Fields,
+            fun field ->
+                field.Name = "reason"
+                && field.Value = DiagnosticPayloadText "comprehension-must-end-with-yield-clause"
         )
 
     [<Fact>]
@@ -3887,6 +3920,47 @@ module SmokeTestsShard4 =
         Assert.Equal(Some "must-decode-to-exactly-one-extended-cluster", tryFindPayloadText "reason" graphemeDiagnostic)
         Assert.Equal("unicode-invalid-byte-literal", byteDiagnostic.Payload.Kind)
         Assert.Equal(Some "must-decode-to-exactly-one-byte", tryFindPayloadText "reason" byteDiagnostic)
+
+
+    [<Fact>]
+    let ``parser reports structured comprehension diagnostics`` () =
+        let sourceText =
+            [
+                "module main"
+                "let missingIn = [ for x xs, yield x ]"
+                "let missingYield = [ for x in xs ]"
+                "let unorderedSkip = [ for x in Set [1, 2], skip 1, yield x ]"
+            ]
+            |> String.concat "\n"
+
+        let _, lexed, parsed =
+            lexAndParse
+                "main.kp"
+                sourceText
+
+        Assert.Empty(lexed.Diagnostics)
+
+        let generatorDiagnostic =
+            parsed.Diagnostics
+            |> List.find (fun diagnostic -> diagnostic.Message = "Expected 'in' in the comprehension generator.")
+
+        let yieldDiagnostic =
+            parsed.Diagnostics
+            |> List.find (fun diagnostic -> diagnostic.Message = "A comprehension must end with a yield clause.")
+
+        let pagingDiagnostic =
+            parsed.Diagnostics
+            |> List.find (fun diagnostic ->
+                diagnostic.Message = "skip and take require an ordered query pipeline; the current pipeline is unordered."
+            )
+
+        Assert.Equal("core-expression-parsing", generatorDiagnostic.Payload.Kind)
+        Assert.Equal(Some "expected-comprehension-generator-in", tryFindPayloadText "reason" generatorDiagnostic)
+        Assert.Equal("core-expression-parsing", yieldDiagnostic.Payload.Kind)
+        Assert.Equal(Some "comprehension-must-end-with-yield-clause", tryFindPayloadText "reason" yieldDiagnostic)
+        Assert.Equal("core-expression-parsing", pagingDiagnostic.Payload.Kind)
+        Assert.Equal(Some "query-paging-requires-ordered-pipeline", tryFindPayloadText "reason" pagingDiagnostic)
+        Assert.Equal(Some "skip", tryFindPayloadText "operation-kind" pagingDiagnostic)
 
 
     [<Fact>]
