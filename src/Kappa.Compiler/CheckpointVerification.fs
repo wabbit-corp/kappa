@@ -997,6 +997,8 @@ module CheckpointVerification =
                     | BackendStringInterpolation inner ->
                         verifyBackendExpression currentModule bindingLabel bindingOrigin inner)
 
+        let backendProfile = BackendProfile.toPortableName workspace.Backend
+
         [
             yield! verifyKRuntimeIRCheckpoint workspace
             yield! erasureDiagnostics
@@ -1011,24 +1013,24 @@ module CheckpointVerification =
                     match workspace.KRuntimeIR |> List.tryFind (fun runtimeModule -> String.Equals(runtimeModule.Name, runtimeModuleName, StringComparison.Ordinal)) with
                     | Some runtimeModule ->
                         yield
-                            makeModuleDiagnostic
+                            makeStructuredModuleDiagnostic
                                 workspace.Documents
                                 (renderedModuleIdentity runtimeModule.Name)
                                 runtimeModule.SourceFile
-                                $"Checkpoint 'KBackendIR' requires a backend module for runtime module '{runtimeModuleName}'."
+                                (MissingBackendModuleForRuntimeModule("KBackendIR", runtimeModuleName))
                     | None ->
-                        yield makeDiagnostic $"Checkpoint 'KBackendIR' requires a backend module for runtime module '{runtimeModuleName}'."
+                        yield makeStructuredDiagnostic (MissingBackendModuleForRuntimeModule("KBackendIR", runtimeModuleName))
 
             for moduleDump in backendModules do
                 for spec in moduleDump.Imports do
                     match importedModuleName spec with
                     | Some importedName when not (moduleMap.ContainsKey importedName) ->
                         yield
-                            makeModuleDiagnostic
+                            makeStructuredModuleDiagnostic
                                 workspace.Documents
                                 (renderedModuleIdentity moduleDump.Name)
                                 moduleDump.SourceFile
-                                $"Checkpoint 'KBackendIR' requires imported backend module '{importedName}' to be present for module '{moduleDump.Name}'."
+                                (MissingImportedBackendModule("KBackendIR", moduleDump.Name, importedName))
                     | _ ->
                         ()
 
@@ -1043,8 +1045,8 @@ module CheckpointVerification =
                         |> List.choose (fun binding -> provenancePrimaryLocation workspace.Documents binding.Provenance)
 
                     yield
-                        makeDuplicateLocationDiagnostic
-                            $"Checkpoint 'KBackendIR' requires unique function identities within module '{moduleDump.Name}', but '{functionName}' was duplicated."
+                        makeStructuredDuplicateLocationDiagnostic
+                            (DuplicateBackendFunctionIdentity("KBackendIR", moduleDump.Name, functionName))
                             "also declared here"
                             locations
 
@@ -1059,8 +1061,8 @@ module CheckpointVerification =
                         |> List.choose (fun layout -> provenancePrimaryLocation workspace.Documents layout.Provenance)
 
                     yield
-                        makeDuplicateLocationDiagnostic
-                            $"Checkpoint 'KBackendIR' requires unique data-layout identities within module '{moduleDump.Name}', but '{typeName}' was duplicated."
+                        makeStructuredDuplicateLocationDiagnostic
+                            (DuplicateBackendDataLayoutIdentity("KBackendIR", moduleDump.Name, typeName))
                             "also declared here"
                             locations
 
@@ -1071,22 +1073,22 @@ module CheckpointVerification =
 
                 for layoutName, _ in duplicateEnvironmentLayouts do
                     yield
-                        makeModuleDiagnostic
+                        makeStructuredModuleDiagnostic
                             workspace.Documents
                             (renderedModuleIdentity moduleDump.Name)
                             moduleDump.SourceFile
-                            $"Checkpoint 'KBackendIR' requires unique environment-layout identities within module '{moduleDump.Name}', but '{layoutName}' was duplicated."
+                            (DuplicateBackendEnvironmentLayoutIdentity("KBackendIR", moduleDump.Name, layoutName))
 
                 let supportedIntrinsics = availableIntrinsicTerms workspace.Backend workspace.AllowUnsafeConsume moduleDump.Name
 
                 for intrinsicName in moduleDump.IntrinsicTerms do
                     if not (supportedIntrinsics.Contains intrinsicName) then
                         yield
-                            makeModuleDiagnostic
+                            makeStructuredModuleDiagnostic
                                 workspace.Documents
                                 (renderedModuleIdentity moduleDump.Name)
                                 moduleDump.SourceFile
-                                $"Checkpoint 'KBackendIR' requires intrinsic term '{intrinsicName}' in module '{moduleDump.Name}' to be provided by backend profile '{BackendProfile.toPortableName workspace.Backend}'."
+                                (UnsupportedBackendIntrinsicTerm("KBackendIR", moduleDump.Name, intrinsicName, backendProfile))
 
                 for entryPointName in moduleDump.EntryPoints do
                     match moduleDump.Functions |> List.tryFind (fun binding -> String.Equals(binding.Name, entryPointName, StringComparison.Ordinal)) with

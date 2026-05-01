@@ -4644,6 +4644,105 @@ module SmokeTestsShard4 =
         Assert.Equal(Some "main.answer", tryFindPayloadText "binding-label" deepHandlerDiagnostic)
 
     [<Fact>]
+    let ``backend checkpoint verification diagnostics render from typed evidence`` () =
+        let bag = DiagnosticBag()
+
+        bag.AddError(DiagnosticFact.checkpointVerification (MissingBackendModuleForRuntimeModule("KBackendIR", "main")))
+
+        bag.AddError(
+            DiagnosticFact.checkpointVerification (
+                MissingImportedBackendModule("KBackendIR", "main", "std.io")
+            )
+        )
+
+        bag.AddError(
+            DiagnosticFact.checkpointVerification (
+                DuplicateBackendFunctionIdentity("KBackendIR", "main", "answer")
+            )
+        )
+
+        bag.AddError(
+            DiagnosticFact.checkpointVerification (
+                DuplicateBackendDataLayoutIdentity("KBackendIR", "main", "List")
+            )
+        )
+
+        bag.AddError(
+            DiagnosticFact.checkpointVerification (
+                DuplicateBackendEnvironmentLayoutIdentity("KBackendIR", "main", "main$arity1")
+            )
+        )
+
+        bag.AddError(
+            DiagnosticFact.checkpointVerification (
+                UnsupportedBackendIntrinsicTerm("KBackendIR", "main", "printInt", "zig")
+            )
+        )
+
+        let diagnostics = bag.Items
+
+        let missingBackendModuleDiagnostic =
+            diagnostics
+            |> List.find (fun item ->
+                item.Code = DiagnosticCode.CheckpointVerification
+                && tryFindPayloadText "reason" item = Some "missing-backend-module-for-runtime-module")
+
+        let missingImportedBackendModuleDiagnostic =
+            diagnostics
+            |> List.find (fun item ->
+                item.Code = DiagnosticCode.CheckpointVerification
+                && tryFindPayloadText "reason" item = Some "missing-imported-backend-module")
+
+        let duplicateFunctionDiagnostic =
+            diagnostics
+            |> List.find (fun item ->
+                item.Code = DiagnosticCode.CheckpointVerification
+                && tryFindPayloadText "reason" item = Some "duplicate-backend-function-identity")
+
+        let duplicateDataLayoutDiagnostic =
+            diagnostics
+            |> List.find (fun item ->
+                item.Code = DiagnosticCode.CheckpointVerification
+                && tryFindPayloadText "reason" item = Some "duplicate-backend-data-layout-identity")
+
+        let duplicateEnvironmentLayoutDiagnostic =
+            diagnostics
+            |> List.find (fun item ->
+                item.Code = DiagnosticCode.CheckpointVerification
+                && tryFindPayloadText "reason" item = Some "duplicate-backend-environment-layout-identity")
+
+        let unsupportedBackendIntrinsicDiagnostic =
+            diagnostics
+            |> List.find (fun item ->
+                item.Code = DiagnosticCode.CheckpointVerification
+                && tryFindPayloadText "reason" item = Some "unsupported-backend-intrinsic-term")
+
+        Assert.Equal("checkpoint-verification-diagnostic", missingBackendModuleDiagnostic.Payload.Kind)
+        Assert.Equal(Some "KBackendIR", tryFindPayloadText "checkpoint" missingBackendModuleDiagnostic)
+        Assert.Equal(Some "main", tryFindPayloadText "runtime-module-name" missingBackendModuleDiagnostic)
+
+        Assert.Equal("checkpoint-verification-diagnostic", missingImportedBackendModuleDiagnostic.Payload.Kind)
+        Assert.Equal(Some "main", tryFindPayloadText "module-name" missingImportedBackendModuleDiagnostic)
+        Assert.Equal(Some "std.io", tryFindPayloadText "imported-module-name" missingImportedBackendModuleDiagnostic)
+
+        Assert.Equal("checkpoint-verification-diagnostic", duplicateFunctionDiagnostic.Payload.Kind)
+        Assert.Equal(Some "main", tryFindPayloadText "module-name" duplicateFunctionDiagnostic)
+        Assert.Equal(Some "answer", tryFindPayloadText "function-name" duplicateFunctionDiagnostic)
+
+        Assert.Equal("checkpoint-verification-diagnostic", duplicateDataLayoutDiagnostic.Payload.Kind)
+        Assert.Equal(Some "main", tryFindPayloadText "module-name" duplicateDataLayoutDiagnostic)
+        Assert.Equal(Some "List", tryFindPayloadText "type-name" duplicateDataLayoutDiagnostic)
+
+        Assert.Equal("checkpoint-verification-diagnostic", duplicateEnvironmentLayoutDiagnostic.Payload.Kind)
+        Assert.Equal(Some "main", tryFindPayloadText "module-name" duplicateEnvironmentLayoutDiagnostic)
+        Assert.Equal(Some "main$arity1", tryFindPayloadText "layout-name" duplicateEnvironmentLayoutDiagnostic)
+
+        Assert.Equal("checkpoint-verification-diagnostic", unsupportedBackendIntrinsicDiagnostic.Payload.Kind)
+        Assert.Equal(Some "main", tryFindPayloadText "module-name" unsupportedBackendIntrinsicDiagnostic)
+        Assert.Equal(Some "printInt", tryFindPayloadText "intrinsic-name" unsupportedBackendIntrinsicDiagnostic)
+        Assert.Equal(Some "zig", tryFindPayloadText "backend-profile" unsupportedBackendIntrinsicDiagnostic)
+
+    [<Fact>]
     let ``surface record diagnostics render from typed evidence`` () =
         let bag = DiagnosticBag()
         bag.AddError(DiagnosticFact.surfaceRecord (RecordFieldDeclaredMoreThanOnce "name"))

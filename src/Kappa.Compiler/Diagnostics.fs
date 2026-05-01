@@ -885,6 +885,12 @@ type CheckpointVerificationEvidence =
     | DuplicateRuntimePatternBinder of checkpoint: string * bindingLabel: string * binderName: string
     | DuplicateRuntimeClosureParameter of checkpoint: string * bindingLabel: string * parameterName: string
     | DeepRuntimeHandlerMustBeDesugared of checkpoint: string * bindingLabel: string
+    | MissingBackendModuleForRuntimeModule of checkpoint: string * runtimeModuleName: string
+    | MissingImportedBackendModule of checkpoint: string * moduleName: string * importedModuleName: string
+    | DuplicateBackendFunctionIdentity of checkpoint: string * moduleName: string * functionName: string
+    | DuplicateBackendDataLayoutIdentity of checkpoint: string * moduleName: string * typeName: string
+    | DuplicateBackendEnvironmentLayoutIdentity of checkpoint: string * moduleName: string * layoutName: string
+    | UnsupportedBackendIntrinsicTerm of checkpoint: string * moduleName: string * intrinsicName: string * backendProfile: string
 
 type SurfaceRecordContext =
     | RecordTypeTelescope
@@ -2716,6 +2722,72 @@ module DiagnosticFact =
                         [ field "reason" (DiagnosticPayloadText "deep-runtime-handler-must-be-desugared")
                           field "checkpoint" (DiagnosticPayloadText checkpoint)
                           field "binding-label" (DiagnosticPayloadText bindingLabel) ])
+            | MissingBackendModuleForRuntimeModule(checkpoint, runtimeModuleName) ->
+                descriptor
+                    DiagnosticCode.CheckpointVerification
+                    None
+                    $"Checkpoint '{checkpoint}' requires a backend module for runtime module '{runtimeModuleName}'."
+                    (payload
+                        "checkpoint-verification-diagnostic"
+                        [ field "reason" (DiagnosticPayloadText "missing-backend-module-for-runtime-module")
+                          field "checkpoint" (DiagnosticPayloadText checkpoint)
+                          field "runtime-module-name" (DiagnosticPayloadText runtimeModuleName) ])
+            | MissingImportedBackendModule(checkpoint, moduleName, importedModuleName) ->
+                descriptor
+                    DiagnosticCode.CheckpointVerification
+                    None
+                    $"Checkpoint '{checkpoint}' requires imported backend module '{importedModuleName}' to be present for module '{moduleName}'."
+                    (payload
+                        "checkpoint-verification-diagnostic"
+                        [ field "reason" (DiagnosticPayloadText "missing-imported-backend-module")
+                          field "checkpoint" (DiagnosticPayloadText checkpoint)
+                          field "module-name" (DiagnosticPayloadText moduleName)
+                          field "imported-module-name" (DiagnosticPayloadText importedModuleName) ])
+            | DuplicateBackendFunctionIdentity(checkpoint, moduleName, functionName) ->
+                descriptor
+                    DiagnosticCode.CheckpointVerification
+                    None
+                    $"Checkpoint '{checkpoint}' requires unique function identities within module '{moduleName}', but '{functionName}' was duplicated."
+                    (payload
+                        "checkpoint-verification-diagnostic"
+                        [ field "reason" (DiagnosticPayloadText "duplicate-backend-function-identity")
+                          field "checkpoint" (DiagnosticPayloadText checkpoint)
+                          field "module-name" (DiagnosticPayloadText moduleName)
+                          field "function-name" (DiagnosticPayloadText functionName) ])
+            | DuplicateBackendDataLayoutIdentity(checkpoint, moduleName, typeName) ->
+                descriptor
+                    DiagnosticCode.CheckpointVerification
+                    None
+                    $"Checkpoint '{checkpoint}' requires unique data-layout identities within module '{moduleName}', but '{typeName}' was duplicated."
+                    (payload
+                        "checkpoint-verification-diagnostic"
+                        [ field "reason" (DiagnosticPayloadText "duplicate-backend-data-layout-identity")
+                          field "checkpoint" (DiagnosticPayloadText checkpoint)
+                          field "module-name" (DiagnosticPayloadText moduleName)
+                          field "type-name" (DiagnosticPayloadText typeName) ])
+            | DuplicateBackendEnvironmentLayoutIdentity(checkpoint, moduleName, layoutName) ->
+                descriptor
+                    DiagnosticCode.CheckpointVerification
+                    None
+                    $"Checkpoint '{checkpoint}' requires unique environment-layout identities within module '{moduleName}', but '{layoutName}' was duplicated."
+                    (payload
+                        "checkpoint-verification-diagnostic"
+                        [ field "reason" (DiagnosticPayloadText "duplicate-backend-environment-layout-identity")
+                          field "checkpoint" (DiagnosticPayloadText checkpoint)
+                          field "module-name" (DiagnosticPayloadText moduleName)
+                          field "layout-name" (DiagnosticPayloadText layoutName) ])
+            | UnsupportedBackendIntrinsicTerm(checkpoint, moduleName, intrinsicName, backendProfile) ->
+                descriptor
+                    DiagnosticCode.CheckpointVerification
+                    None
+                    $"Checkpoint '{checkpoint}' requires intrinsic term '{intrinsicName}' in module '{moduleName}' to be provided by backend profile '{backendProfile}'."
+                    (payload
+                        "checkpoint-verification-diagnostic"
+                        [ field "reason" (DiagnosticPayloadText "unsupported-backend-intrinsic-term")
+                          field "checkpoint" (DiagnosticPayloadText checkpoint)
+                          field "module-name" (DiagnosticPayloadText moduleName)
+                          field "intrinsic-name" (DiagnosticPayloadText intrinsicName)
+                          field "backend-profile" (DiagnosticPayloadText backendProfile) ])
         | SurfaceRecordDiagnostic evidence ->
             match evidence with
             | RecordFieldDeclaredMoreThanOnce fieldName ->
