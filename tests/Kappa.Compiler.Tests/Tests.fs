@@ -4443,6 +4443,7 @@ module SmokeTestsShard4 =
         bag.AddError(DiagnosticFact.checkpointVerification (DuplicateFileIdentity("surface-source", "src/main.kp")))
         bag.AddError(DiagnosticFact.checkpointVerification (NonEmptyLineTableRequired("surface-source", "src/empty.kp")))
         bag.AddError(DiagnosticFact.checkpointVerification (EndOfFileTokenRequired("FIXITIES", "src/frontend.kp")))
+        bag.AddError(DiagnosticFact.checkpointVerification (UnknownVerificationCheckpoint "JUNK"))
 
         bag.AddError(
             DiagnosticFact.checkpointVerification (
@@ -4478,6 +4479,12 @@ module SmokeTestsShard4 =
                 item.Code = DiagnosticCode.CheckpointVerification
                 && tryFindPayloadText "reason" item = Some "end-of-file-token-required")
 
+        let unknownCheckpointDiagnostic =
+            diagnostics
+            |> List.find (fun item ->
+                item.Code = DiagnosticCode.CheckpointVerification
+                && tryFindPayloadText "reason" item = Some "unknown-verification-checkpoint")
+
         let phasesDiagnostic =
             diagnostics
             |> List.find (fun item ->
@@ -4506,6 +4513,9 @@ module SmokeTestsShard4 =
         Assert.Equal("checkpoint-verification-diagnostic", eofDiagnostic.Payload.Kind)
         Assert.Equal(Some "FIXITIES", tryFindPayloadText "checkpoint" eofDiagnostic)
         Assert.Equal(Some "src/frontend.kp", tryFindPayloadText "file-path" eofDiagnostic)
+
+        Assert.Equal("checkpoint-verification-diagnostic", unknownCheckpointDiagnostic.Payload.Kind)
+        Assert.Equal(Some "JUNK", tryFindPayloadText "checkpoint" unknownCheckpointDiagnostic)
 
         Assert.Equal("checkpoint-verification-diagnostic", phasesDiagnostic.Payload.Kind)
         Assert.Equal(Some "BODY_RESOLVE", tryFindPayloadText "checkpoint" phasesDiagnostic)

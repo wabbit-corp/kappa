@@ -868,6 +868,7 @@ type TargetCheckpointDiagnosticEvidence =
     | UnknownTargetCheckpoint of checkpoint: string
 
 type CheckpointVerificationEvidence =
+    | UnknownVerificationCheckpoint of checkpoint: string
     | DuplicateFileIdentity of checkpoint: string * filePath: string
     | NonEmptyLineTableRequired of checkpoint: string * filePath: string
     | EndOfFileTokenRequired of checkpoint: string * filePath: string
@@ -2565,6 +2566,15 @@ module DiagnosticFact =
                           field "checkpoint" (DiagnosticPayloadText checkpoint) ])
         | CheckpointVerificationDiagnostic evidence ->
             match evidence with
+            | UnknownVerificationCheckpoint checkpoint ->
+                descriptor
+                    DiagnosticCode.CheckpointVerification
+                    None
+                    $"Unknown checkpoint '{checkpoint}'."
+                    (payload
+                        "checkpoint-verification-diagnostic"
+                        [ field "reason" (DiagnosticPayloadText "unknown-verification-checkpoint")
+                          field "checkpoint" (DiagnosticPayloadText checkpoint) ])
             | DuplicateFileIdentity(checkpoint, filePath) ->
                 descriptor
                     DiagnosticCode.CheckpointVerification

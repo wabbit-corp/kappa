@@ -4,9 +4,6 @@ open System
 
 // Checks published checkpoints against the compiler's observable pipeline contract.
 module CheckpointVerification =
-    let private makeDiagnostic message =
-        Diagnostics.errorFact "checkpoint-verification" None None [] (DiagnosticFact.simple SimpleDiagnosticKind.CheckpointVerification message)
-
     let private makeStructuredDiagnostic evidence =
         Diagnostics.errorFact "checkpoint-verification" None None [] (DiagnosticFact.checkpointVerification evidence)
 
@@ -54,28 +51,12 @@ module CheckpointVerification =
         |> Option.map (fun location -> [ relatedLocation $"module origin: {moduleName}" location ])
         |> Option.defaultValue []
 
-    let private makeModuleDiagnostic (documents: ParsedDocument list) moduleIdentity filePath message =
-        let location = fileOriginLocation documents filePath
-
-        { makeDiagnostic message with
-            Location = location
-            RelatedLocations = moduleOriginRelatedLocations documents moduleIdentity filePath }
-
     let private makeStructuredModuleDiagnostic (documents: ParsedDocument list) moduleIdentity filePath evidence =
         let location = fileOriginLocation documents filePath
 
         { makeStructuredDiagnostic evidence with
             Location = location
             RelatedLocations = moduleOriginRelatedLocations documents moduleIdentity filePath }
-
-    let private makeOriginDiagnostic (documents: ParsedDocument list) (origin: KCoreOrigin) message =
-        let location =
-            provenancePrimaryLocation documents origin
-            |> Option.orElseWith (fun () -> fileOriginLocation documents origin.FilePath)
-
-        { makeDiagnostic message with
-            Location = location
-            RelatedLocations = moduleOriginRelatedLocations documents origin.ModuleIdentity origin.FilePath }
 
     let private makeStructuredOriginDiagnostic (documents: ParsedDocument list) (origin: KCoreOrigin) evidence =
         let location =
@@ -85,15 +66,6 @@ module CheckpointVerification =
         { makeStructuredDiagnostic evidence with
             Location = location
             RelatedLocations = moduleOriginRelatedLocations documents origin.ModuleIdentity origin.FilePath }
-
-    let private makeDuplicateLocationDiagnostic message role locations =
-        match locations with
-        | head :: tail ->
-            { makeDiagnostic message with
-                Location = Some head
-                RelatedLocations = tail |> List.map (relatedLocation role) }
-        | [] ->
-            makeDiagnostic message
 
     let private makeStructuredDuplicateLocationDiagnostic evidence role locations =
         match locations with
@@ -1258,6 +1230,6 @@ module CheckpointVerification =
                 | Some None ->
                     verifySurfaceSource workspace
                 | None ->
-                    [ makeDiagnostic $"Unknown checkpoint '{checkpoint}'." ]
+                    [ makeStructuredDiagnostic (UnknownVerificationCheckpoint checkpoint) ]
 
         diagnostics |> List.distinct
