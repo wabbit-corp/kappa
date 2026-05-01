@@ -244,7 +244,10 @@ module internal IlDotNetBackendTyping =
                     | _ ->
                         match rawModules |> Map.tryFind currentModule |> Option.bind (fun moduleInfo -> moduleInfo.Bindings |> Map.tryFind bindingName) with
                         | None ->
-                            Result.Error $"IL backend could not resolve binding '{currentModule}.{bindingName}'."
+                            Result.Error(
+                                DiagnosticFact.ClrBackendEmitterError.message
+                                    (ClrBindingResolutionFailed(currentModule, bindingName))
+                            )
                         | Some binding ->
                             result {
                                 let! declaredTypes = tryResolveDeclaredBindingTypes currentModule bindingName
@@ -252,8 +255,10 @@ module internal IlDotNetBackendTyping =
                                 match binding.Parameters, declaredTypes, binding.Body with
                                 | [], Some declared, None when declared.ParameterTypes |> Option.exists (List.isEmpty >> not) ->
                                     return!
-                                        Result.Error
-                                            $"IL backend expected zero-argument binding '{currentModule}.{bindingName}' to have a zero-argument declaration."
+                                        Result.Error(
+                                            DiagnosticFact.ClrBackendEmitterError.message
+                                                (ClrZeroArgumentBindingDeclarationArityMismatch(currentModule, bindingName))
+                                        )
                                 | [], declared, None ->
                                     match declared |> Option.bind (fun info -> info.ReturnType) with
                                     | Some declaredReturnType ->
@@ -268,8 +273,10 @@ module internal IlDotNetBackendTyping =
                                         return info
                                     | None ->
                                         return!
-                                            Result.Error
-                                                $"IL backend requires a declared return type for bodyless binding '{currentModule}.{bindingName}'."
+                                            Result.Error(
+                                                DiagnosticFact.ClrBackendEmitterError.message
+                                                    (ClrBodylessBindingRequiresDeclaredReturnType(currentModule, bindingName))
+                                            )
                                 | [], declared, Some body ->
                                     let declaredReturnType =
                                         declared |> Option.bind (fun info -> info.ReturnType)
@@ -291,8 +298,15 @@ module internal IlDotNetBackendTyping =
                                     match declaredReturnType with
                                     | Some expectedReturnType when not (typesEquivalent expectedReturnType bodyType) ->
                                         return!
-                                            Result.Error
-                                                $"IL backend expected '{currentModule}.{bindingName}' to return {formatIlType expectedReturnType}, but the body returns {formatIlType bodyType}."
+                                            Result.Error(
+                                                DiagnosticFact.ClrBackendEmitterError.message
+                                                    (ClrBindingReturnTypeMismatch(
+                                                        currentModule,
+                                                        bindingName,
+                                                        formatIlType expectedReturnType,
+                                                        formatIlType bodyType
+                                                    ))
+                                            )
                                     | _ ->
                                         let info =
                                             { Binding = binding
@@ -306,18 +320,29 @@ module internal IlDotNetBackendTyping =
                                         return info
                                 | parameters, Some { ParameterTypes = None }, _ ->
                                     return!
-                                        Result.Error
-                                            $"IL backend currently requires parameter types for '{currentModule}.{bindingName}'."
+                                        Result.Error(
+                                            DiagnosticFact.ClrBackendEmitterError.message
+                                                (ClrParameterizedBindingRequiresDeclaredParameterTypes(currentModule, bindingName))
+                                        )
                                 | parameters, None, _ ->
                                     return!
-                                        Result.Error
-                                            $"IL backend currently requires declared types for parameterized binding '{currentModule}.{bindingName}'."
+                                        Result.Error(
+                                            DiagnosticFact.ClrBackendEmitterError.message
+                                                (ClrParameterizedBindingRequiresDeclaredTypes(currentModule, bindingName))
+                                        )
                                 | parameters, Some { ParameterTypes = Some parameterTypes
                                                      ReturnType = declaredReturnType }, body ->
                                     if List.length parameters <> List.length parameterTypes then
                                         return!
-                                            Result.Error
-                                                $"IL backend expected declaration for '{currentModule}.{bindingName}' to declare {List.length parameters} parameter type(s), but found {List.length parameterTypes}."
+                                            Result.Error(
+                                                DiagnosticFact.ClrBackendEmitterError.message
+                                                    (ClrBindingDeclaredParameterCountMismatch(
+                                                        currentModule,
+                                                        bindingName,
+                                                        List.length parameters,
+                                                        List.length parameterTypes
+                                                    ))
+                                            )
 
                                     let parameterNames =
                                         parameters |> List.map (fun parameter -> parameter.Name)
@@ -350,8 +375,10 @@ module internal IlDotNetBackendTyping =
                                             return resolvedInfo
                                         | None ->
                                             return!
-                                                Result.Error
-                                                    $"IL backend requires an explicit return type for bodyless binding '{currentModule}.{bindingName}'."
+                                                Result.Error(
+                                                    DiagnosticFact.ClrBackendEmitterError.message
+                                                        (ClrBodylessParameterizedBindingRequiresExplicitReturnType(currentModule, bindingName))
+                                                )
                                     | Some body ->
                                         let localTypes =
                                             List.zip parameterNames parameterTypes |> Map.ofList
@@ -372,8 +399,15 @@ module internal IlDotNetBackendTyping =
                                             cache.Remove(cacheKey) |> ignore
 
                                             return!
-                                                Result.Error
-                                                    $"IL backend expected '{currentModule}.{bindingName}' to return {formatIlType resolvedReturnType}, but the body returns {formatIlType bodyType}."
+                                                Result.Error(
+                                                    DiagnosticFact.ClrBackendEmitterError.message
+                                                        (ClrBindingReturnTypeMismatch(
+                                                            currentModule,
+                                                            bindingName,
+                                                            formatIlType resolvedReturnType,
+                                                            formatIlType bodyType
+                                                        ))
+                                                )
 
                                         let resolvedInfo =
                                             { info with
@@ -440,8 +474,13 @@ module internal IlDotNetBackendTyping =
                         if literalType = expectedType then
                             Result.Ok(Map.empty<string, IlType>)
                         else
-                            Result.Error
-                                $"IL backend cannot match literal of type {formatIlType literalType} against {formatIlType expectedType}."
+                            Result.Error(
+                                DiagnosticFact.ClrBackendEmitterError.message
+                                    (ClrPatternLiteralTypeMismatch(
+                                        formatIlType literalType,
+                                        formatIlType expectedType
+                                    ))
+                            )
                     | KRuntimeOrPattern alternatives ->
                         alternatives
                         |> List.fold
@@ -495,8 +534,13 @@ module internal IlDotNetBackendTyping =
                             | Result.Ok _ ->
                                 Result.Ok actualType
                             | Result.Error _ ->
-                                Result.Error
-                                    $"IL backend expected expression of type {formatIlType expected}, but found {formatIlType actualType}."
+                                Result.Error(
+                                    DiagnosticFact.ClrBackendEmitterError.message
+                                        (ClrExpressionTypeMismatch(
+                                            formatIlType expected,
+                                            formatIlType actualType
+                                        ))
+                                )
                         | _ ->
                             Result.Ok actualType
 
@@ -671,8 +715,10 @@ module internal IlDotNetBackendTyping =
 
                                     if remainingReturnTypes |> List.exists ((<>) firstBinding.ReturnType) then
                                         return!
-                                            Result.Error
-                                                $"IL backend could not infer a unique result type for trait call '{traitName}.{memberName}'."
+                                            Result.Error(
+                                                DiagnosticFact.ClrBackendEmitterError.message
+                                                    (ClrTraitCallResultTypeInferenceFailed(traitName, memberName))
+                                            )
 
                                     return firstBinding.ReturnType
                         }
@@ -727,8 +773,10 @@ module internal IlDotNetBackendTyping =
                                             match tryResolveConstructor rawModules currentModule constructorName with
                                             | None ->
                                                 let constructorText = String.concat "." constructorName
-                                                Result.Error
-                                                    $"IL backend could not resolve constructor '{constructorText}' for operator 'is'."
+                                                Result.Error(
+                                                    DiagnosticFact.ClrBackendEmitterError.message
+                                                        (ClrTagTestConstructorResolutionFailed constructorText)
+                                                )
                                             | Some(_, constructorInfo) ->
                                                 unifyTypes Map.empty (constructorResultType constructorInfo) leftType
                                                 |> Result.map (fun _ -> IlPrimitive IlBool)

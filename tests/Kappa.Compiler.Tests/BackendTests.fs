@@ -759,6 +759,190 @@ module BackendTestsShard4 =
             )
 
     [<Fact>]
+    let ``dotnet backend reports structured bodyless zero argument binding return type failures`` () =
+        let workspace =
+            compileInMemoryWorkspaceWithBackend
+                "memory-dotnet-bodyless-zero-arg-return-type-root"
+                "dotnet"
+                [
+                    "main.kp",
+                    [
+                        "module main"
+                        "let result = 0"
+                    ]
+                    |> String.concat "\n"
+                ]
+
+        Assert.False(workspace.HasErrors, sprintf "Expected no frontend diagnostics, got %A" workspace.Diagnostics)
+
+        let driftedClrAssemblyIR =
+            workspace.ClrAssemblyIR
+            |> List.map (fun moduleDump ->
+                if moduleDump.Name = "main" then
+                    { moduleDump with
+                        Bindings =
+                            moduleDump.Bindings
+                            |> List.map (fun binding ->
+                                if binding.Name = "result" then
+                                    { binding with
+                                        Body = None
+                                        ReturnTypeText = None }
+                                else
+                                    binding) }
+                else
+                    moduleDump)
+
+        let outputDirectory = createScratchDirectory "dotnet-bodyless-zero-arg-return-type"
+
+        match Backend.emitDotNetArtifact { workspace with ClrAssemblyIR = driftedClrAssemblyIR } "main.result" outputDirectory DotNetDeployment.Managed with
+        | Result.Ok artifact ->
+            failwithf "Expected dotnet artifact emission to reject bodyless zero-argument bindings without return types, but emitted '%s'." artifact.GeneratedFilePath
+        | Result.Error message ->
+            Assert.Equal(
+                "The CLR-backed dotnet profile could not lower 'main.result': The CLR dotnet backend requires a declared return type for bodyless binding 'main.result'.",
+                message
+            )
+
+    [<Fact>]
+    let ``dotnet backend reports structured parameterized binding parameter type failures`` () =
+        let workspace =
+            compileInMemoryWorkspaceWithBackend
+                "memory-dotnet-parameterized-binding-parameter-types-root"
+                "dotnet"
+                [
+                    "main.kp",
+                    [
+                        "module main"
+                        "f : Int -> Int"
+                        "let f x = x"
+                        "let result = f 1"
+                    ]
+                    |> String.concat "\n"
+                ]
+
+        Assert.False(workspace.HasErrors, sprintf "Expected no frontend diagnostics, got %A" workspace.Diagnostics)
+
+        let driftedClrAssemblyIR =
+            workspace.ClrAssemblyIR
+            |> List.map (fun moduleDump ->
+                if moduleDump.Name = "main" then
+                    { moduleDump with
+                        Bindings =
+                            moduleDump.Bindings
+                            |> List.map (fun binding ->
+                                if binding.Name = "f" then
+                                    { binding with
+                                        Parameters =
+                                            binding.Parameters
+                                            |> List.map (fun parameter -> { parameter with TypeText = None }) }
+                                else
+                                    binding) }
+                else
+                    moduleDump)
+
+        let outputDirectory = createScratchDirectory "dotnet-parameterized-binding-parameter-types"
+
+        match Backend.emitDotNetArtifact { workspace with ClrAssemblyIR = driftedClrAssemblyIR } "main.result" outputDirectory DotNetDeployment.Managed with
+        | Result.Ok artifact ->
+            failwithf "Expected dotnet artifact emission to reject parameterized bindings without declared parameter types, but emitted '%s'." artifact.GeneratedFilePath
+        | Result.Error message ->
+            Assert.Equal(
+                "The CLR-backed dotnet profile could not lower 'main.result': The CLR dotnet backend currently requires parameter types for 'main.f'.",
+                message
+            )
+
+    [<Fact>]
+    let ``dotnet backend reports structured bodyless parameterized binding return type failures`` () =
+        let workspace =
+            compileInMemoryWorkspaceWithBackend
+                "memory-dotnet-bodyless-parameterized-binding-return-type-root"
+                "dotnet"
+                [
+                    "main.kp",
+                    [
+                        "module main"
+                        "f : Int -> Int"
+                        "let f x = x"
+                        "let result = f 1"
+                    ]
+                    |> String.concat "\n"
+                ]
+
+        Assert.False(workspace.HasErrors, sprintf "Expected no frontend diagnostics, got %A" workspace.Diagnostics)
+
+        let driftedClrAssemblyIR =
+            workspace.ClrAssemblyIR
+            |> List.map (fun moduleDump ->
+                if moduleDump.Name = "main" then
+                    { moduleDump with
+                        Bindings =
+                            moduleDump.Bindings
+                            |> List.map (fun binding ->
+                                if binding.Name = "f" then
+                                    { binding with
+                                        Body = None
+                                        ReturnTypeText = None }
+                                else
+                                    binding) }
+                else
+                    moduleDump)
+
+        let outputDirectory = createScratchDirectory "dotnet-bodyless-parameterized-binding-return-type"
+
+        match Backend.emitDotNetArtifact { workspace with ClrAssemblyIR = driftedClrAssemblyIR } "main.result" outputDirectory DotNetDeployment.Managed with
+        | Result.Ok artifact ->
+            failwithf "Expected dotnet artifact emission to reject bodyless parameterized bindings without explicit return types, but emitted '%s'." artifact.GeneratedFilePath
+        | Result.Error message ->
+            Assert.Equal(
+                "The CLR-backed dotnet profile could not lower 'main.result': The CLR dotnet backend requires an explicit return type for bodyless binding 'main.f'.",
+                message
+            )
+
+    [<Fact>]
+    let ``dotnet backend reports structured expected expression type failures`` () =
+        let workspace =
+            compileInMemoryWorkspaceWithBackend
+                "memory-dotnet-binding-return-type-mismatch-root"
+                "dotnet"
+                [
+                    "main.kp",
+                    [
+                        "module main"
+                        "result : Int"
+                        "let result = 0"
+                    ]
+                    |> String.concat "\n"
+                ]
+
+        Assert.False(workspace.HasErrors, sprintf "Expected no frontend diagnostics, got %A" workspace.Diagnostics)
+
+        let driftedClrAssemblyIR =
+            workspace.ClrAssemblyIR
+            |> List.map (fun moduleDump ->
+                if moduleDump.Name = "main" then
+                    { moduleDump with
+                        Bindings =
+                            moduleDump.Bindings
+                            |> List.map (fun binding ->
+                                if binding.Name = "result" then
+                                    { binding with ReturnTypeText = Some "String" }
+                                else
+                                    binding) }
+                else
+                    moduleDump)
+
+        let outputDirectory = createScratchDirectory "dotnet-binding-return-type-mismatch"
+
+        match Backend.emitDotNetArtifact { workspace with ClrAssemblyIR = driftedClrAssemblyIR } "main.result" outputDirectory DotNetDeployment.Managed with
+        | Result.Ok artifact ->
+            failwithf "Expected dotnet artifact emission to reject expected-expression type mismatches, but emitted '%s'." artifact.GeneratedFilePath
+        | Result.Error message ->
+            Assert.Equal(
+                "The CLR-backed dotnet profile could not lower 'main.result': The CLR dotnet backend expected expression of type String, but found Int.",
+                message
+            )
+
+    [<Fact>]
     let ``dotnet backend reports structured constructor pattern resolution failures`` () =
         let workspace =
             compileInMemoryWorkspaceWithBackend

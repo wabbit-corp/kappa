@@ -863,6 +863,16 @@ type ClrBackendEmitterErrorEvidence =
     | PrefixedStringsUnsupported
     | FunctionValuedNameUnsupported of targetModuleName: string * bindingName: string
     | ConstructorValuedNameUnsupported of targetModuleName: string * constructorName: string
+    | ClrBindingResolutionFailed of moduleName: string * bindingName: string
+    | ClrZeroArgumentBindingDeclarationArityMismatch of moduleName: string * bindingName: string
+    | ClrBodylessBindingRequiresDeclaredReturnType of moduleName: string * bindingName: string
+    | ClrParameterizedBindingRequiresDeclaredParameterTypes of moduleName: string * bindingName: string
+    | ClrParameterizedBindingRequiresDeclaredTypes of moduleName: string * bindingName: string
+    | ClrBindingDeclaredParameterCountMismatch of moduleName: string * bindingName: string * expectedArity: int * actualArity: int
+    | ClrBodylessParameterizedBindingRequiresExplicitReturnType of moduleName: string * bindingName: string
+    | ClrBindingReturnTypeMismatch of moduleName: string * bindingName: string * expectedTypeText: string * actualTypeText: string
+    | ClrPatternLiteralTypeMismatch of literalTypeText: string * expectedTypeText: string
+    | ClrExpressionTypeMismatch of expectedTypeText: string * actualTypeText: string
     | ClrOrPatternAlternativesBindDifferentNames
     | ClrOrPatternBinderTypeMismatch of binderName: string * expectedTypeText: string * actualTypeText: string
     | ClrConstructorPatternResolutionFailed of patternName: string
@@ -887,6 +897,8 @@ type ClrBackendEmitterErrorEvidence =
     | ClrMatchRequiresAtLeastOneCase
     | ClrMatchCaseTypesMustMatch
     | ClrApplicationRequiresNamedCallee
+    | ClrTraitCallResultTypeInferenceFailed of traitName: string * memberName: string
+    | ClrTagTestConstructorResolutionFailed of constructorText: string
     | UnaryOperatorUnsupported of operatorName: string
     | UnaryOperatorOperandTypeUnsupported of operatorName: string * operandTypeText: string
     | BinaryOperatorUnsupported of operatorName: string * leftTypeText: string * rightTypeText: string
@@ -1790,6 +1802,26 @@ module DiagnosticFact =
                 $"The CLR dotnet backend does not yet support function-valued name '{targetModuleName}.{bindingName}'."
             | ConstructorValuedNameUnsupported(targetModuleName, constructorName) ->
                 $"The CLR dotnet backend does not yet support constructor-valued name '{targetModuleName}.{constructorName}'."
+            | ClrBindingResolutionFailed(moduleName, bindingName) ->
+                $"The CLR dotnet backend could not resolve binding '{moduleName}.{bindingName}'."
+            | ClrZeroArgumentBindingDeclarationArityMismatch(moduleName, bindingName) ->
+                $"The CLR dotnet backend expected zero-argument binding '{moduleName}.{bindingName}' to have a zero-argument declaration."
+            | ClrBodylessBindingRequiresDeclaredReturnType(moduleName, bindingName) ->
+                $"The CLR dotnet backend requires a declared return type for bodyless binding '{moduleName}.{bindingName}'."
+            | ClrParameterizedBindingRequiresDeclaredParameterTypes(moduleName, bindingName) ->
+                $"The CLR dotnet backend currently requires parameter types for '{moduleName}.{bindingName}'."
+            | ClrParameterizedBindingRequiresDeclaredTypes(moduleName, bindingName) ->
+                $"The CLR dotnet backend currently requires declared types for parameterized binding '{moduleName}.{bindingName}'."
+            | ClrBindingDeclaredParameterCountMismatch(moduleName, bindingName, expectedArity, actualArity) ->
+                $"The CLR dotnet backend expected declaration for '{moduleName}.{bindingName}' to declare {expectedArity} parameter type(s), but found {actualArity}."
+            | ClrBodylessParameterizedBindingRequiresExplicitReturnType(moduleName, bindingName) ->
+                $"The CLR dotnet backend requires an explicit return type for bodyless binding '{moduleName}.{bindingName}'."
+            | ClrBindingReturnTypeMismatch(moduleName, bindingName, expectedTypeText, actualTypeText) ->
+                $"The CLR dotnet backend expected '{moduleName}.{bindingName}' to return {expectedTypeText}, but the body returns {actualTypeText}."
+            | ClrPatternLiteralTypeMismatch(literalTypeText, expectedTypeText) ->
+                $"The CLR dotnet backend cannot match literal of type {literalTypeText} against {expectedTypeText}."
+            | ClrExpressionTypeMismatch(expectedTypeText, actualTypeText) ->
+                $"The CLR dotnet backend expected expression of type {expectedTypeText}, but found {actualTypeText}."
             | ClrOrPatternAlternativesBindDifferentNames ->
                 "The CLR dotnet backend requires each or-pattern alternative to bind the same names."
             | ClrOrPatternBinderTypeMismatch(binderName, expectedTypeText, actualTypeText) ->
@@ -1838,6 +1870,10 @@ module DiagnosticFact =
                 "The CLR dotnet backend requires all match cases to return the same type."
             | ClrApplicationRequiresNamedCallee ->
                 "The CLR dotnet backend currently supports application only when the callee is a named binding."
+            | ClrTraitCallResultTypeInferenceFailed(traitName, memberName) ->
+                $"The CLR dotnet backend could not infer a unique result type for trait call '{traitName}.{memberName}'."
+            | ClrTagTestConstructorResolutionFailed constructorText ->
+                $"The CLR dotnet backend could not resolve constructor '{constructorText}' for operator 'is'."
             | UnaryOperatorUnsupported operatorName ->
                 $"The CLR dotnet backend does not yet support unary operator '{operatorName}'."
             | UnaryOperatorOperandTypeUnsupported(operatorName, operandTypeText) ->
