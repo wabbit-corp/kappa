@@ -903,6 +903,15 @@ type SurfaceElaborationDiagnosticEvidence =
     | QuoteSpliceRequiresSyntaxNotElabSyntax
     | TopLevelSpliceRequiresSyntaxOrElabSyntax of actualTypeText: string
     | DoBindRequiresBindableCarrier of sourceTypeText: string
+    | HandlerClausesMustReturnCarrierResultType of actualTypeText: string
+    | HandlerEffectRowMissingLabel of effectName: string * effectRowText: string
+    | HandlerEffectRowNeedsTailRefinement of effectName: string * effectRowText: string
+    | HandlerHandledExpressionMustBeEff of handledTypeText: string
+    | HandlerMissingOperationClause of effectName: string * operationName: string
+    | HandlerDuplicateOperationClause of effectName: string * operationName: string
+    | HandlerUnexpectedOperationClause of effectName: string * operationName: string
+    | HandlerOperationClauseArityMismatch of operationName: string * actualArgumentCount: int * expectedArgumentCount: int
+    | HandlerRelevantResumptionUnused of operationName: string * resumptionName: string
     | TraitConstraintUnresolved of constraintText: string
     | ImplicitTraitConstraintUnresolved of constraintText: string
     | TraitConstraintAmbiguous of constraintText: string * candidateTexts: string list
@@ -2835,6 +2844,95 @@ module DiagnosticFact =
                         "surface-elaboration-diagnostic"
                         [ field "reason" (DiagnosticPayloadText "do-bind-requires-bindable-carrier")
                           field "source-type-text" (DiagnosticPayloadText sourceTypeText) ])
+            | HandlerClausesMustReturnCarrierResultType actualTypeText ->
+                descriptor
+                    DiagnosticCode.TypeEqualityMismatch
+                    None
+                    $"Handler clauses must return a carrier-applied result type 'm b', but inferred '{actualTypeText}'."
+                    (payload
+                        "surface-elaboration-diagnostic"
+                        [ field "reason" (DiagnosticPayloadText "handler-clauses-must-return-carrier-result-type")
+                          field "actual-type-text" (DiagnosticPayloadText actualTypeText) ])
+            | HandlerEffectRowMissingLabel(effectName, effectRowText) ->
+                descriptor
+                    DiagnosticCode.HandlerEffectRowMismatch
+                    None
+                    $"Handler for '{effectName}' expects the handled computation to carry label '{effectName}' in its effect row, but found '{effectRowText}'."
+                    (payload
+                        "surface-elaboration-diagnostic"
+                        [ field "reason" (DiagnosticPayloadText "handler-effect-row-missing-label")
+                          field "effect-name" (DiagnosticPayloadText effectName)
+                          field "effect-row-text" (DiagnosticPayloadText effectRowText) ])
+            | HandlerEffectRowNeedsTailRefinement(effectName, effectRowText) ->
+                descriptor
+                    DiagnosticCode.HandlerEffectRowMismatch
+                    None
+                    $"Handler for '{effectName}' cannot split label '{effectName}' out of open effect row '{effectRowText}' without explicit row refinement. Mention '{effectName}' explicitly in the handled computation type."
+                    (payload
+                        "surface-elaboration-diagnostic"
+                        [ field "reason" (DiagnosticPayloadText "handler-effect-row-needs-tail-refinement")
+                          field "effect-name" (DiagnosticPayloadText effectName)
+                          field "effect-row-text" (DiagnosticPayloadText effectRowText) ])
+            | HandlerHandledExpressionMustBeEff handledTypeText ->
+                descriptor
+                    DiagnosticCode.HandlerEffectRowMismatch
+                    None
+                    $"Handler expects an Eff computation, but the handled expression has type '{handledTypeText}'."
+                    (payload
+                        "surface-elaboration-diagnostic"
+                        [ field "reason" (DiagnosticPayloadText "handler-handled-expression-must-be-eff")
+                          field "handled-type-text" (DiagnosticPayloadText handledTypeText) ])
+            | HandlerMissingOperationClause(effectName, operationName) ->
+                descriptor
+                    DiagnosticCode.HandlerClauseMissing
+                    None
+                    $"Handler for '{effectName}' is missing a clause for operation '{operationName}'."
+                    (payload
+                        "surface-elaboration-diagnostic"
+                        [ field "reason" (DiagnosticPayloadText "handler-missing-operation-clause")
+                          field "effect-name" (DiagnosticPayloadText effectName)
+                          field "operation-name" (DiagnosticPayloadText operationName) ])
+            | HandlerDuplicateOperationClause(effectName, operationName) ->
+                descriptor
+                    DiagnosticCode.HandlerClauseDuplicate
+                    None
+                    $"Handler for '{effectName}' defines more than one clause for operation '{operationName}'."
+                    (payload
+                        "surface-elaboration-diagnostic"
+                        [ field "reason" (DiagnosticPayloadText "handler-duplicate-operation-clause")
+                          field "effect-name" (DiagnosticPayloadText effectName)
+                          field "operation-name" (DiagnosticPayloadText operationName) ])
+            | HandlerUnexpectedOperationClause(effectName, operationName) ->
+                descriptor
+                    DiagnosticCode.HandlerClauseUnexpected
+                    None
+                    $"Handler for '{effectName}' defines a clause for undeclared operation '{operationName}'."
+                    (payload
+                        "surface-elaboration-diagnostic"
+                        [ field "reason" (DiagnosticPayloadText "handler-unexpected-operation-clause")
+                          field "effect-name" (DiagnosticPayloadText effectName)
+                          field "operation-name" (DiagnosticPayloadText operationName) ])
+            | HandlerOperationClauseArityMismatch(operationName, actualArgumentCount, expectedArgumentCount) ->
+                descriptor
+                    DiagnosticCode.HandlerClauseArityMismatch
+                    None
+                    $"Handler clause for operation '{operationName}' binds {actualArgumentCount} argument(s), but the effect declaration requires {expectedArgumentCount}."
+                    (payload
+                        "surface-elaboration-diagnostic"
+                        [ field "reason" (DiagnosticPayloadText "handler-operation-clause-arity-mismatch")
+                          field "operation-name" (DiagnosticPayloadText operationName)
+                          field "actual-argument-count" (DiagnosticPayloadText(string actualArgumentCount))
+                          field "expected-argument-count" (DiagnosticPayloadText(string expectedArgumentCount)) ])
+            | HandlerRelevantResumptionUnused(operationName, resumptionName) ->
+                descriptor
+                    DiagnosticCode.QttLinearDrop
+                    None
+                    $"Handler clause for operation '{operationName}' must use relevant resumption '{resumptionName}'."
+                    (payload
+                        "surface-elaboration-diagnostic"
+                        [ field "reason" (DiagnosticPayloadText "handler-relevant-resumption-unused")
+                          field "operation-name" (DiagnosticPayloadText operationName)
+                          field "resumption-name" (DiagnosticPayloadText resumptionName) ])
             | TraitConstraintUnresolved constraintText ->
                 descriptor
                     DiagnosticCode.TypeEqualityMismatch

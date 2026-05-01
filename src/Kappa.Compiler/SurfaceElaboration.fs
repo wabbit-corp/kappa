@@ -17400,11 +17400,8 @@ module SurfaceElaboration =
                         finalHandlerResultType
                         |> Option.filter (isHandlerCarrierResultType >> not)
                         |> Option.map (fun actualType ->
-                            [
-                                makeDiagnostic
-                                    SimpleDiagnosticKind.TypeEqualityMismatch
-                                    $"Handler clauses must return a carrier-applied result type 'm b', but inferred '{TypeSignatures.toText actualType}'."
-                            ])
+                            [ makeSurfaceElaborationDiagnostic
+                                (HandlerClausesMustReturnCarrierResultType(TypeSignatures.toText actualType)) ])
                         |> Option.defaultValue []
 
                     let returnDiagnostics =
@@ -17437,25 +17434,22 @@ module SurfaceElaboration =
                 let handledEffectRowDiagnostics =
                     match handledEffectSplit, handledBodyType with
                     | Some(declaration, effectRow, _, SplitMismatch), _ ->
-                        [
-                            makeDiagnostic
-                                SimpleDiagnosticKind.HandlerEffectRowMismatch
-                                $"Handler for '{declaration.VisibleName}' expects the handled computation to carry label '{declaration.VisibleName}' in its effect row, but found '{TypeSignatures.toText effectRow}'."
-                        ]
+                        [ makeSurfaceElaborationDiagnostic
+                            (HandlerEffectRowMissingLabel(
+                                declaration.VisibleName,
+                                TypeSignatures.toText effectRow
+                            )) ]
                     | Some(declaration, effectRow, _, SplitNeedsTailRefinement), _ ->
-                        [
-                            makeDiagnostic
-                                SimpleDiagnosticKind.HandlerEffectRowMismatch
-                                $"Handler for '{declaration.VisibleName}' cannot split label '{declaration.VisibleName}' out of open effect row '{TypeSignatures.toText effectRow}' without explicit row refinement. Mention '{declaration.VisibleName}' explicitly in the handled computation type."
-                        ]
+                        [ makeSurfaceElaborationDiagnostic
+                            (HandlerEffectRowNeedsTailRefinement(
+                                declaration.VisibleName,
+                                TypeSignatures.toText effectRow
+                            )) ]
                     | Some(_, _, _, SplitResolved _), _ ->
                         []
                     | None, Some handledType when tryUnwrapEffType handledType |> Option.isNone ->
-                        [
-                            makeDiagnostic
-                                SimpleDiagnosticKind.HandlerEffectRowMismatch
-                                $"Handler expects an Eff computation, but the handled expression has type '{TypeSignatures.toText handledType}'."
-                        ]
+                        [ makeSurfaceElaborationDiagnostic
+                            (HandlerHandledExpressionMustBeEff(TypeSignatures.toText handledType)) ]
                     | _ ->
                         []
 
@@ -17483,20 +17477,22 @@ module SurfaceElaboration =
                                     None
                                 else
                                     Some(
-                                        makeDiagnostic
-                                            SimpleDiagnosticKind.HandlerClauseMissing
-                                            $"Handler for '{declaration.VisibleName}' is missing a clause for operation '{operation.Name}'."
+                                        makeSurfaceElaborationDiagnostic
+                                            (HandlerMissingOperationClause(
+                                                declaration.VisibleName,
+                                                operation.Name
+                                            ))
                                     ))
 
                         let duplicateDiagnostics =
                             clauseGroups
                             |> List.collect (fun (operationName, clauses) ->
                                 if List.length clauses > 1 then
-                                    [
-                                        makeDiagnostic
-                                            SimpleDiagnosticKind.HandlerClauseDuplicate
-                                            $"Handler for '{declaration.VisibleName}' defines more than one clause for operation '{operationName}'."
-                                    ]
+                                    [ makeSurfaceElaborationDiagnostic
+                                        (HandlerDuplicateOperationClause(
+                                            declaration.VisibleName,
+                                            operationName
+                                        )) ]
                                 else
                                     [])
 
@@ -17506,11 +17502,11 @@ module SurfaceElaboration =
                                 if Set.contains operationName declaredOperationNames then
                                     []
                                 else
-                                    [
-                                        makeDiagnostic
-                                            SimpleDiagnosticKind.HandlerClauseUnexpected
-                                            $"Handler for '{declaration.VisibleName}' defines a clause for undeclared operation '{operationName}'."
-                                    ])
+                                    [ makeSurfaceElaborationDiagnostic
+                                        (HandlerUnexpectedOperationClause(
+                                            declaration.VisibleName,
+                                            operationName
+                                        )) ])
 
                         let resumptionDiagnostics =
                             operationClauses
@@ -17527,11 +17523,12 @@ module SurfaceElaboration =
                                     let arityDiagnostics =
                                         match operationArity with
                                         | Some expectedArity when expectedArity <> List.length clause.ArgumentTokens ->
-                                            [
-                                                makeDiagnostic
-                                                    SimpleDiagnosticKind.HandlerClauseArityMismatch
-                                                    $"Handler clause for operation '{clause.OperationName}' binds {List.length clause.ArgumentTokens} argument(s), but the effect declaration requires {expectedArity}."
-                                            ]
+                                            [ makeSurfaceElaborationDiagnostic
+                                                (HandlerOperationClauseArityMismatch(
+                                                    clause.OperationName,
+                                                    List.length clause.ArgumentTokens,
+                                                    expectedArity
+                                                )) ]
                                         | _ ->
                                             []
 
@@ -17543,11 +17540,11 @@ module SurfaceElaboration =
                                             []
                                         | Some _, Some resumptionName
                                             when not (expressionReferencesName resumptionName Set.empty clause.Body) ->
-                                            [
-                                                makeDiagnostic
-                                                    SimpleDiagnosticKind.QttLinearDrop
-                                                    $"Handler clause for operation '{clause.OperationName}' must use relevant resumption '{resumptionName}'."
-                                            ]
+                                            [ makeSurfaceElaborationDiagnostic
+                                                (HandlerRelevantResumptionUnused(
+                                                    clause.OperationName,
+                                                    resumptionName
+                                                )) ]
                                         | Some _, _ ->
                                             []
 

@@ -3101,6 +3101,44 @@ module SmokeTestsShard3 =
         Assert.Equal("surface-elaboration-diagnostic", diagnostic.Payload.Kind)
         Assert.Equal(Some "Int", tryFindPayloadText "source-type-text" diagnostic)
 
+    [<Fact>]
+    let ``source compilation reports missing handler clause payloads`` () =
+        let workspace =
+            compileInMemoryWorkspace
+                "memory-handler-missing-clause-root"
+                [
+                    "main.kp",
+                    [
+                        "module main"
+                        "value : Int"
+                        "let value ="
+                        "    block"
+                        "        scoped effect Ask ="
+                        "            ask : Unit -> Int"
+                        "        let comp : Eff <[Ask : Ask]> Int ="
+                        "            do"
+                        "                let n <- Ask.ask ()"
+                        "                pure n"
+                        "        let handled ="
+                        "            handle Ask comp with"
+                        "                case return x -> pure x"
+                        "        runPure handled"
+                    ]
+                    |> String.concat "\n"
+                ]
+
+        Assert.True(workspace.HasErrors, "Expected handlers missing operation clauses to be rejected.")
+
+        let diagnostic =
+            workspace.Diagnostics
+            |> List.find (fun item ->
+                item.Code = DiagnosticCode.HandlerClauseMissing
+                && tryFindPayloadText "reason" item = Some "handler-missing-operation-clause")
+
+        Assert.Equal("surface-elaboration-diagnostic", diagnostic.Payload.Kind)
+        Assert.Equal(Some "Ask", tryFindPayloadText "effect-name" diagnostic)
+        Assert.Equal(Some "ask", tryFindPayloadText "operation-name" diagnostic)
+
 
     [<Fact>]
     let ``lexer reports malformed prefixed numeric literals directly`` () =
@@ -4126,6 +4164,15 @@ module SmokeTestsShard4 =
         bag.AddError(DiagnosticFact.surfaceElaboration QuoteSpliceRequiresSyntaxNotElabSyntax)
         bag.AddError(DiagnosticFact.surfaceElaboration (TopLevelSpliceRequiresSyntaxOrElabSyntax "Int"))
         bag.AddError(DiagnosticFact.surfaceElaboration (DoBindRequiresBindableCarrier "Int"))
+        bag.AddError(DiagnosticFact.surfaceElaboration (HandlerClausesMustReturnCarrierResultType "Int"))
+        bag.AddError(DiagnosticFact.surfaceElaboration (HandlerEffectRowMissingLabel("Ask", "Eff <[]> Int")))
+        bag.AddError(DiagnosticFact.surfaceElaboration (HandlerEffectRowNeedsTailRefinement("Ask", "Eff <r> Int")))
+        bag.AddError(DiagnosticFact.surfaceElaboration (HandlerHandledExpressionMustBeEff "Int"))
+        bag.AddError(DiagnosticFact.surfaceElaboration (HandlerMissingOperationClause("Ask", "ask")))
+        bag.AddError(DiagnosticFact.surfaceElaboration (HandlerDuplicateOperationClause("Ask", "ask")))
+        bag.AddError(DiagnosticFact.surfaceElaboration (HandlerUnexpectedOperationClause("Ask", "reply")))
+        bag.AddError(DiagnosticFact.surfaceElaboration (HandlerOperationClauseArityMismatch("ask", 1, 2)))
+        bag.AddError(DiagnosticFact.surfaceElaboration (HandlerRelevantResumptionUnused("ask", "k")))
         bag.AddError(DiagnosticFact.surfaceElaboration (TraitConstraintUnresolved "Eq Int"))
         bag.AddError(DiagnosticFact.surfaceElaboration (ImplicitTraitConstraintUnresolved "Show Int"))
         bag.AddError(DiagnosticFact.surfaceElaboration (TraitConstraintAmbiguous("Score Int", [ "left.ScoreInt"; "right.ScoreInt" ])))
@@ -4401,6 +4448,60 @@ module SmokeTestsShard4 =
                 item.Code = DiagnosticCode.TypeEqualityMismatch
                 && tryFindPayloadText "reason" item = Some "do-bind-requires-bindable-carrier")
 
+        let handlerCarrierDiagnostic =
+            diagnostics
+            |> List.find (fun item ->
+                item.Code = DiagnosticCode.TypeEqualityMismatch
+                && tryFindPayloadText "reason" item = Some "handler-clauses-must-return-carrier-result-type")
+
+        let handlerRowMissingDiagnostic =
+            diagnostics
+            |> List.find (fun item ->
+                item.Code = DiagnosticCode.HandlerEffectRowMismatch
+                && tryFindPayloadText "reason" item = Some "handler-effect-row-missing-label")
+
+        let handlerRowRefinementDiagnostic =
+            diagnostics
+            |> List.find (fun item ->
+                item.Code = DiagnosticCode.HandlerEffectRowMismatch
+                && tryFindPayloadText "reason" item = Some "handler-effect-row-needs-tail-refinement")
+
+        let handlerHandledTypeDiagnostic =
+            diagnostics
+            |> List.find (fun item ->
+                item.Code = DiagnosticCode.HandlerEffectRowMismatch
+                && tryFindPayloadText "reason" item = Some "handler-handled-expression-must-be-eff")
+
+        let handlerMissingClauseDiagnostic =
+            diagnostics
+            |> List.find (fun item ->
+                item.Code = DiagnosticCode.HandlerClauseMissing
+                && tryFindPayloadText "reason" item = Some "handler-missing-operation-clause")
+
+        let handlerDuplicateClauseDiagnostic =
+            diagnostics
+            |> List.find (fun item ->
+                item.Code = DiagnosticCode.HandlerClauseDuplicate
+                && tryFindPayloadText "reason" item = Some "handler-duplicate-operation-clause")
+
+        let handlerUnexpectedClauseDiagnostic =
+            diagnostics
+            |> List.find (fun item ->
+                item.Code = DiagnosticCode.HandlerClauseUnexpected
+                && tryFindPayloadText "reason" item = Some "handler-unexpected-operation-clause")
+
+        let handlerArityDiagnostic =
+            diagnostics
+            |> List.find (fun item ->
+                item.Code = DiagnosticCode.HandlerClauseArityMismatch
+                && tryFindPayloadText "reason" item = Some "handler-operation-clause-arity-mismatch")
+
+        let handlerResumptionDiagnostic =
+            diagnostics
+            |> List.find (fun item ->
+                item.Code = DiagnosticCode.QttLinearDrop
+                && tryFindPayloadText "reason" item = Some "handler-relevant-resumption-unused")
+
         let unresolvedConstraintDiagnostic =
             diagnostics
             |> List.find (fun item ->
@@ -4562,6 +4663,23 @@ module SmokeTestsShard4 =
         )
         Assert.Equal(Some "Int", tryFindPayloadText "actual-type-text" topLevelSpliceDiagnostic)
         Assert.Equal(Some "Int", tryFindPayloadText "source-type-text" doBindCarrierDiagnostic)
+        Assert.Equal(Some "Int", tryFindPayloadText "actual-type-text" handlerCarrierDiagnostic)
+        Assert.Equal(Some "Ask", tryFindPayloadText "effect-name" handlerRowMissingDiagnostic)
+        Assert.Equal(Some "Eff <[]> Int", tryFindPayloadText "effect-row-text" handlerRowMissingDiagnostic)
+        Assert.Equal(Some "Ask", tryFindPayloadText "effect-name" handlerRowRefinementDiagnostic)
+        Assert.Equal(Some "Eff <r> Int", tryFindPayloadText "effect-row-text" handlerRowRefinementDiagnostic)
+        Assert.Equal(Some "Int", tryFindPayloadText "handled-type-text" handlerHandledTypeDiagnostic)
+        Assert.Equal(Some "Ask", tryFindPayloadText "effect-name" handlerMissingClauseDiagnostic)
+        Assert.Equal(Some "ask", tryFindPayloadText "operation-name" handlerMissingClauseDiagnostic)
+        Assert.Equal(Some "Ask", tryFindPayloadText "effect-name" handlerDuplicateClauseDiagnostic)
+        Assert.Equal(Some "ask", tryFindPayloadText "operation-name" handlerDuplicateClauseDiagnostic)
+        Assert.Equal(Some "Ask", tryFindPayloadText "effect-name" handlerUnexpectedClauseDiagnostic)
+        Assert.Equal(Some "reply", tryFindPayloadText "operation-name" handlerUnexpectedClauseDiagnostic)
+        Assert.Equal(Some "ask", tryFindPayloadText "operation-name" handlerArityDiagnostic)
+        Assert.Equal(Some "1", tryFindPayloadText "actual-argument-count" handlerArityDiagnostic)
+        Assert.Equal(Some "2", tryFindPayloadText "expected-argument-count" handlerArityDiagnostic)
+        Assert.Equal(Some "ask", tryFindPayloadText "operation-name" handlerResumptionDiagnostic)
+        Assert.Equal(Some "k", tryFindPayloadText "resumption-name" handlerResumptionDiagnostic)
         Assert.Equal("Trait constraint 'Eq Int' could not be resolved.", unresolvedConstraintDiagnostic.Message)
         Assert.Equal("Implicit trait constraint 'Show Int' could not be resolved.", unresolvedImplicitConstraintDiagnostic.Message)
         Assert.Equal(Some "Score Int", tryFindPayloadText "constraint-text" ambiguousConstraintDiagnostic)
