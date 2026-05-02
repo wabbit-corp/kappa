@@ -403,6 +403,13 @@ Semantic disambiguation of bare dotted import forms:
   * `import A.B.C.* except (...)`
 * URL module references are never extended by dotted module-path continuation after the closing string literal, so:
   * `import "url".x` is always singleton-item import sugar for `import "url".(x)`.
+* A URL `moduleRef` (that is, a `string_literal` module reference) may not appear in the bare module-only form
+  `import moduleRef`.
+* Therefore a URL import must use one of:
+  * `as`
+  * `.*`
+  * `.(...)`
+  * `.* except (...)`
 
 Selective import aliases:
 
@@ -875,6 +882,13 @@ Semantic disambiguation of bare dotted export forms:
   * and a compile-time error if both interpretations are resolvable.
 * To force singleton-item re-export, write `export A.B.(C)`.
 * To force module re-export, use a module-only form such as `export A.B.C as X` or `export A.B.C.*`.
+* A URL `moduleRef` (that is, a `string_literal` module reference) may not appear in the bare module-only form
+  `export moduleRef`.
+* Therefore a URL export must use one of:
+  * `as`
+  * `.*`
+  * `.(...)`
+  * `.* except (...)`
 
 The `except` form uses the same `exceptItem` grammar as §2.3. In particular, `export M.(type T(..))` re-exports the type
 `T` together with all of its constructors.
