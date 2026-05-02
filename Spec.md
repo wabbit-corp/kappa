@@ -6798,9 +6798,9 @@ Runtime-erased propositions and proof terms:
 * `RuntimeErased T` does not imply `IsProp T`.
 * `IsSubsingleton T` does not imply `RuntimeErased T` unless this specification or a trusted intrinsic rule supplies
   that implication.
-* `IsTrait T` implies `IsProp T`, but does not by itself imply that every projection obtainable from `T` has no runtime
-  representation. A method-bearing trait such as `Eq a` may be propositionally unique while its method projection is
-  still runtime-relevant before specialization.
+* `IsTrait T` implies `IsSubsingleton T`. It does not imply `IsProp T` and does not imply `RuntimeErased T`.
+  A method-bearing trait such as `Eq a` may be subsingleton while its method projection is still runtime-relevant before
+  specialization.
 * Equality types are not propositions by default. For arbitrary `A`, the type `x = y` is not assumed to satisfy
   `IsProp`. Such evidence is available from `IsSet A`, from a more specific theorem, or from an intrinsic rule.
 
@@ -21496,8 +21496,8 @@ Resolution proceeds as follows:
    ambiguity, compilation fails. Only if that step yields no local candidate does trait evidence resolution continue.
 
 2. **Intrinsic solver traits.** If `G` is headed by an intrinsic solver trait, invoke that trait's compiler-owned solver.
-   This includes `IsTrait`, compiler-generated `IsProp` evidence for trait evidence types, and the standard row traits
-   `ContainsRec`, `LacksRec`, `ContainsVar`, `LacksVar`, `ContainsEff`, `LacksEff`, and `SplitEff`.
+   This includes `IsTrait`, compiler-generated `IsSubsingleton` evidence for trait evidence types, and the standard row
+   traits `ContainsRec`, `LacksRec`, `ContainsVar`, `LacksVar`, `ContainsEff`, `LacksEff`, and `SplitEff`.
 
    * If the intrinsic solver produces a unique coherent evidence artifact, use it.
    * If the intrinsic solver proves the goal unsatisfiable, the implicit goal is unsolved or rejected according to the
@@ -29224,8 +29224,8 @@ This rule applies only to the built-in equality family and only in the cases lis
 
 Trait evidence types:
 
-If `T : Type u` and `IsTrait T` is available, then `T` is a subsingleton: any two inhabitants of `T` are equal by the
-`IsProp T` evidence supplied through §12.4.
+If `T : Type u` and `IsTrait T` is available, then `T` is a subsingleton: any two inhabitants of `T` are equal by
+`IsSubsingleton.allEqual` using the `IsSubsingleton T` evidence supplied through §12.4.
 
 This does not by itself prove that `T` is inhabited.
 
