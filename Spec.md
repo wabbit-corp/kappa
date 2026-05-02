@@ -21547,7 +21547,8 @@ The instance artifact records at least:
 * all runtime method fields;
 * all law and proof fields, whether runtime-erased or runtime-relevant;
 * the active intrinsic-trait and solver dependencies used while checking the instance; and
-* the canonical Easy Hash and, when available or required, Hard Hash used by §15.2.1 coherence.
+* the canonical Easy Hash and, when available or required, the full-normalization identity/digest data used by §15.2.1
+  coherence.
 
 Rules:
 
@@ -21622,9 +21623,9 @@ Resolution proceeds as follows:
    * If one candidate survives, use it.
    * If multiple candidates survive, compare their instantiated evidence artifacts according to §15.2.1:
      * compare Easy Hashes first;
-     * if needed compare Hard Hashes;
-     * if all surviving instantiated evidence artifacts have the same canonical Hard Hash, accept the goal and select the
-       canonical representative by the deterministic ordering below;
+     * if needed compare `HardIdentity` values (using `HardDigest` only as a lookup/indexing aid);
+     * if all surviving instantiated evidence artifacts have the same canonical `HardIdentity`, accept the goal and
+       select the canonical representative by the deterministic ordering below;
      * otherwise reject the program as incoherent.
 
 Canonical representative ordering for equivalent surviving instances:
@@ -21638,9 +21639,9 @@ Canonical representative ordering for equivalent surviving instances:
 
 The selected representative affects diagnostics, reflection, hole-goal display, and generated evidence names.
 
-Because the surviving evidence artifacts have the same canonical Hard Hash, the choice of representative MUST NOT affect
-source-language semantics, definitional equality, accepted/rejected status, generated KCore modulo alpha-renaming, or
-runtime behavior.
+Because the surviving evidence artifacts have the same canonical `HardIdentity`, the choice of representative MUST NOT
+affect source-language semantics, definitional equality, accepted/rejected status, generated KCore modulo
+alpha-renaming, or runtime behavior.
 
 Instance candidate collection and representative selection MUST NOT depend on import declaration order, module load
 order, interface reload order, hash-map iteration order, cache insertion order, or worker scheduling.
@@ -23346,8 +23347,8 @@ via `$(...)`; they do not apply to pre-expansion surface syntax.
 ### 15.1 The Two-Tier Hash System
 
 Every top-level definition (term, type alias, trait, instance, `data` declaration, and similar declarations) has an
-**Easy Hash**. A corresponding **Hard Hash** is defined for the same KCore term or module and is computed on demand and
-cached.
+**Easy Hash**. A corresponding full-normalization identity layer, consisting of a canonical **HardIdentity** together
+with its derived **HardDigest**, is defined for the same KCore term or module and is computed on demand and cached.
 
 <!-- identity.hash_system.easy_hash_structural_identity_hash -->
 #### 15.1.1 Easy Hash (Structural Identity Hash)
@@ -23383,9 +23384,9 @@ Uses of the Easy Hash include:
 * fallback when the Hard Hash is unavailable.
 
 <!-- identity.hash_system.hard_hash_semantic_equivalence_hash -->
-#### 15.1.2 Hard Hash (Semantic Equivalence Hash)
+#### 15.1.2 Hard Identity and Hard Digest (Canonical-Normal-Form Identity)
 
-The Hard Hash is computed on demand and cached, keyed by Easy Hash.
+The full-normalization identity layer is computed on demand and cached, keyed by Easy Hash.
 
 It is computed by full normalization of the definition, including:
 
@@ -23402,23 +23403,35 @@ It is computed by full normalization of the definition, including:
 * memoization, fuel, or an equivalent implementation technique sufficient to guarantee that the normalization procedure
   itself terminates.
 
-The resulting fully normalized form is De Bruijn-indexed, canonically serialized, and hashed.
+The resulting fully normalized form is De Bruijn-indexed and canonically serialized.
 
-Hard Hash soundness assumption:
-
-A Hard Hash is a SHA-256 digest over a canonical, domain-separated serialization of a semantic object. Hard Hash equality
-may be used as evidence of semantic-object equality only under the following cryptographic assumption:
+Definitions:
 
 ```text
-hardHash_D(x) = hardHash_D(y)  implies  x = y
+HardIdentity_D(x) = canonical, domain-separated serialization of the fully normalized semantic object x in domain D
+HardDigest_D(x)   = SHA-256(HardIdentity_D(x))
 ```
 
-where `D` is the hash domain and `x` and `y` are canonical serialized semantic objects in that same domain.
+Normative status:
+
+* `HardIdentity` is the canonical full-normal-form identity used by equality-sensitive rules in this chapter.
+* `HardDigest` is a finite digest of `HardIdentity`. It is useful for indexing, caching, and lookup, but it is not by
+  itself a theorem of equality in the source language or core semantics.
+* Elsewhere in this specification, the historical shorthand “Hard Hash” refers to this full-normalization identity
+  layer. When an equality-sensitive rule uses that shorthand, the normative comparison is of `HardIdentity`, not of raw
+  digest equality.
+* Implementations MAY index `HardIdentity` by `HardDigest`, but any path that concludes semantic-object equality,
+  harmless instance overlap, or definitional equality from the full-normalization identity layer MUST compare
+  `HardIdentity` directly or use a validated equality witness derived from it.
+* A raw `HardDigest` match MAY be used only as a lookup hint. Before an implementation concludes equality from that
+  match, it MUST validate the match against `HardIdentity` (or an observationally equivalent canonical-normal-form
+  representation).
 
 The implementation MUST compute the digest itself from canonical serialized bytes. It MUST NOT trust a digest supplied
-by an external artifact unless that digest is validated against the artifact contents. Each Hard Hash domain MUST include
-a domain-separation prefix identifying the object class, schema version, language version, profile, and semantic options
-that affect canonicalization. Hard Hashes from different domains are never comparable.
+by an external artifact unless that digest is validated against the artifact contents. Each full-normalization domain
+MUST include a domain-separation prefix identifying the object class, schema version, language version, profile, and
+semantic options that affect canonicalization. `HardIdentity` and `HardDigest` values from different domains are never
+comparable.
 
 Standard domains include at least:
 
@@ -23431,31 +23444,35 @@ KAPPA:v1:TraitEvidence
 KAPPA:v1:CoherenceWitness
 ```
 
-The canonical Hard Hash of a definition is computed using the defining module's own transparency rules only, ignoring
-downstream `clarify`. For coherence checking, implementations MUST compare these canonical hashes, not hashes recomputed
-under the importing module's view. Coherence comparisons are performed on instantiated candidate dictionaries, not
-merely on raw instance declarations. Those comparisons use the canonical instance-artifact hashes exported by the
-defining modules.
+The canonical `HardIdentity` (and corresponding `HardDigest`) of a definition is computed using the defining module's
+own transparency rules only, ignoring downstream `clarify`. For coherence checking, implementations MUST compare these
+canonical identities, not identities recomputed under the importing module's view. Coherence comparisons are performed
+on instantiated candidate dictionaries, not merely on raw instance declarations. Those comparisons use the canonical
+instance-artifact identities exported by the defining modules; an implementation MAY use the corresponding digests to
+locate those identities efficiently.
 
-The Easy Hash and Hard Hash of a definition are immutable properties of the compiled artifact produced by its defining
-module. A downstream `clarify` import item MAY affect local typechecking and definitional equality in the importing
-module, but it MUST NOT alter or recompute the canonical hashes recorded for the imported definition.
+The Easy Hash, `HardIdentity`, and `HardDigest` of a definition are immutable properties of the compiled artifact
+produced by its defining module. A downstream `clarify` import item MAY affect local typechecking and definitional
+equality in the importing module, but it MUST NOT alter or recompute the canonical identity or digest recorded for the
+imported definition.
 
-Because the Hard Hash is computed from an elaborated definition already parameterized by the macro input transcript, it
-is likewise deterministic only relative to that transcript in script mode.
+Because `HardIdentity` is computed from an elaborated definition already parameterized by the macro input transcript, it
+and its derived `HardDigest` are likewise deterministic only relative to that transcript in script mode.
 
 Caching contract (normative):
 
-* Implementations MUST provide a persistent cache mapping `Easy Hash -> Hard Hash` or `Easy Hash -> Canonical Normal
-  Form`.
+* Implementations MUST provide a persistent cache mapping `Easy Hash -> HardIdentity`, `Easy Hash -> (HardIdentity,
+  HardDigest)`, or `Easy Hash -> Canonical Normal Form`.
+* Implementations MAY additionally maintain secondary indexes by `HardDigest`.
 * The cache MAY additionally record failure states such as "normalization failed" or "not yet computed".
 * The cache MAY be global, per-project, or distributed.
-* Once computed for a given elaborated definition, the Hard Hash is stable and reusable across compilations.
+* Once computed for a given elaborated definition, `HardIdentity` and its derived `HardDigest` are stable and reusable
+  across compilations.
 
-If an implementation cannot complete Hard-Hash normalization, it MUST treat the Hard Hash as unavailable rather than
-emitting a non-canonical approximation. In package mode, if a Hard Hash is required for a coherence comparison, that
-Hard Hash MUST be available from the defining artifact or computable on demand; otherwise package-mode compilation is a
-hard error.
+If an implementation cannot complete full-normalization identity construction, it MUST treat `HardIdentity` and
+`HardDigest` as unavailable rather than emitting a non-canonical approximation. In package mode, if a
+full-normalization identity is required for a coherence comparison, that identity MUST be available from the defining
+artifact or computable on demand; otherwise package-mode compilation is a hard error.
 
 <!-- identity.hash_system.hash_stability_canonicalization -->
 #### 15.1.3 Hash Stability and Canonicalization
@@ -23466,9 +23483,10 @@ transcript when script-mode macro I/O is enabled.
 In particular:
 
 * the Easy Hash is canonical for the structural-baseline normalization of §15.1.1,
-* the Hard Hash is canonical for the full normalization of §15.1.2,
-* two semantically equivalent definitions that fully normalize to the same canonical normal form MUST produce the same
-  Hard Hash.
+* `HardIdentity` is canonical for the full normalization of §15.1.2,
+* `HardDigest` is the canonical SHA-256 digest of that `HardIdentity`, and
+* two definitions that fully normalize to the same canonical normal form MUST produce the same `HardIdentity` and the
+  same `HardDigest`.
 * In package mode, reproducibility claims are absolute with respect to macro execution.
 * In script mode, reproducibility claims are only relative to a fixed macro input transcript.
 
@@ -23486,11 +23504,12 @@ Coherence is checked on instantiated evidence artifacts, not merely on raw insta
 Instance artifacts include ordinary top-level instances, local instances whose evidence escapes, intrinsic solver
 artifacts when those artifacts are materialized in interfaces, and trusted boundary-published evidence artifacts.
 
-In particular, overlap decisions are based on the canonical instance-artifact hashes exported by the defining modules.
-Those hashes are computed in the defining modules' own transparency environments, never in the importer's local
-`clarify` view. Downstream `clarify` MAY affect local typechecking, but it MUST NOT alter the hashes used for coherence.
-In package mode, whenever a Hard Hash is needed for such a comparison, it MUST be available from the defining artifact
-or computable on demand; otherwise compilation is a hard error.
+In particular, overlap decisions are based on the canonical instance-artifact identities exported by the defining
+modules. Those identities are computed in the defining modules' own transparency environments, never in the importer's
+local `clarify` view. Downstream `clarify` MAY affect local typechecking, but it MUST NOT alter the canonical
+identities used for coherence. An implementation MAY use the corresponding digests for indexing or lookup only. In
+package mode, whenever a full-normalization identity is needed for such a comparison, it MUST be available from the
+defining artifact or computable on demand; otherwise compilation is a hard error.
 
 The coherence input for an evidence artifact includes all source-observable projections of that evidence, including:
 
@@ -23520,18 +23539,21 @@ Coherence check algorithm for instance resolution:
 4. For candidates with different Easy Hashes:
    * if `coherence_mode = "structural"`, the compiler MUST treat the differing Easy Hashes as distinct implementations
      and reject the overlap;
-   * if `coherence_mode = "semantic"`, the compiler MUST obtain the Hard Hash for each candidate in the comparison set,
-     computing it on first need and reusing any previously cached canonical Hard Hash keyed by Easy Hash when valid; it
-     then compares those Hard Hashes and rejects the program if any required Hard Hash cannot be obtained;
-   * if `coherence_mode = "semantic-if-available"`, the compiler MUST attempt to compute the Hard Hash for each
+   * if `coherence_mode = "semantic"`, the compiler MUST obtain the `HardIdentity` for each candidate in the comparison
+     set, computing it on first need and reusing any previously cached canonical `HardIdentity` keyed by Easy Hash when
+     valid; it MAY use `HardDigest` as a lookup index, but any digest match MUST be validated against `HardIdentity`
+     before comparison; it then compares those identities and rejects the program if any required `HardIdentity` cannot
+     be obtained;
+   * if `coherence_mode = "semantic-if-available"`, the compiler MUST attempt to compute the `HardIdentity` for each
      candidate in the comparison set;
-   * under either semantic mode, if the Hard Hashes match in the same `KAPPA:v1:InstanceArtifact` domain, treat the
-     candidates as semantically equivalent under the Hard Hash soundness assumption and therefore as harmless overlap;
-   * under either semantic mode, if the Hard Hashes differ, the program violates coherence and the compiler MUST reject
-     it;
-   * under `semantic-if-available`, if one or more required Hard Hashes cannot be computed, the compiler MUST
+   * under either semantic mode, if the `HardIdentity` values match in the same `KAPPA:v1:InstanceArtifact` domain,
+     treat the candidates as canonically identical under full normalization and therefore as harmless overlap;
+   * under either semantic mode, if the `HardIdentity` values differ, the program violates coherence and the compiler
+     MUST reject it;
+   * under `semantic-if-available`, if one or more required `HardIdentity` values cannot be computed, the compiler MUST
      conservatively treat the differing Easy Hashes as distinct implementations and reject the overlap, while also
-     emitting a warning that coherence was checked using structural identity only.
+     emitting a warning that full-normalization identity was unavailable and coherence therefore fell back to structural
+     identity only.
 
 Escaping evidence values:
 
@@ -23557,11 +23579,12 @@ Hard-Hash policy for coherence:
 * The coherence policy is controlled by `coherence_mode = "structural" | "semantic" | "semantic-if-available"`.
 * In script mode, the default is `semantic-if-available`.
 * In package mode, the compiler MUST behave as if `coherence_mode = "semantic"` for any coherence check that reaches the
-  “different Easy Hash” branch above, and MUST compute Hard Hashes for coherence comparisons on first need and persist
-  them in the artifact cache keyed by Easy Hash. Subsequent builds MAY reuse a cached canonical Hard Hash without
-  recomputing normalization, provided the defining module's source and its transitive dependencies tracked by Easy Hash
-  are unchanged. If any required Hard Hash normalization fails or otherwise cannot be completed, compilation is a hard
-  error in package mode; the implementation MUST NOT fall back to structural-only coherence checking there.
+  “different Easy Hash” branch above, and MUST compute canonical `HardIdentity` values for coherence comparisons on
+  first need and persist them in the artifact cache keyed by Easy Hash. It MAY also persist the derived `HardDigest`
+  for indexing. Subsequent builds MAY reuse a cached canonical `HardIdentity` without recomputing normalization,
+  provided the defining module's source and its transitive dependencies tracked by Easy Hash are unchanged. If any
+  required `HardIdentity` normalization fails or otherwise cannot be completed, compilation is a hard error in package
+  mode; the implementation MUST NOT fall back to structural-only coherence checking there.
 * A compiler flag or manifest setting MAY request a different mode in script mode for debugging or performance work.
 * Implementations MAY reject `coherence_mode = "structural"` or `coherence_mode = "semantic-if-available"` in package
   mode; if they do not reject such a request, they MUST still apply the package-mode rule above.
@@ -23569,11 +23592,11 @@ Hard-Hash policy for coherence:
 This rule guarantees that:
 
 * two evidence artifacts that are structurally identical after Easy-Hash normalization are always accepted;
-* two evidence artifacts that are extensionally equal after full normalization are also accepted when the Hard Hash is
+* two evidence artifacts that are extensionally equal after full normalization are also accepted when `HardIdentity` is
   available;
-* two evidence artifacts that are not extensionally equal are rejected whenever the required Hard-Hash comparison is
-  available; and
-* in script mode under `semantic-if-available`, if the Hard Hash is unavailable, structurally different artifacts are
+* two evidence artifacts that are not extensionally equal are rejected whenever the required `HardIdentity` comparison
+  is available; and
+* in script mode under `semantic-if-available`, if `HardIdentity` is unavailable, structurally different artifacts are
   conservatively rejected with a warning.
 
 Trait-evidence coherence has two levels.
@@ -23606,7 +23629,8 @@ Trait-evidence coherence has two levels.
 
    The implementation MUST NOT use generated trait proof irrelevance to accept otherwise incoherent instance artifacts.
    Instance artifacts are checked by the coherence rules of §15.2.1, including normalized heads, Easy Hash comparison,
-   Hard Hash comparison, and the relevant artifact provenance rules.
+   `HardIdentity` comparison (with `HardDigest` used only as an indexing aid), and the relevant artifact provenance
+   rules.
 
 The proof irrelevance of trait evidence in §12.4 is justified by this coherence invariant plus the abstract evidence
 construction rules of §5.1.3. If an implementation accepts a program without enforcing this coherence invariant, it MUST
@@ -23616,31 +23640,33 @@ NOT expose compiler-generated `IsTrait` evidence for the affected trait evidence
 #### 15.2.2 Fast-Path Definitional Equality
 
 When checking definitional equality (`t1 ≡ t2`) between two top-level definitions, or between two closed transparent
-subterms for which Hard Hashes are available, the compiler MAY first compare their Hard Hashes.
+subterms for which full-normalization identities are available, the compiler MAY first compare their `HardIdentity`
+values. It MAY use `HardDigest` only as an index to locate the candidate identities.
 
-* If both Hard Hashes are available, are from the same Hard Hash domain, and are equal, the compiler MAY conclude that
-  the terms are definitionally equal without further conversion checking under the Hard Hash soundness assumption of
-  §15.1.2.
-* If the Hard Hashes differ, or one or both Hard Hashes are unavailable, the compiler MUST fall back to ordinary
-  definitional-equality checking (§14.3).
+* If both `HardIdentity` values are available, are from the same full-normalization domain, and are equal, the compiler
+  MAY conclude that the terms are definitionally equal without further conversion checking, because they share the same
+  canonical full-normal-form identity of §15.1.2.
+* A raw `HardDigest` match is never, by itself, sufficient to conclude definitional equality.
+* If the `HardIdentity` values differ, or one or both `HardIdentity` values are unavailable, the compiler MUST fall
+  back to ordinary definitional-equality checking (§14.3).
 
 This is an optimization only; §14.3 remains the normative definition of definitional equality.
 
 Restriction:
 
-* The Hard-Hash fast path may be taken only when both definitions are fully transparent at the use site. An `opaque`
-  definition may not be treated as definitionally equal via Hard Hash unless the current compilation context has
+* The `HardIdentity` fast path may be taken only when both definitions are fully transparent at the use site. An
+  `opaque` definition may not be treated as definitionally equal via this path unless the current compilation context has
   clarified it.
 * This use-site transparency check affects only whether the fast path may be applied locally. It does not modify either
-  definition's canonical Easy Hash or Hard Hash.
+  definition's canonical Easy Hash, `HardIdentity`, or `HardDigest`.
 
 <!-- identity.hash_uses.macro_elaboration_time_caching -->
 #### 15.2.3 Macro and Elaboration-Time Caching
 
 A macro invocation of the form `$(macro '{ args... })` MAY be cached only under a key that includes, in addition to:
 
-* the Hard Hash of the macro definition,
-* the tuple of Hard Hashes of the argument syntax, and
+* the HardDigest of the macro definition,
+* the tuple of HardDigests of the argument syntax, and
 * the digest of the macro input transcript,
 
 a fingerprint of the call-site semantic environment sufficient to determine the result of any semantic reflection
@@ -23672,7 +23698,7 @@ The two-tier hash system is designed to support additional applications, includi
 * incremental compilation by detecting unchanged definitions via Easy Hash,
 * proof and instance-dictionary caching,
 * cross-module specialization and inlining decisions,
-* reproducible-build verification by comparing Hard Hashes of final artifacts.
+* reproducible-build verification by comparing HardDigests of final artifacts.
 
 ---
 
