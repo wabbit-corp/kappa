@@ -30384,7 +30384,8 @@ At minimum it MUST represent:
   cleanup scopes, and error-propagation structure;
 * atomic operations and their memory orders;
 * multi-shot resumption sites and the backend capability witness justifying them;
-* selected runtime representation classes and calling-convention facts relevant to debugging; and
+* selected runtime representation classes, continuation realization classes under §17.5.1A, and calling-convention
+  facts relevant to debugging; and
 * provenance links back to KCore.
 
 If the implementation internally uses a structured form rather than explicit basic blocks, the dump MUST still expose
@@ -30612,6 +30613,29 @@ Rules:
 
 These terms name implementation strategies only. They do not add new surface syntax or new source typing rules.
 
+<!-- compiler.kbackendir.lexical_handler_lookup_lowering -->
+#### 17.4.7B Lexical and region-based handler-lookup lowering
+
+When an effect-label value is known not to escape its lexical or nominal scope, a conforming implementation MAY lower
+handler selection and effect-operation dispatch to a lexical, region-indexed, or equivalent non-object representation
+instead of a general runtime label-object comparison.
+
+This optimization is permitted only when:
+
+* exact effect-label identity semantics of §8.1.7C are preserved;
+* nearest dynamically enclosing matching-handler selection remains observationally unchanged;
+* rebinding, package storage, closure capture, and projection of the label value preserve the same handler-selection
+  behavior whenever those source forms are well-typed; and
+* if the label escapes its hidden nominal-scope token, exported type, package boundary, bridge boundary, or any other
+  interface where first-class label identity is observable, the implementation either preserves ordinary label identity
+  in the lowered representation or falls back to the general representation.
+
+A scoped-effect canonical self label that remains within the hidden nominal scope of §§6.3.1.1 and 17.3.1.5A is a
+standard eligible case for this lowering.
+
+This subsection grants representation freedom only. It does not change source typing, source equality, or the fact that
+effect labels are ordinary first-class semantic objects.
+
 <!-- compiler.kbackendir.incremental_reuse_across_lowering_stages -->
 #### 17.4.8 Incremental reuse across lowering stages
 
@@ -30720,6 +30744,45 @@ The required documentation need not expose private implementation internals, but
 
 This section does not require a particular garbage collector, reference-counting scheme, arena layout, or host runtime.
 It requires only that the chosen strategy preserve Kappa semantics.
+
+<!-- compiler.runtime.continuation_realization_classes -->
+#### 17.5.1A Continuation realization classes
+
+For backend metadata, capability reporting, and stage dumps, a backend that realizes captured continuations MUST classify
+each supported deployment mode and each lowered resumption site using one or more of the following realization classes:
+
+* `abortive-noresume`
+* `oneshot-destructive`
+* `oneshot-persistent`
+* `multishot-copying`
+* `multishot-persistent`
+* `multishot-cps`
+* `multishot-state-machine`
+* `tail-resumptive`
+
+Meaning:
+
+* `abortive-noresume` means the clause is abortive and no resumable continuation object is needed;
+* `oneshot-destructive` means a one-shot resumption may consume its captured representation on use;
+* `oneshot-persistent` means a one-shot resumption uses a persistent representation even though destructive use would be
+  permitted;
+* `multishot-copying` means repeated use behaves via copied stack / frame / segment state;
+* `multishot-persistent` means repeated use behaves via persistent heap-frame or equivalent persistent continuation
+  objects;
+* `multishot-cps` means repeated use behaves via CPS closures or an observationally equivalent continuation graph;
+* `multishot-state-machine` means repeated use behaves via a defunctionalized state machine or equivalent persistent
+  control object; and
+* `tail-resumptive` means the site is realized under the tail-resumptive conditions of §14.8.6A.
+
+Rules:
+
+* The chosen realization class is descriptive metadata only. It does not weaken the behavioral obligations of
+  §§14.8.5-14.8.9 and §17.4.6A.
+* A KBackendIR stage dump containing resumption sites MUST record the realization class of each such site or of the
+  enclosing lowered control region.
+* A backend profile that advertises `rt-multishot-effects` MUST record, in machine-readable capability metadata, which
+  multi-shot realization classes may be used in the selected deployment mode.
+* If multiple realization classes are used in one compilation unit, the dump MUST distinguish their sites precisely.
 
 <!-- compiler.intrinsics -->
 ### 17.6 Backend intrinsics and `expect`
@@ -32514,6 +32577,21 @@ Foreign-call routing consistency:
   runtime capability for that declaration.
 * A backend that can execute a `blocking` call but cannot realize the documented safe cancellation mechanism for the same
   call MUST reject the `blocking-cancellable` declaration or require it to be reclassified by a trusted binding summary.
+
+<!-- compiler.capabilities.machine_readable_profile_metadata -->
+#### 17.13A Machine-readable capability metadata
+
+A backend profile MUST expose its runtime capability set in machine-readable profile metadata.
+
+If the capability set includes `rt-multishot-effects`, that metadata MUST additionally record:
+
+* which continuation realization classes of §17.5.1A may appear in the selected deployment mode;
+* whether one-shot resumptions may be represented destructively;
+* whether multiple realization classes may be mixed within one compilation unit; and
+* any deployment submodes in which `rt-multishot-effects` is withheld.
+
+This metadata is descriptive capability reporting only.
+It does not weaken any obligation of §§14.8.5-14.8.9, §17.4.6A, or §17.5.1A.
 
 <!-- compiler.conformance -->
 ### 17.14 Backend conformance
