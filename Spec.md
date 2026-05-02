@@ -33071,6 +33071,45 @@ A KFrontIR dump MUST expose, for each relevant node:
 If a tooling query forces lazy phase advancement, an implementation MUST be able to dump both the pre-query and
 post-query KFrontIR snapshots, or observationally equivalent reconstructions thereof.
 
+<!-- compiler.kfrontir.snapshot_roundtrip_queries -->
+#### 34.2.12A Snapshot cross-reference integrity
+
+Every KFrontIR, KCore, and KBackendIR stage dump MUST be internally cross-reference checkable.
+
+A stage dump MUST include a cross-reference table, or an observationally equivalent representation, for every identity
+space used in that dump.
+
+At minimum, when present, the dump MUST permit checking that:
+
+* every declaration-symbol reference targets a declaration symbol in the dump or in an explicitly referenced imported
+  interface;
+* every semantic-object reference targets a semantic object in the dump, in an imported interface, or in a referenced
+  semantic-object store;
+* every origin reference targets a source origin or synthetic-origin record;
+* every synthetic origin references an acyclic provenance chain;
+* every obligation reference targets an obligation record;
+* every hole reference targets a hole record;
+* every query reference targets a query-trace node or query-key digest;
+* every generated-name reference targets a generated-name record.
+
+If a dump intentionally omits a referenced object, it MUST include an explicit omission marker identifying why the
+object was omitted.
+
+Omission reasons include at least:
+
+```text
+not-yet-computed
+redacted
+private-definition-unavailable
+opaque-definition-unavailable
+external-interface-reference
+different-checkpoint
+implementation-private
+```
+
+A checkpoint verifier MUST reject a dump whose required cross references are dangling, unless each dangling reference is
+covered by an explicit omission marker.
+
 <!-- compiler.kfrontir.whole_compilation_phase_order -->
 #### 34.2.13 Whole-compilation phase order
 
