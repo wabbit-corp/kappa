@@ -1154,6 +1154,96 @@ module BackendTestsShard4 =
             )
 
     [<Fact>]
+    let ``dotnet backend reports structured malformed declared type text failures`` () =
+        let workspace =
+            compileInMemoryWorkspaceWithBackend
+                "memory-dotnet-malformed-declared-type-root"
+                "dotnet"
+                [
+                    "main.kp",
+                    [
+                        "module main"
+                        "helper : Int -> Int"
+                        "let helper x = x"
+                        "let result = helper 1"
+                    ]
+                    |> String.concat "\n"
+                ]
+
+        Assert.False(workspace.HasErrors, sprintf "Expected no frontend diagnostics, got %A" workspace.Diagnostics)
+
+        let driftedClrAssemblyIR =
+            workspace.ClrAssemblyIR
+            |> List.map (fun moduleDump ->
+                if moduleDump.Name = "main" then
+                    { moduleDump with
+                        Bindings =
+                            moduleDump.Bindings
+                            |> List.map (fun binding ->
+                                if binding.Name = "helper" then
+                                    { binding with ReturnTypeText = Some "(" }
+                                else
+                                    binding) }
+                else
+                    moduleDump)
+
+        let outputDirectory = createScratchDirectory "dotnet-malformed-declared-type"
+
+        match Backend.emitDotNetArtifact { workspace with ClrAssemblyIR = driftedClrAssemblyIR } "main.result" outputDirectory DotNetDeployment.Managed with
+        | Result.Ok artifact ->
+            failwithf "Expected dotnet artifact emission to reject malformed declared type text, but emitted '%s'." artifact.GeneratedFilePath
+        | Result.Error message ->
+            Assert.Equal(
+                "The CLR-backed dotnet profile could not lower 'main.result': Expected ')' to close the type.",
+                message
+            )
+
+    [<Fact>]
+    let ``dotnet backend reports structured non applicable type argument failures`` () =
+        let workspace =
+            compileInMemoryWorkspaceWithBackend
+                "memory-dotnet-nonapplicable-type-arguments-root"
+                "dotnet"
+                [
+                    "main.kp",
+                    [
+                        "module main"
+                        "helper : Int -> Int"
+                        "let helper x = x"
+                        "let result = helper 1"
+                    ]
+                    |> String.concat "\n"
+                ]
+
+        Assert.False(workspace.HasErrors, sprintf "Expected no frontend diagnostics, got %A" workspace.Diagnostics)
+
+        let driftedClrAssemblyIR =
+            workspace.ClrAssemblyIR
+            |> List.map (fun moduleDump ->
+                if moduleDump.Name = "main" then
+                    { moduleDump with
+                        Bindings =
+                            moduleDump.Bindings
+                            |> List.map (fun binding ->
+                                if binding.Name = "helper" then
+                                    { binding with ReturnTypeText = Some "Int String" }
+                                else
+                                    binding) }
+                else
+                    moduleDump)
+
+        let outputDirectory = createScratchDirectory "dotnet-nonapplicable-type-arguments"
+
+        match Backend.emitDotNetArtifact { workspace with ClrAssemblyIR = driftedClrAssemblyIR } "main.result" outputDirectory DotNetDeployment.Managed with
+        | Result.Ok artifact ->
+            failwithf "Expected dotnet artifact emission to reject non-applicable type arguments, but emitted '%s'." artifact.GeneratedFilePath
+        | Result.Error message ->
+            Assert.Equal(
+                "The CLR-backed dotnet profile could not lower 'main.result': Type 'Int' cannot take arguments.",
+                message
+            )
+
+    [<Fact>]
     let ``dotnet backend reports structured binding arity failures`` () =
         let workspace =
             compileInMemoryWorkspaceWithBackend

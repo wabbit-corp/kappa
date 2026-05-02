@@ -21,7 +21,7 @@ module internal IlDotNetBackendInput =
         let rec loop depth current remaining =
             match remaining with
             | [] ->
-                Result.Error "Expected ')' to close the type."
+                Result.Error(DiagnosticFact.ClrBackendEmitterError.message ClrTypeTextExpectedClosingParen)
             | token :: tail when token.Kind = LeftParen ->
                 loop (depth + 1) (token :: current) tail
             | token :: tail when token.Kind = RightParen && depth = 1 ->
@@ -35,7 +35,7 @@ module internal IlDotNetBackendInput =
         | head :: tail when head.Kind = LeftParen ->
             loop 1 [] tail
         | _ ->
-            Result.Error "Expected '(' to start a parenthesized type."
+            Result.Error(DiagnosticFact.ClrBackendEmitterError.message ClrTypeTextExpectedOpeningParen)
 
     let internal typeTextTokens (text: string) =
         let rec loop index tokens =
@@ -347,7 +347,7 @@ module internal IlDotNetBackendInput =
     let internal tryResolveTypeName (rawModules: Map<string, RawModuleInfo>) currentModule typeParameters segments =
         match segments with
         | [] ->
-            Result.Error "Expected a type name."
+            Result.Error(DiagnosticFact.ClrBackendEmitterError.message ClrTypeNameExpected)
         | [ name ] ->
             if Set.contains name typeParameters then
                 Result.Ok(IlTypeParameter name)
@@ -430,7 +430,10 @@ module internal IlDotNetBackendInput =
 
                         return dictionaryIlType traitName loweredArguments
                     | _ ->
-                        return! Result.Error "IL backend expected Dict to be applied to a concrete trait constraint."
+                        return!
+                            Result.Error(
+                                DiagnosticFact.ClrBackendEmitterError.message ClrTraitConstraintTypeExpected
+                            )
                 | TypeSignatures.TypeName(segments, arguments) ->
                     let! headType = tryResolveTypeName rawModules currentModule typeParameters segments
 
@@ -448,13 +451,27 @@ module internal IlDotNetBackendInput =
 
                     match headType, loweredArguments with
                     | IlPrimitive _, [] -> return headType
-                    | IlPrimitive _, _ -> return! Result.Error $"Type '{formatIlType headType}' cannot take arguments."
+                    | IlPrimitive _, _ ->
+                        return!
+                            Result.Error(
+                                DiagnosticFact.ClrBackendEmitterError.message
+                                    (ClrTypeCannotTakeArguments(formatIlType headType))
+                            )
                     | IlTypeParameter _, [] -> return headType
-                    | IlTypeParameter _, _ -> return! Result.Error $"Type '{formatIlType headType}' cannot take arguments."
+                    | IlTypeParameter _, _ ->
+                        return!
+                            Result.Error(
+                                DiagnosticFact.ClrBackendEmitterError.message
+                                    (ClrTypeCannotTakeArguments(formatIlType headType))
+                            )
                     | IlNamed(identity, existingArguments), _ when List.isEmpty existingArguments ->
                         return IlNamed(identity, loweredArguments)
                     | IlNamed _, _ ->
-                        return! Result.Error $"Type '{formatIlType headType}' cannot take arguments."
+                        return!
+                            Result.Error(
+                                DiagnosticFact.ClrBackendEmitterError.message
+                                    (ClrTypeCannotTakeArguments(formatIlType headType))
+                            )
                 | TypeSignatures.TypeVariable name ->
                     return! tryResolveTypeName rawModules currentModule typeParameters [ name ]
                 | _ ->
@@ -475,7 +492,7 @@ module internal IlDotNetBackendInput =
         let rec parseAtom remaining =
             match remaining with
             | [] ->
-                Result.Error "Expected a type.", []
+                Result.Error(DiagnosticFact.ClrBackendEmitterError.message ClrTypeExpressionExpected), []
             | token :: tail when token.Kind = LeftParen ->
                 match collectParenthesizedTokens (token :: tail) with
                 | Result.Ok(innerTokens, rest) ->
@@ -491,7 +508,10 @@ module internal IlDotNetBackendInput =
                 | Result.Ok resolvedType -> Result.Ok resolvedType, rest
                 | Result.Error message -> Result.Error message, rest
             | token :: tail ->
-                Result.Error $"Unexpected token '{token.Text}' in a type.", tail
+                Result.Error(
+                    DiagnosticFact.ClrBackendEmitterError.message (ClrUnexpectedTypeToken token.Text)
+                ),
+                tail
 
         and parseApplication tokens =
             let rec gather remaining parsed =
@@ -514,7 +534,7 @@ module internal IlDotNetBackendInput =
             gather tokens []
             |> Result.bind (function
                 | [] ->
-                    Result.Error "Expected a type."
+                    Result.Error(DiagnosticFact.ClrBackendEmitterError.message ClrTypeExpressionExpected)
                 | IlNamed(identity, existingArguments) :: arguments when List.isEmpty existingArguments ->
                     let fullTokens =
                         if List.isEmpty arguments then
@@ -530,7 +550,10 @@ module internal IlDotNetBackendInput =
                 | head :: [] ->
                     Result.Ok head
                 | head :: _ ->
-                    Result.Error $"Type '{formatIlType head}' cannot take arguments.")
+                    Result.Error(
+                        DiagnosticFact.ClrBackendEmitterError.message
+                            (ClrTypeCannotTakeArguments(formatIlType head))
+                    ))
 
         match parseApplication significant with
         | Result.Error message ->
@@ -555,7 +578,7 @@ module internal IlDotNetBackendInput =
         |> Result.bind (fun reversedSegments ->
             match List.rev reversedSegments with
             | [] ->
-                Result.Error "Expected at least one type in the signature."
+                Result.Error(DiagnosticFact.ClrBackendEmitterError.message ClrFunctionSignatureRequiresAtLeastOneType)
             | parsedSegments ->
                 let parameterTypes = parsedSegments |> List.take (parsedSegments.Length - 1)
                 let returnType = List.last parsedSegments

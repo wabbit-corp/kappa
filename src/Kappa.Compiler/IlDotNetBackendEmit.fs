@@ -794,7 +794,7 @@ module internal IlDotNetBackendEmit =
                         let! conditionType = infer condition None
 
                         if conditionType <> IlPrimitive IlBool then
-                            return! Result.Error "IL backend requires Bool conditions for while expressions."
+                            return! Result.Error(DiagnosticFact.ClrBackendEmitterError.message ClrWhileConditionMustBeBool)
 
                         do! infer body None |> Result.map (fun _ -> ())
                         return! ensureExpected unitIlType
@@ -1167,7 +1167,10 @@ module internal IlDotNetBackendEmit =
                                 il.Emit(OpCodes.Newobj, constructor)
                                 Result.Ok()
                         | None ->
-                            Result.Error $"IL backend could not resolve Ordering constructor '{constructorName}'."
+                            Result.Error(
+                                DiagnosticFact.ClrBackendEmitterError.message
+                                    (ClrOrderingConstructorResolutionFailed constructorName)
+                            )
 
                     match name, resultType with
                     | "print", _ ->
@@ -1251,7 +1254,11 @@ module internal IlDotNetBackendEmit =
                         il.MarkLabel(doneLabel)
                         il.Emit(OpCodes.Ldloc, orderingLocal)
                     | _ ->
-                        return! Result.Error $"IL backend intrinsic '{name}' is not implemented yet."
+                        return!
+                            Result.Error(
+                                DiagnosticFact.ClrBackendEmitterError.message
+                                    (ClrIntrinsicImplementationMissing name)
+                            )
             }
 
         let cleanupExpressionForExitAction action =
@@ -1335,7 +1342,14 @@ module internal IlDotNetBackendEmit =
                                 if List.length routeBindingInfo.ParameterTypes <> List.length argumentLocals + 1 then
                                     return!
                                         Result.Error
-                                            $"IL backend trait route '{instanceInfo.ModuleName}.{bindingName}' expected {List.length routeBindingInfo.ParameterTypes} argument(s), but the trait call supplies 1 dictionary and {List.length argumentLocals} explicit argument(s)."
+                                            (DiagnosticFact.ClrBackendEmitterError.message (
+                                                ClrTraitRouteArityMismatch(
+                                                    instanceInfo.ModuleName,
+                                                    bindingName,
+                                                    List.length routeBindingInfo.ParameterTypes,
+                                                    List.length argumentLocals
+                                                )
+                                            ))
 
                                 il.Emit(OpCodes.Ldloc, dictionaryLocal)
                                 il.Emit(OpCodes.Callvirt, dictionaryModuleGetter)
@@ -1708,7 +1722,11 @@ module internal IlDotNetBackendEmit =
                 | IlPrimitive IlFloat64 ->
                     il.Emit(OpCodes.Neg)
                 | other ->
-                    return! Result.Error $"Unary '-' is not supported for {formatIlType other}."
+                    return!
+                        Result.Error(
+                            DiagnosticFact.ClrBackendEmitterError.message
+                                (UnaryOperatorOperandTypeUnsupported("-", formatIlType other))
+                        )
             }
         | KRuntimeUnary(operatorName, _) ->
             Result.Error(
@@ -1978,7 +1996,10 @@ module internal IlDotNetBackendEmit =
                 elif sourceType.IsEnum then
                     emitManagedNumericConversion (Enum.GetUnderlyingType sourceType) targetType
                 else
-                    Result.Error $"IL backend cannot convert managed host type '{sourceType}' to '{targetType}'."
+                    Result.Error(
+                        DiagnosticFact.ClrBackendEmitterError.message
+                            (ClrManagedHostTypeConversionUnsupported(sourceType.ToString(), targetType.ToString()))
+                    )
 
             let emitManagedArgument actualParameterType (localValue: LocalValue) =
                 result {
@@ -2438,7 +2459,9 @@ module internal IlDotNetBackendEmit =
                           AssemblyName = assemblyName
                           AssemblyFilePath = assemblyPath }
             with ex ->
-                Result.Error $"IL backend emission failed: {ex}"
+                Result.Error(
+                    DiagnosticFact.ClrBackendEmitterError.message (ClrIlEmissionFailed(ex.ToString()))
+                )
 
     let private bundledStdlibRoot =
         Path.GetFullPath("__kappa_stdlib__")

@@ -329,6 +329,27 @@ module ObservabilityTestsShard0 =
         Assert.Contains(("lowerKRuntimeIR", "KCoreUnit", "KCore", "KRuntimeIR"), trace)
         Assert.Contains(("lowerKBackendIR", "module", "KRuntimeIR", "KBackendIR"), trace)
 
+    [<Fact>]
+    let ``dump stage rejects unknown checkpoints through the centralized command formatter`` () =
+        let workspace =
+            compileInMemoryWorkspace
+                "memory-observability-unknown-checkpoint-root"
+                [
+                    "main.kp",
+                    [
+                        "module main"
+                        "let answer = 42"
+                    ]
+                    |> String.concat "\n"
+                ]
+
+        match Compilation.dumpStage workspace "jvm.class" StageDumpFormat.Json with
+        | Result.Ok dump ->
+            failwithf "Expected unknown checkpoint dump to fail, got %s" dump
+        | Result.Error message ->
+            Assert.Contains("Unknown checkpoint 'jvm.class'.", message, StringComparison.Ordinal)
+            Assert.Contains("Available checkpoints:", message, StringComparison.Ordinal)
+
 
     [<Fact>]
     let ``declaration input keys stay stable when unrelated declarations are inserted earlier in the file`` () =

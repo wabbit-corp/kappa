@@ -730,6 +730,10 @@ type ClrBackendEmitterErrorEvidence =
     | RuntimeClosuresUnsupported
     | EffectHandlersUnsupported
     | PrefixedStringsUnsupported
+    | ClrEntryPointBindingNameRequired
+    | ClrEntryPointBindingNotFound of bindingName: string
+    | ClrEntryPointBindingAmbiguous of bindingName: string
+    | ClrQualifiedEntryPointBindingNotFound of moduleName: string * bindingName: string
     | FunctionValuedNameUnsupported of targetModuleName: string * bindingName: string
     | ConstructorValuedNameUnsupported of targetModuleName: string * constructorName: string
     | ClrBindingResolutionFailed of moduleName: string * bindingName: string
@@ -741,6 +745,14 @@ type ClrBackendEmitterErrorEvidence =
     | ClrBodylessParameterizedBindingRequiresExplicitReturnType of moduleName: string * bindingName: string
     | ClrBindingReturnTypeMismatch of moduleName: string * bindingName: string * expectedTypeText: string * actualTypeText: string
     | ClrTypeResolutionFailed of typeText: string
+    | ClrTypeTextExpectedClosingParen
+    | ClrTypeTextExpectedOpeningParen
+    | ClrTypeNameExpected
+    | ClrTraitConstraintTypeExpected
+    | ClrTypeExpressionExpected
+    | ClrUnexpectedTypeToken of tokenText: string
+    | ClrTypeCannotTakeArguments of headTypeText: string
+    | ClrFunctionSignatureRequiresAtLeastOneType
     | ClrBindingArityMismatch of bindingName: string * expectedArity: int * actualArity: int
     | ClrUnsupportedLoweredTypeForm
     | ClrConstructorTypeArgumentInferenceFailed of constructorName: string
@@ -774,6 +786,11 @@ type ClrBackendEmitterErrorEvidence =
     | ClrApplicationRequiresNamedCallee
     | ClrTraitCallResultTypeInferenceFailed of traitName: string * memberName: string
     | ClrTagTestConstructorResolutionFailed of constructorText: string
+    | ClrOrderingConstructorResolutionFailed of constructorName: string
+    | ClrIntrinsicImplementationMissing of intrinsicName: string
+    | ClrTraitRouteArityMismatch of moduleName: string * bindingName: string * expectedArity: int * explicitArgumentCount: int
+    | ClrManagedHostTypeConversionUnsupported of sourceType: string * targetType: string
+    | ClrIlEmissionFailed of detail: string
     | UnaryOperatorUnsupported of operatorName: string
     | UnaryOperatorOperandTypeUnsupported of operatorName: string * operandTypeText: string
     | BinaryOperatorUnsupported of operatorName: string * leftTypeText: string * rightTypeText: string
@@ -842,6 +859,9 @@ type TargetCheckpointDiagnosticEvidence =
     | TargetCheckpointMalformedInput of checkpoint: string * inputCheckpoint: string * diagnosticCount: int * diagnosticCodes: string list
     | TargetCheckpointEmitterFailure of checkpoint: string * backendProfile: string * detail: string
     | UnknownTargetCheckpoint of checkpoint: string
+
+type CompilationCommandErrorEvidence =
+    | UnknownStageCheckpoint of checkpoint: string * availableCheckpoints: string list
 
 type CheckpointVerificationEvidence =
     | UnknownVerificationCheckpoint of checkpoint: string
@@ -1554,6 +1574,14 @@ module DiagnosticFact =
                 "The CLR dotnet backend does not yet support effect handlers in this lowering lane."
             | PrefixedStringsUnsupported ->
                 "The CLR dotnet backend does not yet support prefixed strings in this lowering lane."
+            | ClrEntryPointBindingNameRequired ->
+                "Expected a binding name to run."
+            | ClrEntryPointBindingNotFound bindingName ->
+                $"No zero-argument binding named '{bindingName}' was found for dotnet."
+            | ClrEntryPointBindingAmbiguous bindingName ->
+                $"Binding name '{bindingName}' is ambiguous. Use a fully qualified name."
+            | ClrQualifiedEntryPointBindingNotFound(moduleName, bindingName) ->
+                $"dotnet requires a zero-argument binding named '{bindingName}' in module '{moduleName}'."
             | FunctionValuedNameUnsupported(targetModuleName, bindingName) ->
                 $"The CLR dotnet backend does not yet support function-valued name '{targetModuleName}.{bindingName}'."
             | ConstructorValuedNameUnsupported(targetModuleName, constructorName) ->
@@ -1576,6 +1604,22 @@ module DiagnosticFact =
                 $"The CLR dotnet backend expected '{moduleName}.{bindingName}' to return {expectedTypeText}, but the body returns {actualTypeText}."
             | ClrTypeResolutionFailed typeText ->
                 $"The CLR dotnet backend could not resolve type '{typeText}'."
+            | ClrTypeTextExpectedClosingParen ->
+                "Expected ')' to close the type."
+            | ClrTypeTextExpectedOpeningParen ->
+                "Expected '(' to start a parenthesized type."
+            | ClrTypeNameExpected ->
+                "Expected a type name."
+            | ClrTraitConstraintTypeExpected ->
+                "The CLR dotnet backend expected a concrete trait constraint type."
+            | ClrTypeExpressionExpected ->
+                "Expected a type."
+            | ClrUnexpectedTypeToken tokenText ->
+                $"Unexpected token '{tokenText}' in a type."
+            | ClrTypeCannotTakeArguments headTypeText ->
+                $"Type '{headTypeText}' cannot take arguments."
+            | ClrFunctionSignatureRequiresAtLeastOneType ->
+                "Expected at least one type in the signature."
             | ClrBindingArityMismatch(bindingName, expectedArity, actualArity) ->
                 $"The CLR dotnet backend expected '{bindingName}' to receive {expectedArity} argument(s), but received {actualArity}."
             | ClrUnsupportedLoweredTypeForm ->
@@ -1642,6 +1686,16 @@ module DiagnosticFact =
                 $"The CLR dotnet backend could not infer a unique result type for trait call '{traitName}.{memberName}'."
             | ClrTagTestConstructorResolutionFailed constructorText ->
                 $"The CLR dotnet backend could not resolve constructor '{constructorText}' for operator 'is'."
+            | ClrOrderingConstructorResolutionFailed constructorName ->
+                $"The CLR dotnet backend could not resolve Ordering constructor '{constructorName}'."
+            | ClrIntrinsicImplementationMissing intrinsicName ->
+                $"The CLR dotnet backend intrinsic '{intrinsicName}' is not implemented yet."
+            | ClrTraitRouteArityMismatch(moduleName, bindingName, expectedArity, explicitArgumentCount) ->
+                $"The CLR dotnet backend trait route '{moduleName}.{bindingName}' expected {expectedArity} argument(s), but the trait call supplies 1 dictionary and {explicitArgumentCount} explicit argument(s)."
+            | ClrManagedHostTypeConversionUnsupported(sourceType, targetType) ->
+                $"The CLR dotnet backend cannot convert managed host type '{sourceType}' to '{targetType}'."
+            | ClrIlEmissionFailed detail ->
+                $"The CLR dotnet backend failed to emit IL: {detail}"
             | UnaryOperatorUnsupported operatorName ->
                 $"The CLR dotnet backend does not yet support unary operator '{operatorName}'."
             | UnaryOperatorOperandTypeUnsupported(operatorName, operandTypeText) ->
@@ -1757,6 +1811,13 @@ module DiagnosticFact =
                 "zig backend requires each or-pattern alternative to bind the same names."
             | ZigOrPatternBinderRepresentationMismatch binderName ->
                 $"zig backend requires binder '{binderName}' to keep the same runtime representation across every or-pattern alternative."
+
+    module internal CompilationCommandError =
+        let message evidence =
+            match evidence with
+            | UnknownStageCheckpoint(checkpoint, availableCheckpoints) ->
+                let availableText = String.concat ", " availableCheckpoints
+                $"Unknown checkpoint '{checkpoint}'. Available checkpoints: {availableText}."
 
     let private expectedActualMismatchKindText mismatchKind =
         match mismatchKind with

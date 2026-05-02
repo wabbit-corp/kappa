@@ -510,8 +510,7 @@ module Compilation =
         let available = availableCheckpoints workspace
 
         if not (available |> List.contains checkpoint) then
-            let availableText = String.concat ", " available
-            Result.Error $"Unknown checkpoint '{checkpoint}'. Available checkpoints: {availableText}."
+            Result.Error(DiagnosticFact.CompilationCommandError.message (UnknownStageCheckpoint(checkpoint, available)))
         elif CompilationCheckpoints.targetCheckpointNames workspace |> List.contains checkpoint then
             CompilationCheckpoints.tryEmitTargetTranslationUnit workspace checkpoint
             |> Result.map (fun translationUnit ->

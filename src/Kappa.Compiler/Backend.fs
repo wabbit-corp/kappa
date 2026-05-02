@@ -96,7 +96,7 @@ module Backend =
 
         match segments with
         | [] ->
-            Result.Error "Expected a binding name to run."
+            Result.Error(DiagnosticFact.ClrBackendEmitterError.message ClrEntryPointBindingNameRequired)
         | [ bindingName ] ->
             let matches =
                 workspace.ClrAssemblyIR
@@ -110,11 +110,11 @@ module Backend =
 
             match matches with
             | [] ->
-                Result.Error $"No zero-argument binding named '{bindingName}' was found for dotnet."
+                Result.Error(DiagnosticFact.ClrBackendEmitterError.message (ClrEntryPointBindingNotFound bindingName))
             | [ moduleName, resolvedBindingName ] ->
                 Result.Ok(moduleName, resolvedBindingName)
             | _ ->
-                Result.Error $"Binding name '{bindingName}' is ambiguous. Use a fully qualified name."
+                Result.Error(DiagnosticFact.ClrBackendEmitterError.message (ClrEntryPointBindingAmbiguous bindingName))
         | _ ->
             let moduleName = segments |> List.take (segments.Length - 1) |> String.concat "."
             let bindingName = List.last segments
@@ -123,7 +123,11 @@ module Backend =
             | Some _ ->
                 Result.Ok(moduleName, bindingName)
             | None ->
-                Result.Error $"dotnet requires a zero-argument binding named '{bindingName}' in module '{moduleName}'."
+                Result.Error(
+                    DiagnosticFact.ClrBackendEmitterError.message (
+                        ClrQualifiedEntryPointBindingNotFound(moduleName, bindingName)
+                    )
+                )
 
     let private buildClrRunnerProjectText supportFileNames =
         let itemLines =
