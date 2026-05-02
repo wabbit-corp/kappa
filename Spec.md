@@ -5452,6 +5452,16 @@ An operator token is an implementation-defined sequence of non-alphanumeric, non
 forming a reserved token (such as `->`, string delimiters, comment delimiters, etc.). Common operator tokens include
 `+`, `*`, `==`, `&&`, `||`, `..`, `..<`.
 
+Numeric-literal disambiguation:
+
+* A decimal point is part of a numeric literal only when it is followed by at least one decimal digit and is not
+  immediately followed by another `.`.
+* Consequently:
+  * `1..10` tokenizes as `1`, `..`, `10`;
+  * `1..<10` tokenizes as `1`, `..<`, `10`;
+  * `1.foo` tokenizes as `1`, `.`, `foo`; and
+  * `1.0` tokenizes as one floating-point literal.
+
 Operators may be used as ordinary function names by parenthesizing:
 
 ```kappa
@@ -5612,8 +5622,15 @@ Decimal floating-point numbers:
 
 General form:
 
-* `[digits] '.' [digits] [exponent]`
+* `digits '.' digits [exponent]`
 * `[digits] [exponent]` where exponent is `e` or `E` followed by an optional sign and digits.
+
+Lexical restrictions:
+
+* In the first form, both digit sequences are non-empty.
+* A `.` begins the fractional part only under the tokenization rule of §3.5.1.
+* `.5` is not a portable floating-point literal; write `0.5`.
+* `5.` is not a portable floating-point literal; write `5.0`.
 
 <!-- literals.numeric_literals.float_double_semantics -->
 #### 4.1.3 `Float` / `Double` semantics
@@ -18745,6 +18762,8 @@ Rules:
 
 * `from .. to` elaborates to `range from to False`.
 * `from ..< to` elaborates to `range from to True`.
+* By the numeric-literal tokenization rule of §3.5.1, forms such as `1..10` and `1..<10` are parsed as range syntax,
+  not as malformed floating literals.
 * For coherent `Rangeable v` evidence, the result type is `Rangeable.Range v`.
 * Range construction is pure. Iterating a range is governed by `IntoQuery` or another explicit consumer instance.
 * The portable prelude MUST provide `Rangeable` instances for `Nat`, `Int`, `Integer`, and `UnicodeScalar`.
