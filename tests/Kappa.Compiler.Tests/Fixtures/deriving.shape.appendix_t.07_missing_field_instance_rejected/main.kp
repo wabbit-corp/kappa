@@ -13,7 +13,7 @@ data NeedsMystery : Type =
 
 probe : Unit
 let probe =
-    $(assertHasAdtRuntimeFieldInstances @MiniShow @NeedsMystery '{ NeedsMystery })
+    $(assertHasAdtRuntimeFieldInstances @MiniShow @NeedsMystery '{ type NeedsMystery })
 
 --! assertErrorCount 1
 --! assertDiagnostic error KAPPA_DERIVING_SHAPE_MISSING_RUNTIME_FIELD_INSTANCE

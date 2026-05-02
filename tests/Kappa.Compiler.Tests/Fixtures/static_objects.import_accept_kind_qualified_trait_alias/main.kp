@@ -2,8 +2,8 @@
 
 import lib.classes.(trait Size as Sized)
 
-C : Type -> Constraint
+C : Type -> Type
 let C = trait Sized
 
-use : Dict (C String) -> Dict (Sized String)
+use : C String -> Sized String
 let use d = d

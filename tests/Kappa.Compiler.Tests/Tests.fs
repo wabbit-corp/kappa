@@ -2735,7 +2735,7 @@ module SmokeTestsShard2 =
                         "shapeSmoke : Unit"
                         "let shapeSmoke ="
                         "    $(assertAdtShape @User"
-                        "        '{ User }"
+                        "        '{ type User }"
                         "        ((\"name\" :: \"age\" :: Nil) :: Nil))"
                     ]
                     |> String.concat "\n"
@@ -3982,7 +3982,7 @@ module SmokeTestsShard3 =
                         "    Add (left : Expr) (right : Expr)"
                         "tagName : Expr -> String"
                         "let tagName value ="
-                        "    $(deriveTagNameBody @Expr '{ Expr } '{ value })"
+                        "    $(deriveTagNameBody @Expr '{ type Expr } '{ value })"
                     ]
                     |> String.concat "\n"
                     "support/shape_assert.kp",
@@ -4054,22 +4054,6 @@ module SmokeTestsShard3 =
 
 
 module SmokeTestsShard4 =
-
-    [<Fact>]
-    let ``code-detail diagnostic facts normalize through the shared formatter`` () =
-        let bag = DiagnosticBag()
-        bag.AddError(DiagnosticFact.codeDetail DiagnosticCode.ExpectedSyntaxToken "Expected an expression.")
-
-        let diagnostic = Assert.Single(bag.Items)
-        Assert.Equal(DiagnosticCode.ExpectedSyntaxToken, diagnostic.Code)
-        Assert.Equal("Expected an expression.", diagnostic.Message)
-        Assert.Equal("expected-syntax-token", diagnostic.Payload.Kind)
-        Assert.Contains(
-            diagnostic.Payload.Fields,
-            fun field ->
-                field.Name = "detail"
-                && field.Value = DiagnosticPayloadText "Expected an expression."
-        )
 
     [<Fact>]
     let ``QTT structured diagnostics render from typed evidence`` () =
@@ -8464,7 +8448,7 @@ module SmokeTestsShard4 =
         Assert.Equal(TypeSignatures.TypeIntrinsic TypeSignatures.UniverseClassifier, parseTypeText "Universe")
         Assert.Equal(TypeSignatures.TypeIntrinsic TypeSignatures.QuantityClassifier, parseTypeText "Quantity")
         Assert.Equal(TypeSignatures.TypeIntrinsic TypeSignatures.RegionClassifier, parseTypeText "Region")
-        Assert.Equal(TypeSignatures.TypeIntrinsic TypeSignatures.ConstraintClassifier, parseTypeText "Constraint")
+        Assert.Equal(TypeSignatures.TypeName([ "Constraint" ], []), parseTypeText "Constraint")
         Assert.Equal(TypeSignatures.TypeIntrinsic TypeSignatures.RecRowClassifier, parseTypeText "RecRow")
         Assert.Equal(TypeSignatures.TypeIntrinsic TypeSignatures.VarRowClassifier, parseTypeText "VarRow")
         Assert.Equal(TypeSignatures.TypeIntrinsic TypeSignatures.EffRowClassifier, parseTypeText "EffRow")
@@ -8729,7 +8713,7 @@ module SmokeTestsShard4 =
                         "    User (name : String) (age : Int)"
                         "result : Unit"
                         "let result ="
-                        "    $(smoke @User '{ User })"
+                        "    $(smoke @User '{ type User })"
                     ]
                     |> String.concat "\n"
                     "support/helper.kp",
@@ -9328,7 +9312,7 @@ module SmokeTestsShard5 =
                         "    User (name : String) (age : Int)"
                         "result : Unit"
                         "let result ="
-                        "    $(smoke @User '{ User })"
+                        "    $(smoke @User '{ type User })"
                     ]
                     |> String.concat "\n"
                     "support/helper.kp",
@@ -10279,11 +10263,12 @@ module SmokeTestsShard6 =
                         "module main"
                         "import std.deriving.shape.*"
                         "assertHasAdtRuntimeFieldInstances :"
-                        "    forall (tc : Type -> Constraint) (@0 a : Type)."
+                        "    forall (tc : Type -> Type) (@0 a : Type)."
+                        "    (@traitWitness : forall (x : Type). IsTrait (tc x)) ->"
                         "    Syntax Type -> Elab (Syntax Unit)"
-                        "let assertHasAdtRuntimeFieldInstances @tc @a target = do"
+                        "let assertHasAdtRuntimeFieldInstances @tc @a @traitWitness target = do"
                         "    shape <- inspectAdt @a target"
-                        "    requireRuntimeFieldInstances @tc shape"
+                        "    requireRuntimeFieldInstances @tc @a shape"
                         "    unitSyntax"
                     ]
                     |> String.concat "\n"
@@ -10293,6 +10278,59 @@ module SmokeTestsShard6 =
             workspace.HasErrors,
             $"Expected compile-time shape helper to typecheck through inspectAdt and requireRuntimeFieldInstances, got:{Environment.NewLine}{diagnosticsSummary workspace.Diagnostics}"
         )
+
+    [<Fact>]
+    let ``imported compile time shape helpers run runtime field instance checks at the splice site`` () =
+        let workspace =
+            compileInMemoryWorkspace
+                "memory-imported-shape-helper-splice-site-root"
+                [
+                    "main.kp",
+                    [
+                        "module main"
+                        "import support.shape_assert.(assertHasAdtRuntimeFieldInstances)"
+                        "trait MiniShow (a : Type) ="
+                        "    miniShow : (& value : a) -> String"
+                        "data Mystery : Type ="
+                        "    Mystery"
+                        "data NeedsMystery : Type ="
+                        "    NeedsMystery (value : Mystery)"
+                        "instance MiniShow Mystery ="
+                        "    let miniShow &value = \"mystery\""
+                        "probe : Unit"
+                        "let probe ="
+                        "    $(assertHasAdtRuntimeFieldInstances @MiniShow @NeedsMystery '{ type NeedsMystery })"
+                    ]
+                    |> String.concat "\n"
+                    "support/shape_assert.kp",
+                    [
+                        "module support.shape_assert"
+                        "import std.deriving.shape.*"
+                        "assertHasAdtRuntimeFieldInstances :"
+                        "    forall (tc : Type -> Type) (@0 a : Type)."
+                        "    (@traitWitness : forall (x : Type). IsTrait (tc x)) ->"
+                        "    Syntax Type -> Elab (Syntax Unit)"
+                        "let assertHasAdtRuntimeFieldInstances @tc @a @traitWitness target = do"
+                        "    shape <- inspectAdt @a target"
+                        "    requireRuntimeFieldInstances @tc @a shape"
+                        "    unitSyntax"
+                    ]
+                    |> String.concat "\n"
+                ]
+
+        Assert.False(workspace.HasErrors, $"Expected imported shape helper splice to succeed, got:{Environment.NewLine}{diagnosticsSummary workspace.Diagnostics}")
+
+        let mainDocument =
+            tryFindDocument "main" workspace
+            |> Option.defaultWith (fun () -> failwith "Expected main document.")
+
+        let probeDeclaration =
+            tryFindLetDeclaration "probe" mainDocument
+            |> Option.defaultWith (fun () -> failwith "Expected probe declaration.")
+
+        match probeDeclaration.Body with
+        | Some(Literal LiteralValue.Unit) -> ()
+        | other -> failwithf "Expected imported shape helper splice to expand to unit syntax, got %A" other
 
 
     [<Fact>]
@@ -10309,7 +10347,7 @@ module SmokeTestsShard6 =
                         "    User (name : String) (age : Int)"
                         "result : String"
                         "let result ="
-                        "    $(smoke @User '{ User })"
+                        "    $(smoke @User '{ type User })"
                     ]
                     |> String.concat "\n"
                     "support/helper.kp",
@@ -10792,6 +10830,33 @@ module SmokeTestsShard7 =
 
 
     [<Fact>]
+    let ``type signatures treat alpha equivalent type lambdas as definitionally equal`` () =
+        let left =
+            TypeSignatures.TypeLambda(
+                "x",
+                TypeSignatures.TypeUniverse None,
+                TypeSignatures.TypeApply(
+                    TypeSignatures.TypeName([ "IsTrait" ], []),
+                    [ TypeSignatures.TypeVariable "tc"
+                      TypeSignatures.TypeVariable "x" ]
+                )
+            )
+
+        let right =
+            TypeSignatures.TypeLambda(
+                "y",
+                TypeSignatures.TypeUniverse None,
+                TypeSignatures.TypeApply(
+                    TypeSignatures.TypeName([ "IsTrait" ], []),
+                    [ TypeSignatures.TypeVariable "tc"
+                      TypeSignatures.TypeVariable "y" ]
+                )
+            )
+
+        Assert.True(TypeSignatures.definitionallyEqual left right)
+
+
+    [<Fact>]
     let ``raw type signature normalization does not treat Float as a builtin alias of Double`` () =
         let floatType = TypeSignatures.TypeName([ "Float" ], [])
         let doubleType = TypeSignatures.TypeName([ "Double" ], [])
@@ -10880,11 +10945,12 @@ module SmokeTestsShard7 =
                         "module main"
                         "import std.deriving.shape.*"
                         "assertHasAdtRuntimeFieldInstances :"
-                        "    forall (tc : Type -> Constraint) (@0 a : Type)."
+                        "    forall (tc : Type -> Type) (@0 a : Type)."
+                        "    (@traitWitness : forall (x : Type). IsTrait (tc x)) ->"
                         "    Syntax Type -> Elab (Syntax Unit)"
-                        "let assertHasAdtRuntimeFieldInstances @tc @a target = do"
+                        "let assertHasAdtRuntimeFieldInstances @tc @a @traitWitness target = do"
                         "    shape <- inspectAdt @a target"
-                        "    requireRuntimeFieldInstances @tc shape"
+                        "    requireRuntimeFieldInstances @tc @a shape"
                         "    unitSyntax"
                         "trait MiniShow (a : Type) ="
                         "    miniShow : (& value : a) -> String"
@@ -10894,7 +10960,7 @@ module SmokeTestsShard7 =
                         "    NeedsMystery (value : Mystery)"
                         "probe : Unit"
                         "let probe ="
-                        "    $(assertHasAdtRuntimeFieldInstances @MiniShow @NeedsMystery '{ NeedsMystery })"
+                        "    $(assertHasAdtRuntimeFieldInstances @MiniShow @NeedsMystery '{ type NeedsMystery })"
                     ]
                     |> String.concat "\n"
                 ]

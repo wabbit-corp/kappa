@@ -904,7 +904,29 @@ module SurfaceElaboration =
             None
 
     let private tryParseSignatureParameterLayout (tokens: Token list) =
-        stripDelimitedParameterTokens tokens
+        let makeParameter name quantity isImplicit isInout suspensionTypeToken typeTokens =
+            { Name = name
+              TypeTokens =
+                Some(
+                    suspensionTypeToken
+                    |> Option.map (fun typeToken -> typeToken :: typeTokens)
+                    |> Option.defaultValue typeTokens
+                )
+              Quantity = quantity
+              IsImplicit = isImplicit
+              IsInout = isInout
+              IsReceiver = false }
+
+        let initialTokens =
+            match stripDelimitedParameterTokens tokens with
+            | Some(delimiterImplicit, innerTokens) ->
+                Some(delimiterImplicit, innerTokens)
+            | None when not (List.isEmpty tokens) ->
+                Some(false, tokens)
+            | None ->
+                None
+
+        initialTokens
         |> Option.bind (fun (delimiterImplicit, innerTokens) ->
             let isImplicit, innerTokens =
                 match innerTokens with
@@ -931,23 +953,12 @@ module SurfaceElaboration =
 
             match bodyTokens with
             | { Kind = Underscore } as underscoreToken :: { Kind = Colon } :: typeTokens when not (List.isEmpty typeTokens) ->
-                Some
-                    { Name = $"__kappa_signature_wildcard_{underscoreToken.Span.Start}"
-                      TypeTokens =
-                        Some(suspensionTypeToken |> Option.map (fun typeToken -> typeToken :: typeTokens) |> Option.defaultValue typeTokens)
-                      Quantity = quantity
-                      IsImplicit = isImplicit
-                      IsInout = isInout
-                      IsReceiver = false }
+                Some(makeParameter $"__kappa_signature_wildcard_{underscoreToken.Span.Start}" quantity isImplicit isInout suspensionTypeToken typeTokens)
             | nameToken :: { Kind = Colon } :: typeTokens when Token.isName nameToken && not (List.isEmpty typeTokens) ->
-                Some
-                    { Name = SyntaxFacts.trimIdentifierQuotes nameToken.Text
-                      TypeTokens =
-                        Some(suspensionTypeToken |> Option.map (fun typeToken -> typeToken :: typeTokens) |> Option.defaultValue typeTokens)
-                      Quantity = quantity
-                      IsImplicit = isImplicit
-                      IsInout = isInout
-                      IsReceiver = false }
+                Some(makeParameter (SyntaxFacts.trimIdentifierQuotes nameToken.Text) quantity isImplicit isInout suspensionTypeToken typeTokens)
+            | typeTokens when not (List.isEmpty typeTokens) && not isImplicit && not isInout ->
+                let firstToken = significantTokens typeTokens |> List.head
+                Some(makeParameter $"__kappa_signature_wildcard_{firstToken.Span.Start}" quantity false false suspensionTypeToken typeTokens)
             | _ ->
                 None)
 
@@ -985,15 +996,49 @@ module SurfaceElaboration =
         (signatureLayouts: Parameter option list option)
         (definitionLayouts: Parameter list option)
         =
+        let isAnonymousSignatureLayoutName name =
+            String.IsNullOrWhiteSpace name
+            || String.Equals(name, "_", StringComparison.Ordinal)
+            || name.StartsWith("__kappa_signature_wildcard_", StringComparison.Ordinal)
+
         match signatureLayouts, definitionLayouts with
         | Some signatureParameters, Some definitionParameters ->
             let mergeResolvedParameter (signatureParameter: Parameter) (definitionParameter: Parameter) =
                 { definitionParameter with
-                    Name = signatureParameter.Name
+                    Name =
+                        if isAnonymousSignatureLayoutName signatureParameter.Name then
+                            definitionParameter.Name
+                        else
+                            signatureParameter.Name
                     TypeTokens = signatureParameter.TypeTokens |> Option.orElse definitionParameter.TypeTokens
                     Quantity = signatureParameter.Quantity |> Option.orElse definitionParameter.Quantity
                     IsImplicit = signatureParameter.IsImplicit
                     IsInout = signatureParameter.IsInout }
+
+            let positionalMergeWithLeadingOmitted () =
+                let omittedLeadingCount = List.length signatureParameters - List.length definitionParameters
+
+                if omittedLeadingCount <= 0 then
+                    None
+                else
+                    let leadingOmitted = signatureParameters |> List.take omittedLeadingCount
+                    let alignedSignatureParameters = signatureParameters |> List.skip omittedLeadingCount
+
+                    if List.length alignedSignatureParameters <> List.length definitionParameters then
+                        None
+                    else
+                        let mergedLeading =
+                            leadingOmitted
+                            |> List.choose id
+
+                        let mergedTrailing =
+                            List.zip alignedSignatureParameters definitionParameters
+                            |> List.map (fun (signatureParameter, definitionParameter) ->
+                                match signatureParameter with
+                                | Some signatureParameter -> mergeResolvedParameter signatureParameter definitionParameter
+                                | None -> definitionParameter)
+
+                        Some(mergedLeading @ mergedTrailing)
 
             let rec mergeAligned
                 (signatureParameters: Parameter option list)
@@ -1032,7 +1077,8 @@ module SurfaceElaboration =
                     | None -> definitionParameter)
                 |> Some
             | None ->
-                definitionLayouts
+                positionalMergeWithLeadingOmitted ()
+                |> Option.orElse definitionLayouts
         | Some signatureParameters, None when signatureParameters |> List.forall Option.isSome ->
             signatureParameters |> List.choose id |> Some
         | _ ->
@@ -1206,9 +1252,6 @@ module SurfaceElaboration =
     let private typeObjectType =
         TypeUniverse None
 
-    let private constraintObjectType =
-        TypeIntrinsic ConstraintClassifier
-
     let private effectLabelObjectType =
         TypeIntrinsic EffLabelClassifier
 
@@ -1220,7 +1263,7 @@ module SurfaceElaboration =
         let body =
             traitInfo.TypeParameters
             |> List.rev
-            |> List.fold (fun current _ -> TypeArrow(QuantityOmega, typeObjectType, current)) constraintObjectType
+            |> List.fold (fun current _ -> TypeArrow(QuantityOmega, typeObjectType, current)) typeObjectType
 
         { Forall = []
           Constraints = []
@@ -4947,6 +4990,34 @@ module SurfaceElaboration =
 
         loop Set.empty
 
+    let private tryResolveVisibleTraitApplication
+        (environment: BindingLoweringEnvironment)
+        argumentType
+        =
+        let rec collectHeadAndArguments current =
+            match normalizeTypeAliases environment.VisibleTypeAliases current with
+            | TypeName(nameSegments, arguments) ->
+                Some(nameSegments, arguments)
+            | TypeApply(callee, arguments) ->
+                collectHeadAndArguments callee
+                |> Option.map (fun (nameSegments, existingArguments) ->
+                    nameSegments, existingArguments @ arguments)
+            | _ ->
+                None
+
+        collectHeadAndArguments argumentType
+        |> Option.bind (fun (nameSegments, arguments) ->
+            let resolvedTrait =
+                match nameSegments with
+                | [ traitName ] ->
+                    environment.VisibleTraits |> Map.tryFind traitName
+                | _ ->
+                    environment.VisibleQualifiedTraits |> Map.tryFind nameSegments
+
+            resolvedTrait
+            |> Option.filter (fun traitInfo -> List.length traitInfo.TypeParameters = List.length arguments)
+            |> Option.map (fun traitInfo -> traitInfo, nameSegments, arguments))
+
     let rec private tryUnwrapBindablePayloadType
         (aliases: Map<string, TypeAliasInfo>)
         typeExpr
@@ -5471,11 +5542,16 @@ module SurfaceElaboration =
         next
         |> Map.fold (fun state name value -> Map.add name value state) rewrittenExisting
 
-    let private isCompileTimeArgumentType
+    let rec private isCompileTimeArgumentType
         (aliases: Map<string, TypeAliasInfo>)
         parameterType
         =
         match normalizeTypeAliases aliases parameterType with
+        | TypeLambda _ ->
+            true
+        | TypeArrow(_, parameterSort, resultSort) ->
+            isCompileTimeArgumentType aliases parameterSort
+            && isCompileTimeArgumentType aliases resultSort
         | TypeUniverse _
         | TypeIntrinsic UniverseClassifier
         | TypeIntrinsic ConstraintClassifier
@@ -5644,6 +5720,8 @@ module SurfaceElaboration =
                 loop current
 
         loop typeExpr
+
+    let private implicitMarkerName name = $"__kappa_implicit_{name}"
 
     let private extendPatternLocalTypes
         (environment: BindingLoweringEnvironment)
@@ -5874,10 +5952,24 @@ module SurfaceElaboration =
             collectPatternNames binding.Pattern
             |> List.fold (fun state name ->
                 match Map.tryFind name extendedLocals with
-                | Some boundType -> Map.add $"__kappa_implicit_{name}" boundType state
+                | Some boundType -> Map.add (implicitMarkerName name) boundType state
                 | None -> state) extendedLocals
         else
             extendedLocals
+
+    let private extendBindingLocalImplicitTypes
+        (localImplicitTypes: Map<string, TypeExpr>)
+        (extendedLocals: Map<string, TypeExpr>)
+        (binding: SurfaceBindPattern)
+        =
+        if binding.IsImplicit then
+            collectPatternNames binding.Pattern
+            |> List.fold (fun state name ->
+                match Map.tryFind (implicitMarkerName name) extendedLocals with
+                | Some boundType -> Map.add (implicitMarkerName name) boundType state
+                | None -> state) localImplicitTypes
+        else
+            localImplicitTypes
 
     let private unwrapInstantiatedCallType
         (environment: BindingLoweringEnvironment)
@@ -6004,7 +6096,13 @@ module SurfaceElaboration =
         (scheme: TypeScheme option)
         (parameters: Parameter list)
         =
-        let implicitMarkerName name = $"__kappa_implicit_{name}"
+        let appendMissingEntries existing additional =
+            additional
+            |> List.fold (fun state (name, parameterType) ->
+                if state |> List.exists (fun (existingName, _) -> String.Equals(existingName, name, StringComparison.Ordinal)) then
+                    state
+                else
+                    state @ [ name, parameterType ]) existing
 
         let forallLocals =
             match scheme with
@@ -6043,38 +6141,50 @@ module SurfaceElaboration =
             | None ->
                 []
 
-        let implicitMarkers =
-            (match scheme with
-             | Some scheme ->
-                 let _, runtimeParameters = splitLeadingForallParameters (Some scheme) parameters
-                 let parameterTypes, _ = TypeSignatures.schemeParts scheme
+        let implicitMarkersFromScheme =
+            match scheme with
+            | Some scheme ->
+                let _, runtimeParameters = splitLeadingForallParameters (Some scheme) parameters
+                let parameterTypes, _ = TypeSignatures.schemeParts scheme
 
-                 if List.length parameterTypes = List.length runtimeParameters then
-                     List.zip runtimeParameters parameterTypes
-                     |> List.choose (fun (parameter, parameterType) ->
-                         if parameter.IsImplicit then
-                             Some(implicitMarkerName parameter.Name, parameterType)
-                         else
-                             None)
-                 else
-                     []
-             | None ->
-                 [])
-            @
-                (parameters
-                 |> List.choose (fun parameter ->
-                     if parameter.IsImplicit then
-                         tryParseParameterType parameter
-                         |> Option.map (fun parameterType -> implicitMarkerName parameter.Name, parameterType)
-                     else
-                         None))
+                if List.length parameterTypes = List.length runtimeParameters then
+                    List.zip runtimeParameters parameterTypes
+                    |> List.choose (fun (parameter, parameterType) ->
+                        if parameter.IsImplicit then
+                            Some(implicitMarkerName parameter.Name, parameterType)
+                        else
+                            None)
+                else
+                    []
+            | None ->
+                []
 
-        forallLocals @ fromScheme @ fromAnnotations @ fromConstraints @ implicitMarkers
+        let implicitMarkersFromAnnotations =
+            parameters
+            |> List.choose (fun parameter ->
+                if parameter.IsImplicit then
+                    tryParseParameterType parameter
+                    |> Option.map (fun parameterType -> implicitMarkerName parameter.Name, parameterType)
+                else
+                    None)
+
+        let withScheme = appendMissingEntries forallLocals fromScheme
+        let withAnnotations = appendMissingEntries withScheme fromAnnotations
+        let withConstraints = appendMissingEntries withAnnotations fromConstraints
+        let withSchemeImplicitMarkers = appendMissingEntries withConstraints implicitMarkersFromScheme
+
+        appendMissingEntries withSchemeImplicitMarkers implicitMarkersFromAnnotations
 
     let private buildLocalImplicitTypes
         (scheme: TypeScheme option)
         (parameters: Parameter list)
         =
+        let addIfMissing state (name, parameterType) =
+            if Map.containsKey name state then
+                state
+            else
+                Map.add name parameterType state
+
         let fromScheme =
             match scheme with
             | Some scheme ->
@@ -6085,7 +6195,7 @@ module SurfaceElaboration =
                     List.zip runtimeParameters parameterTypes
                     |> List.choose (fun (parameter, parameterType) ->
                         if parameter.IsImplicit then
-                            Some(parameter.Name, parameterType)
+                            Some(implicitMarkerName parameter.Name, parameterType)
                         else
                             None)
                 else
@@ -6098,7 +6208,7 @@ module SurfaceElaboration =
             |> List.choose (fun parameter ->
                 if parameter.IsImplicit then
                     tryParseParameterType parameter
-                    |> Option.map (fun parameterType -> parameter.Name, parameterType)
+                    |> Option.map (fun parameterType -> implicitMarkerName parameter.Name, parameterType)
                 else
                     None)
 
@@ -6112,8 +6222,10 @@ module SurfaceElaboration =
             | None ->
                 []
 
-        fromScheme @ fromAnnotations @ fromConstraints
-        |> List.fold (fun state (name, parameterType) -> Map.add name parameterType state) Map.empty
+        let withScheme = List.fold addIfMissing Map.empty fromScheme
+        let withAnnotations = List.fold addIfMissing withScheme fromAnnotations
+
+        List.fold addIfMissing withAnnotations fromConstraints
 
     let private buildSourceBindingInfosByName
         (moduleIdentity: ModuleIdentity)
@@ -7496,13 +7608,7 @@ module SurfaceElaboration =
         (constraintInfo: TraitConstraint)
         =
         let supportsIntrinsicTraitEvidenceType argumentType =
-            match argumentType with
-            | TypeName([ traitName ], _) ->
-                tryResolveVisibleTraitByRoot environment traitName |> Option.isSome
-            | TypeName(qualifiedName, _) ->
-                tryResolveVisibleTraitInfo environment qualifiedName |> Option.isSome
-            | _ ->
-                false
+            tryResolveVisibleTraitApplication environment argumentType |> Option.isSome
 
         let normalizedArguments =
             constraintInfo.Arguments
@@ -7570,41 +7676,39 @@ module SurfaceElaboration =
         | _ ->
             None
 
-    let private tryLowerCompilerIssuedTraitEvidence
+    let rec private tryLowerCompilerIssuedTraitEvidence
         (environment: BindingLoweringEnvironment)
         parameterType
         =
         let supportsIntrinsicTraitEvidenceType argumentType =
-            match normalizeTypeAliases environment.VisibleTypeAliases argumentType with
-            | TypeName([ traitName ], _) ->
-                tryResolveVisibleTraitByRoot environment traitName |> Option.isSome
-            | TypeName(qualifiedName, _) ->
-                tryResolveVisibleTraitInfo environment qualifiedName |> Option.isSome
-            | _ ->
-                false
+            tryResolveVisibleTraitApplication environment argumentType |> Option.isSome
 
         let normalizedParameterType =
             normalizeTypeAliases environment.VisibleTypeAliases parameterType
 
-        let constraintInfo =
-            match normalizedParameterType with
-            | TypeName(nameSegments, [ argumentType ])
-                when matchesKnownType CompilerKnownSymbols.IsTraitType nameSegments
-                     && supportsIntrinsicTraitEvidenceType argumentType ->
-                Some(unqualifiedTraitConstraint "IsTrait" [ argumentType ])
-            | _ ->
-                None
+        match normalizedParameterType with
+        | TypeLambda(parameterName, parameterSort, body) ->
+            tryLowerCompilerIssuedTraitEvidence environment body
+            |> Option.map (fun loweredBody ->
+                KCoreLambda(
+                    [ lowerSyntheticKCoreParameter parameterName (Some QuantityZero) false (Some parameterSort) ],
+                    loweredBody
+                ))
+        | TypeName(nameSegments, [ argumentType ]) when matchesKnownType CompilerKnownSymbols.IsTraitType nameSegments ->
+            if supportsIntrinsicTraitEvidenceType argumentType then
+                let constraintInfo = unqualifiedTraitConstraint "IsTrait" [ argumentType ]
 
-        constraintInfo
-        |> Option.bind (fun constraintInfo ->
-            tryResolveIntrinsicTraitInstance environment constraintInfo
-            |> Option.map (fun instanceInfo ->
-                KCoreDictionaryValue(
-                    ModuleIdentity.text instanceInfo.ModuleIdentity,
-                    traitReferenceRuntimeName instanceInfo.Trait,
-                    instanceInfo.InstanceKey,
-                    []
-                )))
+                tryResolveIntrinsicTraitInstance environment constraintInfo
+                |> Option.map (fun instanceInfo ->
+                    KCoreDictionaryValue(
+                        ModuleIdentity.text instanceInfo.ModuleIdentity,
+                        traitReferenceRuntimeName instanceInfo.Trait,
+                        instanceInfo.InstanceKey,
+                        []
+                    ))
+            else
+                None
+        | _ -> None
 
     let private resolveConstraintInstanceDetailedWithSubstitution
         (environment: BindingLoweringEnvironment)
@@ -7823,28 +7927,27 @@ module SurfaceElaboration =
         (environment: BindingLoweringEnvironment)
         parameterType
         =
-        match normalizeTypeAliases environment.VisibleTypeAliases parameterType with
-        | TypeName([ traitName ], arguments) ->
-            match tryResolveVisibleTraitByRoot environment traitName with
-            | Some traitInfo ->
-                Some
-                    { Trait = TypeSignatures.TraitReference.unqualified traitName |> TypeSignatures.TraitReference.attachIdentity traitInfo.Identity
-                      Arguments = arguments }
-            | None ->
+        match tryResolveVisibleTraitApplication environment parameterType with
+        | Some(traitInfo, nameSegments, arguments) ->
+            Some
+                { Trait =
+                    TypeSignatures.TraitReference.ofSegments nameSegments
+                    |> TypeSignatures.TraitReference.attachIdentity traitInfo.Identity
+                  Arguments = arguments }
+        | None ->
+            match normalizeTypeAliases environment.VisibleTypeAliases parameterType with
+            | TypeName([ traitName ], arguments) ->
                 environment.VisibleTraits
                 |> Map.toSeq
                 |> Seq.tryFind (fun (_, traitInfo) ->
                     String.Equals(traitName, TraitRuntime.dictionaryTypeName traitInfo.Name, StringComparison.Ordinal))
                 |> Option.map (fun (_, traitInfo) ->
-                    { Trait = TypeSignatures.TraitReference.unqualified traitInfo.Name |> TypeSignatures.TraitReference.attachIdentity traitInfo.Identity
+                    { Trait =
+                        TypeSignatures.TraitReference.unqualified traitInfo.Name
+                        |> TypeSignatures.TraitReference.attachIdentity traitInfo.Identity
                       Arguments = arguments })
-        | TypeName(qualifiedName, arguments) ->
-            tryResolveVisibleTraitInfo environment qualifiedName
-            |> Option.map (fun traitInfo ->
-                { Trait = TypeSignatures.TraitReference.ofSegments qualifiedName |> TypeSignatures.TraitReference.attachIdentity traitInfo.Identity
-                  Arguments = arguments })
-        | _ ->
-            None
+            | _ ->
+                None
 
     let private semanticallyMatchesTraitConstraintType
         (environment: BindingLoweringEnvironment)
@@ -8272,6 +8375,113 @@ module SurfaceElaboration =
         | _ ->
             None
 
+    let rec private tryParseVisibleCompileTimeArgumentType
+        (environment: BindingLoweringEnvironment)
+        (localTypes: Map<string, TypeExpr> option)
+        (inferArgumentType: SurfaceExpression -> TypeExpr option)
+        expression
+        =
+        match expression with
+        | Name [ name ] ->
+            let isLocalCompileTimeBinder =
+                localTypes
+                |> Option.bind (Map.tryFind name)
+                |> Option.exists (isCompileTimeArgumentType environment.VisibleTypeAliases)
+
+            match isLocalCompileTimeBinder, inferArgumentType expression with
+            | true, _ ->
+                Some(TypeVariable name)
+            | false, Some inferredType when isCompileTimeArgumentType environment.VisibleTypeAliases inferredType ->
+                Some(TypeName([ name ], []))
+            | _ ->
+                Some(TypeName([ name ], []))
+        | Name segments when not (List.isEmpty segments) ->
+            Some(TypeName(segments, []))
+        | NumericLiteral(SurfaceIntegerLiteral(value, _, None)) when value = 0I || value = 1I ->
+            Some(TypeName([ value.ToString() ], []))
+        | Apply(head, arguments) ->
+            match
+                tryParseVisibleCompileTimeArgumentType environment localTypes inferArgumentType head,
+                arguments
+                |> List.map (tryParseVisibleCompileTimeArgumentType environment localTypes inferArgumentType)
+            with
+            | Some(TypeName(name, existingArguments)), parsedArguments
+                when parsedArguments |> List.forall Option.isSome ->
+                Some(TypeName(name, existingArguments @ (parsedArguments |> List.choose id)))
+            | _ ->
+                None
+        | ExplicitImplicitArgument inner ->
+            tryParseVisibleCompileTimeArgumentType environment localTypes inferArgumentType inner
+        | _ ->
+            None
+
+    let private tryConsumeLeadingCompileTimeApplications
+        (environment: BindingLoweringEnvironment)
+        (localTypes: Map<string, TypeExpr> option)
+        (inferArgumentType: SurfaceExpression -> TypeExpr option)
+        (remainingForall: TypeSignatures.ForallBinder list)
+        (remainingArguments: SurfaceExpression list)
+        =
+        let rec loop
+            (pendingForall: TypeSignatures.ForallBinder list)
+            (pendingArguments: SurfaceExpression list)
+            (substitution: Map<string, TypeExpr>)
+            =
+            match pendingForall, pendingArguments with
+            | binder :: restForall, ExplicitImplicitArgument explicitArgument :: restArguments ->
+                match
+                    tryParseVisibleCompileTimeArgumentType environment localTypes inferArgumentType explicitArgument
+                with
+                | Some explicitTypeArgument ->
+                    loop
+                        restForall
+                        restArguments
+                        (composeTypeSubstitution substitution (Map.ofList [ binder.Name, explicitTypeArgument ]))
+                | None ->
+                    None
+            | _, _ ->
+                Some(substitution, pendingArguments)
+
+        loop remainingForall remainingArguments Map.empty
+
+    type private SpecializedBindingApplication =
+        { InstantiatedScheme: TypeScheme
+          ExplicitTypeApplicationSubstitution: Map<string, TypeExpr>
+          LayoutTypeSubstitution: Map<string, TypeExpr>
+          RemainingArguments: SurfaceExpression list }
+
+    let private trySpecializeBindingApplication
+        (environment: BindingLoweringEnvironment)
+        (freshPrefix: string)
+        (freshCounter: int ref)
+        (bindingInfo: BindingSchemeInfo)
+        (localTypes: Map<string, TypeExpr> option)
+        (inferArgumentType: SurfaceExpression -> TypeExpr option)
+        (arguments: SurfaceExpression list)
+        =
+        let instantiated = TypeSignatures.instantiate freshPrefix freshCounter.Value bindingInfo.Scheme
+        freshCounter.Value <- freshCounter.Value + instantiated.Forall.Length
+
+        tryConsumeLeadingCompileTimeApplications
+            environment
+            localTypes
+            inferArgumentType
+            instantiated.Forall
+            arguments
+        |> Option.map (fun (explicitTypeApplicationSubstitution, remainingArguments) ->
+            let instantiatedScheme =
+                TypeSignatures.applySchemeSubstitution explicitTypeApplicationSubstitution instantiated
+
+            let layoutTypeSubstitution =
+                forallInstantiationSubstitution bindingInfo.Scheme instantiatedScheme
+                |> fun substitution ->
+                    composeTypeSubstitution substitution explicitTypeApplicationSubstitution
+
+            { InstantiatedScheme = instantiatedScheme
+              ExplicitTypeApplicationSubstitution = explicitTypeApplicationSubstitution
+              LayoutTypeSubstitution = layoutTypeSubstitution
+              RemainingArguments = remainingArguments })
+
     let private trySynthesizeImplicitArgument
         (environment: BindingLoweringEnvironment)
         (tryResolveLocalImplicit: TypeExpr -> KCoreExpression option)
@@ -8294,12 +8504,80 @@ module SurfaceElaboration =
         | UniqueLocalImplicitCandidate of KCoreExpression
         | AmbiguousLocalImplicitCandidates
 
+    let private reinterpretLocalCompileTimeTypeNamesAsVariables
+        (environment: BindingLoweringEnvironment)
+        (localTypes: Map<string, TypeExpr>)
+        typeExpr
+        =
+        let compileTimeLocalNames =
+            localTypes
+            |> Map.toList
+            |> List.choose (fun (name, localType) ->
+                if isCompileTimeArgumentType environment.VisibleTypeAliases localType then
+                    Some name
+                else
+                    None)
+            |> Set.ofList
+
+        let rec rewrite bound current =
+            match current with
+            | TypeVariable _
+            | TypeLevelLiteral _
+            | TypeUniverse None
+            | TypeIntrinsic _ ->
+                current
+            | TypeUniverse(Some universeExpr) ->
+                TypeUniverse(Some(rewrite bound universeExpr))
+            | TypeName([ name ], [])
+                when Set.contains name compileTimeLocalNames
+                     && not (Set.contains name bound) ->
+                TypeVariable name
+            | TypeName(nameSegments, arguments) ->
+                TypeName(nameSegments, arguments |> List.map (rewrite bound))
+            | TypeApply(callee, arguments) ->
+                TypeApply(rewrite bound callee, arguments |> List.map (rewrite bound))
+            | TypeLambda(parameterName, parameterSort, body) ->
+                TypeLambda(parameterName, rewrite bound parameterSort, rewrite (Set.add parameterName bound) body)
+            | TypeDelay inner ->
+                TypeDelay(rewrite bound inner)
+            | TypeMemo inner ->
+                TypeMemo(rewrite bound inner)
+            | TypeForce inner ->
+                TypeForce(rewrite bound inner)
+            | TypeProject(target, fieldName) ->
+                TypeProject(rewrite bound target, fieldName)
+            | TypeArrow(quantity, parameterType, resultType) ->
+                TypeArrow(quantity, rewrite bound parameterType, rewrite bound resultType)
+            | TypeEquality(left, right) ->
+                TypeEquality(rewrite bound left, rewrite bound right)
+            | TypeCapture(inner, captures) ->
+                TypeCapture(rewrite bound inner, captures)
+            | TypeEffectRow(entries, tail) ->
+                TypeEffectRow(
+                    entries
+                    |> List.map (fun entry ->
+                        { Label = rewrite bound entry.Label
+                          Effect = rewrite bound entry.Effect }),
+                    tail |> Option.map (rewrite bound)
+                )
+            | TypeRecord fields ->
+                TypeRecord(
+                    fields
+                    |> List.map (fun field ->
+                        { field with
+                            Type = rewrite bound field.Type })
+                )
+            | TypeUnion members ->
+                TypeUnion(members |> List.map (rewrite bound))
+
+        rewrite Set.empty typeExpr
+
     let private classifyLocalImplicitByType
         (environment: BindingLoweringEnvironment)
         (localTypes: Map<string, TypeExpr>)
         parameterType
         =
-        let tryDecodeImplicitLocalName (name: string) =
+        let tryResolveImplicitLocalName (name: string) =
             let implicitPrefix = "__kappa_implicit_"
             let dictionaryPrefix = "__kappa_dict_"
 
@@ -8312,6 +8590,7 @@ module SurfaceElaboration =
 
         let normalizeVisible currentType =
             currentType
+            |> reinterpretLocalCompileTimeTypeNamesAsVariables environment localTypes
             |> qualifyVisibleTypeNames environment
             |> normalizeTypeAliases environment.VisibleTypeAliases
 
@@ -8322,12 +8601,14 @@ module SurfaceElaboration =
             localTypes
             |> Map.toList
             |> List.choose (fun (name, localType) ->
-                tryDecodeImplicitLocalName name
+                let normalizedLocalType = normalizeVisible localType
+                let equal = TypeSignatures.definitionallyEqual normalizedLocalType normalizedGoal
+
+                tryResolveImplicitLocalName name
                 |> Option.filter (fun _ ->
-                    TypeSignatures.definitionallyEqual
-                        (normalizeVisible localType)
-                        normalizedGoal)
+                    equal)
                 |> Option.map (fun actualName -> actualName, localType))
+            |> List.distinctBy fst
 
         match matches with
         | [ name, _ ] ->
@@ -8341,7 +8622,7 @@ module SurfaceElaboration =
                     localTypes
                     |> Map.toList
                     |> List.choose (fun (name, localType) ->
-                        tryDecodeImplicitLocalName name
+                        tryResolveImplicitLocalName name
                         |> Option.map (fun actualName -> actualName, localType))
                     |> Map.ofList
 
@@ -8396,6 +8677,21 @@ module SurfaceElaboration =
             TypeSignatures.applySubstitution substitution parameterType
 
         tryResolveUniqueLocalImplicitByType environment substitutedLocalTypes substitutedParameterType
+
+    let private implicitLocalsFromLocalTypes (localTypes: Map<string, TypeExpr>) =
+        let implicitPrefix = "__kappa_implicit_"
+        let dictionaryPrefix = "__kappa_dict_"
+
+        localTypes
+        |> Map.toList
+        |> List.choose (fun (name, parameterType) ->
+            if name.StartsWith(implicitPrefix, StringComparison.Ordinal) then
+                Some(name, parameterType)
+            elif name.StartsWith(dictionaryPrefix, StringComparison.Ordinal) then
+                Some(name, parameterType)
+            else
+                None)
+        |> Map.ofList
 
     let private tryAlignParameterTypesWithLayouts
         (environment: BindingLoweringEnvironment)
@@ -8606,79 +8902,36 @@ module SurfaceElaboration =
             |> Option.orElseWith (fun () -> inferArgumentType argument)
             |> Option.orElseWith (fun () -> tryInferConstructorExpressionType argument)
 
-        let rec tryParseVisibleTypeLikeArgument expression =
-            match expression with
-            | Name [ name ] ->
-                match inferArgumentType expression with
-                | Some inferredType when isCompileTimeArgumentType environment.VisibleTypeAliases inferredType ->
-                    Some(TypeVariable name)
-                | _ ->
-                    Some(TypeName([ name ], []))
-            | Name segments when not (List.isEmpty segments) ->
-                Some(TypeName(segments, []))
-            | NumericLiteral(SurfaceIntegerLiteral(value, _, None)) when value = 0I || value = 1I ->
-                Some(TypeName([ value.ToString() ], []))
-            | Apply(head, arguments) ->
-                match
-                    tryParseVisibleTypeLikeArgument head,
-                    arguments |> List.map tryParseVisibleTypeLikeArgument
-                with
-                | Some(TypeName(name, existingArguments)), parsedArguments
-                    when parsedArguments |> List.forall Option.isSome ->
-                    Some(TypeName(name, existingArguments @ (parsedArguments |> List.choose id)))
-                | _ ->
-                    None
-            | ExplicitImplicitArgument inner ->
-                tryParseVisibleTypeLikeArgument inner
-            | _ ->
-                None
-
-        let isLeadingCompileTimeApplicationArgument argument =
-            match argument with
-            | ExplicitImplicitArgument explicitArgument ->
-                tryParseVisibleTypeLikeArgument explicitArgument |> Option.isSome
-            | _ ->
-                inferArgumentType argument
-                |> Option.exists (isCompileTimeArgumentType environment.VisibleTypeAliases)
-
-        let instantiated = TypeSignatures.instantiate "t" freshCounter.Value bindingInfo.Scheme
-        freshCounter.Value <- freshCounter.Value + instantiated.Forall.Length
-
-        let rec consumeCompileTimeApplications
-            (remainingForall: TypeSignatures.ForallBinder list)
-            (remainingArguments: SurfaceExpression list)
-            substitution
-            =
-            match remainingForall, remainingArguments with
-            | binder :: restForall, ExplicitImplicitArgument explicitArgument :: restArguments ->
-                match tryParseVisibleTypeLikeArgument explicitArgument with
-                | Some explicitTypeArgument ->
-                    consumeCompileTimeApplications
-                        restForall
-                        restArguments
-                        (composeTypeSubstitution substitution (Map.ofList [ binder.Name, explicitTypeArgument ]))
-                | None ->
-                    None
-            | _, _ ->
-                Some(substitution, remainingArguments)
-
-        let explicitTypeApplicationsValid, instantiated, arguments =
-            match consumeCompileTimeApplications instantiated.Forall arguments Map.empty with
-            | Some(substitution, remainingArguments) ->
+        let explicitTypeApplicationsValid, instantiated, arguments, layoutTypeSubstitution =
+            match
+                trySpecializeBindingApplication
+                    environment
+                    "t"
+                    freshCounter
+                    bindingInfo
+                    localImplicitTypes
+                    inferArgumentType
+                    arguments
+            with
+            | Some specialized ->
                 true,
-                TypeSignatures.applySchemeSubstitution substitution instantiated,
-                remainingArguments
+                specialized.InstantiatedScheme,
+                specialized.RemainingArguments,
+                specialized.LayoutTypeSubstitution
             | None ->
+                let fallbackInstantiated =
+                    TypeSignatures.instantiate "t" freshCounter.Value bindingInfo.Scheme
+
+                freshCounter.Value <- freshCounter.Value + fallbackInstantiated.Forall.Length
+
                 false,
-                instantiated,
-                arguments
+                fallbackInstantiated,
+                arguments,
+                forallInstantiationSubstitution bindingInfo.Scheme fallbackInstantiated
 
         let normalizedParameterLayouts =
             normalizedVisibleBindingParameterLayouts bindingInfo instantiated
             |> Option.orElse bindingInfo.ParameterLayouts
-        let layoutTypeSubstitution = forallInstantiationSubstitution bindingInfo.Scheme instantiated
-
-        let debugVisibleBindingCall _ = ()
 
         let hasApplicationOnlyArgument arguments =
             arguments
@@ -8693,11 +8946,20 @@ module SurfaceElaboration =
         let tryResolveCurrentLocalImplicit substitution parameterType =
             match localImplicitTypes with
             | Some localTypes ->
-                tryResolveUniqueLocalImplicitByTypeWithSubstitution
-                    environment
+                let substitutedLocalTypes =
                     localTypes
-                    substitution
-                    parameterType
+                    |> Map.map (fun _ localType -> TypeSignatures.applySubstitution substitution localType)
+
+                let substitutedParameterType =
+                    TypeSignatures.applySubstitution substitution parameterType
+
+                let resolution =
+                    classifyLocalImplicitByType environment substitutedLocalTypes substitutedParameterType
+
+                match resolution with
+                | UniqueLocalImplicitCandidate candidate -> Some candidate
+                | NoLocalImplicitCandidate
+                | AmbiguousLocalImplicitCandidates -> None
             | None ->
                 tryResolveLocalImplicit parameterType
 
@@ -8797,30 +9059,20 @@ module SurfaceElaboration =
 
         match normalizedParameterLayouts with
         | None ->
-            debugVisibleBindingCall "no normalized parameter layouts"
             if (not explicitTypeApplicationsValid) || hasApplicationOnlyArgument arguments then
                 None
             else
                 tryPrepareSchemeOnlyCall instantiated arguments
         | Some parameterLayouts when List.isEmpty parameterLayouts ->
-            debugVisibleBindingCall "empty normalized parameter layouts"
             if (not explicitTypeApplicationsValid) || hasApplicationOnlyArgument arguments then
                 None
             else
                 tryPrepareSchemeOnlyCall instantiated arguments
         | Some parameterLayouts ->
-            debugVisibleBindingCall $"parameter layouts = {parameterLayouts.Length}; scheme constraints = {instantiated.Constraints.Length}"
             if not explicitTypeApplicationsValid then
                 None
             else
                 let schemeParameterTypes, resultType = TypeSignatures.schemeParts instantiated
-                let sourceForallNames =
-                    bindingInfo.Scheme.Forall |> List.map (fun binder -> binder.Name) |> String.concat ","
-                let instantiatedForallNames =
-                    instantiated.Forall |> List.map (fun binder -> binder.Name) |> String.concat ","
-
-                debugVisibleBindingCall
-                    $"scheme forall = {sourceForallNames}; instantiated forall = {instantiatedForallNames}; layout substitution size = {layoutTypeSubstitution.Count}"
 
                 match
                     tryAlignParameterTypesWithLayouts
@@ -8832,13 +9084,6 @@ module SurfaceElaboration =
                 | None ->
                     None
                 | Some(parameterTypes, trailingParameterTypes) ->
-                    let alignedParameterTypeText =
-                        parameterTypes
-                        |> List.map TypeSignatures.toText
-                        |> String.concat "; "
-
-                    debugVisibleBindingCall
-                        $"aligned parameter types = {alignedParameterTypeText}"
                     let splitNamedBlock (arguments: SurfaceExpression list) =
                         let indexedNamedBlocks =
                             arguments
@@ -8858,7 +9103,6 @@ module SurfaceElaboration =
 
                     match splitNamedBlock arguments with
                     | None ->
-                        debugVisibleBindingCall "splitNamedBlock failed"
                         None
                     | Some(positionalArguments, namedFields) ->
                         let tryPrepareLeadingRuntimeImplicits
@@ -8923,7 +9167,6 @@ module SurfaceElaboration =
 
                                 collectExplicitParameterTypes remainingLayouts remainingTypes positionalArguments []
                                 |> Option.bind (fun explicitParameterTypes ->
-                                    debugVisibleBindingCall $"leading implicits = {leadingImplicits.Length}; explicit parameter types = {explicitParameterTypes.Length}; positional arguments = {positionalArguments.Length}"
                                     if List.isEmpty leadingImplicits then
                                         None
                                     elif List.length explicitParameterTypes <> List.length positionalArguments then
@@ -8935,30 +9178,17 @@ module SurfaceElaboration =
                                                 inferArgumentTypeForParameter parameterType argument)
 
                                         if explicitArgumentTypes |> List.exists Option.isNone then
-                                            debugVisibleBindingCall "explicit argument types contained None during leading implicit prep"
                                             None
                                         else
                                             let explicitArgumentTypes = explicitArgumentTypes |> List.choose id
-                                            let explicitArgumentTypeText =
-                                                explicitArgumentTypes
-                                                |> List.map TypeSignatures.toText
-                                                |> String.concat "; "
-                                            let explicitParameterTypeText =
-                                                explicitParameterTypes
-                                                |> List.map TypeSignatures.toText
-                                                |> String.concat "; "
-                                            debugVisibleBindingCall
-                                                $"explicit argument types = {explicitArgumentTypeText}; explicit parameter types = {explicitParameterTypeText}"
 
                                             tryUnifyVisibleTypes
                                                 environment.VisibleTypeAliases
                                                 (List.zip explicitParameterTypes explicitArgumentTypes)
                                             |> function
                                                 | None ->
-                                                    debugVisibleBindingCall "unification for leading implicit prep failed"
                                                     None
                                                 | Some initialSubstitution ->
-                                                    debugVisibleBindingCall $"initial substitution size = {initialSubstitution.Count}"
                                                     let rec synthesize
                                                         (pendingImplicits: (Parameter * TypeExpr) list)
                                                         (preparedArguments: PreparedCallArgument list)
@@ -8978,7 +9208,6 @@ module SurfaceElaboration =
                                                                     parameterType
                                                             with
                                                             | Some implicitArgument ->
-                                                                debugVisibleBindingCall $"synthesized leading implicit {layout.Name} : {TypeSignatures.toText parameterType}"
                                                                 synthesize
                                                                     rest
                                                                     (ImplicitArgument implicitArgument :: preparedArguments)
@@ -8987,7 +9216,6 @@ module SurfaceElaboration =
                                                                        AssignedArgument = Some(ImplicitArgument implicitArgument) }
                                                                      :: preparedParameters)
                                                             | None ->
-                                                                debugVisibleBindingCall $"failed to synthesize leading implicit {layout.Name} : {TypeSignatures.toText parameterType}"
                                                                 None
 
                                                     synthesize leadingImplicits [] []
@@ -9048,7 +9276,13 @@ module SurfaceElaboration =
                                 match remainingArguments with
                                 | ExplicitImplicitArgument explicitArgument :: rest ->
                                     if isCompileTimeArgumentType environment.VisibleTypeAliases parameterType then
-                                        match tryParseVisibleTypeLikeArgument explicitArgument with
+                                        match
+                                            tryParseVisibleCompileTimeArgumentType
+                                                environment
+                                                localImplicitTypes
+                                                inferArgumentType
+                                                explicitArgument
+                                        with
                                         | Some explicitTypeArgument ->
                                             remainingArguments <- rest
                                             substitution <-
@@ -9075,7 +9309,11 @@ module SurfaceElaboration =
                                                 )
                                                 remainingArguments <- rest
                                                 let termSubstitution =
-                                                    tryParseVisibleTypeLikeArgument explicitArgument
+                                                    tryParseVisibleCompileTimeArgumentType
+                                                        environment
+                                                        localImplicitTypes
+                                                        inferArgumentType
+                                                        explicitArgument
                                                     |> Option.map (fun argumentType -> Map.ofList [ parameterLayout.Name, argumentType ])
                                                     |> Option.defaultValue Map.empty
 
@@ -9108,7 +9346,13 @@ module SurfaceElaboration =
                                 | ExplicitImplicitArgument _ :: _ ->
                                     success <- false
                                 | nextArgument :: rest ->
-                                    match tryParseVisibleTypeLikeArgument nextArgument with
+                                    match
+                                        tryParseVisibleCompileTimeArgumentType
+                                            environment
+                                            localImplicitTypes
+                                            inferArgumentType
+                                            nextArgument
+                                    with
                                     | Some explicitTypeArgument ->
                                         remainingArguments <- rest
                                         substitution <-
@@ -9125,7 +9369,13 @@ module SurfaceElaboration =
                                 | [] ->
                                     match tryTakeNamedArgument parameterLayout with
                                     | Some namedArgument ->
-                                        match tryParseVisibleTypeLikeArgument namedArgument with
+                                        match
+                                            tryParseVisibleCompileTimeArgumentType
+                                                environment
+                                                localImplicitTypes
+                                                inferArgumentType
+                                                namedArgument
+                                        with
                                         | Some explicitTypeArgument ->
                                             substitution <-
                                                 composeTypeSubstitution
@@ -9192,8 +9442,13 @@ module SurfaceElaboration =
                                                   ParameterType = parameterType
                                                   AssignedArgument = Some(ExplicitArgument nextArgument) }
                                             )
+
                                             let termSubstitution =
-                                                tryParseVisibleTypeLikeArgument nextArgument
+                                                tryParseVisibleCompileTimeArgumentType
+                                                    environment
+                                                    localImplicitTypes
+                                                    inferArgumentType
+                                                    nextArgument
                                                 |> Option.map (fun argumentType -> Map.ofList [ parameterLayout.Name, argumentType ])
                                                 |> Option.defaultValue Map.empty
 
@@ -9216,7 +9471,6 @@ module SurfaceElaboration =
                                 |> Option.defaultValue true)
 
                         if success && namedFieldsValid && List.isEmpty remainingArguments then
-                            debugVisibleBindingCall "prepared call succeeded"
                             let instantiatedScheme = TypeSignatures.applySchemeSubstitution substitution instantiated
                             let appliedResultType =
                                 let loweredRemainingParameters =
@@ -9245,7 +9499,6 @@ module SurfaceElaboration =
                                   Parameters = List.ofSeq preparedParameters
                                   Arguments = List.ofSeq preparedArguments }
                         else
-                            debugVisibleBindingCall $"prepared call failed success={success} namedFieldsValid={namedFieldsValid} remainingArguments={remainingArguments.Length}"
                             if hasApplicationOnlyArgument arguments || namedFields.IsSome then
                                 None
                             else
@@ -10043,6 +10296,9 @@ module SurfaceElaboration =
                         binding
                         (Some(inferFallbackLocalType freshCounter value))
 
+            let nextLocalImplicitTypes =
+                extendBindingLocalImplicitTypes localImplicitTypes nextLocals binding
+
             let bodyForInference =
                 match bindingNames, tryResolveScopedStaticObject environment value with
                 | [ aliasName ], Some staticObject ->
@@ -10054,7 +10310,7 @@ module SurfaceElaboration =
                 environment
                 freshCounter
                 nextLocals
-                localImplicitTypes
+                nextLocalImplicitTypes
                 bodyForInference
         | LocalScopedEffect(declaration, body) ->
             withScopedEffectDeclaration environment.CurrentModuleIdentity declaration (fun () ->
@@ -10095,7 +10351,7 @@ module SurfaceElaboration =
                 List.zip parameters parameterTypes
                 |> List.fold (fun state (parameter, parameterType) ->
                     if parameter.IsImplicit then
-                        Map.add parameter.Name parameterType state
+                        Map.add (implicitMarkerName parameter.Name) parameterType state
                     else
                         state) localImplicitTypes
 
@@ -10430,50 +10686,62 @@ module SurfaceElaboration =
             let nextLocals =
                 inferValidationExpressionTypeWithContext environment freshCounter localTypes localImplicitTypes expression
                 |> Option.map (fun valueType ->
-                    extendPatternLocalTypes environment freshCounter localTypes (Some valueType) binding.Pattern)
+                    extendBindingLocalTypes environment freshCounter localTypes binding (Some valueType))
                 |> Option.defaultValue localTypes
 
-            inferValidationDoResultTypeWithContext environment freshCounter nextLocals localImplicitTypes rest
+            let nextLocalImplicitTypes =
+                extendBindingLocalImplicitTypes localImplicitTypes nextLocals binding
+
+            inferValidationDoResultTypeWithContext environment freshCounter nextLocals nextLocalImplicitTypes rest
         | DoLetQuestion(binding, expression, failure) :: rest ->
             let nextLocals =
                 inferValidationExpressionTypeWithContext environment freshCounter localTypes localImplicitTypes expression
                 |> Option.map (fun valueType ->
-                    extendPatternLocalTypes environment freshCounter localTypes (Some valueType) binding.Pattern)
+                    extendBindingLocalTypes environment freshCounter localTypes binding (Some valueType))
                 |> Option.defaultValue localTypes
+
+            let nextLocalImplicitTypes =
+                extendBindingLocalImplicitTypes localImplicitTypes nextLocals binding
 
             failure
             |> Option.iter (fun failure ->
                 inferValidationDoResultTypeWithContext environment freshCounter localTypes localImplicitTypes failure.Body
                 |> ignore)
 
-            inferValidationDoResultTypeWithContext environment freshCounter nextLocals localImplicitTypes rest
+            inferValidationDoResultTypeWithContext environment freshCounter nextLocals nextLocalImplicitTypes rest
         | DoBind(binding, expression) :: rest ->
             let nextLocals =
                 inferValidationExpressionTypeWithContext environment freshCounter localTypes localImplicitTypes expression
                 |> Option.bind (tryUnwrapBindablePayloadType environment.VisibleTypeAliases)
                 |> Option.map (fun valueType ->
-                    extendPatternLocalTypes
+                    extendBindingLocalTypes
                         environment
                         freshCounter
                         localTypes
-                        (Some valueType)
-                        binding.Pattern)
+                        binding
+                        (Some valueType))
                 |> Option.defaultValue localTypes
 
-            inferValidationDoResultTypeWithContext environment freshCounter nextLocals localImplicitTypes rest
+            let nextLocalImplicitTypes =
+                extendBindingLocalImplicitTypes localImplicitTypes nextLocals binding
+
+            inferValidationDoResultTypeWithContext environment freshCounter nextLocals nextLocalImplicitTypes rest
         | DoUsing(binding, expression) :: rest ->
             let nextLocals =
                 inferValidationExpressionTypeWithContext environment freshCounter localTypes localImplicitTypes expression
                 |> Option.map (fun valueType ->
-                    extendPatternLocalTypes
+                    extendBindingLocalTypes
                         environment
                         freshCounter
                         localTypes
-                        (Some(unwrapIoType valueType))
-                        binding.Pattern)
+                        binding
+                        (Some(unwrapIoType valueType)))
                 |> Option.defaultValue localTypes
 
-            inferValidationDoResultTypeWithContext environment freshCounter nextLocals localImplicitTypes rest
+            let nextLocalImplicitTypes =
+                extendBindingLocalImplicitTypes localImplicitTypes nextLocals binding
+
+            inferValidationDoResultTypeWithContext environment freshCounter nextLocals nextLocalImplicitTypes rest
         | DoVar(bindingName, expression) :: rest ->
             let nextLocals =
                 match inferValidationExpressionTypeWithContext environment freshCounter localTypes localImplicitTypes expression with
@@ -10507,7 +10775,12 @@ module SurfaceElaboration =
         (localTypes: Map<string, TypeExpr>)
         expression
         =
-        inferValidationExpressionTypeWithContext environment freshCounter localTypes localTypes expression
+        inferValidationExpressionTypeWithContext
+            environment
+            freshCounter
+            localTypes
+            (implicitLocalsFromLocalTypes localTypes)
+            expression
 
     let private inferValidationApplicationType
         (environment: BindingLoweringEnvironment)
@@ -10791,6 +11064,7 @@ module SurfaceElaboration =
         (explicitSignatureNames: Set<string>)
         (sourceSignatureScheme: TypeScheme option)
         (topLevelDefinitionsByName: Map<string, LetDefinition>)
+        (validationParameters: Parameter list)
         (definition: LetDefinition)
         (scheme: TypeScheme option)
         =
@@ -10816,6 +11090,47 @@ module SurfaceElaboration =
                     parameters, body
             | parameters, body, None ->
                 parameters, body
+
+        let bodyEnvironment =
+            match effectiveScheme with
+            | Some scheme ->
+                let schemeConstrainedMembers =
+                    if List.isEmpty scheme.Constraints then
+                        Map.empty
+                    else
+                        buildConstrainedMembers environment scheme.Constraints
+
+                let schemeConstraintDictionaries =
+                    scheme.Constraints
+                    |> List.mapi (fun index constraintInfo ->
+                        constraintInfo, KCoreName [ $"__kappa_dict_{traitConstraintBinderStem constraintInfo}_{index}" ])
+                    |> buildConstraintDictionaries environment
+
+                let parameterConstrainedMembers =
+                    buildParameterConstrainedMembers environment scheme validationParameters
+
+                let parameterConstraintDictionaries =
+                    buildParameterConstraintDictionaries environment scheme validationParameters
+
+                { environment with
+                    ConstraintDictionaries =
+                        parameterConstraintDictionaries
+                        |> Map.fold (fun state key value ->
+                            if Map.containsKey key state then
+                                state
+                            else
+                                Map.add key value state) schemeConstraintDictionaries
+                    ConstrainedMembers =
+                        parameterConstrainedMembers
+                        |> Map.fold (fun state memberName route ->
+                            if Map.containsKey memberName state then
+                                state
+                            else
+                                Map.add memberName route state) schemeConstrainedMembers }
+            | None ->
+                environment
+
+        let environment = bodyEnvironment
 
         let makeSurfaceElaborationDiagnostic evidence =
             Diagnostics.errorFact
@@ -13446,6 +13761,13 @@ module SurfaceElaboration =
             |> qualifyVisibleTypeNames environment
             |> normalizeTypeAliases environment.VisibleTypeAliases
 
+        let normalizeComparedType locals refinements typeExpr =
+            typeExpr
+            |> applyRefinements refinements
+            |> reinterpretLocalCompileTimeTypeNamesAsVariables environment locals
+            |> qualifyVisibleTypeNames environment
+            |> normalizeTypeAliases environment.VisibleTypeAliases
+
         let rec typeContainsLocalTermVariable locals typeExpr =
             match typeExpr with
             | TypeLevelLiteral _ ->
@@ -13710,8 +14032,8 @@ module SurfaceElaboration =
             | _ -> None
 
         let rec expectedTypeAccepts locals refinements expectedType actualType =
-            let expectedType = normalizeExpectedType refinements expectedType
-            let actualType = normalizeExpectedType refinements actualType
+            let expectedType = normalizeComparedType locals refinements expectedType
+            let actualType = normalizeComparedType locals refinements actualType
 
             if TypeSignatures.definitionallyEqual expectedType actualType then
                 true
@@ -13757,7 +14079,7 @@ module SurfaceElaboration =
                                 expectedTypeAccepts locals refinements expectedMember actualType)
                         | _ when typeContainsLocalTermVariable locals expectedType
                                  || typeContainsLocalTermVariable locals actualType ->
-                            false
+                            TypeSignatures.definitionallyEqual expectedType actualType
                         | _ ->
                             tryUnifyVisibleTypes environment.VisibleTypeAliases [ expectedType, actualType ]
                             |> Option.isSome
@@ -13773,8 +14095,8 @@ module SurfaceElaboration =
                 false
 
         let expectedMismatchDiagnostic locals refinements mismatchKind context expectedType actualType =
-            let expectedType = normalizeExpectedType refinements expectedType
-            let actualType = normalizeExpectedType refinements actualType
+            let expectedType = normalizeComparedType locals refinements expectedType
+            let actualType = normalizeComparedType locals refinements actualType
             let expectedText = TypeSignatures.toText expectedType
             let actualText = TypeSignatures.toText actualType
 
@@ -14411,7 +14733,8 @@ module SurfaceElaboration =
                 []
 
         let validateExpectedBody locals body =
-            let localImplicitTypes = buildLocalImplicitTypes effectiveScheme effectiveParameters
+            let localImplicitTypes =
+                buildLocalImplicitTypes effectiveScheme validationParameters
 
             let dropDefinitionParameters typeExpr =
                 let rec loop remaining current =
@@ -14894,9 +15217,9 @@ module SurfaceElaboration =
                             environment
                             freshCounter
                             bindingInfo
-                            (Some locals)
+                            (Some localImplicitTypes)
                             (inferValidationExpressionType environment freshCounter locals)
-                            (tryResolveUniqueLocalImplicitByType environment locals)
+                            (tryResolveUniqueLocalImplicitByType environment localImplicitTypes)
                             arguments)
                     |> Option.exists (fun preparedCall ->
                         preparedCall.Parameters
@@ -15418,132 +15741,153 @@ module SurfaceElaboration =
                 | None ->
                         []
                 | Some parameterLayouts ->
-                    let instantiated = TypeSignatures.instantiate "v" freshCounter.Value bindingInfo.Scheme
-                    let runtimeArguments = dropLeadingCompileTimeArguments instantiated.Forall arguments
-                    let schemeParameterTypes, _ = TypeSignatures.schemeParts instantiated
-
-                    let hasApplicationOnlyArgument =
-                        runtimeArguments
-                        |> List.exists (function
-                            | ExplicitImplicitArgument _
-                            | NamedApplicationBlock _ -> true
-                            | _ -> false)
-
-                    if hasApplicationOnlyArgument then
+                    match
+                        trySpecializeBindingApplication
+                            environment
+                            "v"
+                            freshCounter
+                            bindingInfo
+                            (Some locals)
+                            (inferValidationExpressionType environment freshCounter locals)
+                            arguments
+                    with
+                    | None ->
                         []
-                    else
-                        let layoutTypeSubstitution = forallInstantiationSubstitution bindingInfo.Scheme instantiated
+                    | Some specialized ->
+                        let schemeParameterTypes, _ = TypeSignatures.schemeParts specialized.InstantiatedScheme
 
-                        match
-                            tryAlignParameterTypesWithLayouts
-                                environment
-                                layoutTypeSubstitution
-                                parameterLayouts
-                                schemeParameterTypes
-                        with
-                        | Some(parameterTypes, []) ->
-                            let remainingArguments = ref runtimeArguments
-                            let substitution = ref Map.empty<string, TypeExpr>
-                            let diagnostics = ResizeArray<Diagnostic>()
+                        let hasApplicationOnlyArgument =
+                            specialized.RemainingArguments
+                            |> List.exists (function
+                                | ExplicitImplicitArgument _
+                                | NamedApplicationBlock _ -> true
+                                | _ -> false)
 
-                            for parameterLayout, rawParameterType in List.zip parameterLayouts parameterTypes do
-                                let parameterType =
-                                    rawParameterType
-                                    |> TypeSignatures.applySubstitution !substitution
+                        if hasApplicationOnlyArgument then
+                            []
+                        else
+                            match
+                                tryAlignParameterTypesWithLayouts
+                                    environment
+                                    specialized.LayoutTypeSubstitution
+                                    parameterLayouts
+                                    schemeParameterTypes
+                            with
+                            | Some(parameterTypes, []) ->
+                                let remainingArguments = ref specialized.RemainingArguments
+                                let substitution = ref Map.empty<string, TypeExpr>
+                                let diagnostics = ResizeArray<Diagnostic>()
 
-                                if parameterLayout.IsImplicit then
-                                    ()
-                                elif isCompileTimeArgumentType environment.VisibleTypeAliases parameterType then
-                                    match !remainingArguments with
-                                    | nextArgument :: rest ->
-                                        remainingArguments := rest
+                                for parameterLayout, rawParameterType in List.zip parameterLayouts parameterTypes do
+                                    let parameterType =
+                                        rawParameterType
+                                        |> TypeSignatures.applySubstitution !substitution
 
-                                        match tryParseTypeLikeSurfaceExpression nextArgument with
-                                        | Some typeArgument ->
-                                            substitution :=
-                                                composeTypeSubstitution
-                                                    !substitution
-                                                    (Map.ofList [ parameterLayout.Name, typeArgument ])
-                                        | None ->
-                                            ()
-                                    | [] ->
+                                    if parameterLayout.IsImplicit then
                                         ()
-                                else
-                                    match !remainingArguments with
-                                    | nextArgument :: rest ->
-                                        remainingArguments := rest
+                                    elif isCompileTimeArgumentType environment.VisibleTypeAliases parameterType then
+                                        match !remainingArguments with
+                                        | nextArgument :: rest ->
+                                            remainingArguments := rest
 
-                                        match parameterLayout.IsInout, nextArgument with
-                                        | true, InoutArgument _ ->
-                                            ()
-                                        | true, _ ->
-                                            diagnostics.Add(
-                                                makeLocatedDiagnosticFact
-                                                    (DiagnosticFact.qttInoutMarkerRequired InoutMarkerRequired)
-                                                    (tryFindArgumentLocation bindingInfo.Name nextArgument)
-                                            )
-                                        | false, InoutArgument _ ->
-                                            diagnostics.Add(
-                                                { (Diagnostics.errorFact
-                                                    "KFrontIR"
-                                                    (Some(KFrontIRPhase.phaseName CORE_LOWERING))
-                                                    None
-                                                    []
-                                                    (DiagnosticFact.qttInoutMarkerUnexpected InoutMarkerUnexpected)) with
-                                                    Location = tryFindArgumentLocation bindingInfo.Name nextArgument }
-                                            )
-                                        | false, _ ->
-                                            ()
-
-                                        match inferArgumentTypeForParameter parameterType nextArgument with
-                                        | Some argumentType ->
-                                            match tryNumericLiteralRangeDiagnostic parameterType nextArgument with
-                                            | Some diagnostic ->
-                                                diagnostics.Add(diagnostic)
-                                            | None
-                                                when (canCompareInferredValidationTypes locals parameterType argumentType
-                                                      || canCompareDirectLocalNameArgumentTypes
-                                                          locals
-                                                          nextArgument
-                                                          parameterType
-                                                          argumentType
-                                                      || canCompareDistinctValidationShapes parameterType argumentType
-                                                      || needsDependentTransportComparison locals parameterType argumentType)
-                                                     && not (expectedTypeAccepts locals refinements parameterType argumentType) ->
-                                                diagnostics.Add(
-                                                    expectedMismatchDiagnostic
-                                                        locals
-                                                        refinements
-                                                        ApplicationArgumentMismatch
-                                                        "Application argument"
-                                                        parameterType
-                                                        argumentType
-                                                )
+                                            match
+                                                tryParseVisibleCompileTimeArgumentType
+                                                    environment
+                                                    (Some locals)
+                                                    (inferValidationExpressionType environment freshCounter locals)
+                                                    nextArgument
+                                            with
+                                            | Some typeArgument ->
+                                                substitution :=
+                                                    composeTypeSubstitution
+                                                        !substitution
+                                                        (Map.ofList [ parameterLayout.Name, typeArgument ])
                                             | None ->
-                                                match tryParseTypeLikeSurfaceExpression nextArgument with
-                                                | Some termArgument ->
-                                                    substitution :=
-                                                        composeTypeSubstitution
-                                                            !substitution
-                                                            (Map.ofList [ parameterLayout.Name, termArgument ])
+                                                ()
+                                        | [] ->
+                                            ()
+                                    else
+                                        match !remainingArguments with
+                                        | nextArgument :: rest ->
+                                            remainingArguments := rest
+
+                                            match parameterLayout.IsInout, nextArgument with
+                                            | true, InoutArgument _ ->
+                                                ()
+                                            | true, _ ->
+                                                diagnostics.Add(
+                                                    makeLocatedDiagnosticFact
+                                                        (DiagnosticFact.qttInoutMarkerRequired InoutMarkerRequired)
+                                                        (tryFindArgumentLocation bindingInfo.Name nextArgument)
+                                                )
+                                            | false, InoutArgument _ ->
+                                                diagnostics.Add(
+                                                    { (Diagnostics.errorFact
+                                                        "KFrontIR"
+                                                        (Some(KFrontIRPhase.phaseName CORE_LOWERING))
+                                                        None
+                                                        []
+                                                        (DiagnosticFact.qttInoutMarkerUnexpected InoutMarkerUnexpected)) with
+                                                        Location = tryFindArgumentLocation bindingInfo.Name nextArgument }
+                                                )
+                                            | false, _ ->
+                                                ()
+
+                                            match inferArgumentTypeForParameter parameterType nextArgument with
+                                            | Some argumentType ->
+                                                match tryNumericLiteralRangeDiagnostic parameterType nextArgument with
+                                                | Some diagnostic ->
+                                                    diagnostics.Add(diagnostic)
+                                                | None
+                                                    when (canCompareInferredValidationTypes locals parameterType argumentType
+                                                          || canCompareDirectLocalNameArgumentTypes
+                                                              locals
+                                                              nextArgument
+                                                              parameterType
+                                                              argumentType
+                                                          || canCompareDistinctValidationShapes parameterType argumentType
+                                                          || needsDependentTransportComparison locals parameterType argumentType)
+                                                         && not (expectedTypeAccepts locals refinements parameterType argumentType) ->
+                                                    diagnostics.Add(
+                                                        expectedMismatchDiagnostic
+                                                            locals
+                                                            refinements
+                                                            ApplicationArgumentMismatch
+                                                            "Application argument"
+                                                            parameterType
+                                                            argumentType
+                                                    )
                                                 | None ->
-                                                    match tryUnifyVisibleTypes environment.VisibleTypeAliases [ parameterType, argumentType ] with
-                                                    | Some inferredSubstitution ->
+                                                    match
+                                                        tryParseVisibleCompileTimeArgumentType
+                                                            environment
+                                                            (Some locals)
+                                                            (inferValidationExpressionType environment freshCounter locals)
+                                                            nextArgument
+                                                    with
+                                                    | Some termArgument ->
                                                         substitution :=
                                                             composeTypeSubstitution
                                                                 !substitution
-                                                                inferredSubstitution
+                                                                (Map.ofList [ parameterLayout.Name, termArgument ])
                                                     | None ->
-                                                        ()
-                                        | None ->
+                                                        match tryUnifyVisibleTypes environment.VisibleTypeAliases [ parameterType, argumentType ] with
+                                                        | Some inferredSubstitution ->
+                                                            substitution :=
+                                                                composeTypeSubstitution
+                                                                    !substitution
+                                                                    inferredSubstitution
+                                                        | None ->
+                                                            ()
+                                            | None ->
+                                                ()
+                                        | [] ->
                                             ()
-                                    | [] ->
-                                        ()
 
-                            List.ofSeq diagnostics
-                        | Some _
-                        | None ->
-                            []
+                                List.ofSeq diagnostics
+                            | Some _
+                            | None ->
+                                []
 
         let localApplicationExpectedArgumentDiagnostics locals refinements calleeType arguments =
             let tryInferExpectedVisibleValueType parameterType argument =
@@ -18418,14 +18762,29 @@ module SurfaceElaboration =
                             (remainingArguments: SurfaceExpression list)
                             =
                             match remainingForall, remainingArguments with
-                            | _ :: restForall, ExplicitImplicitArgument explicitArgument :: restArguments ->
+                            | binder :: restForall, ExplicitImplicitArgument explicitArgument :: restArguments ->
                                 let currentDiagnostics = validateCompileTimeArgument explicitArgument
-                                let remainingDiagnostics, finalArguments =
+                                let remainingDiagnostics, remainingSubstitution, finalArguments =
                                     consumeLeadingCompileTimeArguments restForall restArguments
 
-                                currentDiagnostics @ remainingDiagnostics, finalArguments
+                                let currentSubstitution =
+                                    match
+                                        tryParseVisibleCompileTimeArgumentType
+                                            environment
+                                            (Some locals)
+                                            (inferValidationExpressionType environment freshCounter locals)
+                                            explicitArgument
+                                    with
+                                    | Some explicitTypeArgument ->
+                                        Map.ofList [ binder.Name, explicitTypeArgument ]
+                                    | None ->
+                                        Map.empty
+
+                                currentDiagnostics @ remainingDiagnostics,
+                                composeTypeSubstitution remainingSubstitution currentSubstitution,
+                                finalArguments
                             | _ ->
-                                [], remainingArguments
+                                [], Map.empty, remainingArguments
 
                         let argumentDiagnosticsForBindingInfo (bindingInfo: BindingSchemeInfo) =
                             let preserveOrdinaryConstructorApplication =
@@ -18438,12 +18797,23 @@ module SurfaceElaboration =
                             else
                                 match bindingInfo.ParameterLayouts with
                                 | Some parameterLayouts ->
-                                    let instantiated = TypeSignatures.instantiate "v" freshCounter.Value bindingInfo.Scheme
-                                    let explicitTypeArgumentDiagnostics, alignedArguments =
+                                    let instantiated =
+                                        TypeSignatures.instantiate "v" freshCounter.Value bindingInfo.Scheme
+
+                                    let explicitTypeArgumentDiagnostics, explicitTypeApplicationSubstitution, alignedArguments =
                                         consumeLeadingCompileTimeArguments instantiated.Forall arguments
 
+                                    let instantiated =
+                                        TypeSignatures.applySchemeSubstitution
+                                            explicitTypeApplicationSubstitution
+                                            instantiated
+
                                     let schemeParameterTypes, _ = TypeSignatures.schemeParts instantiated
-                                    let layoutTypeSubstitution = forallInstantiationSubstitution bindingInfo.Scheme instantiated
+
+                                    let layoutTypeSubstitution =
+                                        forallInstantiationSubstitution bindingInfo.Scheme instantiated
+                                        |> fun substitution ->
+                                            composeTypeSubstitution substitution explicitTypeApplicationSubstitution
 
                                     match
                                         tryAlignParameterTypesWithLayouts
@@ -18548,21 +18918,40 @@ module SurfaceElaboration =
                                 | None ->
                                     true))
 
+                        let trySpecializedBindingApplicationInfo (bindingInfo: BindingSchemeInfo) =
+                            trySpecializeBindingApplication
+                                environment
+                                "v"
+                                freshCounter
+                                bindingInfo
+                                (Some locals)
+                                (inferValidationExpressionType environment freshCounter locals)
+                                arguments
+
+                        let canSatisfyRuntimeImplicitParameter parameterType =
+                            not (isCompileTimeArgumentType environment.VisibleTypeAliases parameterType)
+                            && (trySynthesizeImplicitArgument
+                                    environment
+                                    (tryResolveUniqueLocalImplicitByType environment locals)
+                                    parameterType
+                                |> Option.isSome)
+
                         let localCanSatisfyImplicitParameter (bindingInfo: BindingSchemeInfo) =
                             match runtimeRelevantParameterLayouts bindingInfo with
                             | Some layouts when layouts |> List.exists (fun parameter -> parameter.IsImplicit) ->
-                                let parameterTypes, _ = TypeSignatures.schemeParts bindingInfo.Scheme
+                                match trySpecializedBindingApplicationInfo bindingInfo with
+                                | Some specialized ->
+                                    let parameterTypes, _ =
+                                        TypeSignatures.schemeParts specialized.InstantiatedScheme
 
-                                if List.length layouts = List.length parameterTypes then
-                                    List.zip layouts parameterTypes
-                                    |> List.exists (fun (layout, parameterType) ->
-                                        layout.IsImplicit
-                                        && not (isCompileTimeArgumentType environment.VisibleTypeAliases parameterType)
-                                        && (match classifyLocalImplicitByType environment locals parameterType with
-                                            | UniqueLocalImplicitCandidate _ -> true
-                                            | NoLocalImplicitCandidate
-                                            | AmbiguousLocalImplicitCandidates -> false))
-                                else
+                                    if List.length layouts = List.length parameterTypes then
+                                        List.zip layouts parameterTypes
+                                        |> List.exists (fun (layout, parameterType) ->
+                                            layout.IsImplicit
+                                            && canSatisfyRuntimeImplicitParameter parameterType)
+                                    else
+                                        false
+                                | None ->
                                     false
                             | _ ->
                                 false
@@ -18570,18 +18959,23 @@ module SurfaceElaboration =
                         let hasAmbiguousLocalImplicitParameter (bindingInfo: BindingSchemeInfo) =
                             match runtimeRelevantParameterLayouts bindingInfo with
                             | Some layouts when layouts |> List.exists (fun parameter -> parameter.IsImplicit) ->
-                                let parameterTypes, _ = TypeSignatures.schemeParts bindingInfo.Scheme
+                                match trySpecializedBindingApplicationInfo bindingInfo with
+                                | Some specialized ->
+                                    let parameterTypes, _ =
+                                        TypeSignatures.schemeParts specialized.InstantiatedScheme
 
-                                if List.length layouts = List.length parameterTypes then
-                                    List.zip layouts parameterTypes
-                                    |> List.exists (fun (layout, parameterType) ->
-                                        layout.IsImplicit
-                                        && not (isCompileTimeArgumentType environment.VisibleTypeAliases parameterType)
-                                        && (match classifyLocalImplicitByType environment locals parameterType with
-                                            | AmbiguousLocalImplicitCandidates -> true
-                                            | NoLocalImplicitCandidate
-                                            | UniqueLocalImplicitCandidate _ -> false))
-                                else
+                                    if List.length layouts = List.length parameterTypes then
+                                        List.zip layouts parameterTypes
+                                        |> List.exists (fun (layout, parameterType) ->
+                                            layout.IsImplicit
+                                            && not (isCompileTimeArgumentType environment.VisibleTypeAliases parameterType)
+                                            && (match classifyLocalImplicitByType environment locals parameterType with
+                                                | AmbiguousLocalImplicitCandidates -> true
+                                                | NoLocalImplicitCandidate
+                                                | UniqueLocalImplicitCandidate _ -> false))
+                                    else
+                                        false
+                                | None ->
                                     false
                             | _ ->
                                 false
@@ -18596,20 +18990,23 @@ module SurfaceElaboration =
                             else
                                 match bindingInfo.ParameterLayouts with
                                 | Some layouts ->
-                                    let parameterTypes, _ = TypeSignatures.schemeParts bindingInfo.Scheme
-                                    let isTraitConstraintType parameterType =
-                                        tryTraitConstraintFromType environment parameterType |> Option.isSome
+                                    match trySpecializedBindingApplicationInfo bindingInfo with
+                                    | Some specialized ->
+                                        let parameterTypes, _ =
+                                            TypeSignatures.schemeParts specialized.InstantiatedScheme
 
-                                    List.length layouts = List.length parameterTypes
-                                    && (List.zip layouts parameterTypes
-                                        |> List.exists (fun (layout, parameterType) ->
-                                            layout.IsImplicit
-                                            && not (isCompileTimeArgumentType environment.VisibleTypeAliases parameterType)
-                                            && not (isTraitConstraintType parameterType)
-                                            && (match classifyLocalImplicitByType environment locals parameterType with
-                                                | NoLocalImplicitCandidate -> true
-                                                | UniqueLocalImplicitCandidate _
-                                                | AmbiguousLocalImplicitCandidates -> false)))
+                                        let isTraitConstraintType parameterType =
+                                            tryTraitConstraintFromType environment parameterType |> Option.isSome
+
+                                        List.length layouts = List.length parameterTypes
+                                        && (List.zip layouts parameterTypes
+                                            |> List.exists (fun (layout, parameterType) ->
+                                                layout.IsImplicit
+                                                && canSatisfyRuntimeImplicitParameter parameterType |> not
+                                                && not (isTraitConstraintType parameterType)
+                                                ))
+                                    | None ->
+                                        false
                                 | None ->
                                     false
 
@@ -18841,33 +19238,38 @@ module SurfaceElaboration =
                                     if not (List.isEmpty leadingDiagnostics) then
                                         leadingDiagnostics
                                     else
-                                        let parameterTypes, _ = TypeSignatures.schemeParts bindingInfo.Scheme
+                                        match trySpecializedBindingApplicationInfo bindingInfo with
+                                        | Some specialized ->
+                                            let parameterTypes, _ =
+                                                TypeSignatures.schemeParts specialized.InstantiatedScheme
 
-                                        if List.length layouts = List.length parameterTypes then
-                                            List.zip layouts parameterTypes
-                                            |> List.choose (fun (layout, parameterType) ->
-                                                if layout.IsImplicit
-                                                   && not (isCompileTimeArgumentType environment.VisibleTypeAliases parameterType)
-                                                   && (match classifyLocalImplicitByType environment locals parameterType with
-                                                       | NoLocalImplicitCandidate -> true
-                                                       | UniqueLocalImplicitCandidate _
-                                                       | AmbiguousLocalImplicitCandidates -> false) then
-                                                    match tryTraitConstraintFromType environment parameterType with
-                                                    | Some constraintInfo when constraintHasLocalDictionary environment constraintInfo ->
-                                                        None
-                                                    | Some constraintInfo ->
-                                                        match resolveConstraintInstanceDetailedWithSubstitution environment constraintInfo with
-                                                        | ConstraintResolved _ ->
+                                            if List.length layouts = List.length parameterTypes then
+                                                List.zip layouts parameterTypes
+                                                |> List.choose (fun (layout, parameterType) ->
+                                                    if layout.IsImplicit
+                                                       && not (isCompileTimeArgumentType environment.VisibleTypeAliases parameterType)
+                                                       && (match classifyLocalImplicitByType environment locals parameterType with
+                                                           | NoLocalImplicitCandidate -> true
+                                                           | UniqueLocalImplicitCandidate _
+                                                           | AmbiguousLocalImplicitCandidates -> false) then
+                                                        match tryTraitConstraintFromType environment parameterType with
+                                                        | Some constraintInfo when constraintHasLocalDictionary environment constraintInfo ->
                                                             None
-                                                        | ConstraintUnresolved ->
-                                                            Some(makeImplicitTraitConstraintUnresolvedDiagnostic constraintInfo)
-                                                        | ConstraintAmbiguous(ambiguousGoal, candidates) ->
-                                                            Some(makeTraitConstraintAmbiguousDiagnostic ambiguousGoal candidates)
-                                                    | None ->
-                                                        None
-                                                else
-                                                    None)
-                                        else
+                                                        | Some constraintInfo ->
+                                                            match resolveConstraintInstanceDetailedWithSubstitution environment constraintInfo with
+                                                            | ConstraintResolved _ ->
+                                                                None
+                                                            | ConstraintUnresolved ->
+                                                                Some(makeImplicitTraitConstraintUnresolvedDiagnostic constraintInfo)
+                                                            | ConstraintAmbiguous(ambiguousGoal, candidates) ->
+                                                                Some(makeTraitConstraintAmbiguousDiagnostic ambiguousGoal candidates)
+                                                        | None ->
+                                                            None
+                                                    else
+                                                        None)
+                                            else
+                                                []
+                                        | None ->
                                             []
                         let hasTooManyArguments (bindingInfo: BindingSchemeInfo) =
                             let preserveOrdinaryConstructorApplication =
@@ -18879,16 +19281,17 @@ module SurfaceElaboration =
                             else
                                 match runtimeRelevantParameterLayouts bindingInfo with
                                 | Some layouts ->
-                                    let instantiated = TypeSignatures.instantiate "v" freshCounter.Value bindingInfo.Scheme
-                                    let runtimeArguments =
-                                        consumeLeadingCompileTimeArguments instantiated.Forall arguments
-                                        |> snd
-                                    let visibleParameterCount =
-                                        layouts
-                                        |> List.filter (fun parameter -> not parameter.IsImplicit)
-                                        |> List.length
+                                    match trySpecializedBindingApplicationInfo bindingInfo with
+                                    | Some specialized ->
+                                        let visibleParameterCount =
+                                            layouts
+                                            |> List.filter (fun parameter -> not parameter.IsImplicit)
+                                            |> List.length
 
-                                    visibleParameterCount > 0 && runtimeArguments.Length > visibleParameterCount
+                                        visibleParameterCount > 0
+                                        && specialized.RemainingArguments.Length > visibleParameterCount
+                                    | None ->
+                                        false
                                 | None ->
                                     false
 
@@ -18900,95 +19303,101 @@ module SurfaceElaboration =
                             if preserveOrdinaryConstructorApplication then
                                 []
                             else
-                                let instantiatedForStructural =
-                                    TypeSignatures.instantiate "v" freshCounter.Value bindingInfo.Scheme
-
-                                let structuralParameterTypes, _ =
-                                    TypeSignatures.schemeParts instantiatedForStructural
-
-                                let structuralArguments =
-                                    consumeLeadingCompileTimeArguments instantiatedForStructural.Forall arguments
-                                    |> snd
-
-                                let rec walk (parameters: (Parameter * TypeExpr) list) pendingArguments =
-                                    match parameters, pendingArguments with
-                                    | [], [] ->
-                                        []
-                                    | [], _ :: _ ->
-                                        [ makeSurfaceElaborationDiagnostic
-                                            ApplicationArgumentsDoNotMatchCalleeParameters ]
-                                    | (layout, parameterType) :: restParameters, ExplicitImplicitArgument explicitArgument :: restArguments ->
-                                        if not layout.IsImplicit then
-                                            [ makeSurfaceElaborationDiagnostic
-                                                ImplicitApplicationArgumentUnresolvedOrMismatched ]
-                                        else
-                                            if isCompileTimeArgumentType environment.VisibleTypeAliases parameterType then
-                                                walk restParameters restArguments
-                                            else
-                                                match inferValidationExpressionType environment (ref freshCounter.Value) locals explicitArgument with
-                                                | Some argumentType ->
-                                                    if
-                                                        canCompareInferredValidationTypes locals parameterType argumentType
-                                                        && not (expectedTypeAccepts locals refinements parameterType argumentType)
-                                                    then
-                                                        [ expectedMismatchDiagnostic
-                                                            locals
-                                                            refinements
-                                                            ApplicationArgumentMismatch
-                                                            "Application argument"
-                                                            parameterType
-                                                            argumentType ]
-                                                    else
-                                                        walk restParameters restArguments
-                                                | None ->
-                                                    walk restParameters restArguments
-                                    | (layout, _) :: _, (NamedApplicationBlock _ :: _) ->
-                                        []
-                                    | (layout, parameterType) :: restParameters, pending when layout.IsImplicit ->
-                                        let isRuntimeImplicit =
-                                            not (isCompileTimeArgumentType environment.VisibleTypeAliases parameterType)
-
-                                        let isTraitImplicit =
-                                            tryTraitConstraintFromType environment parameterType
-                                            |> Option.isSome
-
-                                        if not isRuntimeImplicit then
-                                            walk restParameters pending
-                                        elif
-                                            match classifyLocalImplicitByType environment locals parameterType with
-                                            | AmbiguousLocalImplicitCandidates -> true
-                                            | NoLocalImplicitCandidate
-                                            | UniqueLocalImplicitCandidate _ -> false
-                                        then
-                                            walk restParameters pending
-                                        elif localCanSatisfyImplicitParameter bindingInfo || isTraitImplicit then
-                                            walk restParameters pending
-                                        elif List.isEmpty pending then
-                                            []
-                                        else
-                                            [ makeSurfaceElaborationDiagnostic
-                                                ImplicitApplicationArgumentUnresolvedOrMismatched ]
-                                    | _ :: restParameters, _ :: restArguments ->
-                                        walk restParameters restArguments
-                                    | _ :: _, [] ->
-                                        []
-
-                                match bindingInfo.ParameterLayouts with
-                                | Some [] ->
+                                match trySpecializedBindingApplicationInfo bindingInfo with
+                                | None ->
                                     []
-                                | Some layouts ->
-                                    match
-                                        tryAlignParameterTypesWithLayouts
-                                            environment
-                                            Map.empty
-                                            layouts
-                                            structuralParameterTypes
-                                    with
-                                    | Some(alignedParameterTypes, _) ->
-                                        walk (List.zip layouts alignedParameterTypes) structuralArguments
+                                | Some specialized ->
+                                    let structuralParameterTypes, _ =
+                                        TypeSignatures.schemeParts specialized.InstantiatedScheme
+
+                                    let rec walk (parameters: (Parameter * TypeExpr) list) pendingArguments =
+                                        match parameters, pendingArguments with
+                                        | [], [] ->
+                                            []
+                                        | [], _ :: _ ->
+                                            [ makeSurfaceElaborationDiagnostic
+                                                ApplicationArgumentsDoNotMatchCalleeParameters ]
+                                        | (layout, parameterType) :: restParameters, ExplicitImplicitArgument explicitArgument :: restArguments ->
+                                            if not layout.IsImplicit then
+                                                [ makeSurfaceElaborationDiagnostic
+                                                    ImplicitApplicationArgumentUnresolvedOrMismatched ]
+                                            else
+                                                if isCompileTimeArgumentType environment.VisibleTypeAliases parameterType then
+                                                    walk restParameters restArguments
+                                                else
+                                                    match
+                                                        inferValidationExpressionType
+                                                            environment
+                                                            (ref freshCounter.Value)
+                                                            locals
+                                                            explicitArgument
+                                                    with
+                                                    | Some argumentType ->
+                                                        if
+                                                            canCompareInferredValidationTypes locals parameterType argumentType
+                                                            && not (expectedTypeAccepts locals refinements parameterType argumentType)
+                                                        then
+                                                            [ expectedMismatchDiagnostic
+                                                                locals
+                                                                refinements
+                                                                ApplicationArgumentMismatch
+                                                                "Application argument"
+                                                                parameterType
+                                                                argumentType ]
+                                                        else
+                                                            walk restParameters restArguments
+                                                    | None ->
+                                                        walk restParameters restArguments
+                                        | (layout, _) :: _, (NamedApplicationBlock _ :: _) ->
+                                            []
+                                        | (layout, parameterType) :: restParameters, pending when layout.IsImplicit ->
+                                            let isRuntimeImplicit =
+                                                not (isCompileTimeArgumentType environment.VisibleTypeAliases parameterType)
+
+                                            let isTraitImplicit =
+                                                tryTraitConstraintFromType environment parameterType
+                                                |> Option.isSome
+
+                                            if not isRuntimeImplicit then
+                                                walk restParameters pending
+                                            elif
+                                                match classifyLocalImplicitByType environment locals parameterType with
+                                                | AmbiguousLocalImplicitCandidates -> true
+                                                | NoLocalImplicitCandidate
+                                                | UniqueLocalImplicitCandidate _ -> false
+                                            then
+                                                walk restParameters pending
+                                            elif canSatisfyRuntimeImplicitParameter parameterType || isTraitImplicit then
+                                                walk restParameters pending
+                                            elif List.isEmpty pending then
+                                                []
+                                            else
+                                                [ makeSurfaceElaborationDiagnostic
+                                                    ImplicitApplicationArgumentUnresolvedOrMismatched ]
+                                        | _ :: restParameters, _ :: restArguments ->
+                                            walk restParameters restArguments
+                                        | _ :: _, [] ->
+                                            []
+
+                                    match bindingInfo.ParameterLayouts with
+                                    | Some [] ->
+                                        []
+                                    | Some layouts ->
+                                        match
+                                            tryAlignParameterTypesWithLayouts
+                                                environment
+                                                specialized.LayoutTypeSubstitution
+                                                layouts
+                                                structuralParameterTypes
+                                        with
+                                        | Some(alignedParameterTypes, _) ->
+                                            walk
+                                                (List.zip layouts alignedParameterTypes)
+                                                specialized.RemainingArguments
+                                        | None ->
+                                            []
                                     | None ->
                                         []
-                                | None -> []
 
                         let constraintResolutionDiagnostics constraints =
                             constraints
@@ -19062,7 +19471,7 @@ module SurfaceElaboration =
                                                     traitOrSupertraitProvidesMember (traitReferenceLocalName supertrait.Trait) memberName)))
 
                                     let localConstraintProjectionAvailable =
-                                        locals
+                                        implicitLocalsFromLocalTypes locals
                                         |> Map.values
                                         |> Seq.exists (fun localType ->
                                             tryTraitConstraintFromType environment localType
@@ -22769,6 +23178,7 @@ module SurfaceElaboration =
                                 explicitSignatureNames
                                 sourceSignatureScheme
                                 moduleTopLevelDefinitionsByName
+                                effectiveValidationParameters
                                 definition
                                 scheme
                             @
@@ -22866,11 +23276,7 @@ module SurfaceElaboration =
                 extraLocalTypes
                 |> List.fold (fun current (name, parameterType) -> Map.add name parameterType current) state
 
-        let localImplicitTypes =
-            buildLocalImplicitTypes scheme parameters
-            |> fun state ->
-                extraLocalTypes
-                |> List.fold (fun current (name, parameterType) -> Map.add name parameterType current) state
+        let localImplicitTypes = localTypes
 
         let rec substituteZeroArityLocalTypeAliasInExpression (alias: TypeAlias) expression =
             let substituteTypeTokens tokens =
@@ -23400,13 +23806,13 @@ module SurfaceElaboration =
                                     environment
                                     freshCounter
                                     constructorInfo
-                                    (Some localTypes)
+                                    (Some localImplicitTypes)
                                     (inferValidationExpressionTypeWithContext
                                         environment
                                         freshCounter
                                         localTypes
-                                        localTypes)
-                                    (tryResolveUniqueLocalImplicitByType environment localTypes)
+                                        localImplicitTypes)
+                                    (tryResolveUniqueLocalImplicitByType environment localImplicitTypes)
                                     []
                                 |> Option.map (fun preparedCall -> preparedCall.ResultType)
                             else
@@ -23421,13 +23827,13 @@ module SurfaceElaboration =
                                         environment
                                         freshCounter
                                         bindingInfo
-                                        (Some localTypes)
+                                        (Some localImplicitTypes)
                                         (inferValidationExpressionTypeWithContext
                                             environment
                                             freshCounter
                                             localTypes
-                                            localTypes)
-                                        (tryResolveUniqueLocalImplicitByType environment localTypes)
+                                            localImplicitTypes)
+                                        (tryResolveUniqueLocalImplicitByType environment localImplicitTypes)
                                         []
                                     |> Option.map (fun preparedCall -> preparedCall.ResultType)
                                     |> Option.orElseWith (fun () -> instantiateVisibleBindingBodyType environment freshCounter root)
@@ -23460,7 +23866,7 @@ module SurfaceElaboration =
                                 environment
                                 freshCounter
                                 localTypes
-                                localTypes)
+                                localImplicitTypes)
                             (Name [ root ])
                             memberName
                             [])
@@ -23691,13 +24097,13 @@ module SurfaceElaboration =
                                     environment
                                     freshCounter
                                     bindingInfo
-                                    (Some localTypes)
+                                    (Some localImplicitTypes)
                                     (inferValidationExpressionTypeWithContext
                                         environment
                                         freshCounter
                                         localTypes
-                                        localTypes)
-                                    (tryResolveUniqueLocalImplicitByType environment localTypes)
+                                        localImplicitTypes)
+                                    (tryResolveUniqueLocalImplicitByType environment localImplicitTypes)
                                     receiverArguments
                                 |> Option.map (fun preparedCall -> preparedCall.ResultType))))
                     |> Option.orElseWith (fun () ->
@@ -23854,13 +24260,13 @@ module SurfaceElaboration =
                                 environment
                                 freshCounter
                                 bindingInfo
-                                (Some localTypes)
+                                (Some localImplicitTypes)
                                 (inferValidationExpressionTypeWithContext
                                     environment
                                     freshCounter
                                     localTypes
-                                    localTypes)
-                                (tryResolveUniqueLocalImplicitByType environment localTypes)
+                                    localImplicitTypes)
+                                (tryResolveUniqueLocalImplicitByType environment localImplicitTypes)
                                 receiverArguments
                             |> Option.map (fun preparedCall -> preparedCall.ResultType))))
                 | Apply(Name [ calleeName ], arguments) ->
@@ -23884,13 +24290,13 @@ module SurfaceElaboration =
                                     environment
                                     freshCounter
                                     constructorInfo
-                                    (Some localTypes)
+                                    (Some localImplicitTypes)
                                     (inferValidationExpressionTypeWithContext
                                         environment
                                         freshCounter
                                         localTypes
-                                        localTypes)
-                                    (tryResolveUniqueLocalImplicitByType environment localTypes)
+                                        localImplicitTypes)
+                                    (tryResolveUniqueLocalImplicitByType environment localImplicitTypes)
                                     arguments
                                 |> Option.map (fun preparedCall -> preparedCall.ResultType)))
                     |> Option.orElseWith (fun () ->
@@ -23905,13 +24311,13 @@ module SurfaceElaboration =
                                         environment
                                         freshCounter
                                         bindingInfo
-                                        (Some localTypes)
+                                        (Some localImplicitTypes)
                                         (inferValidationExpressionTypeWithContext
                                             environment
                                             freshCounter
                                             localTypes
-                                            localTypes)
-                                        (tryResolveUniqueLocalImplicitByType environment localTypes)
+                                            localImplicitTypes)
+                                        (tryResolveUniqueLocalImplicitByType environment localImplicitTypes)
                                         arguments
                                     |> Option.map (fun preparedCall -> preparedCall.ResultType)
 
@@ -24445,9 +24851,9 @@ module SurfaceElaboration =
                         environment
                         freshCounter
                         bindingInfo
-                        (Some localTypes)
+                        (Some localImplicitTypes)
                         (inferExpressionType localTypes)
-                        (tryResolveUniqueLocalImplicitByType environment localTypes)
+                        (tryResolveUniqueLocalImplicitByType environment localImplicitTypes)
                         arguments
                     |> Option.bind (fun preparedCall ->
                         let explicitParameters =
@@ -25055,6 +25461,8 @@ module SurfaceElaboration =
             lowerExpressionWithExpectedType localTypes None expression
 
         and lowerExpressionWithExpectedType localTypes expectedType expression =
+            let localImplicitTypes = localTypes
+
             let lowerArguments arguments =
                 arguments
                 |> List.map (function
@@ -25921,13 +26329,13 @@ module SurfaceElaboration =
                                 environment
                                 freshCounter
                                 bindingInfo
-                                (Some localTypes)
+                                (Some localImplicitTypes)
                                 (inferValidationExpressionTypeWithContext
                                     environment
                                     freshCounter
                                     localTypes
-                                    localTypes)
-                                (tryResolveUniqueLocalImplicitByType environment localTypes)
+                                    localImplicitTypes)
+                                (tryResolveUniqueLocalImplicitByType environment localImplicitTypes)
                                 []
                         let expectedPreparedCall =
                             expectedType
@@ -25936,13 +26344,13 @@ module SurfaceElaboration =
                                     environment
                                     freshCounter
                                     bindingInfo
-                                    (Some localTypes)
+                                    (Some localImplicitTypes)
                                     (inferValidationExpressionTypeWithContext
                                         environment
                                         freshCounter
                                         localTypes
-                                        localTypes)
-                                    (tryResolveUniqueLocalImplicitByType environment localTypes)
+                                        localImplicitTypes)
+                                    (tryResolveUniqueLocalImplicitByType environment localImplicitTypes)
                                     expectedResultType)
 
                         match expectedPreparedCall |> Option.orElse initialPreparedCall with
@@ -26303,13 +26711,13 @@ module SurfaceElaboration =
                                                     environment
                                                     freshCounter
                                                     bindingInfo
-                                                    (Some localTypes)
+                                                    (Some localImplicitTypes)
                                                     (inferValidationExpressionTypeWithContext
                                                         environment
                                                         freshCounter
                                                         localTypes
-                                                        localTypes)
-                                                    (tryResolveUniqueLocalImplicitByType environment localTypes)
+                                                        localImplicitTypes)
+                                                    (tryResolveUniqueLocalImplicitByType environment localImplicitTypes)
                                                     receiverArguments
                                             with
                                             | Some preparedCall ->
@@ -26339,13 +26747,13 @@ module SurfaceElaboration =
                                                 environment
                                                 freshCounter
                                                 bindingInfo
-                                                (Some localTypes)
+                                                (Some localImplicitTypes)
                                                 (inferValidationExpressionTypeWithContext
                                                     environment
                                                     freshCounter
                                                     localTypes
-                                                    localTypes)
-                                                (tryResolveUniqueLocalImplicitByType environment localTypes)
+                                                    localImplicitTypes)
+                                                (tryResolveUniqueLocalImplicitByType environment localImplicitTypes)
                                                 receiverArguments
                                         with
                                         | Some preparedCall ->
@@ -26467,13 +26875,13 @@ module SurfaceElaboration =
                                             environment
                                             freshCounter
                                             bindingInfo
-                                            (Some localTypes)
+                                            (Some localImplicitTypes)
                                             (inferValidationExpressionTypeWithContext
                                                 environment
                                                 freshCounter
                                                 localTypes
-                                                localTypes)
-                                            (tryResolveUniqueLocalImplicitByType environment localTypes)
+                                                localImplicitTypes)
+                                            (tryResolveUniqueLocalImplicitByType environment localImplicitTypes)
                                             receiverArguments
                                     with
                                     | Some preparedCall ->
@@ -26533,13 +26941,13 @@ module SurfaceElaboration =
                                     environment
                                     freshCounter
                                     constructorInfo
-                                    (Some localTypes)
+                                    (Some localImplicitTypes)
                                     (inferValidationExpressionTypeWithContext
                                         environment
                                         freshCounter
                                         localTypes
-                                        localTypes)
-                                    (tryResolveUniqueLocalImplicitByType environment localTypes)
+                                        localImplicitTypes)
+                                    (tryResolveUniqueLocalImplicitByType environment localImplicitTypes)
                                     arguments
                             with
                             | Some preparedCall ->
@@ -26558,13 +26966,13 @@ module SurfaceElaboration =
                                     environment
                                     freshCounter
                                     bindingInfo
-                                    (Some localTypes)
+                                    (Some localImplicitTypes)
                                     (inferValidationExpressionTypeWithContext
                                         environment
                                         freshCounter
                                         localTypes
-                                        localTypes)
-                                    (tryResolveUniqueLocalImplicitByType environment localTypes)
+                                        localImplicitTypes)
+                                    (tryResolveUniqueLocalImplicitByType environment localImplicitTypes)
                                     arguments
                             with
                             | Some preparedCall ->

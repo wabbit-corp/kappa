@@ -2,5 +2,9 @@
 
 trait Marker (a : Type)
 
-useConstraintDescriptor : (C : Constraint) -> Dict C -> Dict C
-let useConstraintDescriptor C d = d
+useTraitDescriptor :
+    forall (@0 a : Type).
+    (F : Type -> Type) ->
+    (@_ : forall (x : Type). IsTrait (F x)) ->
+    F a -> F a
+let useTraitDescriptor @a F d = d

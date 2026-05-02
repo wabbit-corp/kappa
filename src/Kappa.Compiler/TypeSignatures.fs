@@ -159,7 +159,6 @@ module TypeSignatures =
         | Some CompilerKnownSymbols.UniverseType -> Some UniverseClassifier
         | Some CompilerKnownSymbols.QuantityType -> Some QuantityClassifier
         | Some CompilerKnownSymbols.RegionType -> Some RegionClassifier
-        | Some CompilerKnownSymbols.ConstraintType -> Some ConstraintClassifier
         | Some CompilerKnownSymbols.RecRowType -> Some RecRowClassifier
         | Some CompilerKnownSymbols.VarRowType -> Some VarRowClassifier
         | Some CompilerKnownSymbols.EffRowType -> Some EffRowClassifier
@@ -2429,9 +2428,123 @@ module TypeSignatures =
 
     let private canonicalize = normalizeWithContext builtinDefinitionContext
 
+    let private canonicalizeBoundTypeLambdas typeExpr =
+        let rec loop substitution nextId current =
+            match current with
+            | TypeVariable name ->
+                Map.tryFind name substitution |> Option.defaultValue current, nextId
+            | TypeLevelLiteral _
+            | TypeUniverse None
+            | TypeIntrinsic _ ->
+                current, nextId
+            | TypeUniverse(Some universeExpr) ->
+                let normalizedUniverseExpr, nextId = loop substitution nextId universeExpr
+                TypeUniverse(Some normalizedUniverseExpr), nextId
+            | TypeName(name, arguments) ->
+                let normalizedArguments, nextId =
+                    arguments
+                    |> List.fold
+                        (fun (state, nextId) argument ->
+                            let normalizedArgument, nextId = loop substitution nextId argument
+                            normalizedArgument :: state, nextId)
+                        ([], nextId)
+
+                TypeName(name, List.rev normalizedArguments), nextId
+            | TypeApply(callee, arguments) ->
+                let normalizedCallee, nextId = loop substitution nextId callee
+
+                let normalizedArguments, nextId =
+                    arguments
+                    |> List.fold
+                        (fun (state, nextId) argument ->
+                            let normalizedArgument, nextId = loop substitution nextId argument
+                            normalizedArgument :: state, nextId)
+                        ([], nextId)
+
+                TypeApply(normalizedCallee, List.rev normalizedArguments), nextId
+            | TypeLambda(parameterName, parameterSort, body) ->
+                let normalizedParameterSort, nextId = loop substitution nextId parameterSort
+                let canonicalParameterName = $"__alpha{nextId}"
+                let substitution = Map.add parameterName (TypeVariable canonicalParameterName) substitution
+                let normalizedBody, nextId = loop substitution (nextId + 1) body
+                TypeLambda(canonicalParameterName, normalizedParameterSort, normalizedBody), nextId
+            | TypeDelay inner ->
+                let normalizedInner, nextId = loop substitution nextId inner
+                TypeDelay normalizedInner, nextId
+            | TypeMemo inner ->
+                let normalizedInner, nextId = loop substitution nextId inner
+                TypeMemo normalizedInner, nextId
+            | TypeForce inner ->
+                let normalizedInner, nextId = loop substitution nextId inner
+                TypeForce normalizedInner, nextId
+            | TypeProject(target, fieldName) ->
+                let normalizedTarget, nextId = loop substitution nextId target
+                TypeProject(normalizedTarget, fieldName), nextId
+            | TypeArrow(quantity, parameterType, resultType) ->
+                let normalizedParameterType, nextId = loop substitution nextId parameterType
+                let normalizedResultType, nextId = loop substitution nextId resultType
+                TypeArrow(quantity, normalizedParameterType, normalizedResultType), nextId
+            | TypeEquality(left, right) ->
+                let normalizedLeft, nextId = loop substitution nextId left
+                let normalizedRight, nextId = loop substitution nextId right
+                TypeEquality(normalizedLeft, normalizedRight), nextId
+            | TypeCapture(inner, captures) ->
+                let normalizedInner, nextId = loop substitution nextId inner
+                TypeCapture(normalizedInner, captures), nextId
+            | TypeEffectRow(entries, tail) ->
+                let normalizedEntries, nextId =
+                    entries
+                    |> List.fold
+                        (fun (state, nextId) entry ->
+                            let normalizedLabel, nextId = loop substitution nextId entry.Label
+                            let normalizedEffect, nextId = loop substitution nextId entry.Effect
+
+                            { Label = normalizedLabel
+                              Effect = normalizedEffect }
+                            :: state,
+                            nextId)
+                        ([], nextId)
+
+                let normalizedTail, nextId =
+                    match tail with
+                    | Some tailExpr ->
+                        let normalizedTailExpr, nextId = loop substitution nextId tailExpr
+                        Some normalizedTailExpr, nextId
+                    | None ->
+                        None, nextId
+
+                TypeEffectRow(List.rev normalizedEntries, normalizedTail), nextId
+            | TypeRecord fields ->
+                let normalizedFields, nextId =
+                    fields
+                    |> List.fold
+                        (fun (state, nextId) field ->
+                            let normalizedFieldType, nextId = loop substitution nextId field.Type
+
+                            { field with
+                                Type = normalizedFieldType }
+                            :: state,
+                            nextId)
+                        ([], nextId)
+
+                TypeRecord(List.rev normalizedFields), nextId
+            | TypeUnion members ->
+                let normalizedMembers, nextId =
+                    members
+                    |> List.fold
+                        (fun (state, nextId) memberType ->
+                            let normalizedMemberType, nextId = loop substitution nextId memberType
+                            normalizedMemberType :: state, nextId)
+                        ([], nextId)
+
+                TypeUnion(List.rev normalizedMembers), nextId
+
+        loop Map.empty 0 typeExpr |> fst
+
     let definitionallyEqualIn context left right =
         not (hasCyclicRecordDependencies left || hasCyclicRecordDependencies right)
-        && normalizeWithContext context left = normalizeWithContext context right
+        && (normalizeWithContext context left |> canonicalizeBoundTypeLambdas)
+           = (normalizeWithContext context right |> canonicalizeBoundTypeLambdas)
 
     let definitionallyEqual left right =
         definitionallyEqualIn builtinDefinitionContext left right

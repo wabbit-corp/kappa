@@ -15,6 +15,7 @@ module internal ElaborationEvaluation =
           ModuleName: string
           Name: string
           Parameters: Parameter list
+          ParameterTypes: TypeSignatures.TypeExpr option list
           Body: SurfaceExpression option
           IsExpect: bool }
 
@@ -61,6 +62,7 @@ module internal ElaborationEvaluation =
         { ModuleIdentity: ModuleIdentity
           ModuleName: string
           Parameters: Parameter list
+          ParameterTypes: TypeSignatures.TypeExpr option list
           Body: SurfaceExpression
           MetaBindings: Map<string, MetaValue> }
 
@@ -76,6 +78,7 @@ module internal ElaborationEvaluation =
         | MetaSyntax of SyntaxValue
         | MetaTypeSyntax of TypeSyntaxValue
         | MetaTraitRef of moduleName: string * traitName: string
+        | MetaExplicitImplicit of MetaValue
         | MetaConstructor of constructorName: string * parameters: DataConstructorParameter list * appliedArguments: MetaValue list
         | MetaClosure of MetaClosure
         | MetaBuiltin of name: string * appliedArguments: MetaValue list
@@ -93,6 +96,7 @@ module internal ElaborationEvaluation =
         { Models: Map<ModuleIdentity, ModuleModel>
           Inventories: Map<ModuleIdentity, ExportInventory>
           CurrentModule: ModuleIdentity
+          ExpansionModule: ModuleIdentity
           Source: SourceText
           ObjectBinders: Set<string>
           MetaBindings: Map<string, MetaValue> }
@@ -192,20 +196,74 @@ module internal ElaborationEvaluation =
             |> List.filter (fun parameter -> not (Set.contains parameter.Name existingNames)))
         |> Option.defaultValue []
 
+    let private annotateParametersFromSignature (signature: BindingSignature option) (parameters: Parameter list) =
+        let assignParameterType (parameter: Parameter) (typeExpr: TypeSignatures.TypeExpr) =
+            if parameter.TypeTokens.IsSome then
+                parameter, Some typeExpr
+            else
+                { parameter with
+                    TypeTokens = Some(typeTokensFromText (TypeSignatures.toText typeExpr)) },
+                Some typeExpr
+
+        let fallbackParameterType (parameter: Parameter) =
+            parameter.TypeTokens |> Option.bind TypeSignatures.parseType
+
+        match signature |> Option.bind (fun currentSignature -> TypeSignatures.parseScheme currentSignature.TypeTokens) with
+        | None ->
+            parameters, (parameters |> List.map fallbackParameterType)
+        | Some scheme ->
+            let forallByName =
+                scheme.Forall
+                |> List.map (fun binder -> binder.Name, binder.Sort)
+                |> Map.ofList
+
+            let bodyParameterTypes, _ = TypeSignatures.schemeParts scheme
+
+            let rec loop (remainingBodyParameters: TypeSignatures.TypeExpr list) (remainingParameters: Parameter list) =
+                match remainingParameters with
+                | [] ->
+                    [], []
+                | parameter :: rest ->
+                    match Map.tryFind parameter.Name forallByName with
+                    | Some sort ->
+                        let annotatedParameter, parameterType = assignParameterType parameter sort
+                        let annotatedRest, remainingTypes = loop remainingBodyParameters rest
+                        annotatedParameter :: annotatedRest, parameterType :: remainingTypes
+                    | None ->
+                        match remainingBodyParameters with
+                        | parameterType :: remaining ->
+                            let annotatedParameter, parameterType = assignParameterType parameter parameterType
+                            let annotatedRest, remainingTypes = loop remaining rest
+                            annotatedParameter :: annotatedRest, parameterType :: remainingTypes
+                        | [] ->
+                            let annotatedRest, remainingTypes = loop [] rest
+                            parameter :: annotatedRest, (fallbackParameterType parameter) :: remainingTypes
+
+            loop bodyParameterTypes parameters
+
     let private tryParseTopLevelTermDefinition moduleIdentity moduleName (signatures: Map<string, BindingSignature>) declaration =
         match declaration with
         | LetDeclaration definition when definition.Name.IsSome ->
+            let signature =
+                signatures |> Map.tryFind definition.Name.Value
+
             let leadingParameters =
-                signatures
-                |> Map.tryFind definition.Name.Value
-                |> fun signature -> leadingForallParameters signature definition.Parameters
+                leadingForallParameters signature definition.Parameters
+
+            let annotatedParameters, parameterTypes =
+                annotateParametersFromSignature signature definition.Parameters
+
+            let leadingParameterTypes =
+                leadingParameters
+                |> List.map (fun parameter -> parameter.TypeTokens |> Option.bind TypeSignatures.parseType)
 
             Some(
                 definition.Name.Value,
                 { ModuleIdentity = moduleIdentity
                   ModuleName = moduleName
                   Name = definition.Name.Value
-                  Parameters = leadingParameters @ definition.Parameters
+                  Parameters = leadingParameters @ annotatedParameters
+                  ParameterTypes = leadingParameterTypes @ parameterTypes
                   Body = definition.Body
                   IsExpect = false }
             )
@@ -216,6 +274,7 @@ module internal ElaborationEvaluation =
                   ModuleName = moduleName
                   Name = declaration.Name
                   Parameters = []
+                  ParameterTypes = []
                   Body = None
                   IsExpect = false }
             )
@@ -226,6 +285,7 @@ module internal ElaborationEvaluation =
                   ModuleName = moduleName
                   Name = declaration.Name
                   Parameters = []
+                  ParameterTypes = []
                   Body = None
                   IsExpect = true }
             )
@@ -781,6 +841,18 @@ module internal ElaborationEvaluation =
                     [])
         model.Instances @ importedInstances
 
+    let private visibleInstancesForContext (context: RewriteContext) =
+        let currentInstances =
+            visibleInstancesForModule context.Models context.Inventories context.CurrentModule
+
+        let expansionInstances =
+            if context.ExpansionModule = context.CurrentModule then
+                []
+            else
+                visibleInstancesForModule context.Models context.Inventories context.ExpansionModule
+
+        currentInstances @ expansionInstances
+
     let private tryParseInstanceHeader (declaration: InstanceDeclaration) =
         declaration.FullHeaderTokens
         |> TypeSignatures.parseScheme
@@ -913,6 +985,11 @@ module internal ElaborationEvaluation =
     let rec private evalExpression (context: RewriteContext) (expression: SurfaceExpression) : EvalResult =
         let success value diagnostics = EvalSucceeded(value, diagnostics)
 
+        let rec unwrapExplicitImplicit value =
+            match value with
+            | MetaExplicitImplicit inner -> unwrapExplicitImplicit inner
+            | _ -> value
+
         let rec forceValue value diagnostics =
             match value with
             | MetaClosure closure when List.isEmpty closure.Parameters ->
@@ -924,6 +1001,8 @@ module internal ElaborationEvaluation =
                 | EvalSucceeded(result, resultDiagnostics) -> EvalSucceeded(result, mergeDiagnostics diagnostics resultDiagnostics)
                 | EvalFailed resultDiagnostics -> EvalFailed(mergeDiagnostics diagnostics resultDiagnostics)
                 | EvalBlocked -> EvalBlocked
+            | MetaExplicitImplicit inner ->
+                forceValue inner diagnostics
             | _ -> EvalSucceeded(value, diagnostics)
 
         let rec evalQuotedSyntax shadowed current =
@@ -1150,27 +1229,170 @@ module internal ElaborationEvaluation =
             | Comprehension _ -> EvalBlocked
 
         and applyMeta functionValue argumentValue diagnostics =
-            match functionValue with
-            | MetaClosure closure ->
+            let bindClosureParameter (closure: MetaClosure) parameterValue =
                 match closure.Parameters with
-                | [] -> EvalBlocked
+                | [] ->
+                    EvalBlocked
                 | parameter :: remainingParameters ->
-                    let nextBindings = Map.add parameter.Name argumentValue closure.MetaBindings
+                    let remainingParameterTypes =
+                        match closure.ParameterTypes with
+                        | _ :: rest -> rest
+                        | [] -> []
+
+                    let nextBindings = Map.add parameter.Name parameterValue closure.MetaBindings
+
                     if List.isEmpty remainingParameters then
                         let nextContext =
                             { context with
                                 CurrentModule = closure.ModuleIdentity
                                 MetaBindings = nextBindings }
+
                         match evalExpression nextContext closure.Body with
-                        | EvalSucceeded(value, bodyDiagnostics) -> forceValue value (mergeDiagnostics diagnostics bodyDiagnostics)
-                        | EvalFailed bodyDiagnostics -> EvalFailed(mergeDiagnostics diagnostics bodyDiagnostics)
-                        | EvalBlocked -> EvalBlocked
+                        | EvalSucceeded(value, bodyDiagnostics) ->
+                            forceValue value (mergeDiagnostics diagnostics bodyDiagnostics)
+                        | EvalFailed bodyDiagnostics ->
+                            EvalFailed(mergeDiagnostics diagnostics bodyDiagnostics)
+                        | EvalBlocked ->
+                            EvalBlocked
                     else
-                        EvalSucceeded(MetaClosure { closure with Parameters = remainingParameters; MetaBindings = nextBindings }, diagnostics)
+                        EvalSucceeded(
+                            MetaClosure
+                                { closure with
+                                    Parameters = remainingParameters
+                                    ParameterTypes = remainingParameterTypes
+                                    MetaBindings = nextBindings },
+                            diagnostics
+                        )
+
+            let trySynthesizeImplicitMetaValue (closure: MetaClosure) (parameter: Parameter) =
+                let rec peelLeadingTypeLambdas collected typeExpr =
+                    match typeExpr with
+                    | TypeSignatures.TypeLambda(name, sort, body) ->
+                        let binder: TypeSignatures.ForallBinder =
+                            { Name = name
+                              Quantity = QuantityOmega
+                              Sort = sort }
+
+                        peelLeadingTypeLambdas
+                            (binder :: collected)
+                            body
+                    | _ ->
+                        List.rev collected, typeExpr
+
+                let tryParseParameterTypeTokens tokens =
+                    TypeSignatures.parseType tokens
+                    |> Option.map (fun parsedType ->
+                        let lambdaBinders, bodyType = peelLeadingTypeLambdas [] parsedType
+
+                        if List.isEmpty lambdaBinders then
+                            None, bodyType
+                        else
+                            Some lambdaBinders, bodyType)
+                    |> Option.orElseWith (fun () ->
+                        TypeSignatures.parseScheme tokens
+                        |> Option.map (fun scheme -> Some scheme.Forall, scheme.Body))
+
+                let tryMatchTraitWitnessBody bodyType =
+                    match bodyType with
+                    | TypeSignatures.TypeName(nameSegments, [ TypeSignatures.TypeApply(TypeSignatures.TypeVariable traitBindingName, [ TypeSignatures.TypeVariable boundName ]) ])
+                        when TypeSignatures.matchesKnownTypeName CompilerKnownSymbols.IsTraitType nameSegments ->
+                        Some(traitBindingName, boundName)
+                    | TypeSignatures.TypeApply(TypeSignatures.TypeName(nameSegments, []), [ TypeSignatures.TypeVariable traitBindingName; TypeSignatures.TypeVariable boundName ])
+                        when TypeSignatures.matchesKnownTypeName CompilerKnownSymbols.IsTraitType nameSegments ->
+                        Some(traitBindingName, boundName)
+                    | TypeSignatures.TypeApply(TypeSignatures.TypeName(nameSegments, existingArguments), appliedArguments)
+                        when TypeSignatures.matchesKnownTypeName CompilerKnownSymbols.IsTraitType nameSegments ->
+                        match existingArguments @ appliedArguments with
+                        | [ TypeSignatures.TypeVariable traitBindingName; TypeSignatures.TypeVariable boundName ] ->
+                            Some(traitBindingName, boundName)
+                        | _ ->
+                            None
+                    | _ ->
+                        None
+
+                let tryResolveTraitValue bindingName =
+                    closure.MetaBindings
+                    |> Map.tryFind bindingName
+                    |> Option.map unwrapExplicitImplicit
+                    |> Option.bind (function
+                        | MetaTraitRef(moduleName, traitName) ->
+                            Some(MetaTraitRef(moduleName, traitName))
+                        | MetaTypeSyntax typeSyntax ->
+                            typeSyntax
+                            |> tryParseTypeSyntaxValue
+                            |> Option.bind (function
+                                | TypeSignatures.TypeName(nameSegments, []) when not (List.isEmpty nameSegments) ->
+                                    let traitName = List.last nameSegments
+                                    let moduleName =
+                                        if List.length nameSegments > 1 then
+                                            SyntaxFacts.moduleNameToText (nameSegments |> List.take (List.length nameSegments - 1))
+                                        else
+                                            ""
+
+                                    Some(MetaTraitRef(moduleName, traitName))
+                                | _ ->
+                                    None)
+                        | _ ->
+                            None)
+
+                let parameterType =
+                    match closure.ParameterTypes with
+                    | Some parameterType :: _ ->
+                        let lambdaBinders, bodyType = peelLeadingTypeLambdas [] parameterType
+
+                        if List.isEmpty lambdaBinders then
+                            Some(None, bodyType)
+                        else
+                            Some(Some lambdaBinders, bodyType)
+                    | None :: _ ->
+                        parameter.TypeTokens |> Option.bind tryParseParameterTypeTokens
+                    | [] ->
+                        parameter.TypeTokens |> Option.bind tryParseParameterTypeTokens
+
+                parameterType
+                |> Option.bind (fun (forallBinders, bodyType) ->
+                    match forallBinders, bodyType with
+                    | Some [ binder ], _ ->
+                        match tryMatchTraitWitnessBody bodyType with
+                        | Some(traitBindingName, boundName)
+                            when String.Equals(boundName, binder.Name, StringComparison.Ordinal) ->
+                            tryResolveTraitValue traitBindingName
+                        | _ ->
+                            None
+                    | None, _ ->
+                        match tryMatchTraitWitnessBody bodyType with
+                        | Some(traitBindingName, _) ->
+                            tryResolveTraitValue traitBindingName
+                        | _ ->
+                            None
+                    | _ ->
+                        None)
+
+            match functionValue with
+            | MetaClosure closure ->
+                match closure.Parameters with
+                | [] ->
+                    EvalBlocked
+                | parameter :: _ when parameter.IsImplicit ->
+                    match argumentValue with
+                    | MetaExplicitImplicit explicitValue ->
+                        bindClosureParameter closure explicitValue
+                    | _ ->
+                        match trySynthesizeImplicitMetaValue closure parameter with
+                        | Some implicitValue ->
+                            match bindClosureParameter closure implicitValue with
+                            | EvalSucceeded(nextValue, nextDiagnostics) ->
+                                applyMeta nextValue argumentValue nextDiagnostics
+                            | other ->
+                                other
+                        | None ->
+                            EvalBlocked
+                | _ ->
+                    bindClosureParameter closure (unwrapExplicitImplicit argumentValue)
             | MetaBuiltin(name, appliedArguments) ->
-                applyBuiltin context name (appliedArguments @ [ argumentValue ]) diagnostics
+                applyBuiltin context name (appliedArguments @ [ unwrapExplicitImplicit argumentValue ]) diagnostics
             | MetaConstructor(constructorName, parameters, appliedArguments) ->
-                let nextArguments = appliedArguments @ [ argumentValue ]
+                let nextArguments = appliedArguments @ [ unwrapExplicitImplicit argumentValue ]
 
                 if List.length nextArguments < List.length parameters then
                     EvalSucceeded(MetaConstructor(constructorName, parameters, nextArguments), diagnostics)
@@ -1206,6 +1428,7 @@ module internal ElaborationEvaluation =
                                     { ModuleIdentity = definition.ModuleIdentity
                                       ModuleName = definition.ModuleName
                                       Parameters = definition.Parameters
+                                      ParameterTypes = definition.ParameterTypes
                                       Body = body
                                       MetaBindings = Map.empty })
                                 []
@@ -1239,24 +1462,24 @@ module internal ElaborationEvaluation =
         | ExplicitImplicitArgument inner ->
             match evalExpression context inner with
             | EvalSucceeded(MetaTypeSyntax typeSyntax, diagnostics) ->
-                success (MetaTypeSyntax typeSyntax) diagnostics
+                success (MetaExplicitImplicit(MetaTypeSyntax typeSyntax)) diagnostics
             | EvalSucceeded(MetaTraitRef(moduleName, traitName), diagnostics) ->
-                success (MetaTraitRef(moduleName, traitName)) diagnostics
+                success (MetaExplicitImplicit(MetaTraitRef(moduleName, traitName))) diagnostics
             | EvalSucceeded(MetaSyntax syntaxValue, diagnostics) ->
                 match tryTypeSyntaxFromExpression syntaxValue.Expression with
                 | Some typeSyntax ->
-                    success (MetaTypeSyntax typeSyntax) diagnostics
+                    success (MetaExplicitImplicit(MetaTypeSyntax typeSyntax)) diagnostics
                 | None ->
                     EvalBlocked
             | EvalSucceeded(value, diagnostics) ->
                 match tryTypeSyntaxFromExpression inner with
-                | Some typeSyntax -> success (MetaTypeSyntax typeSyntax) diagnostics
-                | None -> success value diagnostics
+                | Some typeSyntax -> success (MetaExplicitImplicit(MetaTypeSyntax typeSyntax)) diagnostics
+                | None -> success (MetaExplicitImplicit value) diagnostics
             | EvalFailed diagnostics ->
                 EvalFailed diagnostics
             | EvalBlocked ->
                 match tryTypeSyntaxFromExpression inner with
-                | Some typeSyntax -> success (MetaTypeSyntax typeSyntax) []
+                | Some typeSyntax -> success (MetaExplicitImplicit(MetaTypeSyntax typeSyntax)) []
                 | None -> EvalBlocked
         | SyntaxQuote inner ->
             match evalQuotedSyntax Set.empty inner with
@@ -1269,6 +1492,7 @@ module internal ElaborationEvaluation =
                     { ModuleIdentity = context.CurrentModule
                       ModuleName = (Map.find context.CurrentModule context.Models).ModuleName
                       Parameters = parameters
+                      ParameterTypes = parameters |> List.map (fun parameter -> parameter.TypeTokens |> Option.bind TypeSignatures.parseType)
                       Body = body
                       MetaBindings = context.MetaBindings })
                 []
@@ -1582,6 +1806,11 @@ module internal ElaborationEvaluation =
                     match closure.Parameters with
                     | [] -> EvalBlocked
                     | parameter :: remainingParameters ->
+                        let remainingParameterTypes =
+                            match closure.ParameterTypes with
+                            | _ :: rest -> rest
+                            | [] -> []
+
                         let nextBindings = Map.add parameter.Name argumentValue closure.MetaBindings
 
                         if List.isEmpty remainingParameters then
@@ -1613,7 +1842,14 @@ module internal ElaborationEvaluation =
                             | EvalBlocked ->
                                 EvalBlocked
                         else
-                            EvalSucceeded(MetaClosure { closure with Parameters = remainingParameters; MetaBindings = nextBindings }, callbackDiagnostics)
+                            EvalSucceeded(
+                                MetaClosure
+                                    { closure with
+                                        Parameters = remainingParameters
+                                        ParameterTypes = remainingParameterTypes
+                                        MetaBindings = nextBindings },
+                                callbackDiagnostics
+                            )
                 | MetaBuiltin(name, builtinArguments) ->
                     applyBuiltin context name (builtinArguments @ [ argumentValue ]) callbackDiagnostics
                 | _ ->
@@ -1625,6 +1861,21 @@ module internal ElaborationEvaluation =
                 match applyOne callback argument diagnostics with
                 | EvalSucceeded(value, _) -> applyCallback value rest
                 | other -> other
+
+        let tryTraitHeadName value =
+            match value with
+            | MetaTraitRef(_, traitName) ->
+                Some traitName
+            | MetaTypeSyntax typeSyntax ->
+                typeSyntax
+                |> tryParseTypeSyntaxValue
+                |> Option.bind (function
+                    | TypeSignatures.TypeName(nameSegments, []) when not (List.isEmpty nameSegments) ->
+                        Some(List.last nameSegments)
+                    | _ ->
+                        None)
+            | _ ->
+                None
 
         match builtinSuffix, appliedArguments with
         | "pure", [ value ] -> EvalSucceeded(value, diagnostics)
@@ -1667,26 +1918,27 @@ module internal ElaborationEvaluation =
             | Some(Result.Ok fields) -> EvalSucceeded(shapeRecordData fields, diagnostics)
             | Some(Result.Error code) -> EvalFailed [ makeShapeDiagnostic code "Record shape inspection failed." context.Source ]
             | None -> EvalFailed [ makeShapeDiagnostic DiagnosticCode.DerivingShapeNotClosedRecord "Record shape inspection failed." context.Source ]
-        | "requireRuntimeFieldInstances", [ MetaTraitRef(_, traitName); MetaData(shapeTag, shapeFields) ]
+        | "requireRuntimeFieldInstances", [ traitValue; _; MetaData(shapeTag, shapeFields) ]
             when String.Equals(shapeTag, CompilerKnownSymbols.KnownTypeNames.AdtShape, StringComparison.Ordinal) ->
-            match tryGetField "constructors" shapeFields with
-            | Some(MetaList constructors) ->
-                let visibleInstances = visibleInstancesForModule context.Models context.Inventories context.CurrentModule
-                let instanceMatches fieldType =
-                    visibleInstances
-                    |> List.exists (fun declaration ->
-                        match tryParseInstanceHeader declaration with
-                        | Some(candidateTrait, [ candidateType ]) ->
-                            let fieldTypeText =
-                                match fieldType with
-                                | MetaTypeSyntax typeSyntax ->
-                                    typeSyntax |> tryParseTypeSyntaxValue |> Option.map TypeSignatures.toText |> Option.defaultValue "<unknown>"
-                                | _ ->
-                                    "<unknown>"
+            match tryTraitHeadName traitValue, tryGetField "constructors" shapeFields with
+            | Some traitName, Some(MetaList constructors) ->
+                let visibleInstances = visibleInstancesForContext context
 
-                            candidateTrait = traitName
-                            && TypeSignatures.toText candidateType = fieldTypeText
-                        | _ -> false)
+                let instanceMatches fieldType =
+                    fieldType
+                    |> Option.bind (function
+                        | MetaTypeSyntax typeSyntax -> tryParseTypeSyntaxValue typeSyntax
+                        | _ -> None)
+                    |> Option.exists (fun fieldTypeExpr ->
+                        visibleInstances
+                        |> List.exists (fun declaration ->
+                            match tryParseInstanceHeader declaration with
+                            | Some(candidateTrait, [ candidateType ]) ->
+                                candidateTrait = traitName
+                                && TypeSignatures.definitionallyEqual candidateType fieldTypeExpr
+                            | _ ->
+                                false))
+
                 let missingField =
                     constructors
                     |> List.tryPick (fun constructor ->
@@ -1696,13 +1948,23 @@ module internal ElaborationEvaluation =
                             |> List.tryFind (fun field ->
                                 let runtimeRelevant =
                                     tryGetDataField "runtimeRelevant" field |> Option.bind tryAsBool |> Option.defaultValue true
-                                let fieldType = tryGetDataField "fieldType" field
-                                runtimeRelevant && not (fieldType |> Option.exists instanceMatches))
-                        | _ -> None)
+
+                                runtimeRelevant
+                                && not (tryGetDataField "fieldType" field |> instanceMatches))
+                        | _ ->
+                            None)
+
                 match missingField with
-                | Some _ -> EvalFailed [ makeShapeDiagnostic DiagnosticCode.DerivingShapeMissingRuntimeFieldInstance "Missing runtime field instance." context.Source ]
-                | None -> EvalSucceeded(MetaUnit, diagnostics)
-            | _ -> EvalBlocked
+                | Some _ ->
+                    EvalFailed [ makeShapeDiagnostic DiagnosticCode.DerivingShapeMissingRuntimeFieldInstance "Missing runtime field instance." context.Source ]
+                | None ->
+                    EvalSucceeded(MetaUnit, diagnostics)
+            | _ ->
+                EvalBlocked
+        | "requireRuntimeFieldInstances", arguments when arguments.Length < 3 ->
+            partial ()
+        | "requireRuntimeFieldInstances", _ ->
+            EvalBlocked
         | "matchAdt", [ MetaData(shapeTag, shapeFields); MetaSyntax scrutineeSyntax; callback ]
             when String.Equals(shapeTag, CompilerKnownSymbols.KnownTypeNames.AdtShape, StringComparison.Ordinal) ->
             match tryGetField "constructors" shapeFields with
@@ -2086,6 +2348,7 @@ module internal ElaborationEvaluation =
                     { Models = models
                       Inventories = inventories
                       CurrentModule = moduleIdentity
+                      ExpansionModule = moduleIdentity
                       Source = document.Source
                       ObjectBinders = Set.empty
                       MetaBindings = Map.empty }

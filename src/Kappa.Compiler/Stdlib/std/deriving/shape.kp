@@ -47,8 +47,8 @@ data FieldArgument : Type =
 
     OmittedImplicitFieldArgument (field : ShapeField)
 
-data FieldConstraint (tc : Type -> Constraint) : Type =
-    FieldConstraint (field : ShapeField) (@0 fieldType : Type) (origin : SyntaxOrigin)
+data FieldConstraint (tc : Type -> Type) : Type =
+    FieldConstraint (field : ShapeField) (@0 fieldType : Type) (@0 fieldTrait : IsTrait (tc fieldType)) (origin : SyntaxOrigin)
 
 expect term tryInspectAdt :
     forall (@0 a : Type).
@@ -74,15 +74,18 @@ expect term runtimeRecordFields :
     RecordShape a -> List ShapeField
 
 expect term requiredRuntimeFieldConstraints :
-    forall (tc : Type -> Constraint) (@0 a : Type).
+    forall (tc : Type -> Type) (@0 a : Type).
+    (@_ : forall (x : Type). IsTrait (tc x)) ->
     AdtShape a -> Elab (List (FieldConstraint tc))
 
 expect term requireRuntimeFieldInstances :
-    forall (tc : Type -> Constraint) (@0 a : Type).
+    forall (tc : Type -> Type) (@0 a : Type).
+    (@_ : forall (x : Type). IsTrait (tc x)) ->
     AdtShape a -> Elab Unit
 
 expect term requireRecordFieldInstances :
-    forall (tc : Type -> Constraint) (@0 a : Type).
+    forall (tc : Type -> Type) (@0 a : Type).
+    (@_ : forall (x : Type). IsTrait (tc x)) ->
     RecordShape a -> Elab Unit
 
 expect term fieldArgument :

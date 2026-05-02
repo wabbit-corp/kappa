@@ -9,7 +9,7 @@ data Expr : Type =
 
 tagName : Expr -> String
 let tagName value =
-    $(deriveTagNameBody @Expr '{ Expr } '{ value })
+    $(deriveTagNameBody @Expr '{ type Expr } '{ value })
 
 --! assertNoErrors
 --! assertType tagName Expr -> String

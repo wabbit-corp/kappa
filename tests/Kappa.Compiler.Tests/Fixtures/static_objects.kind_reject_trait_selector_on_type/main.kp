@@ -3,5 +3,5 @@
 data Box (a : Type) : Type =
     Box (value : a)
 
-bad : Type -> Constraint
+bad : Type -> Type
 let bad = trait Box

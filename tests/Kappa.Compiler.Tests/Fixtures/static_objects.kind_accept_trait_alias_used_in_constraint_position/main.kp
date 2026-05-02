@@ -3,7 +3,7 @@
 trait Sized (a : Type) =
     size : a -> Int
 
-C : Type -> Constraint
+C : Type -> Type
 let C = trait Sized
 
 needs : C String => String -> Int

@@ -79,11 +79,12 @@ let assertRecordShape @a target expectedFields = do
     unitSyntax
 
 assertHasAdtRuntimeFieldInstances :
-    forall (tc : Type -> Constraint) (@0 a : Type).
+    forall (tc : Type -> Type) (@0 a : Type).
+    (@traitWitness : forall (x : Type). IsTrait (tc x)) ->
     Syntax Type -> Elab (Syntax Unit)
-let assertHasAdtRuntimeFieldInstances @tc @a target = do
+let assertHasAdtRuntimeFieldInstances @tc @a @traitWitness target = do
     shape <- inspectAdt @a target
-    requireRuntimeFieldInstances @tc shape
+    requireRuntimeFieldInstances @tc @a shape
     unitSyntax
 
 deriveTagNameBody :

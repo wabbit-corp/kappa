@@ -10,7 +10,7 @@ data Expr : Type =
 shapeSmoke : Unit
 let shapeSmoke =
     $(assertAdtShape @Expr
-        '{ Expr }
+        '{ type Expr }
         "Expr"
         ("Lit" :: "Add" :: "Var" :: Nil)
         (("value" :: Nil) :: ("left" :: "right" :: Nil) :: ("name" :: Nil) :: Nil))

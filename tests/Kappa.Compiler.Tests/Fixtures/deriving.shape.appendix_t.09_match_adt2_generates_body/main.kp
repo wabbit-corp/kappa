@@ -9,7 +9,7 @@ data Expr : Type =
 
 sameConstructor : Expr -> Expr -> Bool
 let sameConstructor left right =
-    $(deriveSameConstructorBody @Expr '{ Expr } '{ left } '{ right })
+    $(deriveSameConstructorBody @Expr '{ type Expr } '{ left } '{ right })
 
 --! assertNoErrors
 --! assertType sameConstructor Expr -> Expr -> Bool

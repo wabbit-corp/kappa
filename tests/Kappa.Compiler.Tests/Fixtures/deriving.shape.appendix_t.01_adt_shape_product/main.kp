@@ -8,7 +8,7 @@ data User : Type =
 shapeSmoke : Unit
 let shapeSmoke =
     $(assertAdtShape @User
-        '{ User }
+        '{ type User }
         "User"
         ("User" :: Nil)
         (("name" :: "age" :: Nil) :: Nil))
