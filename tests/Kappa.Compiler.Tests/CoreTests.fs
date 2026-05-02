@@ -441,6 +441,52 @@ module CoreTestsShard0 =
         | Result.Error issue ->
             failwithf "Expected semantic trait identity resolution to succeed, got %s" issue.Message
 
+    [<Fact>]
+    let ``local compile time trait does not erase imported qualified runtime trait of same local name`` () =
+        let mainSource =
+            [
+                "module main"
+                ""
+                "import providers.a as a"
+                ""
+                "trait Show a ="
+                "    probe : (@0 _ : a) -> Unit"
+                ""
+                "showA : a.Show Int"
+                "let showA = summon"
+                ""
+                "result : Int"
+                "let result = showA.show 0"
+            ]
+            |> String.concat "\n"
+
+        let traitASource =
+            [
+                "module providers.a"
+                ""
+                "trait Show a ="
+                "    show : a -> Int"
+                ""
+                "instance Show Int ="
+                "    let show _ = 1"
+            ]
+            |> String.concat "\n"
+
+        let workspace, result =
+            evaluateInMemoryBinding
+                "memory-qualified-runtime-trait-not-erased-by-local-compile-time-shadow-root"
+                "main.result"
+                [ "main.kp", mainSource
+                  "providers/a.kp", traitASource ]
+
+        Assert.False(workspace.HasErrors, sprintf "Expected no diagnostics, got %A" workspace.Diagnostics)
+
+        match result with
+        | Result.Ok value ->
+            Assert.Equal("1", RuntimeValue.format value)
+        | Result.Error issue ->
+            failwithf "Expected imported runtime trait to survive local compile-time shadowing, got %s" issue.Message
+
 
     [<Fact>]
     let ``interpreter resolves bundled summon helper across imported trait modules`` () =

@@ -39,6 +39,49 @@ module internal KRuntimeLowering =
         matchesKnownType CompilerKnownSymbols.IsPropType nameSegments
         || matchesKnownType CompilerKnownSymbols.IsTraitType nameSegments
 
+    let private traitReferenceMatchesNameSegments
+        (traitReference: TypeSignatures.TraitReference)
+        (nameSegments: string list)
+        =
+        let localName = TypeSignatures.TraitReference.localName traitReference
+
+        match TypeSignatures.TraitReference.identity traitReference with
+        | Some identity ->
+            let canonicalNameSegments =
+                (DeclarationIdentity.moduleIdentity identity |> ModuleIdentity.segments)
+                @ [ DeclarationIdentity.name identity ]
+
+            nameSegments = [ localName ] || nameSegments = canonicalNameSegments
+        | None ->
+            nameSegments = TypeSignatures.TraitReference.segments traitReference
+
+    let private compileTimeTraitContainsNameSegments
+        (compileTimeTraits: TypeSignatures.TraitReference list)
+        (nameSegments: string list)
+        =
+        compileTimeTraits
+        |> List.exists (fun traitReference -> traitReferenceMatchesNameSegments traitReference nameSegments)
+
+    let private compileTimeTraitContainsReference
+        (compileTimeTraits: TypeSignatures.TraitReference list)
+        (traitReference: TypeSignatures.TraitReference)
+        =
+        match TypeSignatures.TraitReference.identity traitReference with
+        | Some identity ->
+            compileTimeTraits
+            |> List.exists (fun candidate ->
+                TypeSignatures.TraitReference.identity candidate
+                |> Option.exists ((=) identity))
+        | None ->
+            compileTimeTraitContainsNameSegments compileTimeTraits (TypeSignatures.TraitReference.segments traitReference)
+
+    let private compileTimeTraitDictionaryTypeNames
+        (compileTimeTraits: TypeSignatures.TraitReference list)
+        =
+        compileTimeTraits
+        |> List.map (TypeSignatures.TraitReference.localName >> TraitRuntime.dictionaryTypeName)
+        |> Set.ofList
+
     let private isCompileTimeOnlyNamedType nameSegments =
         matchesKnownType CompilerKnownSymbols.UniverseType nameSegments
         || matchesKnownType CompilerKnownSymbols.ConstraintType nameSegments
@@ -262,43 +305,43 @@ module internal KRuntimeLowering =
                 false
 
     let rec private typeExprReferencesCompileTimeTrait
-        (compileTimeTraitNames: Set<string>)
+        (compileTimeTraits: TypeSignatures.TraitReference list)
         typeExpr
         =
         let referencesChildren =
             match typeExpr with
             | TypeSignatures.TypeApply(callee, arguments) ->
-                typeExprReferencesCompileTimeTrait compileTimeTraitNames callee
-                || (arguments |> List.exists (typeExprReferencesCompileTimeTrait compileTimeTraitNames))
+                typeExprReferencesCompileTimeTrait compileTimeTraits callee
+                || (arguments |> List.exists (typeExprReferencesCompileTimeTrait compileTimeTraits))
             | TypeSignatures.TypeLambda(_, parameterSort, body) ->
-                typeExprReferencesCompileTimeTrait compileTimeTraitNames parameterSort
-                || typeExprReferencesCompileTimeTrait compileTimeTraitNames body
+                typeExprReferencesCompileTimeTrait compileTimeTraits parameterSort
+                || typeExprReferencesCompileTimeTrait compileTimeTraits body
             | TypeSignatures.TypeDelay inner
             | TypeSignatures.TypeMemo inner
             | TypeSignatures.TypeForce inner ->
-                typeExprReferencesCompileTimeTrait compileTimeTraitNames inner
+                typeExprReferencesCompileTimeTrait compileTimeTraits inner
             | TypeSignatures.TypeProject(target, _) ->
-                typeExprReferencesCompileTimeTrait compileTimeTraitNames target
+                typeExprReferencesCompileTimeTrait compileTimeTraits target
             | TypeSignatures.TypeArrow(_, parameterType, resultType) ->
-                typeExprReferencesCompileTimeTrait compileTimeTraitNames parameterType
-                || typeExprReferencesCompileTimeTrait compileTimeTraitNames resultType
+                typeExprReferencesCompileTimeTrait compileTimeTraits parameterType
+                || typeExprReferencesCompileTimeTrait compileTimeTraits resultType
             | TypeSignatures.TypeEquality(left, right) ->
-                typeExprReferencesCompileTimeTrait compileTimeTraitNames left
-                || typeExprReferencesCompileTimeTrait compileTimeTraitNames right
+                typeExprReferencesCompileTimeTrait compileTimeTraits left
+                || typeExprReferencesCompileTimeTrait compileTimeTraits right
             | TypeSignatures.TypeCapture(inner, _) ->
-                typeExprReferencesCompileTimeTrait compileTimeTraitNames inner
+                typeExprReferencesCompileTimeTrait compileTimeTraits inner
             | TypeSignatures.TypeEffectRow(entries, tail) ->
                 entries
                 |> List.exists (fun entry ->
-                    typeExprReferencesCompileTimeTrait compileTimeTraitNames entry.Label
-                    || typeExprReferencesCompileTimeTrait compileTimeTraitNames entry.Effect)
-                || tail |> Option.exists (typeExprReferencesCompileTimeTrait compileTimeTraitNames)
+                    typeExprReferencesCompileTimeTrait compileTimeTraits entry.Label
+                    || typeExprReferencesCompileTimeTrait compileTimeTraits entry.Effect)
+                || tail |> Option.exists (typeExprReferencesCompileTimeTrait compileTimeTraits)
             | TypeSignatures.TypeRecord fields ->
-                fields |> List.exists (fun field -> typeExprReferencesCompileTimeTrait compileTimeTraitNames field.Type)
+                fields |> List.exists (fun field -> typeExprReferencesCompileTimeTrait compileTimeTraits field.Type)
             | TypeSignatures.TypeUnion members ->
-                members |> List.exists (typeExprReferencesCompileTimeTrait compileTimeTraitNames)
+                members |> List.exists (typeExprReferencesCompileTimeTrait compileTimeTraits)
             | TypeSignatures.TypeName(_, arguments) ->
-                arguments |> List.exists (typeExprReferencesCompileTimeTrait compileTimeTraitNames)
+                arguments |> List.exists (typeExprReferencesCompileTimeTrait compileTimeTraits)
             | TypeSignatures.TypeLevelLiteral _
             | TypeSignatures.TypeUniverse _
             | TypeSignatures.TypeIntrinsic _
@@ -311,25 +354,24 @@ module internal KRuntimeLowering =
                 when matchesKnownType CompilerKnownSymbols.DictType nameSegments ->
                 match constraintType with
                 | TypeSignatures.TypeName(traitNameSegments, _) ->
-                    compileTimeTraitNames.Contains(List.last traitNameSegments)
+                    compileTimeTraitContainsNameSegments compileTimeTraits traitNameSegments
                 | _ ->
                     false
             | TypeSignatures.TypeName([ dictionaryTypeName ], _) ->
-                compileTimeTraitNames
-                |> Seq.exists (fun traitName ->
-                    String.Equals(dictionaryTypeName, TraitRuntime.dictionaryTypeName traitName, StringComparison.Ordinal))
+                compileTimeTraitDictionaryTypeNames compileTimeTraits
+                |> Set.contains dictionaryTypeName
             | _ ->
                 false
 
         referencesSelf || referencesChildren
 
     let private schemeRequiresRuntimeErasure
-        (compileTimeTraitNames: Set<string>)
+        (compileTimeTraits: TypeSignatures.TraitReference list)
         (scheme: TypeSignatures.TypeScheme)
         =
         let touches typeExpr =
             typeExprContainsCompileTimeOnly typeExpr
-            || typeExprReferencesCompileTimeTrait compileTimeTraitNames typeExpr
+            || typeExprReferencesCompileTimeTrait compileTimeTraits typeExpr
 
         let parameterTypes, resultType = TypeSignatures.schemeParts scheme
 
@@ -337,7 +379,7 @@ module internal KRuntimeLowering =
         || (parameterTypes |> List.exists touches)
         || (scheme.Constraints
             |> List.exists (fun constraintInfo ->
-                Set.contains (TypeSignatures.TraitReference.localName constraintInfo.Trait) compileTimeTraitNames
+                compileTimeTraitContainsReference compileTimeTraits constraintInfo.Trait
                 || (constraintInfo.Arguments |> List.exists touches)))
 
     let private tryParseTraitMemberScheme (memberDeclaration: TraitMember) =
@@ -1099,7 +1141,17 @@ module internal KRuntimeLowering =
         |> Map.ofList
 
     let lowerKRuntimeModule (sharedRuntimeParameterMasks: Map<string, bool list>) (coreModule: KCoreModule) : KRuntimeModule =
-        let compileTimeOnlyTraitNames =
+        let localCompileTimeTraitReference traitName =
+            let traitReference = TypeSignatures.TraitReference.unqualified traitName
+
+            match coreModule.ModuleIdentity with
+            | Some moduleIdentity ->
+                let identity = DeclarationIdentity.topLevel moduleIdentity traitName TraitDeclaration
+                TypeSignatures.TraitReference.attachIdentity identity traitReference
+            | None ->
+                traitReference
+
+        let compileTimeOnlyTraits =
             coreModule.Declarations
             |> List.choose (fun declaration ->
                 match declaration.Source with
@@ -1111,14 +1163,17 @@ module internal KRuntimeLowering =
                             | [] -> false
                             | memberSchemes ->
                                 memberSchemes
-                                |> List.forall (schemeRequiresRuntimeErasure Set.empty)
+                                |> List.forall (schemeRequiresRuntimeErasure [])
 
                     if isCompileTimeOnlyTrait then
-                        Some traitDeclaration.Name
+                        Some(localCompileTimeTraitReference traitDeclaration.Name)
                     else
                         None
                 | _ ->
                     None)
+        let compileTimeOnlyTraitLocalNames =
+            compileTimeOnlyTraits
+            |> List.map TypeSignatures.TraitReference.localName
             |> Set.ofList
 
         let visibleTraitArities = coreModule.VisibleTraitTypeParameterCounts
@@ -1148,19 +1203,19 @@ module internal KRuntimeLowering =
                 | Some binding
                     when binding.Name.IsSome
                          && not (isCompileTimeOnlyBindingBody binding.Body)
-                         && not (
+                        && not (
                              (binding.Parameters |> List.exists (fun parameter ->
                                  parameter.Type
-                                 |> Option.map (typeExprReferencesCompileTimeTrait compileTimeOnlyTraitNames)
+                                 |> Option.map (typeExprReferencesCompileTimeTrait compileTimeOnlyTraits)
                                  |> Option.defaultValue false))
                              || (binding.ReturnType
                                  |> Option.map (fun returnType ->
                                      typeExprContainsCompileTimeOnly returnType
-                                     || typeExprReferencesCompileTimeTrait compileTimeOnlyTraitNames returnType)
+                                     || typeExprReferencesCompileTimeTrait compileTimeOnlyTraits returnType)
                                  |> Option.defaultValue false)
                              || (binding.Name
                                  |> Option.bind TraitRuntime.tryParseDispatchBindingName
-                                 |> Option.exists (fun (traitName, _) -> Set.contains traitName compileTimeOnlyTraitNames))) ->
+                                 |> Option.exists (fun (traitName, _) -> Set.contains traitName compileTimeOnlyTraitLocalNames))) ->
                     let loweredBody =
                         binding.Body
                         |> Option.map (lowerKRuntimeExpression runtimeParameterMasks >> specializeBuiltinPreludeRuntimeExpression)
@@ -1195,7 +1250,7 @@ module internal KRuntimeLowering =
                     | ExpectDeclarationNode (ExpectTermDeclaration termDeclaration) ->
                         TypeSignatures.parseScheme termDeclaration.TypeTokens
                         |> Option.bind (fun scheme ->
-                            if schemeRequiresRuntimeErasure compileTimeOnlyTraitNames scheme then
+                            if schemeRequiresRuntimeErasure compileTimeOnlyTraits scheme then
                                 None
                             else
                                 intrinsicRuntimeSignature termDeclaration
@@ -1273,7 +1328,8 @@ module internal KRuntimeLowering =
             coreModule.Declarations
             |> List.choose (fun declaration ->
                 match declaration.Source with
-                | TraitDeclarationNode traitDeclaration when not (Set.contains traitDeclaration.Name compileTimeOnlyTraitNames) ->
+                | TraitDeclarationNode traitDeclaration
+                    when not (compileTimeTraitContainsNameSegments compileTimeOnlyTraits [ traitDeclaration.Name ]) ->
                     Some
                         { Name = traitDeclaration.Name
                           TypeParameterCount =
@@ -1286,7 +1342,14 @@ module internal KRuntimeLowering =
             coreModule.Declarations
             |> List.choose (fun declaration ->
                 match declaration.Source with
-                | InstanceDeclarationNode instanceDeclaration when not (Set.contains instanceDeclaration.TraitName compileTimeOnlyTraitNames) ->
+                | InstanceDeclarationNode instanceDeclaration ->
+                    let traitNameSegments =
+                        instanceDeclaration.TraitName.Split('.', StringSplitOptions.RemoveEmptyEntries)
+                        |> Array.toList
+
+                    if compileTimeTraitContainsNameSegments compileTimeOnlyTraits traitNameSegments then
+                        None
+                    else
                     let instanceKey = TraitRuntime.instanceKeyFromTokens instanceDeclaration.HeaderTokens
                     let argumentCount =
                         visibleTraitArities
