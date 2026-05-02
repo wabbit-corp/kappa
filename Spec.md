@@ -31524,6 +31524,27 @@ Additional rules:
 * Multiple bridge handles for the same runtime family may coexist.
   They may differ in executable path, environment, transport, authentication, sandboxing, timeout policy, runtime
   version, or other implementation-documented configuration.
+* Bridge scheduling and affinity:
+  * A bridge handle or bridge contract whose operations are restricted to a
+    particular runtime thread, scheduler lane, interpreter lock, event
+    loop, fiber, native thread, apartment, process, or callback context
+    MUST expose that restriction through its API, contract metadata,
+    effect type, resource type, or documented bridge profile.
+  * A bridge handle MUST NOT be treated as `Shareable` unless the bridge
+    implementation guarantees safe concurrent use or serializes concurrent
+    use according to a documented policy.
+  * If a bridge operation may block an implementation scheduler thread, the
+    bridge library MUST either:
+    * run the operation through the backend's blocking-lane mechanism;
+    * expose the operation through an API that requires explicit
+      `blocking`; or
+    * document that the selected backend profile treats such bridge calls
+      as blocking-safe.
+  * If a bridge operation requires re-entry into the Kappa runtime through
+    callbacks, the callback-ingress policy of §17.7.4C applies.
+  * Violating a bridge affinity, scheduling, or re-entry policy is a bridge
+    failure or defect as specified by the bridge contract. It MUST NOT be
+    undefined behavior in portable Kappa.
 * Values obtained from distinct bridge handles MUST NOT be assumed mutually interchangeable unless a bridge contract,
   trusted summary, or explicit Kappa conversion establishes that relationship.
 * A bridge-bound value that closes over a handle may be:
