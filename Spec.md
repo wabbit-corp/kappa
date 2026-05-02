@@ -11209,6 +11209,16 @@ Rules:
   is available.
 * An `ElabDiagnosticFix` may edit only source origins. If the diagnostic concerns generated syntax, the macro or
   implementation must map the edit back to a source origin before exposing it as a fix.
+* Each `ElabDiagnosticEdit.origin` MUST denote a concrete source range in an editable source file. It MUST NOT denote a
+  purely synthetic origin, a whole module without a range, a generated interface artifact, or an implementation-private
+  IR node.
+* Applying all edits in one `ElabDiagnosticFix` MUST be well-defined by source range. Edits in one fix MUST NOT overlap
+  unless the implementation specifies a deterministic nested-edit interpretation and the rendered JSON diagnostic marks
+  that interpretation explicitly.
+* A fix marked `MachineApplicable` MUST parse under the same active language profile after application, and MUST NOT
+  require enabling a feature gate that was inactive at the diagnostic site.
+* A fix emitted by a macro MUST NOT introduce a new source dependency, import, feature gate, unsafe/debug escape, or
+  backend requirement unless the fix title and diagnostic help text explicitly state that consequence.
 * A fix marked `MachineApplicable` by an `Elab` diagnostic is subject to the same applicability requirements as a
   compiler-generated machine-applicable fix in §17.2.4.4.
 * A macro package that emits public diagnostic codes SHOULD use a package-qualified diagnostic-code prefix or another
