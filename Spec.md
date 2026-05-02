@@ -3114,14 +3114,14 @@ BridgeOrigin,
 BoundaryDirection,
 BoundaryPrecision,
 BridgeFailure,
-BridgeContract sig,
-BridgePackage sig
+BridgeContract surface,
+BridgePackage surface
 ```
 
 Traits (constraint namespace, restricted to trait):
 
 ```text
-BridgeBindable sig,
+BridgeBindable surface,
 BridgeHandle h
 ```
 
@@ -3134,6 +3134,17 @@ bridgePackageValue,
 bridgePackageOrigin,
 bridgeFailureToCastBlame
 ```
+
+Bridge surfaces are region-indexed.
+
+A bridge surface has kind:
+
+```kappa
+Region -> Type
+```
+
+The region argument denotes the borrow lifetime of the bridge capability
+through which the surface is being used.
 
 Canonical declarations:
 
@@ -3151,11 +3162,11 @@ data BoundaryPrecision : Type =
     Conservative
     Lossy
 
-expect data BridgeContract (@0 sig : Type) : Type
-expect data BridgePackage (@0 sig : Type) : Type
+expect data BridgeContract (@0 surface : Region -> Type) : Type
+expect data BridgePackage (@0 surface : Region -> Type) : Type
 
-trait BridgeBindable (sig : Type) =
-    bridgeContract : BridgeContract sig
+trait BridgeBindable (surface : Region -> Type) =
+    bridgeContract : BridgeContract surface
 
 trait BridgeHandle (h : Type) =
     Error : Type
@@ -3167,49 +3178,49 @@ trait BridgeHandle (h : Type) =
         BridgeFailure -> Error
 
     bindModuleWith :
-        forall (r : Region) (@0 sig : Type).
-        BridgeContract sig ->
+        forall (@0 surface : Region -> Type) (r : Region).
+        BridgeContract surface ->
         (&[r] this : h) ->
         String ->
-        IO Error (sig captures (r))
+        IO Error ((surface r) captures (r))
 
     bindModuleOwnedWith :
-        forall (@0 sig : Type).
-        BridgeContract sig ->
+        forall (@0 surface : Region -> Type).
+        BridgeContract surface ->
         (1 this : h) ->
         String ->
-        IO Error (BridgePackage sig)
+        IO Error (BridgePackage surface)
 
 bindModule :
-    forall (@0 sig : Type) (h : Type) (r : Region).
-    (@B : BridgeBindable sig) ->
+    forall (@0 surface : Region -> Type) (h : Type) (r : Region).
+    (@B : BridgeBindable surface) ->
     (@H : BridgeHandle h) ->
     (&[r] handle : h) ->
     String ->
-    IO H.Error (sig captures (r))
+    IO H.Error ((surface r) captures (r))
 
 let bindModule @B @H handle name =
     H.bindModuleWith B.bridgeContract handle name
 
 bindModuleOwned :
-    forall (@0 sig : Type) (h : Type).
-    (@B : BridgeBindable sig) ->
+    forall (@0 surface : Region -> Type) (h : Type).
+    (@B : BridgeBindable surface) ->
     (@H : BridgeHandle h) ->
     (1 handle : h) ->
     String ->
-    IO H.Error (BridgePackage sig)
+    IO H.Error (BridgePackage surface)
 
 let bindModuleOwned @B @H handle name =
     H.bindModuleOwnedWith B.bridgeContract handle name
 
 bridgePackageValue :
-    forall (r : Region) (@0 sig : Type).
-    (&[r] package : BridgePackage sig) ->
-    sig captures (r)
+    forall (r : Region) (@0 surface : Region -> Type).
+    (&[r] package : BridgePackage surface) ->
+    (surface r) captures (r)
 
 bridgePackageOrigin :
-    forall (@0 sig : Type).
-    (& package : BridgePackage sig) -> UIO BridgeOrigin
+    forall (@0 surface : Region -> Type).
+    (& package : BridgePackage surface) -> UIO BridgeOrigin
 
 bridgeFailureToCastBlame :
     BridgeFailure -> std.gradual.CastBlame
@@ -3232,33 +3243,41 @@ Rules:
 * `BridgeFailure` is the standard bridge-level failure payload for missing members, wrong arity, marshalling failure,
   contract violation, bridge-lifecycle failure, transport failure, and later higher-order boundary misuse.
 * `bridgeFailureToCastBlame` embeds bridge failures into the gradual blame vocabulary.
-* `BridgeContract sig` is a runtime representation of the boundary contract for a foreign value or package surface
-  exposed at type `sig`.
-* The type argument `sig` is compile-time only.
-  Runtime binding depends on the `BridgeContract sig` value, not on the erased type argument alone.
-* `BridgeBindable sig` provides the canonical contract for binding a surface of type `sig`.
-* For a Kappa-to-Kappa bridge under §17.7.8, an implementation SHOULD derive `BridgeContract sig` from the same
+* `BridgeContract surface` is a runtime representation of the boundary contract for a foreign value or package surface
+  exposed at type family `surface`.
+* The type argument `surface` is compile-time only. Runtime binding depends on the `BridgeContract surface` value, not on
+  the erased type argument alone.
+* `BridgeBindable surface` provides the canonical contract for binding a surface of type `surface`.
+* For a Kappa-to-Kappa bridge under §17.7.8, an implementation SHOULD derive `BridgeContract surface` from the same
   canonical Kappa interface or signature data used for static bridge-supplied modules.
-* A derived Kappa-to-Kappa `BridgeContract sig` MUST preserve the precise Kappa surface of `sig`; it MUST NOT replace
-  bridge-visible members with `Dyn`, opaque host values, raw pointers, serialized blobs, or weaker first-order
-  approximations unless `sig` itself requests such a surface.
+* A derived Kappa-to-Kappa `BridgeContract surface` MUST preserve the precise Kappa surface of `surface`; it MUST NOT
+  replace bridge-visible members with `Dyn`, opaque host values, raw pointers, serialized blobs, or weaker first-order
+  approximations unless `surface` itself requests such a surface.
 * `BridgeHandle h` classifies ordinary runtime values that authorize bridge operations.
 * `BridgeHandle.Error` is the expected-error type used by operations on that handle.
 * `BridgeHandle.bridgeFailure` injects standard bridge failures into the handle-specific error type.
+* A bridge-bound package surface SHOULD be written as a type family `Region -> Type`.
+* The region parameter is the lifetime of the bridge capability through which the package is used.
+* Any member result, callback, iterator, stream, object, or handle whose validity depends on the bridge capability MUST
+  mention that region in its result type, capture annotation, owner type, or another explicit lifetime carrier.
+* A bridge surface that is truly independent of the bridge lifetime MAY ignore its region parameter.
 * `bindModule` borrows a bridge handle and returns a bridge-bound package value whose lifetime is captured by the
   borrowed region.
-* `bindModuleOwned` consumes a bridge handle and returns an owned `BridgePackage sig`.
+* `bindModuleOwned` consumes a bridge handle and returns an owned `BridgePackage surface`.
   This is the standard escape hatch when a bridge-bound value must outlive the lexical borrow of the original handle.
 * `bridgePackageValue` borrows an owned bridge package and exposes its underlying package-like surface for the borrow
   duration.
-* If a `BridgePackage sig` owns, retains, registers, pins, leases, keeps alive, or otherwise controls any runtime
+* A bridge implementation MUST NOT rely on the outer package annotation `(surface r) captures (r)` to justify escaping
+  values returned by package members. Returned values must carry their own lifetime, ownership, or resource contract
+  when they depend on the bridge.
+* If a `BridgePackage surface` owns, retains, registers, pins, leases, keeps alive, or otherwise controls any runtime
   resource, bridge connection, callback registration, host object, foreign object, process, interpreter, endpoint,
   transport, native handle, or bridge capability, the implementation MUST provide a `Releasable` instance or another
   specification-defined release operation with equivalent source-level behavior.
-* The release operation for an owned `BridgePackage sig` MUST specify whether release failure is impossible, an expected
+* The release operation for an owned `BridgePackage surface` MUST specify whether release failure is impossible, an expected
   typed failure, or a defect. It MUST NOT silently rely on host finalization to provide source-level resource release.
-* If `BridgePackage sig` does not own or retain any runtime resource, no `Releasable` instance is required.
-* A conforming implementation MAY implement `BridgePackage sig` as an ordinary Kappa library type, as a runtime
+* If `BridgePackage surface` does not own or retain any runtime resource, no `Releasable` instance is required.
+* A conforming implementation MAY implement `BridgePackage surface` as an ordinary Kappa library type, as a runtime
   primitive, or as another observationally equivalent resource wrapper.
 
 <!-- modules.atomic -->
@@ -22995,7 +23014,7 @@ Restrictions:
 * The implementation MUST NOT elide storage merely because a type is proposition-shaped or conventionally used as proof.
 * Ordinary inhabitants of `P : Type` are runtime-relevant when bound at a runtime quantity unless another rule of this
   specification erases them or the type is proven contractible.
-* Explicit trait evidence values, `DynRep a`, `BridgeContract sig`, foreign handles, backend intrinsics, and any value whose runtime
+* Explicit trait evidence values, `DynRep a`, `BridgeContract surface`, foreign handles, backend intrinsics, and any value whose runtime
   representation is explicitly required by a library, ABI, dynamic boundary, bridge boundary, or backend profile MUST
   retain whatever representation that boundary requires.
 * Inhabitant-driven elision MUST NOT change exported ABI layout, FFI layout, bridge contracts, dynamic casts, stable
@@ -30646,7 +30665,7 @@ provenance are specified.
 
 A foreign surface may pass runtime type information, runtime representation information, descriptors, or capabilities
 only when the surface explicitly models them as runtime values, such as `DynRep a`, an explicit trait evidence value,
-`BridgeContract sig`, `OpaqueHandle`, or another ordinary runtime-capable carrier.
+`BridgeContract surface`, `OpaqueHandle`, or another ordinary runtime-capable carrier.
 
 Consequences:
 
@@ -31335,8 +31354,10 @@ control bridge startup and policy explicitly.
 Examples (illustrative):
 
 ```kappa
-type NumpySig : Type =
-    (array : List Int -> IO PyError PyArray)
+type PyArray (r : Region) : Type = ...
+
+type NumpySig (r : Region) : Type =
+    (array : List Int -> IO PyError (PyArray r))
 
 do
     using py <- python.start cfg
@@ -31369,9 +31390,9 @@ Rules:
   `np.array` is ordinary package-member selection rather than qualified
   module lookup.
 * A runtime bridge bind MUST be checked and enforced by an explicit
-  `BridgeContract sig` value or an observationally equivalent runtime
+  `BridgeContract surface` value or an observationally equivalent runtime
   contract.
-  The erased type argument `sig` alone is never sufficient to determine
+  The erased type argument `surface` alone is never sufficient to determine
   runtime validation.
 * Missing members, wrong arities, marshalling failures, representation
   mismatches, contract violations, and later higher-order boundary
@@ -31429,16 +31450,16 @@ Additional rules:
 <!-- compiler.ffi.bridge_contract_formation -->
 #### 17.7.7A Bridge contract formation and bridge-bound package semantics
 
-A `BridgeContract sig` describes how a runtime bridge produces, validates, marshals, monitors, and diagnoses a value of
-type `sig`.
+A `BridgeContract surface` describes how a runtime bridge produces, validates, marshals, monitors, and diagnoses a
+value of type family `surface`.
 
 A bridge contract is not merely a runtime type tag. It is the boundary specification for a foreign surface.
 
 Construction boundary:
 
-* `BridgeContract sig` and `BridgeFailure` are opaque in the portable `std.bridge` API.
+* `BridgeContract surface` and `BridgeFailure` are opaque in the portable `std.bridge` API.
 * Portable code is not required to construct them directly.
-* A `BridgeContract sig` may be supplied by:
+* A `BridgeContract surface` may be supplied by:
   * generated Kappa source;
   * a Kappa-to-Kappa bridge generator;
   * a trusted binding summary;
@@ -31448,22 +31469,22 @@ Construction boundary:
 * Any construction mechanism whose result affects exported signatures, runtime semantics, bridge identity, hashing, or
   reproducibility MUST have its identity recorded in the corresponding build inputs, interface artifacts, bridge
   contract identity, or runtime bridge transcript as appropriate.
-* A contract construction mechanism MUST NOT use the erased type argument `sig` alone as runtime evidence.
+* A contract construction mechanism MUST NOT use the erased type argument `surface` alone as runtime evidence.
 
 <!-- compiler.ffi.bridge_contract_formation.contract_shape -->
 #### Contract shape
 
 Rules:
 
-* A `BridgeContract sig` MUST be sufficient to enforce the runtime bridge binding rules of §17.7.7 for values of type
-  `sig`.
-* If `sig` is a closed record, signature type, package-like surface, or another bridge-bindable surface, the contract
-  MUST describe every runtime-relevant exported member of that surface.
-* If `sig` contains function, callback, iterator, stream, object, receiver-method, or other higher-order members, the
+* A `BridgeContract surface` MUST be sufficient to enforce the runtime bridge binding rules of §17.7.7 for values of
+  type family `surface`.
+* If `surface r` is a closed record, signature type, package-like surface, or another bridge-bindable surface, the
+  contract MUST describe every runtime-relevant exported member of that surface.
+* If `surface r` contains function, callback, iterator, stream, object, receiver-method, or other higher-order members, the
   contract MUST specify the higher-order monitoring required by §17.7.4B.
 * If such monitoring is unavailable, the contract MUST expose the member as `std.gradual.Dyn`, as an opaque bridge
   object, or through a less precise member type.
-* If `sig` contains compile-time-only members, such as type members, constraint members, region members, row members,
+* If `surface r` contains compile-time-only members, such as type members, constraint members, region members, row members,
   labels, erased proofs, or opaque compile-time members, those members are supplied by the contract's static skeleton.
 * Runtime bridge lookup MUST NOT discover or synthesize compile-time-only members from the foreign runtime.
 * A bridge contract whose apparent result type would require runtime discovery of compile-time-only members is
@@ -31489,7 +31510,7 @@ Rules:
 Example:
 
 ```kappa
-type Numpy : Type =
+type Numpy (r : Region) : Type =
     (opaque NDArray : Type -> Nat -> Type,
      array :
         forall (@0 a : Type).
@@ -31508,26 +31529,30 @@ Rules:
 * `std.bridge.bindModule` returns a borrowed bridge-bound value.
   Its result type MUST carry `captures (r)` when the value depends on a borrowed bridge handle under region `r`.
 * Such a value MUST NOT escape the region of the borrowed handle.
-* `std.bridge.bindModuleOwned` returns an owned `BridgePackage sig`.
-* `BridgePackage sig` may outlive the original lexical borrow because it owns, retains, or otherwise safely manages the
+* `std.bridge.bindModuleOwned` returns an owned `BridgePackage surface`.
+* `BridgePackage surface` may outlive the original lexical borrow because it owns, retains, or otherwise safely manages the
   required bridge capability.
-* Borrowing a `BridgePackage sig` with `bridgePackageValue` exposes `sig captures (r)` for the borrow duration.
-* Releasing a `BridgePackage sig` invalidates future bridge operations through values borrowed from that package.
+* Borrowing a `BridgePackage surface` with `bridgePackageValue` exposes `(surface r) captures (r)` for the borrow
+  duration.
+* Releasing a `BridgePackage surface` invalidates future bridge operations through values borrowed from that package.
 * A bridge implementation MUST prevent use-after-release either statically through regions and quantities, dynamically
   through checked resource state, or by an observationally equivalent mechanism.
+* A bridge implementation MUST NOT rely on the outer package annotation `(surface r) captures (r)` to justify escaping
+  values returned by package members. Such returned values must carry their own lifetime, ownership, or resource
+  contract whenever they depend on the bridge capability.
 
 Owned package release:
 
-* If `BridgePackage sig` owns, retains, registers, pins, leases, keeps alive, or otherwise controls any runtime resource,
+* If `BridgePackage surface` owns, retains, registers, pins, leases, keeps alive, or otherwise controls any runtime resource,
   bridge connection, callback registration, host object, foreign object, process, interpreter, endpoint, transport,
   native handle, or bridge capability, the implementation MUST provide a `Releasable` instance or another
   specification-defined release operation with equivalent source-level behavior.
-* Releasing an owned `BridgePackage sig` MUST release, unregister, unpin, decrement, close, detach, or otherwise end the
+* Releasing an owned `BridgePackage surface` MUST release, unregister, unpin, decrement, close, detach, or otherwise end the
   owned bridge resources according to the bridge contract.
 * Release MUST be idempotent unless the bridge contract explicitly states otherwise and the type system prevents double
   release through ordinary linearity.
 * Host finalization or garbage collection MAY be used as a backup cleanup mechanism, but it MUST NOT be the only
-  source-level release mechanism for an owned `BridgePackage sig`.
+  source-level release mechanism for an owned `BridgePackage surface`.
 * If release can fail, the bridge contract MUST specify whether that failure is represented as an expected typed failure,
   a bridge failure, or a defect.
 
@@ -31578,25 +31603,21 @@ import std.gradual
 
 type PyError : Type = ...
 type PyObject : Type = ...
-type PyArray : Type = ...
+type PyArray (r : Region) : Type = ...
 
-type Numpy : Type =
+type Numpy (r : Region) : Type =
     ( array :
           forall (@0 a : Type).
           (@_ : std.gradual.DynamicType a) ->
-          List a -> IO PyError PyArray,
+          List a -> IO PyError (PyArray r),
 
       sin :
-          PyArray -> IO PyError PyArray,
-
-      linspace :
-          (start : Float, stop : Float, count : Nat) ->
-          IO PyError (exists (n : Nat). (len : n = count, value : PyArray))
+          PyArray r -> IO PyError (PyArray r)
     )
 
 instance std.bridge.BridgeBindable Numpy =
     let bridgeContract =
-        ... -- contract describing "array", "sin", and "linspace"
+        ... -- contract for Numpy
 
 let main : IO PyError Unit = do
     using py <- Python.start
