@@ -194,6 +194,46 @@ module CoreTestsShard0 =
         | Result.Error issue ->
             failwithf "Expected prelude show/compare trait member regression to evaluate successfully, got %s" issue.Message
 
+    [<Fact>]
+    let ``user defined Eq does not reuse builtin prelude evidence by local name`` () =
+        let otherSource =
+            [
+                "module providers.shadow"
+                "trait Eq (a : Type) ="
+                "    eq : a -> a -> Bool"
+            ]
+            |> String.concat "\n"
+
+        let mainSource =
+            [
+                "module main"
+                "import providers.shadow as shadow"
+                "g : (@_ : shadow.Eq Int) -> Bool"
+                "let g @D = True"
+                "result : Bool"
+                "let result = g"
+            ]
+            |> String.concat "\n"
+
+        let workspace =
+            compileInMemoryWorkspace
+                "memory-shadow-eq-does-not-reuse-builtin-evidence-root"
+                [
+                    "providers/shadow.kp", otherSource
+                    "main.kp", mainSource
+                ]
+
+        Assert.True(workspace.HasErrors, "Expected unresolved implicit evidence for providers.shadow.Eq Int.")
+
+        let unresolvedDiagnostic =
+            workspace.Diagnostics
+            |> List.find (fun diagnostic ->
+                diagnostic.Code = DiagnosticCode.TypeEqualityMismatch
+                && hasPayloadText "reason" "trait-constraint-unresolved" diagnostic
+                && hasPayloadText "constraint-text" "shadow.Eq Int" diagnostic)
+
+        Assert.Equal("surface-elaboration-diagnostic", unresolvedDiagnostic.Payload.Kind)
+
 
     [<Fact>]
     let ``interpreter supports bare wildcard lambda binders`` () =

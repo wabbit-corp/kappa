@@ -70,6 +70,8 @@ Current M4 status note: started, not complete. The compiler now has a real effec
 - [ ] Finish slimming `Stdlib.fs` after the new `StandardLibraryCatalog` introduction. Prelude/bundled/synthetic module definitions now live in one typed catalog, but some convenience lookups still route through `Stdlib` rather than consuming the catalog directly.
 - [ ] Replace verifier/runtime stringly type carriers that force semantic checks over rendered text, especially `KRuntimeIR` type-text fields and the substring fallback in `CheckpointVerification.runtimeTypeLeaksErasureMetadata`.
 - [ ] Replace stringly trait/dictionary conventions that still depend on synthesized textual names or prefixes, including `TraitRuntime.dictionaryTypeName ...`, `__kappa_dict_*` prefix checks, and literal trait-name comparisons such as `InterpolatedMacro`, `LacksRec`, `IsProp`, and `IsTrait`.
+  `SurfaceElaboration` now uses resolved prelude trait identities for compiler-known builtin evidence and `LacksRec` / `Rangeable` checks instead of local-name string comparisons.
+  The remaining debt is the runtime/backend side, especially synthetic dictionary type names and trait-call routing that still collapse traits to text.
 - [ ] Keep propagating semantic trait identity through backend/runtime lowering. `TraitConstraint` now preserves resolved `TraitReference` identity through elaboration and instance search, and source instances now normalize their declaring-trait identity before dictionary synthesis, but `KRuntimeIR`/`KBackendIR` still collapse that information back to text.
 - [ ] Replace text-based trait, constructor, and type matching in compile-time evaluation and backend typing with symbolic references.
   Current hot spots:

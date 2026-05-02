@@ -386,6 +386,9 @@ module SurfaceElaboration =
         { Trait = TypeSignatures.TraitReference.ofSegments traitNameSegments
           Arguments = arguments }
 
+    let private knownPreludeTraitConstraint traitReference arguments =
+        KnownPreludeSemantics.knownPreludeTraitConstraint traitReference arguments
+
     let private tryResolveVisibleTypeFacetByRoot
         (environment: BindingLoweringEnvironment)
         root
@@ -451,10 +454,11 @@ module SurfaceElaboration =
             |> Map.tryFind instanceInfo.ModuleIdentity
             |> Option.bind (fun moduleInfo ->
                 moduleInfo.Traits
-                |> Map.tryFind (traitReferenceLocalName instanceInfo.Trait)
-                |> Option.map (fun traitInfo ->
-                    { instanceInfo with
-                        Trait = TypeSignatures.TraitReference.attachIdentity traitInfo.Identity instanceInfo.Trait }))
+                |> Map.tryFind (traitReferenceLocalName instanceInfo.Trait))
+            |> Option.orElseWith (fun () -> tryResolveTraitInfoByReference environment instanceInfo.Trait)
+            |> Option.map (fun traitInfo ->
+                { instanceInfo with
+                    Trait = TypeSignatures.TraitReference.attachIdentity traitInfo.Identity instanceInfo.Trait })
             |> Option.defaultValue instanceInfo
 
     let private tryFindVisibleStaticObject (environment: BindingLoweringEnvironment) nameSegments =
@@ -7615,40 +7619,40 @@ module SurfaceElaboration =
             |> List.map (normalizeTypeAliases environment.VisibleTypeAliases)
 
         let constraintInfo = attachResolvedTraitConstraint environment constraintInfo
-        let constraintTraitName = traitConstraintLocalName constraintInfo
+        let constraintTraitName = traitReferenceLocalName constraintInfo.Trait
 
         let canonicalArgumentTexts, moduleIdentity, instancePrefix =
-            match constraintTraitName, normalizedArguments with
-            | "IsTrait", [ argumentType ] ->
+            match normalizedArguments with
+            | [ argumentType ] when KnownPreludeSemantics.resolvedTraitMatches KnownPreludeSemantics.IsTraitReference constraintInfo.Trait ->
                 (if supportsIntrinsicTraitEvidenceType argumentType then
                      Some [ TypeSignatures.toText argumentType ]
                  else
                      None),
                 Some Stdlib.PreludeModuleIdentity,
                 "builtin-prelude"
-            | CompilerKnownSymbols.KnownTypeNames.IsProp, [ argumentType ] ->
+            | [ argumentType ] when KnownPreludeSemantics.resolvedTraitMatches KnownPreludeSemantics.IsPropTraitReference constraintInfo.Trait ->
                 (if supportsIntrinsicTraitEvidenceType argumentType then
                      Some [ TypeSignatures.toText argumentType ]
                  else
                      None),
                 Some Stdlib.PreludeModuleIdentity,
                 "builtin-prelude"
-            | "Eq", [ argumentType ] ->
+            | [ argumentType ] when KnownPreludeSemantics.resolvedTraitMatches KnownPreludeSemantics.EqTraitReference constraintInfo.Trait ->
                 KnownPreludeSemantics.tryCanonicalBuiltinPreludeEqHeadTypeText argumentType
                 |> Option.map List.singleton,
                 Some Stdlib.PreludeModuleIdentity,
                 "builtin-prelude"
-            | "Ord", [ argumentType ] ->
+            | [ argumentType ] when KnownPreludeSemantics.resolvedTraitMatches KnownPreludeSemantics.OrdTraitReference constraintInfo.Trait ->
                 KnownPreludeSemantics.tryCanonicalBuiltinPreludeOrdHeadTypeText argumentType
                 |> Option.map List.singleton,
                 Some Stdlib.PreludeModuleIdentity,
                 "builtin-prelude"
-            | "Show", [ argumentType ] ->
+            | [ argumentType ] when KnownPreludeSemantics.resolvedTraitMatches KnownPreludeSemantics.ShowTraitReference constraintInfo.Trait ->
                 KnownPreludeSemantics.tryCanonicalBuiltinPreludeShowHeadTypeText argumentType
                 |> Option.map List.singleton,
                 Some Stdlib.PreludeModuleIdentity,
                 "builtin-prelude"
-            | "Rangeable", [ argumentType ] ->
+            | [ argumentType ] when KnownPreludeSemantics.resolvedTraitMatches KnownPreludeSemantics.RangeableTraitReference constraintInfo.Trait ->
                 KnownPreludeSemantics.tryCanonicalBuiltinPreludeRangeableHeadTypeText argumentType
                 |> Option.map List.singleton,
                 Some Stdlib.PreludeModuleIdentity,
@@ -7696,7 +7700,8 @@ module SurfaceElaboration =
                 ))
         | TypeName(nameSegments, [ argumentType ]) when matchesKnownType CompilerKnownSymbols.IsTraitType nameSegments ->
             if supportsIntrinsicTraitEvidenceType argumentType then
-                let constraintInfo = unqualifiedTraitConstraint "IsTrait" [ argumentType ]
+                let constraintInfo =
+                    knownPreludeTraitConstraint KnownPreludeSemantics.IsTraitReference [ argumentType ]
 
                 tryResolveIntrinsicTraitInstance environment constraintInfo
                 |> Option.map (fun instanceInfo ->
@@ -14418,15 +14423,41 @@ module SurfaceElaboration =
                 definition.Parameters
                 |> List.exists (fun parameter ->
                     parameter.TypeTokens
-                    |> Option.map tokenText
-                    |> Option.exists (fun text -> String.Equals(text, $"LacksRec {rowName} {labelName}", StringComparison.Ordinal)))
+                    |> Option.bind TypeSignatures.parseType
+                    |> Option.exists (fun constraintInfo ->
+                        match tryTraitConstraintFromType environment constraintInfo with
+                        | Some resolvedConstraintInfo ->
+                            let resolvedConstraintInfo =
+                                attachResolvedTraitConstraint environment resolvedConstraintInfo
+
+                            KnownPreludeSemantics.resolvedTraitMatches
+                                KnownPreludeSemantics.LacksRecTraitReference
+                                resolvedConstraintInfo.Trait
+                            && match resolvedConstraintInfo.Arguments with
+                               | [ TypeVariable row; TypeVariable label ] ->
+                                   String.Equals(row, rowName, StringComparison.Ordinal)
+                                   && String.Equals(label, labelName, StringComparison.Ordinal)
+                               | _ ->
+                                   false
+                        | None ->
+                            match constraintInfo with
+                            | TypeName(nameSegments, [ TypeVariable row; TypeVariable label ]) ->
+                                KnownPreludeSemantics.traitNameMatches
+                                    KnownPreludeSemantics.LacksRecTraitReference
+                                    nameSegments
+                                && String.Equals(row, rowName, StringComparison.Ordinal)
+                                && String.Equals(label, labelName, StringComparison.Ordinal)
+                            | _ ->
+                                false))
 
             let schemeHasConstraint =
                 scheme
                 |> Option.exists (fun scheme ->
                     scheme.Constraints
                     |> List.exists (fun constraintInfo ->
-                        String.Equals(traitConstraintLocalName constraintInfo, "LacksRec", StringComparison.Ordinal)
+                        KnownPreludeSemantics.resolvedTraitMatches
+                            KnownPreludeSemantics.LacksRecTraitReference
+                            (attachResolvedTraitConstraint environment constraintInfo).Trait
                         && match constraintInfo.Arguments with
                            | [ TypeVariable row; TypeVariable label ] ->
                                String.Equals(row, rowName, StringComparison.Ordinal)
@@ -19798,7 +19829,9 @@ module SurfaceElaboration =
                         match tryResolveComparableOperandTypes locals left right with
                         | Some(normalizedLeftType, _, leftType, rightType) ->
                                 let constraintInfo =
-                                    unqualifiedTraitConstraint "Rangeable" [ normalizedLeftType ]
+                                    knownPreludeTraitConstraint
+                                        KnownPreludeSemantics.RangeableTraitReference
+                                        [ normalizedLeftType ]
 
                                 if constraintHasLocalDictionary environment constraintInfo then
                                     []

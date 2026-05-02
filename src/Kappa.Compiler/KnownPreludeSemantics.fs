@@ -15,12 +15,27 @@ module internal KnownPreludeSemantics =
         | ForwardToIntrinsicTerm of string
 
     type BuiltinPreludeTraitInstanceSpec =
-        { TraitName: string
+        { Trait: TraitReference
           HeadTypeIdentity: TypeIdentity
           MemberLowerings: (string * BuiltinPreludeTraitMemberLowering) list }
+        member this.TraitIdentity =
+            this.Trait
+            |> TraitReference.identity
+            |> Option.defaultWith (fun () -> invalidOp "Builtin prelude trait specs must carry semantic identity.")
+
+        member this.TraitName =
+            this.Trait
+            |> TraitReference.localName
 
     let preludeModuleIdentity = ModuleIdentity.ofSegments CompilerKnownSymbols.KnownModules.Prelude
     let hashModuleIdentity = ModuleIdentity.ofSegments CompilerKnownSymbols.KnownModules.Hash
+
+    let private preludeTraitIdentity name =
+        DeclarationIdentity.topLevel preludeModuleIdentity name TraitDeclaration
+
+    let private preludeTraitReference name =
+        TraitReference.unqualified name
+        |> TraitReference.attachIdentity (preludeTraitIdentity name)
 
     let private preludeTypeIdentity name =
         TypeIdentity.topLevel preludeModuleIdentity name
@@ -33,6 +48,30 @@ module internal KnownPreludeSemantics =
 
     [<Literal>]
     let BuiltinPreludeCompareHelperName = "__kappa_builtin_compare"
+
+    let IsTraitReference = preludeTraitReference CompilerKnownSymbols.KnownTypeNames.IsTrait
+    let IsPropTraitReference = preludeTraitReference CompilerKnownSymbols.KnownTypeNames.IsProp
+    let EqTraitReference = preludeTraitReference "Eq"
+    let OrdTraitReference = preludeTraitReference "Ord"
+    let ShowTraitReference = preludeTraitReference "Show"
+    let RangeableTraitReference = preludeTraitReference "Rangeable"
+    let LacksRecTraitReference = preludeTraitReference "LacksRec"
+
+    let resolvedTraitMatches expectedTraitReference actualTraitReference =
+        match TraitReference.identity expectedTraitReference, TraitReference.identity actualTraitReference with
+        | Some expectedIdentity, Some actualIdentity -> expectedIdentity = actualIdentity
+        | _ -> false
+
+    let traitNameMatches expectedTraitReference nameSegments =
+        let localName =
+            expectedTraitReference
+            |> TraitReference.localName
+
+        nameSegments = [ localName ] || nameSegments = (CompilerKnownSymbols.KnownModules.Prelude @ [ localName ])
+
+    let knownPreludeTraitConstraint traitReference arguments =
+        { Trait = traitReference
+          Arguments = arguments }
 
     let binaryOperatorNames =
         Set.ofList [ "+"; "-"; "*"; "/"; "=="; "!="; "<"; "<="; ">"; ">="; "&&"; "||"; "is" ]
@@ -103,19 +142,19 @@ module internal KnownPreludeSemantics =
     let private builtinPreludeTraitInstanceSpecsValue =
         lazy
             ([ for headTypeIdentity in eqBuiltinPreludeHeadTypeIdentities do
-                   { TraitName = "Eq"
+                   { Trait = EqTraitReference
                      HeadTypeIdentity = headTypeIdentity
                      MemberLowerings = [ "==", ForwardToBuiltinBinaryOperator "==" ] }
                for headTypeIdentity in ordBuiltinPreludeHeadTypeIdentities do
-                   { TraitName = "Ord"
+                   { Trait = OrdTraitReference
                      HeadTypeIdentity = headTypeIdentity
                      MemberLowerings = [ "compare", ForwardToIntrinsicTerm BuiltinPreludeCompareHelperName ] }
                for headTypeIdentity in showBuiltinPreludeHeadTypeIdentities do
-                   { TraitName = "Show"
+                   { Trait = ShowTraitReference
                      HeadTypeIdentity = headTypeIdentity
                      MemberLowerings = [ "show", ForwardToIntrinsicTerm BuiltinPreludeShowHelperName ] } ]
              |> List.sortBy (fun spec ->
-                 spec.TraitName,
+                spec.TraitName,
                  ((TypeIdentity.moduleIdentity spec.HeadTypeIdentity |> ModuleIdentity.segments) @ [ TypeIdentity.name spec.HeadTypeIdentity ])
                  |> String.concat "."))
 
