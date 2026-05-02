@@ -1170,6 +1170,47 @@ let private executeFixtureBinding (workspace: WorkspaceCompilation) (filePath: s
     let result, output = executeBindingWithCapturedOutput workspace bindingTarget
     bindingTarget, result, output
 
+let private tryFindNextAssertionTargetLine (filePath: string) directiveLineNumber =
+    let lines = File.ReadAllLines(filePath)
+    let mutable index = directiveLineNumber
+    let mutable targetLine = None
+
+    while index < lines.Length && targetLine.IsNone do
+        let trimmed = lines[index].Trim()
+
+        if
+            String.IsNullOrWhiteSpace(trimmed)
+            || trimmed.StartsWith("--!", StringComparison.Ordinal)
+            || trimmed.StartsWith("--", StringComparison.Ordinal)
+        then
+            index <- index + 1
+        else
+            targetLine <- Some(index + 1)
+
+    targetLine
+
+let private diagnosticMatchesLocation
+    expectedPath
+    severity
+    code
+    expectedStartLine
+    expectedStartColumn
+    expectedEndLine
+    expectedEndColumn
+    (diagnostic: Diagnostic)
+    =
+    match diagnostic.Location with
+    | Some location ->
+        diagnostic.Severity = severity
+        && diagnostic.Code = code
+        && String.Equals(Path.GetFullPath(location.FilePath), expectedPath, StringComparison.OrdinalIgnoreCase)
+        && location.Start.Line = expectedStartLine
+        && (expectedStartColumn |> Option.forall (fun column -> location.Start.Column = column))
+        && (expectedEndLine |> Option.forall (fun line -> location.End.Line = line))
+        && (expectedEndColumn |> Option.forall (fun column -> location.End.Column = column))
+    | None ->
+        false
+
 let runKpFixtureCase (fixtureCase: KpFixtureCase) =
     Assert.NotEmpty(fixtureCase.SourceFiles)
     Assert.NotEmpty(fixtureCase.Assertions)
@@ -1195,7 +1236,6 @@ let runKpFixtureCase (fixtureCase: KpFixtureCase) =
         )
 
     let runResult = lazy (executeFixtureRun fixtureCase workspace)
-    let mutable nextDiagnosticIndex = 0
 
     let requireRunMode assertionName =
         if fixtureCase.Configuration.Mode <> KpFixtureMode.Run then
@@ -1216,51 +1256,62 @@ let runKpFixtureCase (fixtureCase: KpFixtureCase) =
                 workspace.Diagnostics |> List.exists (fun diagnostic -> diagnostic.Severity = severity && diagnostic.Code = code),
                 $"Could not find diagnostic {severity} {DiagnosticCode.toIdentifier code} ({fixtureCase.Name}:{lineNumber}). Actual diagnostics:{Environment.NewLine}{formatDiagnostics workspace.Diagnostics}"
             )
-        | AssertDiagnosticNext(severity, code, _, lineNumber) ->
-            let remainingDiagnostics =
+        | AssertDiagnosticNext(severity, code, filePath, lineNumber) ->
+            let targetLine =
+                match tryFindNextAssertionTargetLine filePath lineNumber with
+                | Some targetLine -> targetLine
+                | None ->
+                    invalidOp
+                        $"assertDiagnosticNext at {filePath}:{lineNumber} must be followed by a nonblank, non-comment source line in the same file."
+
+            let expectedPath = Path.GetFullPath(filePath)
+            let codeText = DiagnosticCode.toIdentifier code
+
+            Assert.True(
                 workspace.Diagnostics
-                |> List.skip nextDiagnosticIndex
-
-            match remainingDiagnostics with
-            | diagnostic :: _ ->
-                Assert.True(
-                    diagnostic.Severity = severity && diagnostic.Code = code,
-                    $"Expected next diagnostic {severity} {DiagnosticCode.toIdentifier code} but found {diagnostic.Severity} {DiagnosticCode.toIdentifier diagnostic.Code} ({fixtureCase.Name}:{lineNumber}). Actual diagnostics:{Environment.NewLine}{formatDiagnostics workspace.Diagnostics}"
-                )
-
-                nextDiagnosticIndex <- nextDiagnosticIndex + 1
-            | [] ->
-                Assert.True(
-                    false,
-                    $"Expected next diagnostic {severity} {DiagnosticCode.toIdentifier code}, but there were no remaining diagnostics ({fixtureCase.Name}:{lineNumber})."
-                )
+                |> List.exists (
+                    diagnosticMatchesLocation
+                        expectedPath
+                        severity
+                        code
+                        targetLine
+                        None
+                        None
+                        None
+                ),
+                $"Could not find diagnostic {severity} {codeText} on the next source line {Path.GetFileName(filePath)}:{targetLine} ({fixtureCase.Name}:{lineNumber}). Actual diagnostics:{Environment.NewLine}{formatDiagnostics workspace.Diagnostics}"
+            )
         | AssertDiagnosticCodes(expectedCodes, _, _) ->
             let actual = workspace.Diagnostics |> List.map (fun diagnostic -> diagnostic.Code)
             Assert.Equal<DiagnosticCode list>(expectedCodes, actual)
-        | AssertDiagnosticAt(relativePath, severity, code, expectedLine, expectedColumn, _, lineNumber) ->
+        | AssertDiagnosticAt(relativePath, severity, code, expectedStartLine, expectedStartColumn, expectedEndLine, expectedEndColumn, _, lineNumber) ->
             let expectedPath = rootedFilePath fixtureCase.Root relativePath |> Path.GetFullPath
+            let matches =
+                diagnosticMatchesLocation
+                    expectedPath
+                    severity
+                    code
+                    expectedStartLine
+                    expectedStartColumn
+                    expectedEndLine
+                    expectedEndColumn
 
-            let matches diagnostic =
-                match diagnostic.Location with
-                | Some location ->
-                    diagnostic.Severity = severity
-                    && diagnostic.Code = code
-                    && String.Equals(Path.GetFullPath(location.FilePath), expectedPath, StringComparison.OrdinalIgnoreCase)
-                    && location.Start.Line = expectedLine
-                    && (expectedColumn |> Option.forall (fun column -> location.Start.Column = column))
-                | None ->
-                    false
-
-            let expectedColumnText =
-                expectedColumn
-                |> Option.map (fun column -> $":{column}")
-                |> Option.defaultValue ""
+            let expectedRangeText =
+                match expectedStartColumn, expectedEndLine, expectedEndColumn with
+                | None, None, None ->
+                    $"{relativePath}:{expectedStartLine}"
+                | Some startColumn, None, None ->
+                    $"{relativePath}:{expectedStartLine}:{startColumn}"
+                | Some startColumn, Some endLine, Some endColumn ->
+                    $"{relativePath}:{expectedStartLine}:{startColumn}-{endLine}:{endColumn}"
+                | _ ->
+                    $"{relativePath}:{expectedStartLine}"
 
             let codeText = DiagnosticCode.toIdentifier code
 
             Assert.True(
                 workspace.Diagnostics |> List.exists matches,
-                $"Could not find diagnostic {severity} {codeText} at {relativePath}:{expectedLine}{expectedColumnText} ({fixtureCase.Name}:{lineNumber}). Actual diagnostics:{Environment.NewLine}{formatDiagnostics workspace.Diagnostics}"
+                $"Could not find diagnostic {severity} {codeText} at {expectedRangeText} ({fixtureCase.Name}:{lineNumber}). Actual diagnostics:{Environment.NewLine}{formatDiagnostics workspace.Diagnostics}"
             )
         | AssertDiagnosticMatch(pattern, _, lineNumber) ->
             let regex =

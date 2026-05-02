@@ -324,12 +324,13 @@ let private parseFixtureDirective (sourceKind: KpFixtureDirectiveSource) (filePa
                         lineNumber
                     ))
             )
-        | "assertDiagnosticNext" ->
+        | "assertDiagnosticNext"
+        | "assertDiagnosticHere" ->
             let tokens =
                 directiveBody.Split([| ' '; '\t' |], StringSplitOptions.RemoveEmptyEntries)
 
             if tokens.Length <> 2 then
-                invalidOp $"assertDiagnosticNext expects '<severity> <code>' ({filePath}:{lineNumber})."
+                invalidOp $"{directiveName} expects '<severity> <code>' ({filePath}:{lineNumber})."
 
             Some(
                 assertionDirective
@@ -358,24 +359,36 @@ let private parseFixtureDirective (sourceKind: KpFixtureDirectiveSource) (filePa
             let tokens =
                 directiveBody.Split([| ' '; '\t' |], StringSplitOptions.RemoveEmptyEntries)
 
-            if tokens.Length <> 4 && tokens.Length <> 5 then
-                invalidOp $"assertDiagnosticAt expects '<path> <severity> <code> <line> [column]' ({filePath}:{lineNumber})."
+            if tokens.Length <> 4 && tokens.Length <> 5 && tokens.Length <> 8 then
+                invalidOp
+                    $"assertDiagnosticAt expects '<path> <severity> <code> <line> [column]' or '<path> <severity> <code> <startLine> <startColumn> - <endLine> <endColumn>' ({filePath}:{lineNumber})."
 
-            let expectedLine = parseNonNegativeInt directiveName filePath lineNumber tokens[3]
+            let parseRequiredOneBasedInt description token =
+                let parsed = parseNonNegativeInt directiveName filePath lineNumber token
 
-            if expectedLine = 0 then
-                invalidOp $"assertDiagnosticAt expects a 1-based line number ({filePath}:{lineNumber})."
+                if parsed = 0 then
+                    invalidOp $"{directiveName} expects a 1-based {description} ({filePath}:{lineNumber})."
 
-            let expectedColumn =
-                if tokens.Length = 5 then
-                    let parsedColumn = parseNonNegativeInt directiveName filePath lineNumber tokens[4]
+                parsed
 
-                    if parsedColumn = 0 then
-                        invalidOp $"assertDiagnosticAt expects a 1-based column number ({filePath}:{lineNumber})."
+            let expectedStartLine = parseRequiredOneBasedInt "line number" tokens[3]
 
-                    Some parsedColumn
-                else
-                    None
+            let expectedStartColumn, expectedEndLine, expectedEndColumn =
+                match tokens.Length with
+                | 4 ->
+                    None, None, None
+                | 5 ->
+                    Some(parseRequiredOneBasedInt "column number" tokens[4]), None, None
+                | 8 ->
+                    if not (String.Equals(tokens[5], "-", StringComparison.Ordinal)) then
+                        invalidOp
+                            $"assertDiagnosticAt exact ranges require '-' between the start and end positions ({filePath}:{lineNumber})."
+
+                    Some(parseRequiredOneBasedInt "start column number" tokens[4]),
+                    Some(parseRequiredOneBasedInt "end line number" tokens[6]),
+                    Some(parseRequiredOneBasedInt "end column number" tokens[7])
+                | _ ->
+                    invalidOp $"Unsupported assertDiagnosticAt form ({filePath}:{lineNumber})."
 
             Some(
                 assertionDirective
@@ -383,8 +396,10 @@ let private parseFixtureDirective (sourceKind: KpFixtureDirectiveSource) (filePa
                         tokens[0],
                         parseFixtureDiagnosticSeverity filePath lineNumber tokens[1],
                         parseFixtureDiagnosticCode filePath lineNumber tokens[2],
-                        expectedLine,
-                        expectedColumn,
+                        expectedStartLine,
+                        expectedStartColumn,
+                        expectedEndLine,
+                        expectedEndColumn,
                         filePath,
                         lineNumber
                     ))

@@ -88,6 +88,38 @@ let private requireStageDump root checkpoint format =
     | Result.Ok text -> text
     | Result.Error message -> failwithf "Expected dump for checkpoint '%s': %s" checkpoint message
 
+let private requireDiagnostics root =
+    let workspace =
+        Compilation.parse (CompilationOptions.create root) [ root ]
+
+    Assert.NotEmpty(workspace.Diagnostics)
+    workspace.Diagnostics
+
+let private requireDiagnosticForFile fileName diagnostics =
+    match
+        diagnostics
+        |> List.tryFind (fun item ->
+            item.Location
+            |> Option.exists (fun location ->
+                String.Equals(Path.GetFileName(location.FilePath), fileName, StringComparison.OrdinalIgnoreCase)))
+    with
+    | Some diagnostic ->
+        diagnostic
+    | None ->
+        let rendered =
+            diagnostics
+            |> List.map (fun item ->
+                let locationText =
+                    item.Location
+                    |> Option.map (fun location ->
+                        $"{location.FilePath}:{location.Start.Line}:{location.Start.Column}-{location.End.Line}:{location.End.Column}")
+                    |> Option.defaultValue "<none>"
+
+                $"{DiagnosticCode.toIdentifier item.Code} @ {locationText}")
+            |> String.concat Environment.NewLine
+
+        failwithf "Could not find diagnostic for '%s'. Diagnostics:%s%s" fileName Environment.NewLine rendered
+
 let rec private renderJsonWithReorderedObjectKeys (element: JsonElement) =
     match element.ValueKind with
     | JsonValueKind.Object ->
@@ -160,6 +192,78 @@ let ``suite directives accept standard assertStageDump assertions`` () =
             loadFixtureDirectives
                 KpFixtureDirectiveSource.SuiteDirectiveFile
                 (Path.Combine(root, "suite.ktest"))
+
+        Assert.NotEmpty(directives))
+
+[<Fact>]
+let ``fixture harness evaluates assertDiagnosticAt exact ranges`` () =
+    withScratchFixture "appendix-t-diagnostic-range-run" (fun root ->
+        writeWorkspaceFiles
+            root
+            [
+                "main.kp", "module main\nlet answer = @\n"
+            ]
+
+        let diagnostic =
+            requireDiagnostics root
+            |> requireDiagnosticForFile "main.kp"
+
+        let location = diagnostic.Location |> Option.get
+        let severityText = diagnostic.Severity.ToString().ToLowerInvariant()
+        let codeText = DiagnosticCode.toIdentifier diagnostic.Code
+
+        writeWorkspaceFiles
+            root
+            [
+                "suite.ktest",
+                $"--! assertDiagnosticAt main.kp {severityText} {codeText} {location.Start.Line} {location.Start.Column} - {location.End.Line} {location.End.Column}\n"
+            ]
+
+        let fixtureCase = discoverFixtureCase root
+        runKpFixtureCase fixtureCase)
+
+[<Fact>]
+let ``assertDiagnosticNext anchors to the next source line in the same file`` () =
+    withScratchFixture "appendix-t-diagnostic-next-line" (fun root ->
+        writeWorkspaceFiles
+            root
+            [
+                "a.kp", "module a\nbroken =\n"
+                "b.kp", "module b\nlet answer = @\n"
+            ]
+
+        let targetDiagnostic =
+            requireDiagnostics root
+            |> requireDiagnosticForFile "b.kp"
+
+        let severityText = targetDiagnostic.Severity.ToString().ToLowerInvariant()
+        let codeText = DiagnosticCode.toIdentifier targetDiagnostic.Code
+
+        writeWorkspaceFiles
+            root
+            [
+                "b.kp",
+                $"module b\n--! assertDiagnosticNext {severityText} {codeText}\n-- comment\n\nlet answer = @\n"
+            ]
+
+        let fixtureCase = discoverFixtureCase root
+        runKpFixtureCase fixtureCase)
+
+[<Fact>]
+let ``kp source directives accept deprecated assertDiagnosticHere alias`` () =
+    withScratchFixture "appendix-t-diagnostic-here-parse" (fun root ->
+        let codeText = DiagnosticCode.toIdentifier DiagnosticCode.ExpectedSyntaxToken
+
+        writeWorkspaceFiles
+            root
+            [
+                "main.kp", $"module main\n--! assertDiagnosticHere error {codeText}\nbroken =\n"
+            ]
+
+        let directives =
+            loadFixtureDirectives
+                KpFixtureDirectiveSource.KpSourceFile
+                (Path.Combine(root, "main.kp"))
 
         Assert.NotEmpty(directives))
 

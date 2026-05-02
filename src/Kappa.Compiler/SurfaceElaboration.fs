@@ -11201,6 +11201,28 @@ module SurfaceElaboration =
             | _ ->
                 None
 
+        let tryDefinitionBodyLocation () =
+            match significantTokens definition.BodyTokens with
+            | [] ->
+                None
+            | firstToken :: remainingTokens ->
+                let lastToken = remainingTokens |> List.tryLast |> Option.defaultValue firstToken
+
+                sourceText.Value
+                |> Option.map (fun source ->
+                    source.GetLocation(TextSpan.FromBounds(firstToken.Span.Start, lastToken.Span.End)))
+
+        let attachDefinitionBodyLocation diagnostics =
+            let bodyLocation = tryDefinitionBodyLocation ()
+
+            diagnostics
+            |> List.map (fun diagnostic ->
+                if diagnostic.Location.IsSome then
+                    diagnostic
+                else
+                    { diagnostic with
+                        Location = bodyLocation })
+
         let tupleParameterLocalTypes =
             effectiveParameters
             |> List.collect (fun parameter ->
@@ -14928,6 +14950,8 @@ module SurfaceElaboration =
                 match expectedBodyType, body with
                 | Some expectedType, Binary(_, _, _) when isSimpleExpectedBodyType locals (normalizeExpectedType Map.empty expectedType) ->
                     expectedTypeDiagnostics locals Map.empty "Definition body" expectedType body
+                    |> attachDefinitionBodyLocation
+                    |> attachDefinitionBodyLocation
                 | _ ->
                     []
 
@@ -15026,6 +15050,8 @@ module SurfaceElaboration =
                     when isReifiedStaticObjectType environment.VisibleTypeAliases actualType
                          && not (expectedTypeAccepts locals Map.empty expectedType actualType) ->
                     expectedTypeDiagnostics locals Map.empty "Definition body" expectedType body
+                    |> attachDefinitionBodyLocation
+                    |> attachDefinitionBodyLocation
                 | _ ->
                     []
 
@@ -15225,6 +15251,7 @@ module SurfaceElaboration =
                 match expectedBodyType with
                 | Some expectedType when typeContainsUnion expectedType ->
                     expectedTypeDiagnostics locals Map.empty "Definition body" expectedType body
+                    |> attachDefinitionBodyLocation
                 | _ ->
                     []
 
@@ -15232,6 +15259,7 @@ module SurfaceElaboration =
                 match expectedBodyType, body with
                 | Some expectedType, (NumericLiteral _ | Unary("-", NumericLiteral _)) ->
                     expectedTypeDiagnostics locals Map.empty "Definition body" expectedType body
+                    |> attachDefinitionBodyLocation
                 | Some _, _ ->
                     []
                 | None, _ ->
@@ -15397,6 +15425,7 @@ module SurfaceElaboration =
                                 "Definition body"
                                 expectedPayload
                                 actualPayload ]
+                            |> attachDefinitionBodyLocation
                     | _ ->
                         []
                 | _ ->
@@ -15422,6 +15451,7 @@ module SurfaceElaboration =
                             "Definition body"
                             expectedType
                             actualType ]
+                        |> attachDefinitionBodyLocation
                     | None ->
                         []
                 | _ ->
@@ -15441,6 +15471,7 @@ module SurfaceElaboration =
                         "Definition body"
                         expectedType
                         actualType ]
+                    |> attachDefinitionBodyLocation
                 | _ ->
                     []
 
@@ -15462,6 +15493,7 @@ module SurfaceElaboration =
                         "Definition body"
                         expectedType
                         actualType ]
+                    |> attachDefinitionBodyLocation
                 | _ ->
                     []
 
@@ -15491,6 +15523,7 @@ module SurfaceElaboration =
                         "Definition body"
                         expectedType
                         actualType ]
+                    |> attachDefinitionBodyLocation
                 | _ ->
                     []
 
@@ -15521,6 +15554,7 @@ module SurfaceElaboration =
                             "Definition body"
                             expectedType
                             actualType ]
+                        |> attachDefinitionBodyLocation
                 | _ ->
                     []
 
@@ -15557,6 +15591,7 @@ module SurfaceElaboration =
                         "Definition body"
                         expectedType
                         actualType ]
+                    |> attachDefinitionBodyLocation
                 | _ ->
                     []
 
@@ -15578,6 +15613,7 @@ module SurfaceElaboration =
                          && List.isEmpty textBinaryExpectedBodyDiagnostics
                          && List.isEmpty generalInferredExpectedBodyDiagnostics ->
                     expectedTypeDiagnostics locals Map.empty "Definition body" expectedType body
+                    |> attachDefinitionBodyLocation
                 | Some expectedType
                     when (match body with
                           | Name [ _ ] -> true
@@ -15684,12 +15720,14 @@ module SurfaceElaboration =
                             match inferValidationExpressionType environment freshCounter locals body with
                             | Some actualType when isSimpleExpectedBodyType locals actualType ->
                                 expectedTypeDiagnostics locals Map.empty "Definition body" expectedType body
+                                |> attachDefinitionBodyLocation
                             | _ ->
                                 []
                     | _ ->
                         match inferValidationExpressionType environment freshCounter locals body with
                         | Some actualType when isSimpleExpectedBodyType locals actualType ->
                             expectedTypeDiagnostics locals Map.empty "Definition body" expectedType body
+                            |> attachDefinitionBodyLocation
                         | _ ->
                             []
                 | _ ->
@@ -15717,6 +15755,7 @@ module SurfaceElaboration =
             @ recordLiteralExpectedBodyDiagnostics
             @ generalInferredExpectedBodyDiagnostics
             @ generalExpectedBodyDiagnostics
+            |> attachDefinitionBodyLocation
 
         let tryResolveComparableOperandTypes locals left right =
             let normalizeVisibleType typeExpr =
@@ -21204,6 +21243,30 @@ module SurfaceElaboration =
                         []
                         (DiagnosticFact.nameUnresolved name)
 
+                let tryDefinitionBodyLocation (filePath: string) (definition: LetDefinition) =
+                    match significantTokens definition.BodyTokens with
+                    | [] ->
+                        None
+                    | firstToken :: remainingTokens ->
+                        let lastToken = remainingTokens |> List.tryLast |> Option.defaultValue firstToken
+
+                        if System.IO.File.Exists(filePath) then
+                            let source = SourceText.From(filePath, System.IO.File.ReadAllText(filePath))
+                            Some(source.GetLocation(TextSpan.FromBounds(firstToken.Span.Start, lastToken.Span.End)))
+                        else
+                            None
+
+                let attachDefinitionBodyLocation (filePath: string) (definition: LetDefinition) diagnostics =
+                    let bodyLocation = tryDefinitionBodyLocation filePath definition
+
+                    diagnostics
+                    |> List.map (fun diagnostic ->
+                        if diagnostic.Location.IsSome then
+                            diagnostic
+                        else
+                            { diagnostic with
+                                Location = bodyLocation })
+
                 let makeSurfaceElaborationDiagnostic evidence =
                     Diagnostics.errorFact
                         "KFrontIR"
@@ -23203,17 +23266,20 @@ module SurfaceElaboration =
                                 definition.Name
                                 |> Option.bind (fun name -> Map.tryFind name sourceSignatureSchemesByName)
 
-                            validateBuiltInExpressionsForBinding
-                                bodyEnvironment
+                            attachDefinitionBodyLocation
                                 frontendModule.FilePath
-                                knownSurfaceTermNames
-                                allowUnresolvedCallDiagnostics
-                                explicitSignatureNames
-                                sourceSignatureScheme
-                                moduleTopLevelDefinitionsByName
-                                effectiveValidationParameters
                                 definition
-                                scheme
+                                (validateBuiltInExpressionsForBinding
+                                    bodyEnvironment
+                                    frontendModule.FilePath
+                                    knownSurfaceTermNames
+                                    allowUnresolvedCallDiagnostics
+                                    explicitSignatureNames
+                                    sourceSignatureScheme
+                                    moduleTopLevelDefinitionsByName
+                                    effectiveValidationParameters
+                                    definition
+                                    scheme)
                             @
                                 (let initialParameterLocals =
                                      buildLocalTypes scheme effectiveValidationParameters
@@ -23221,8 +23287,9 @@ module SurfaceElaboration =
 
                                  definition.Body
                                  |> Option.map (fun body ->
-                                     expressionPatternDiagnostics initialParameterLocals body
-                                     @ expressionNameResolutionDiagnostics definition body)
+                                     (expressionPatternDiagnostics initialParameterLocals body
+                                      @ expressionNameResolutionDiagnostics definition body)
+                                     |> attachDefinitionBodyLocation frontendModule.FilePath definition)
                                  |> Option.defaultValue [])
                         | ProjectionDeclarationNode declaration ->
                             validateProjectionDeclaration declaration

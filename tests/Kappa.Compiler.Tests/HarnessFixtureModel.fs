@@ -53,7 +53,16 @@ type KpFixtureAssertion =
     | AssertDiagnostic of severity: DiagnosticSeverity * code: DiagnosticCode * filePath: string * lineNumber: int
     | AssertDiagnosticNext of severity: DiagnosticSeverity * code: DiagnosticCode * filePath: string * lineNumber: int
     | AssertDiagnosticCodes of expectedCodes: DiagnosticCode list * filePath: string * lineNumber: int
-    | AssertDiagnosticAt of relativePath: string * severity: DiagnosticSeverity * code: DiagnosticCode * expectedLine: int * expectedColumn: int option * filePath: string * lineNumber: int
+    | AssertDiagnosticAt of
+        relativePath: string *
+        severity: DiagnosticSeverity *
+        code: DiagnosticCode *
+        expectedStartLine: int *
+        expectedStartColumn: int option *
+        expectedEndLine: int option *
+        expectedEndColumn: int option *
+        filePath: string *
+        lineNumber: int
     | AssertDiagnosticMatch of regexPattern: string * filePath: string * lineNumber: int
     | AssertDiagnosticExplainExists of code: DiagnosticCode * filePath: string * lineNumber: int
     | AssertType of target: string * expectedTypeText: string * filePath: string * lineNumber: int
