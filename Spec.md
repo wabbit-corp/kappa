@@ -9287,8 +9287,15 @@ Conflict rules:
 
 Elaboration order:
 
+* The patch scrutinee is elaborated and evaluated exactly once.
 * All ordinary update paths are recursively expanded as specified in this subsection.
+* Each user-written patch right-hand side is elaborated in the original source context of the whole record patch and
+  evaluated exactly once in source item order into a fresh temporary.
 * Each projection-section update is lowered to its corresponding fill operation.
+* Canonical patch assembly then applies the ordinary update, projection-section, and extension rules using those
+  temporaries.
+  This canonical assembly affects typing, dependency checking, reconstruction, and definitional equality.
+  It does not reorder runtime evaluation of user-written patch right-hand sides.
 * The resulting top-level repairs are merged only when their write footprints are pairwise disjoint.
 * The final result is checked against the original record type using the ordinary full-record reconstruction rule.
 
@@ -9327,7 +9334,7 @@ p1.p2....pn = e
 ```
 
 the right-hand side `e` is elaborated in the original source context of the whole record patch, not in a special nested
-scope.
+scope. Its runtime evaluation still follows the source-order temporary rule above.
 
 At each recursive update level:
 
@@ -9361,9 +9368,10 @@ Then a record update whose ordinary update fields have first been expanded to to
 r.{ f1 = e1, ..., fk = ek }
 ```
 
-elaborates to a full record literal in canonical order:
+is assembled as a full record literal in canonical order after source-order evaluation of the scrutinee and explicit
+patch right-hand sides into temporaries:
 
-* if `gi` is explicitly updated, the elaborated literal uses the supplied expression for `gi`;
+* if `gi` is explicitly updated, the elaborated literal uses the corresponding source-evaluated temporary for `gi`;
   implicit fields are updated with surface syntax `@gi = expr`,
 * if `gi` is omitted, the elaborated literal uses the projection `r.gi`, including omitted implicit fields.
 
@@ -9399,10 +9407,12 @@ Multiple computed receiver-relative updates are permitted when their write footp
 
 Field references inside supplied ordinary update expressions:
 
-* `this` refers to the evolving updated record prefix in canonical dependency-respecting order, not to the original
-  record `r`.
-* Therefore a supplied expression may refer to any earlier field in that canonical order, whether that earlier field
-  came from an explicit update or from an implicit copied projection `r.field`.
+* `this` refers to the evolving updated record prefix for typing and elaboration, not to the original record `r` and not
+  to a canonical runtime evaluation order.
+* Therefore a supplied expression may refer to any earlier field in that canonical order only when its value is
+  available either from the original scrutinee projection `r.field` or from an earlier source-evaluated temporary.
+* If a supplied expression refers to a field whose value is not available by one of those mechanisms, the record patch is
+  ill-formed.
 * A bare identifier `label` is shorthand for `this.label` only when that reading is unambiguous; otherwise `this.label`
   is required.
 
@@ -9423,8 +9433,8 @@ where the labels `f1 ... fk` and `x1 ... xm` are pairwise distinct, elaborates a
 Rules:
 
 * The separation into the `=` part and the `:=` part is by item kind, not by source order.
-* Accordingly, the relative surface order between ordinary update fields and extension fields is not semantically
-  significant.
+* This separation affects reconstruction order only.
+  It does not change source-order evaluation of user-written right-hand sides.
 * The `=` part uses the ordinary update rules of this subsection.
 * The `:=` part uses the ordinary row-extension rules of §5.5.6.
 * A mixed form does not change the meaning of extension-field expressions: they are elaborated exactly as they would be
@@ -9434,10 +9444,13 @@ Rules:
 
 Source order:
 
-* The surface order of record-patch items is not semantically significant.
+* The patch scrutinee is evaluated exactly once.
+* User-written patch right-hand sides are evaluated exactly once in source item order into fresh temporaries.
 * For mixed update/extension forms, normative elaboration first applies all ordinary update fields and then all
-  extension fields, as specified above.
-* For pure ordinary updates, elaboration uses the canonical dependency-respecting order of the record type.
+  extension fields during canonical reconstruction, as specified above.
+* For pure ordinary updates, canonical reconstruction uses the dependency-respecting order of the record type.
+* For mixed update/extension forms, the update/extension split affects reconstruction order only.
+  It does not reorder runtime evaluation of user-written patch right-hand sides.
 
 Reconstitution:
 
@@ -9499,6 +9512,10 @@ Rules:
 * A pure row extension is a `lhs.{ ... }` form containing at least one extension field and no ordinary update fields.
 * A mixed update/extension form is a `lhs.{ ... }` form containing at least one extension field and at least one
   ordinary update field. Its elaboration is specified in §5.5.5.
+* A pure row extension evaluates the scrutinee exactly once and evaluates extension-field right-hand sides exactly once
+  in source item order into fresh temporaries before canonical row assembly.
+* Canonical row assembly affects typing, reconstruction, and record identity.
+  It does not reorder runtime evaluation of user-written extension-field right-hand sides.
 * For each extension field `ℓ := e`:
   * if the receiver has a closed record type and already contains field `ℓ`, it is a compile-time error; use update
     syntax `ℓ = ...`;
@@ -10102,6 +10119,11 @@ The translation is defined recursively and preserves Kappa's ordinary left-to-ri
 * Tuple, record, list, set, and map literals:
   translate element or field expressions in the language's ordinary left-to-right evaluation order, bind fresh
   temporaries in that same order, and return the corresponding pure literal built from those temporaries.
+
+* Record patch:
+  translate the scrutinee first, then translate each user-written patch right-hand side in source item order, bind fresh
+  temporaries in that same order, and rebuild the patch from those temporaries.
+  Canonical patch assembly is then performed as specified in §5.5.5.
 
 * Pure projection or other non-short-circuiting expression form:
   translate subexpressions in ordinary left-to-right order and rebuild the pure form from the resulting temporaries.
@@ -22096,7 +22118,8 @@ Evaluation order:
 
 * Function application evaluates the function expression, then the argument expression, then applies.
 * Record/tuple literals evaluate fields/elements left-to-right.
-* Record update evaluates the scrutinee record, then evaluates updated field expressions left-to-right.
+* Record patch evaluates the scrutinee record exactly once, then evaluates user-written patch right-hand sides in source
+  item order exactly once, and only then performs canonical update / projection / extension assembly.
 * `seal e as S` evaluates `e` and constructs a sealed package value whose runtime representation contains exactly the
   non-erased members required by `S`, or an observationally equivalent implementation-defined representation.
 * Projection of a non-erased member from a sealed package evaluates by selecting that stored runtime member.
