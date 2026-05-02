@@ -1,0 +1,20 @@
+module showcase.resources
+
+data File : Type =
+    Handle Int
+
+openFile : String -> IO (1 file : File)
+let openFile path = pure (Handle 1)
+
+readChunk : (& file : File) -> IO String
+let readChunk (& file : File) = pure "chunk"
+
+step : (inout file : File) -> IO (1 file : File)
+let step (inout file : File) : IO (1 file : File) = pure file
+
+demoResources : IO Unit
+let demoResources = do
+    using file <- openFile "orders.txt"
+    readChunk file
+    step ~file
+    printInt 0

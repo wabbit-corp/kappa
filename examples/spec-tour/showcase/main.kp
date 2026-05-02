@@ -1,0 +1,45 @@
+@PrivateByDefault module showcase.main
+
+import model.data as data
+import model.data.(type User, type Order, type NonEmpty, ctor NonEmpty, term featuredUsers, term sampleOrders, term totalRevenue, term paidOnly, trait Pretty)
+import service.reporting.preparedAudit
+import service.reporting.topCustomerQuery
+import showcase.effects.askTwice
+import showcase.resources.demoResources
+
+qualifiedLeadName : String
+let qualifiedLeadName = data.northLead.name
+
+customerBanner : String
+let customerBanner =
+    block
+        banner : String
+        let banner =
+            let
+                dict = summon (Pretty User)
+            in
+                match featuredUsers
+                  case NonEmpty first _ -> dict.pretty first
+        banner
+
+firstPaidSummary : List Order -> String
+let firstPaidSummary orders =
+    match orders
+      case Nil -> "no paid orders"
+      case order :: _ ->
+          f"first paid order: ${ primitiveIntToString order.id } in ${ order.region }"
+
+preparedExample : dsl.sql.PreparedSql Order
+let preparedExample = preparedAudit 100
+
+queryExample : dsl.sql.SqlQuery (id : Int, name : String, orders : List Order)
+let queryExample = topCustomerQuery
+
+main : IO Int
+let main = do
+    let paid = paidOnly sampleOrders
+    let revenue = totalRevenue paid
+    let highlighted = askTwice revenue
+    demoResources
+    printInt highlighted
+    pure revenue

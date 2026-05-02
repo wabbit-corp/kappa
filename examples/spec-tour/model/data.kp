@@ -1,0 +1,91 @@
+module model.data
+
+type User =
+    (id : Int, name : String, region : String, tier : String)
+
+type Order =
+    (id : Int, userId : Int, region : String, total : Int, status : String)
+
+type Payment =
+    (orderId : Int, captured : Bool, amount : Int)
+
+data NonEmpty a : Type =
+    NonEmpty a (List a)
+
+trait Pretty a =
+    pretty : a -> String
+
+instance Pretty Int =
+    let pretty x = primitiveIntToString x
+
+instance Pretty User =
+    let pretty user =
+        f"${ user.name } (${ user.region }, ${ user.tier })"
+
+instance Pretty Order =
+    let pretty order =
+        f"order ${ primitiveIntToString order.id } in ${ order.region } for ${ primitiveIntToString order.total }"
+
+northLead : User
+let northLead = (id = 1, name = "Ada", region = "North", tier = "enterprise")
+
+westLead : User
+let westLead = (id = 2, name = "Grace", region = "West", tier = "standard")
+
+featuredUsers : NonEmpty User
+let featuredUsers = NonEmpty northLead (westLead :: Nil)
+
+sampleOrders : List Order
+let sampleOrders =
+    (id = 10, userId = 1, region = "North", total = 150, status = "paid")
+    :: (id = 11, userId = 1, region = "North", total = 80, status = "open")
+    :: (id = 12, userId = 2, region = "West", total = 200, status = "paid")
+    :: Nil
+
+totalRevenue : List Order -> Int
+let totalRevenue orders =
+    match orders
+      case Nil -> 0
+      case order :: rest -> order.total + totalRevenue rest
+
+paidOnly : List Order -> List Order
+let paidOnly orders =
+    match orders
+      case Nil -> Nil
+      case order :: rest ->
+          if order.status == "paid" then
+              order :: paidOnly rest
+          else
+              paidOnly rest
+
+users : Query User
+let users =
+    Query [
+        for u in [
+            (id = 1, name = "Ada", region = "North", tier = "enterprise"),
+            (id = 2, name = "Grace", region = "West", tier = "standard"),
+            (id = 3, name = "Edsger", region = "North", tier = "standard")
+        ]
+        yield u
+    ]
+
+orders : Query Order
+let orders =
+    Query [
+        for o in [
+            (id = 10, userId = 1, region = "North", total = 150, status = "paid"),
+            (id = 11, userId = 1, region = "North", total = 80, status = "open"),
+            (id = 12, userId = 2, region = "West", total = 200, status = "paid")
+        ]
+        yield o
+    ]
+
+payments : Query Payment
+let payments =
+    Query [
+        for p in [
+            (orderId = 10, captured = True, amount = 150),
+            (orderId = 12, captured = True, amount = 200)
+        ]
+        yield p
+    ]
