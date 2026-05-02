@@ -18059,7 +18059,16 @@ the compiler elaborates the parameter binder to an ordinary linear binder:
 let read (1 f : File Open) (n : Nat) : IO (data : Bytes, 1 f : File Open)
 ```
 
-with the additional `inout` well-formedness condition that the result record contains a quantity-`1` field named `f`.
+with associated callable-interface metadata:
+
+```text
+InoutParam(
+    formal = f,
+    successorField = f
+)
+```
+
+The declaration is well-formed only when the result record contains a quantity-`1` field named `f`.
 That returned field is the threaded linear successor of the parameter `f`, expressed using the ordinary
 quantity-annotated record-field machinery of §5.5. Its type need not be definitionally equal to the input type; this
 allows typestate transitions while preserving the same local variable name at call sites.
@@ -18067,10 +18076,16 @@ allows typestate transitions while preserving the same local variable name at ca
 `inout`:
 
 * forces quantity `@1` on the parameter;
-* requires a matching quantity-`1` field of the same name in the result record, after peeling any enclosing monad
-  required by the binding form;
+* contributes explicit callable-interface metadata `InoutParam(formal = N, successorField = S)`;
+* for the surface form `(inout N : A)`, the generated metadata uses `formal = N` and `successorField = N`;
+* requires a matching quantity-`1` successor field `S` in the result record, after peeling any enclosing monad required
+  by the binding form;
 * enables `~` call-site rebinding sugar inside `do` blocks;
 * does not change the underlying pure-vs-monadic shape of the call.
+
+`InoutParam` metadata is part of named declaration interfaces and trait-member interfaces.
+It is not inferred solely from ordinary function shape, binder spelling, or return-record field names, and it is not
+part of ordinary anonymous function type equality.
 
 In-place mutation guarantee (as-if rule):
 
@@ -18095,8 +18110,9 @@ do
     step ~weights ~bias
 ```
 
-`inout` is permitted only on explicit parameters of named functions and methods. It is not permitted in lambdas or
-ordinary function types; those use the elaborated `@1` binder form directly.
+`inout` is permitted only on explicit parameters of named functions, methods, and trait-member signatures.
+It is not permitted in lambdas or ordinary anonymous function types; those use the elaborated `@1` binder form
+directly and do not acquire `InoutParam` metadata.
 
 <!-- effects.inout.call_site_marker -->
 #### 8.8.3 Call-site marker `~`
@@ -18108,9 +18124,7 @@ Rules:
 * `~` is valid only inside a `do` block, and only on arguments of the maximal application site (§7.1.3) that forms a
   `do`-item rewrite site.
 * `~` may be applied only to:
-  * a stable place as defined in §5.1.7.1;
-  * a parenthesized, fully applied selector-form projection call under §6.1.1;
-  * a parenthesized projector descriptor application under §7.1.3A; or
+  * a place expression admitted by §5.1.7.2; or
   * a parenthesized accessor-bundle descriptor application under §7.1.3B whose bundle contains an `open` descriptor
     field.
 * Parentheses are required around a projection call, projector descriptor application, or accessor-bundle descriptor
@@ -18122,26 +18136,28 @@ Rules:
 * For a selector-form projection call or projector descriptor application, static disjointness checking uses the static
   footprint summary of §5.1.7.2.
 * A `~place` argument is well-formed if and only if the compiler can statically resolve the callee at that application
-  site to a Pi-telescope in which the corresponding explicit parameter:
-  * has quantity `@1`,
-  * has a known formal binder name `N`, and
-  * the function's return type (after peeling the enclosing monad required by the binding form) is a record type
-    containing a quantity-`1` field named `N`.
-* The binder name `N` must come from the resolved interface of the callee (for example, an ordinary
-  declaration/definition, an explicit function type annotation, or a resolved trait member declaration). If overload
-  resolution, implicit resolution, type inference, or opacity prevents the compiler from recovering such a stable formal
-  name, `~` is rejected.
-* Every explicitly supplied parameter satisfying the above `inout`-compatibility condition must be written with `~`.
+  site to an elaborated callable interface in which the corresponding explicit parameter carries
+  `InoutParam(formal = N, successorField = S)` metadata.
+* This metadata must come from a named declaration interface or resolved trait-member interface.
+  It is not inferred solely from the ordinary function shape, binder spelling, or return-record field names of an
+  anonymous function value or ordinary function type.
+* The corresponding explicit parameter must elaborate at quantity `@1`.
+* The function's return type, after peeling the enclosing monad required by the binding form, must be a record type
+  containing a quantity-`1` field named `S`.
+* Every explicitly supplied parameter carrying `InoutParam` metadata must be written with `~`.
 * A surface call to an `inout` parameter without `~` is a compile-time error.
+* A surface call position that lacks `InoutParam` metadata MUST NOT accept `~`, even if the ordinary function shape
+  happens to resemble linear state threading.
 * `~` has no other term-level meaning in Kappa.
 
 Diagnostic requirement:
 
-* If the callee's corresponding formal parameter has a known name `N` but the return record does not contain a
-  quantity-`1` field `N`, the diagnostic SHOULD say that `~place` cannot be used because the return record does not
-  contain a quantity-`1` field matching formal parameter name `N`.
-* If the compiler cannot recover a stable formal name for the corresponding parameter, the diagnostic SHOULD say that
-  `~place` cannot be used because the callee does not expose an `inout`-compatible formal parameter at that position.
+* If the callee's corresponding explicit parameter carries `InoutParam(formal = N, successorField = S)` metadata but the
+  return record does not contain a quantity-`1` field `S`, the diagnostic SHOULD say that `~place` cannot be used
+  because the return record does not contain the declared threaded successor field `S`.
+* If the resolved callable interface does not expose `InoutParam` metadata for the corresponding parameter, the
+  diagnostic SHOULD say that `~place` cannot be used because the callee does not expose an `inout` parameter at that
+  position.
 
 <!-- effects.inout.desugaring -->
 #### 8.8.4 Normative desugaring (type-directed)
@@ -18158,9 +18174,11 @@ let pat <- func ~x1 ... ~xk args
 or the pure analogue `let pat = func ~x1 ... ~xk args`, elaboration proceeds as follows:
 
 1. Resolve the callee's signature for the maximal application site and determine the ordered list of
-   `inout`-compatible formal parameter names `p1 ... pk` corresponding to the marked arguments in that resolved
-   application spine. This step succeeds only when each marked argument position satisfies the admissibility rule of
-   §8.8.3: quantity `@1`, stable formal name, place expression, and matching quantity-`1` return-record field.
+   `InoutParam` metadata entries `m1 ... mk` corresponding to the marked arguments in that resolved application spine.
+   Let `mᵢ = InoutParam(formal = pᵢ, successorField = sᵢ)`.
+   This step succeeds only when each marked argument position satisfies the admissibility rule of §8.8.3:
+   explicit `InoutParam` metadata, quantity `@1`, an admissible marked-argument form, and a matching quantity-`1`
+   return-record field.
 2. Elaborate each marked argument as follows:
 
    * If the marked argument is a stable place, proceed exactly as in the stable-place case of this section.
@@ -18178,23 +18196,23 @@ or the pure analogue `let pat = func ~x1 ... ~xk args`, elaboration proceeds as 
 3. Determine the returned record type `R`:
    * for `let pat <- ...`, the call must have type `m R`;
    * for `let pat = ...`, the call must have type `R`.
-4. Check that `R` is a record type containing fields `p1 ... pk`. Those fields are the threaded successors of the
-   `inout` parameters and must be declared at quantity `1`. Let the residual record be the record obtained from `R` by
-   removing those `inout` fields.
-5. Elaborate the returned `inout` fields through fresh temporaries `__p1_tmp ... __pk_tmp` so that write-back does not
+4. Check that `R` is a record type containing fields `s1 ... sk`. Those fields are the threaded successors recorded by
+   the `InoutParam` metadata and must be declared at quantity `1`. Let the residual record be the record obtained from
+   `R` by removing those `inout` successor fields.
+5. Elaborate the returned `inout` successor fields through fresh temporaries `__s1_tmp ... __sk_tmp` so that write-back does not
    interfere with residual pattern matching.
-6. For each marked argument, matched with formal parameter `pᵢ`, elaborate the returned field `__pᵢ_tmp` back through
+6. For each marked argument, matched with metadata entry `mᵢ`, elaborate the returned field `__sᵢ_tmp` back through
    the corresponding write-back target:
 
    * If the marked argument elaborated as a stable place `Pᵢ`, and `Pᵢ` is the whole place `x`, where `x` is an
-     ordinary immutable local binding, rebind `x` from `__pᵢ_tmp`, shadowing the previous binding exactly as in
-     ordinary linear state threading.
-   * If the marked argument elaborated as a stable place `Pᵢ`, and `Pᵢ` is a proper subplace of an ordinary immutable
-     local binding `x`, rebuild the root by filling `Pᵢ` with `__pᵢ_tmp`, then rebind `x` to the rebuilt root.
-   * If the marked argument elaborated as a stable place `Pᵢ` originating from a `var`-bound root, rebuild the hidden
-     temporary root by filling `Pᵢ` with `__pᵢ_tmp` and then write the rebuilt root back to the corresponding `Ref`.
-   * In KCore these stable-place cases behave as `FillPlace Pᵢ __pᵢ_tmp` together with ordinary rebinding or
-     `writeRef`, or as an observationally equivalent internal form (§17.3.1.1).
+      ordinary immutable local binding, rebind `x` from `__sᵢ_tmp`, shadowing the previous binding exactly as in
+      ordinary linear state threading.
+    * If the marked argument elaborated as a stable place `Pᵢ`, and `Pᵢ` is a proper subplace of an ordinary immutable
+      local binding `x`, rebuild the root by filling `Pᵢ` with `__sᵢ_tmp`, then rebind `x` to the rebuilt root.
+    * If the marked argument elaborated as a stable place `Pᵢ` originating from a `var`-bound root, rebuild the hidden
+      temporary root by filling `Pᵢ` with `__sᵢ_tmp` and then write the rebuilt root back to the corresponding `Ref`.
+    * In KCore these stable-place cases behave as `FillPlace Pᵢ __sᵢ_tmp` together with ordinary rebinding or
+      `writeRef`, or as an observationally equivalent internal form (§17.3.1.1).
    * If the marked argument elaborated as `OpenProjector proj pack`, the restoration is the write-back performed by the
      zipper fill obtained from `OpenProjector`. If that fill rebuilds a root pack containing more than one root field,
      the rebuilt pack is then scattered back to the corresponding actual stable roots in declaration order.
@@ -18243,9 +18261,9 @@ let (f = __f_tmp, data = bytes) <- read myRec.file 1024
 let myRec = myRec.{ file = __f_tmp }
 ```
 
-The returned `inout` fields are rebound using the callee's formal parameter names, not the caller's local names. Thus
-`~file` passed to formal parameter `f` is rebound from returned field `f`, and `~myRec.file` restores the local path
-`myRec.file` from that same returned field `f`.
+The returned `inout` fields are rebound using the callee's `InoutParam` metadata, not the caller's local names. Thus
+`~file` passed to `InoutParam(formal = f, successorField = f)` is rebound from returned field `f`, and `~myRec.file`
+restores the local path `myRec.file` from that same returned successor field `f`.
 
 If the caller-side `file` is a `var`, the corresponding schematic write-back is instead:
 
@@ -18317,8 +18335,8 @@ let bad : (1 a : Int) -> IO (b : Int)
 
 do
     let (b = y) <- bad ~x
-    -- ERROR: cannot use `~x`; return record does not contain a
-    -- quantity-`1` field matching the formal parameter name `a`
+    -- ERROR: cannot use `~x`; this ordinary function type does not
+    -- expose `InoutParam` metadata
 ```
 
 Typestate transition:
@@ -18361,11 +18379,15 @@ step ~weights ~bias
 #### 8.8.6 Restrictions
 
 * `inout` call syntax is valid only inside `do` blocks.
-* `~` may be applied only to stable places: variables, or record projection paths rooted at variables or `var`-bound
-  mutable places.
-* Each `inout` parameter name must have a matching quantity-`1` field of the same name in the result record.
-* `inout` is permitted only on explicit parameters of named functions and methods, not on lambda binders or in ordinary
-  function types.
+* `~` may be applied only to any place expression admitted by §5.1.7.2 and to any accessor-bundle descriptor
+  application admitted by §7.1.3B whose `open` descriptor field is available.
+* Each `inout` parameter contributes explicit `InoutParam` metadata and must have the corresponding quantity-`1`
+  successor field in the result record.
+* `inout` metadata may be introduced only by explicit parameters of named functions, methods, and trait-member
+  signatures. It is not inferred from ordinary function shape and is not part of ordinary anonymous function type
+  equality.
+* Consequently, a `~` call against a resolved callable interface that lacks `InoutParam` metadata is a compile-time
+  error even when the ordinary function shape appears superficially compatible.
 * If the residual result has multiple fields, the user must bind it with an anonymous record pattern naming those
   residual fields.
 * The user-written residual pattern must not bind any name also used as a `~` argument in the same application.
@@ -24220,10 +24242,11 @@ A module interface artifact MUST record at least:
   * the ordered explicit named binder telescope;
   * each binder's source label;
   * each binder's elaborated type after earlier binders;
+  * for each binder carrying `inout` metadata, the corresponding `InoutParam(formal, successorField)` entry;
   * whether the metadata originates from a function, lambda, constructor, or descriptor value;
   * for constructors, any default metadata required by §11.1.1; and
   * enough identity metadata for rebinding, import aliases, export aliases, record/package storage, and field projection
-    to preserve named-call behavior downstream;
+    to preserve named-call and `inout` behavior downstream;
 * for each exported declaration, whether it has a reified static-object term facet under §2.8.6;
 * for each exported reified static-object term facet, its elaborated compile-time type;
 * for each exported reified type-object facet, the static-member table identity needed for downstream dotted static
@@ -24405,7 +24428,8 @@ At minimum, the canonical interface view MUST include:
 * importable fixity declarations;
 * visibility and opacity classification;
 * exported signatures of terms, rendered after elaboration of any inferred non-empty `captures (...)` annotations,
-  together with the corresponding binder metadata needed for downstream application-site elaboration and any
+  together with the corresponding binder metadata, including any explicit `InoutParam` entries needed for downstream
+  `~` elaboration, and any
   interface-visible classification relevant to use sites, such as pattern-head eligibility under §7.7;
   The canonical interface view MUST render any non-empty inferred `captures (...)` annotation explicitly, even if it was
   omitted in the original source.
