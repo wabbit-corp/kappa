@@ -234,6 +234,17 @@ Conformance:
 Portable conformance tests MAY assume that inactive feature gates are rejected during elaboration even when the tested
 syntax is accepted by the parser for recovery.
 
+<!-- design.version_terminology -->
+### 1.3 Version terminology
+
+Version terminology rule:
+
+* This document uses `Kappa v1` for the language version specified by
+  this draft.
+* Historical phrases such as `v0.1` in normative sections SHOULD be
+  replaced by `v1` unless they intentionally refer to a pre-v1 prototype.
+* Non-normative roadmap sections may refer to future revisions as
+  `future Kappa revisions`.
 
 
 ---
