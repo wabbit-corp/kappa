@@ -696,6 +696,21 @@ E_GENERATED_NAME_COLLISION
 E_HOLE_UNSOLVED
 E_HOLE_INCONSISTENT_EXPECTED_TYPE
 I_HOLE_GOAL_AVAILABLE
+E_RECOVERY_INSERTED_TOKEN
+E_RECOVERY_MISSING_NODE
+E_RECOVERY_SKIPPED_INVALID_SYNTAX
+E_FIX_STALE_SOURCE
+E_FIX_OVERLAPPING_EDITS
+E_FIX_PRECONDITION_FAILED
+E_QUERY_CYCLE
+E_QUERY_UNSTABLE_INPUT
+E_QUERY_CACHE_CORRUPT
+E_PROVENANCE_MISSING
+E_PROVENANCE_CYCLE
+E_SYNTHETIC_ORIGIN_UNMAPPED
+E_REPRO_BYTEWISE_MISMATCH
+E_REPRO_AMBIENT_INPUT
+E_REPRO_UNPINNED_TOOL
 
 E_UNSUPPORTED_DETERMINISTIC
 E_INTERACTIVE_PROTOCOL_VIOLATION
@@ -739,6 +754,26 @@ Meanings:
   definitionally equal expected type.
 * `I_HOLE_GOAL_AVAILABLE` MAY be emitted as an informational diagnostic or tooling-visible status indicating that a
   queryable hole goal is available at a hole occurrence.
+* `E_RECOVERY_INSERTED_TOKEN` is emitted when parser recovery inserts a token required to continue analysis.
+* `E_RECOVERY_MISSING_NODE` is emitted when recovery inserts a missing node or placeholder expression.
+* `E_RECOVERY_SKIPPED_INVALID_SYNTAX` is emitted when recovery skips invalid source text.
+* `E_FIX_STALE_SOURCE` is emitted by tooling when a requested fix-it does not apply because the source version changed.
+* `E_FIX_OVERLAPPING_EDITS` is emitted when a diagnostic fix incorrectly contains overlapping edits.
+* `E_FIX_PRECONDITION_FAILED` is emitted when a fix-it precondition is not satisfied.
+* `E_QUERY_CYCLE` is emitted when query evaluation detects an unpermitted dependency cycle.
+* `E_QUERY_UNSTABLE_INPUT` is emitted when a query result would depend on an unmodeled ambient input.
+* `E_QUERY_CACHE_CORRUPT` is emitted when a cached query result cannot be validated against its recorded dependencies.
+* `E_PROVENANCE_MISSING` is emitted when a generated node, generated obligation, synthetic origin, or emitted diagnostic
+  lacks required provenance.
+* `E_PROVENANCE_CYCLE` is emitted when provenance frames form a cycle.
+* `E_SYNTHETIC_ORIGIN_UNMAPPED` is emitted when a diagnostic or fix-it cannot map a synthetic-only origin back to a
+  valid user-written source origin where one is required.
+* `E_REPRO_BYTEWISE_MISMATCH` is emitted when a target claiming bytewise reproducibility produces different artifact
+  bytes for equivalent reproducibility inputs.
+* `E_REPRO_AMBIENT_INPUT` is emitted when a reproducible action observes an ambient input not covered by its
+  reproducibility policy.
+* `E_REPRO_UNPINNED_TOOL` is emitted when a selected tool lacks a pinned or transcript-recorded identity required by the
+  target's reproducibility policy.
 * `E_UNSUPPORTED_DETERMINISTIC` is emitted when an implementation or harness deterministically reports that a requested
   feature or action is unsupported.
 * `E_INTERACTIVE_PROTOCOL_VIOLATION` is reserved for implementations that expose a machine-readable interactive
@@ -31754,6 +31789,36 @@ Sensitive transcript or configuration values MAY be redacted by default.
 If redacted, the dump MUST carry an explicit redaction marker and a stable digest or equivalent placeholder in place of
 the redacted value.
 
+<!-- compiler.pipeline.dump_typed_schema -->
+#### 34.1.5A Typed dump schema requirements
+
+Machine-readable stage dumps MUST expose typed structure, not only pretty-printed source fragments.
+
+A dump MAY include source-like renderings for human convenience, but every source-like rendering of a semantic object
+MUST be paired with typed data sufficient to identify what was rendered.
+
+At minimum:
+
+* declarations are represented with declaration-symbol identities;
+* resolved references are represented with target declaration-symbol identities;
+* semantic objects are represented with semantic object identities when available;
+* types are represented either as typed semantic fragments or as stable references to typed semantic fragments;
+* obligations are represented with obligation identifiers and obligation kinds;
+* holes are represented with hole identifiers;
+* origins are represented with source or synthetic origin records;
+* generated nodes are represented with provenance frames;
+* query-produced facts are represented with query key digests or explicit query-result identities when available.
+
+A dump MUST NOT represent a resolved reference solely as a string such as `"map"`.
+
+A dump MUST NOT represent a type solely as a pretty-printed string such as `"List Int"` when a typed representation or
+stable typed reference is available.
+
+A dump MUST distinguish compact renderings from canonical renderings and from fully explicit renderings.
+
+If a typed representation is unavailable at a checkpoint because the corresponding phase has not yet run, the dump MUST
+say so explicitly.
+
 Stage dumps, pipeline traces, and reproducer bundles are observability artifacts only.
 They are not inputs to the hashing rules of §33.
 
@@ -35213,6 +35278,64 @@ when the publish metadata records the corresponding runtime prerequisites and de
 
 The full reproducibility record, not merely the summary status, is part of the query key for any query whose result can
 depend on a fact represented by that record.
+
+<!-- build_system.bytewise_reproducibility -->
+### 36.6A Bytewise reproducible artifacts
+
+A target whose reproducibility summary is `FullyReproducible` MUST produce bytewise identical primary artifacts for
+fixed:
+
+* source tree identities;
+* dependency identities;
+* selected provider identities;
+* lockfile identities;
+* macro transcripts, when any;
+* generated-output identities;
+* effective build configuration;
+* selected backend profile;
+* backend-intrinsic set;
+* reproducible action environment;
+* implementation version;
+* toolchain identity.
+
+Bytewise identity applies to:
+
+* module interface artifacts;
+* generated source artifacts selected as build outputs;
+* KCore or KBackendIR artifacts emitted as build outputs;
+* final target artifacts;
+* archive artifacts;
+* bridge companion artifacts;
+* host-binding generated artifacts;
+* package metadata emitted by the build.
+
+Rules:
+
+* Archive entry order MUST be canonical.
+* Archive timestamps MUST follow the source-date-epoch policy or another recorded deterministic timestamp policy.
+* File permissions included in artifacts MUST be deterministic or recorded as reproducibility inputs.
+* Debug paths MUST use the path-prefix mapping policy.
+* Temporary paths, absolute workspace paths, usernames, hostnames, process IDs, thread IDs, heap addresses, random
+  seeds, and wall-clock times MUST NOT appear in bytewise reproducible artifacts unless explicitly normalized or
+  recorded as reproducibility inputs.
+* Generated names that appear in emitted artifacts MUST be deterministic functions of typed identities, source origins,
+  semantic object identities, or stable generation counters scoped by typed provenance. They MUST NOT depend on
+  hash-map iteration order, worker scheduling, allocation order, or cache insertion order.
+* Compression settings, metadata, and dictionary choices for compressed artifacts MUST be deterministic or recorded as
+  toolchain identity.
+* A bytewise reproducibility claim MUST include the digest algorithm used to compare primary artifact bytes.
+* If two builds have the same reproducibility inputs but produce different primary artifact bytes, the implementation
+  MUST report diagnostic family `kappa.package.reproducibility`.
+
+A target summarized as `ReproducibleWithRecordedTranscript` MUST produce bytewise identical artifacts when replayed with
+the same accepted transcript and the same fixed inputs listed above.
+
+A target summarized as `ReproducibleCompilationButSystemRuntimePrerequisite` MUST still produce bytewise identical
+compilation artifacts; only runtime execution depends on recorded system prerequisites.
+
+Bytewise reproducibility does not require diagnostics, stage dumps, query traces, or benchmark results to be bytewise
+identical unless those are themselves selected build artifacts. When they are selected build artifacts, their own
+canonicalization policies apply.
 
 <!-- build_system.lockfile_structure -->
 ### 36.7 Lockfile structure and update modes
