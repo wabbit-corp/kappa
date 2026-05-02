@@ -8245,6 +8245,11 @@ denotes a `Ref`. A surface construct that admits a `var`-rooted place, such as `
 reading the current contents of that `Ref` into a fresh hidden temporary root and then forming the corresponding stable
 place from that temporary.
 
+The current-value representative `VarCurrent(x, n)` of §8.5.1A is not a stable
+place. It may carry branch-local refinement evidence for recognized reads of
+`x`, but it is not an addressable root for borrowing, path-sensitive
+consumption, record update, or `inout` rewriting.
+
 An ordinary value binding does not preserve place identity. If `e` elaborates to a stable place and the user writes
 `let y = e`, then `y` is bound to the value currently read from that place, not to an alias of the place itself.
 
@@ -14359,8 +14364,10 @@ Flow typing is defined over stable scrutinee representatives rather than over ra
 Definitions:
 
 * A stable scrutinee is:
-  * a stable place under §5.1.7.1,
-  * a fresh hidden scrutinee term introduced by elaboration of a control-flow form, or
+  * a stable place under §5.1.7.1;
+  * a fresh hidden scrutinee term introduced by elaboration of a control-flow form;
+  * the current-value representative `VarCurrent(x, n)` of a tracked local `var`
+    cell under §8.5.1A; or
   * a simple local alias of another stable scrutinee as defined below.
 
 * A simple local alias binding has one of the forms:
@@ -14399,9 +14406,17 @@ Invalidation:
 A stable-alias relation introduced by this section ceases to be available after any of the following:
 
 * rebinding or shadowing of the alias name;
-* assignment to a `var` from whose read the alias was derived;
+* any invalidation event for a tracked local `var` cell from whose
+  current-value representative the alias was derived, as specified by §8.5.1A;
 * a consuming use that makes the aliased value or path unavailable; or
 * any path-state change that invalidates the original stable place under the ownership rules.
+
+A current-value representative of a tracked local `var` cell participates only
+in flow-sensitive typing and refinement transport. It does not make the `var`
+name itself a stable place, does not preserve place identity for ordinary
+bindings, does not introduce auto-dereferencing, and does not permit borrowing
+or `inout` use of the current cell contents except through the ordinary rules
+that already admit `var`-rooted places.
 
 This section affects only flow typing and refinement transport. It does not change the place-identity rule of
 §5.1.7.1: an ordinary value binding remains not a place alias for borrowing or `inout`.
@@ -17463,6 +17478,24 @@ trait MonadRef (m : Type -> Type) =
     readRef  : Ref a -> m a
     writeRef : Ref a -> a -> m Unit
 ```
+
+Reference laws required by surface `var`:
+
+Any `MonadRef m` evidence used to elaborate a surface `var` declaration MUST
+satisfy the following observational laws for cells created by `newRef`:
+
+* `newRef v` creates a fresh cell not reachable except through the returned
+  `Ref`, or through values explicitly derived from that `Ref`.
+* `readRef r` returns the current value stored in the cell denoted by `r`.
+* `readRef r` does not modify any cell.
+* `writeRef r v` modifies only the cell denoted by `r`.
+* In a sequential execution with no intervening write to `r`, repeated reads of
+  `r` return the same value.
+* A computation cannot read or write a fresh cell unless it has received the
+  corresponding `Ref`, or a runtime value containing that `Ref`.
+
+A `MonadRef` implementation that does not satisfy these laws is not a lawful
+implementation of surface `var`, even if its methods have the right types.
 
 Elaboration of:
 
@@ -22670,8 +22703,10 @@ Definitions:
 
 * A **refinement subject** is a stable scrutinee representative:
   * a stable place under §5.1.7.1;
-  * a fresh hidden scrutinee term introduced by elaboration of a control-flow form; or
-  * a simple stable alias of either, under §7.4.3.
+  * a fresh hidden scrutinee term introduced by elaboration of a control-flow form;
+  * the current-value representative `VarCurrent(x, n)` of a tracked local `var`
+    cell under §8.5.1A; or
+  * a simple stable alias of any of the above, under §7.4.3 and §8.5.1A.
 * A **constructor decision** is a case-tree node, `match` branch selection, or constructor-tag test that inspects the
   top-level constructor of a refinement subject.
 * A **boolean decision** is an `if`, boolean `match`, or equivalent case-tree node that inspects a `Bool`.
