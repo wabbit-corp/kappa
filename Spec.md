@@ -17739,6 +17739,81 @@ because they are one-shot operation invocations. Ordinary writes, escapes,
 handler captures, finalizer captures, and control-flow joins still invalidate
 as specified above.
 
+Examples:
+
+Accepted:
+
+```kappa
+do
+    var x = Some 1
+
+    if !(readRef x) is Some then
+        let n = (!(readRef x)).value
+        println n
+```
+
+The first recognized read refines `VarCurrent(x, n)` with `HasCtor Some`.
+The second recognized read is of the same tracked cell version, so the
+constructor-field projection is accepted.
+
+Accepted with a bound read:
+
+```kappa
+do
+    var x = Some 1
+
+    if !(readRef x) is Some then
+        let y <- readRef x
+        println y.value
+```
+
+The monadic bind records `y` as a flow-typing alias of the same current-value
+representative.
+
+Rejected:
+
+```kappa
+do
+    var x = Some 1
+
+    if !(readRef x) is Some then
+        x = None
+        let n = (!(readRef x)).value
+        println n
+```
+
+The assignment gives `x` a fresh current-value version and discards the previous
+`HasCtor Some` fact.
+
+Rejected:
+
+```kappa
+do
+    var x = Some 1
+
+    let r = x
+
+    if !(readRef x) is Some then
+        let n = (!(readRef x)).value
+        println n
+```
+
+Binding the `Ref` to `r` escapes the cell for purposes of current-value flow
+typing. The later read remains an ordinary read, but no current-value refinement
+is available.
+
+Rejected:
+
+```kappa
+do
+    var x = Some 1
+
+    if x is Some then
+        println x.value
+```
+
+The name `x` has type `Ref (Option Int)`. There is no implicit dereference.
+
 <!-- effects.loops.else -->
 #### 8.5.2 Loop `else`
 
