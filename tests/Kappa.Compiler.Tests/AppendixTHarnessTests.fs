@@ -38,6 +38,7 @@ let private discoverFixtureCase root =
         directives
         |> List.choose (function
             | AssertionDirective assertion -> Some assertion
+            | ExtensionAssertionDirective(_, assertion) -> Some assertion
             | _ -> None)
 
     { Name = Path.GetFileName(root)
@@ -161,6 +162,37 @@ let ``suite directives accept standard assertStageDump assertions`` () =
                 (Path.Combine(root, "suite.ktest"))
 
         Assert.NotEmpty(directives))
+
+[<Fact>]
+let ``legacy x assertion directives remain explicitly marked as extensions`` () =
+    withScratchFixture "appendix-t-extension-directive-parse" (fun root ->
+        writeWorkspaceFiles
+            root
+            [
+                "main.kp", "module main\nanswer : Int\nlet answer = 42\n--! x-assertEval answer 42\n"
+            ]
+
+        let directives =
+            loadFixtureDirectives
+                KpFixtureDirectiveSource.KpSourceFile
+                (Path.Combine(root, "main.kp"))
+
+        match directives with
+        | [ ExtensionAssertionDirective("x-assertEval", AssertEval("answer", "42", _, _)) ] -> ()
+        | other ->
+            failwithf "Expected x-assertEval to remain an explicit extension directive, but parsed %A." other)
+
+[<Fact>]
+let ``legacy x assertion directives still execute with existing semantics`` () =
+    withScratchFixture "appendix-t-extension-directive-run" (fun root ->
+        writeWorkspaceFiles
+            root
+            [
+                "main.kp", "module main\nanswer : Int\nlet answer = 42\n--! x-assertEval answer 42\n"
+            ]
+
+        let fixtureCase = discoverFixtureCase root
+        runKpFixtureCase fixtureCase)
 
 [<Fact>]
 let ``fixture harness evaluates assertStageDump with canonical json and sexpr comparison`` () =

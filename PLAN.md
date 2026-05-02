@@ -31,7 +31,8 @@ Explicit term/type/constructor import-boundary coverage already exists in the fi
 
 - [ ] Finish the remaining Appendix-T gaps without overstating current conformance. Already implemented: `suite.ktest`, `incremental.ktest` parsing plus step-suite execution, `mode`, `packageMode`, `scriptMode`, `backend`, `entry`, `runArgs`, `stdinFile`, `dumpFormat`, `requires`, `assertDiagnostic*`, `assertType` by definitional equality, `assertFileDeclKinds`, `assertStageDump`, `assertStderrFile`, trace-count assertions, and the cross-step assertions `assertStepNoErrors`, `assertStepErrorCount`, `assertStepWarningCount`, and `assertStepTraceCount`.
 - [ ] Keep the `incremental` capability unsupported until the compiler/harness actually preserve reusable cross-step state and can honestly produce `reuse` trace evidence. The current T.7 runner executes ordered step snapshots and applies the standard cross-step assertions over each step's real diagnostics and pipeline trace, but it does not yet preserve caches, interfaces, KCore units, KBackendIR units, or target-lowering units between steps.
-- [ ] Keep existing `x-...` directives explicitly marked as extensions rather than letting them silently stand in for missing standard behavior.
+- [x] Keep existing `x-...` directives explicitly marked as extensions rather than letting them silently stand in for missing standard behavior.
+  Legacy `x-assert*` aliases now remain explicit extension directives in parser/discovery instead of being canonicalized to bare names before execution. The remaining non-portable debt is the separate set of bare legacy assertions such as `assertEval` that are still supported locally even though they are outside Appendix T.
 
 ## 6. Milestone 4 (`Effects` + handlers + row polymorphism)
 

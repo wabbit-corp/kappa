@@ -195,33 +195,21 @@ type KpFixtureDirective =
     | SetStdinFile of relativePath: string * filePath: string * lineNumber: int
     | SetDumpFormat of dumpFormat: StageDumpFormat * filePath: string * lineNumber: int
     | AssertionDirective of KpFixtureAssertion
+    | ExtensionAssertionDirective of extensionName: string * KpFixtureAssertion
     | IncrementalAssertionDirective of KpIncrementalFixtureAssertion
-
-let private legacyDirectiveAliases =
-    Map.ofList
-        [
-            "x-assertEval", "assertEval"
-            "x-assertEvalErrorContains", "assertEvalErrorContains"
-            "x-assertModule", "assertModule"
-            "x-assertModuleAttributes", "assertModuleAttributes"
-            "x-assertDeclDescriptors", "assertDeclDescriptors"
-            "x-assertDataConstructors", "assertDataConstructors"
-            "x-assertTraitMembers", "assertTraitMembers"
-            "x-assertContainsTokenKinds", "assertContainsTokenKinds"
-            "x-assertContainsTokenTexts", "assertContainsTokenTexts"
-        ]
-
-let private canonicalizeDirectiveName directiveName =
-    legacyDirectiveAliases
-    |> Map.tryFind directiveName
-    |> Option.defaultValue directiveName
 
 let private parseFixtureDirective (sourceKind: KpFixtureDirectiveSource) (filePath: string) lineNumber (lineText: string) =
     match parseDirectiveHeader filePath lineNumber lineText with
     | None ->
         None
     | Some(rawDirectiveName, directiveBody) ->
-        let directiveName = canonicalizeDirectiveName rawDirectiveName
+        let directiveName = rawDirectiveName
+
+        let assertionDirective assertion =
+            if rawDirectiveName.StartsWith("x-", StringComparison.Ordinal) then
+                ExtensionAssertionDirective(rawDirectiveName, assertion)
+            else
+                AssertionDirective assertion
 
         let ensureNoArguments () =
             if not (String.IsNullOrWhiteSpace(directiveBody)) then
@@ -312,14 +300,14 @@ let private parseFixtureDirective (sourceKind: KpFixtureDirectiveSource) (filePa
             Some(SetDumpFormat(parseFixtureDumpFormat filePath lineNumber directiveBody, filePath, lineNumber))
         | "assertNoErrors" ->
             ensureNoArguments ()
-            Some(AssertionDirective(AssertNoErrors(filePath, lineNumber)))
+            Some(assertionDirective (AssertNoErrors(filePath, lineNumber)))
         | "assertNoWarnings" ->
             ensureNoArguments ()
-            Some(AssertionDirective(AssertNoWarnings(filePath, lineNumber)))
+            Some(assertionDirective (AssertNoWarnings(filePath, lineNumber)))
         | "assertErrorCount" ->
-            Some(AssertionDirective(AssertErrorCount(parseNonNegativeInt directiveName filePath lineNumber directiveBody, filePath, lineNumber)))
+            Some(assertionDirective (AssertErrorCount(parseNonNegativeInt directiveName filePath lineNumber directiveBody, filePath, lineNumber)))
         | "assertWarningCount" ->
-            Some(AssertionDirective(AssertWarningCount(parseNonNegativeInt directiveName filePath lineNumber directiveBody, filePath, lineNumber)))
+            Some(assertionDirective (AssertWarningCount(parseNonNegativeInt directiveName filePath lineNumber directiveBody, filePath, lineNumber)))
         | "assertDiagnostic" ->
             let tokens =
                 directiveBody.Split([| ' '; '\t' |], StringSplitOptions.RemoveEmptyEntries)
@@ -328,14 +316,13 @@ let private parseFixtureDirective (sourceKind: KpFixtureDirectiveSource) (filePa
                 invalidOp $"assertDiagnostic expects '<severity> <code>' ({filePath}:{lineNumber})."
 
             Some(
-                AssertionDirective(
-                    AssertDiagnostic(
+                assertionDirective
+                    (AssertDiagnostic(
                         parseFixtureDiagnosticSeverity filePath lineNumber tokens[0],
                         parseFixtureDiagnosticCode filePath lineNumber tokens[1],
                         filePath,
                         lineNumber
-                    )
-                )
+                    ))
             )
         | "assertDiagnosticNext" ->
             let tokens =
@@ -345,20 +332,19 @@ let private parseFixtureDirective (sourceKind: KpFixtureDirectiveSource) (filePa
                 invalidOp $"assertDiagnosticNext expects '<severity> <code>' ({filePath}:{lineNumber})."
 
             Some(
-                AssertionDirective(
-                    AssertDiagnosticNext(
+                assertionDirective
+                    (AssertDiagnosticNext(
                         parseFixtureDiagnosticSeverity filePath lineNumber tokens[0],
                         parseFixtureDiagnosticCode filePath lineNumber tokens[1],
                         filePath,
                         lineNumber
-                    )
-                )
+                    ))
             )
         | "assertDiagnosticMatch" ->
             if String.IsNullOrWhiteSpace(directiveBody) then
                 invalidOp $"assertDiagnosticMatch expects a regular expression ({filePath}:{lineNumber})."
 
-            Some(AssertionDirective(AssertDiagnosticMatch(directiveBody, filePath, lineNumber)))
+            Some(assertionDirective (AssertDiagnosticMatch(directiveBody, filePath, lineNumber)))
         | "assertDiagnosticCodes" ->
             let expectedCodes =
                 parseFixtureList directiveBody
@@ -367,7 +353,7 @@ let private parseFixtureDirective (sourceKind: KpFixtureDirectiveSource) (filePa
             if List.isEmpty expectedCodes then
                 invalidOp $"assertDiagnosticCodes expects a comma-separated list of diagnostic codes ({filePath}:{lineNumber})."
 
-            Some(AssertionDirective(AssertDiagnosticCodes(expectedCodes, filePath, lineNumber)))
+            Some(assertionDirective (AssertDiagnosticCodes(expectedCodes, filePath, lineNumber)))
         | "assertDiagnosticAt" ->
             let tokens =
                 directiveBody.Split([| ' '; '\t' |], StringSplitOptions.RemoveEmptyEntries)
@@ -392,8 +378,8 @@ let private parseFixtureDirective (sourceKind: KpFixtureDirectiveSource) (filePa
                     None
 
             Some(
-                AssertionDirective(
-                    AssertDiagnosticAt(
+                assertionDirective
+                    (AssertDiagnosticAt(
                         tokens[0],
                         parseFixtureDiagnosticSeverity filePath lineNumber tokens[1],
                         parseFixtureDiagnosticCode filePath lineNumber tokens[2],
@@ -401,21 +387,19 @@ let private parseFixtureDirective (sourceKind: KpFixtureDirectiveSource) (filePa
                         expectedColumn,
                         filePath,
                         lineNumber
-                    )
-                )
+                    ))
             )
         | "assertDiagnosticExplainExists" ->
             if String.IsNullOrWhiteSpace(directiveBody) then
                 invalidOp $"assertDiagnosticExplainExists expects '<code>' ({filePath}:{lineNumber})."
 
             Some(
-                AssertionDirective(
-                    AssertDiagnosticExplainExists(
+                assertionDirective
+                    (AssertDiagnosticExplainExists(
                         parseFixtureDiagnosticCode filePath lineNumber directiveBody,
                         filePath,
                         lineNumber
-                    )
-                )
+                    ))
             )
         | "assertType" ->
             let targetAndType =
@@ -424,10 +408,10 @@ let private parseFixtureDirective (sourceKind: KpFixtureDirectiveSource) (filePa
             if targetAndType.Length <> 2 then
                 invalidOp $"assertType expects '<target> <type>' ({filePath}:{lineNumber})."
 
-            Some(AssertionDirective(AssertType(targetAndType[0], targetAndType[1].Trim(), filePath, lineNumber)))
+            Some(assertionDirective (AssertType(targetAndType[0], targetAndType[1].Trim(), filePath, lineNumber)))
         | "assertFileDeclKinds" ->
             let relativePath, expectedKinds = parseRelativePathAndList ()
-            Some(AssertionDirective(AssertFileDeclarationKinds(relativePath, expectedKinds, filePath, lineNumber)))
+            Some(assertionDirective (AssertFileDeclarationKinds(relativePath, expectedKinds, filePath, lineNumber)))
         | "assertStageDump" ->
             let tokens =
                 directiveBody.Split([| ' '; '\t' |], StringSplitOptions.RemoveEmptyEntries)
@@ -435,81 +419,77 @@ let private parseFixtureDirective (sourceKind: KpFixtureDirectiveSource) (filePa
             if tokens.Length <> 3 || not (String.Equals(tokens[1], "equals", StringComparison.Ordinal)) then
                 invalidOp $"assertStageDump expects '<checkpoint> equals <path>' ({filePath}:{lineNumber})."
 
-            Some(AssertionDirective(AssertStageDump(tokens[0], tokens[2], filePath, lineNumber)))
-        | "assertEval" ->
+            Some(assertionDirective (AssertStageDump(tokens[0], tokens[2], filePath, lineNumber)))
+        | "assertEval"
+        | "x-assertEval" ->
             let target, expectedValueText = parseTargetAndBody "assertEval" filePath lineNumber directiveBody
-            Some(AssertionDirective(AssertEval(target, expectedValueText, filePath, lineNumber)))
-        | "assertEvalErrorContains" ->
+            Some(assertionDirective (AssertEval(target, expectedValueText, filePath, lineNumber)))
+        | "assertEvalErrorContains"
+        | "x-assertEvalErrorContains" ->
             let target, expectedText = parseTargetAndBody "assertEvalErrorContains" filePath lineNumber directiveBody
-            Some(AssertionDirective(AssertEvalErrorContains(target, expectedText, filePath, lineNumber)))
+            Some(assertionDirective (AssertEvalErrorContains(target, expectedText, filePath, lineNumber)))
         | "assertExecute" ->
             let target, expectedValueText = parseTargetAndBody "assertExecute" filePath lineNumber directiveBody
-            Some(AssertionDirective(AssertExecute(target, expectedValueText, filePath, lineNumber)))
+            Some(assertionDirective (AssertExecute(target, expectedValueText, filePath, lineNumber)))
         | "assertRunStdout" ->
             let target, expectedOutputText = parseTargetAndBody "assertRunStdout" filePath lineNumber directiveBody
 
             Some(
-                AssertionDirective(
-                    AssertRunStdout(
+                assertionDirective
+                    (AssertRunStdout(
                         target,
                         decodeAssertionText "assertRunStdout" filePath lineNumber expectedOutputText,
                         filePath,
                         lineNumber
-                    )
-                )
+                    ))
             )
         | "assertStdout" ->
             Some(
-                AssertionDirective(
-                    AssertStdout(
+                assertionDirective
+                    (AssertStdout(
                         parseSingleStringLiteralArgument directiveName filePath lineNumber directiveBody,
                         filePath,
                         lineNumber
-                    )
-                )
+                    ))
             )
         | "assertStdoutFile" ->
             Some(
-                AssertionDirective(
-                    AssertStdoutFile(
+                assertionDirective
+                    (AssertStdoutFile(
                         parseSingleBareArgument directiveName filePath lineNumber directiveBody,
                         filePath,
                         lineNumber
-                    )
-                )
+                    ))
             )
         | "assertStdoutContains" ->
             Some(
-                AssertionDirective(
-                    AssertStdoutContains(
+                assertionDirective
+                    (AssertStdoutContains(
                         parseSingleStringLiteralArgument directiveName filePath lineNumber directiveBody,
                         filePath,
                         lineNumber
-                    )
-                )
+                    ))
             )
         | "assertStderrContains" ->
             Some(
-                AssertionDirective(
-                    AssertStderrContains(
+                assertionDirective
+                    (AssertStderrContains(
                         parseSingleStringLiteralArgument directiveName filePath lineNumber directiveBody,
                         filePath,
                         lineNumber
-                    )
-                )
+                    ))
             )
         | "assertStderrFile" ->
             Some(
-                AssertionDirective(
-                    AssertStderrFile(
+                assertionDirective
+                    (AssertStderrFile(
                         parseSingleBareArgument directiveName filePath lineNumber directiveBody,
                         filePath,
                         lineNumber
-                    )
-                )
+                    ))
             )
         | "assertExitCode" ->
-            Some(AssertionDirective(AssertExitCode(parseNonNegativeInt directiveName filePath lineNumber directiveBody, filePath, lineNumber)))
+            Some(assertionDirective (AssertExitCode(parseNonNegativeInt directiveName filePath lineNumber directiveBody, filePath, lineNumber)))
         | "assertTraceCount" ->
             let tokens =
                 directiveBody.Split([| ' '; '\t' |], StringSplitOptions.RemoveEmptyEntries)
@@ -518,16 +498,15 @@ let private parseFixtureDirective (sourceKind: KpFixtureDirectiveSource) (filePa
                 invalidOp $"{directiveName} expects '<event> <subject> <relop> <n>' ({filePath}:{lineNumber})."
 
             Some(
-                AssertionDirective(
-                    AssertTraceCount(
+                assertionDirective
+                    (AssertTraceCount(
                         tokens[0],
                         tokens[1],
                         parseFixtureRelation filePath lineNumber tokens[2],
                         parseNonNegativeInt directiveName filePath lineNumber tokens[3],
                         filePath,
                         lineNumber
-                    )
-                )
+                    ))
             )
         | "assertStepNoErrors" ->
             ensureIncrementalDirective ()
@@ -601,18 +580,20 @@ let private parseFixtureDirective (sourceKind: KpFixtureDirectiveSource) (filePa
                     )
                 )
             )
-        | "assertModule" ->
+        | "assertModule"
+        | "x-assertModule" ->
             if String.IsNullOrWhiteSpace(directiveBody) then
                 invalidOp $"assertModule expects '<module>' ({filePath}:{lineNumber})."
 
-            Some(AssertionDirective(AssertModule(directiveBody, filePath, lineNumber)))
-        | "assertModuleAttributes" ->
+            Some(assertionDirective (AssertModule(directiveBody, filePath, lineNumber)))
+        | "assertModuleAttributes"
+        | "x-assertModuleAttributes" ->
             let expectedAttributes = parseFixtureList directiveBody
 
             if List.isEmpty expectedAttributes then
                 invalidOp $"assertModuleAttributes expects a comma-separated list of attributes ({filePath}:{lineNumber})."
 
-            Some(AssertionDirective(AssertModuleAttributes(expectedAttributes, filePath, lineNumber)))
+            Some(assertionDirective (AssertModuleAttributes(expectedAttributes, filePath, lineNumber)))
         | "assertDeclKinds" ->
             ensureSourceFileDirective ()
 
@@ -621,8 +602,9 @@ let private parseFixtureDirective (sourceKind: KpFixtureDirectiveSource) (filePa
             if List.isEmpty expectedKinds then
                 invalidOp $"assertDeclKinds expects a comma-separated list of declaration kinds ({filePath}:{lineNumber})."
 
-            Some(AssertionDirective(AssertDeclarationKinds(expectedKinds, filePath, lineNumber)))
-        | "assertDeclDescriptors" ->
+            Some(assertionDirective (AssertDeclarationKinds(expectedKinds, filePath, lineNumber)))
+        | "assertDeclDescriptors"
+        | "x-assertDeclDescriptors" ->
             ensureSourceFileDirective ()
 
             let expectedDescriptors = parseFixtureList directiveBody
@@ -630,20 +612,21 @@ let private parseFixtureDirective (sourceKind: KpFixtureDirectiveSource) (filePa
             if List.isEmpty expectedDescriptors then
                 invalidOp $"assertDeclDescriptors expects a comma-separated list of declaration descriptors ({filePath}:{lineNumber})."
 
-            Some(AssertionDirective(AssertDeclarationDescriptors(expectedDescriptors, filePath, lineNumber)))
+            Some(assertionDirective (AssertDeclarationDescriptors(expectedDescriptors, filePath, lineNumber)))
         | "assertParameterQuantities" ->
             ensureSourceFileDirective ()
             let bindingName, expectedQuantities = parseTargetAndList "binding"
-            Some(AssertionDirective(AssertParameterQuantities(bindingName, expectedQuantities, filePath, lineNumber)))
+            Some(assertionDirective (AssertParameterQuantities(bindingName, expectedQuantities, filePath, lineNumber)))
         | "assertInoutParameters" ->
             ensureSourceFileDirective ()
             let bindingName, expectedNames = parseTargetAndList "binding"
-            Some(AssertionDirective(AssertInoutParameters(bindingName, expectedNames, filePath, lineNumber)))
+            Some(assertionDirective (AssertInoutParameters(bindingName, expectedNames, filePath, lineNumber)))
         | "assertDoItemDescriptors" ->
             ensureSourceFileDirective ()
             let bindingName, expectedDescriptors = parseTargetAndList "binding"
-            Some(AssertionDirective(AssertDoItemDescriptors(bindingName, expectedDescriptors, filePath, lineNumber)))
-        | "assertDataConstructors" ->
+            Some(assertionDirective (AssertDoItemDescriptors(bindingName, expectedDescriptors, filePath, lineNumber)))
+        | "assertDataConstructors"
+        | "x-assertDataConstructors" ->
             ensureSourceFileDirective ()
 
             let typeAndConstructors =
@@ -657,8 +640,9 @@ let private parseFixtureDirective (sourceKind: KpFixtureDirectiveSource) (filePa
             if List.isEmpty expectedConstructors then
                 invalidOp $"assertDataConstructors expects at least one constructor ({filePath}:{lineNumber})."
 
-            Some(AssertionDirective(AssertDataConstructors(typeAndConstructors[0], expectedConstructors, filePath, lineNumber)))
-        | "assertTraitMembers" ->
+            Some(assertionDirective (AssertDataConstructors(typeAndConstructors[0], expectedConstructors, filePath, lineNumber)))
+        | "assertTraitMembers"
+        | "x-assertTraitMembers" ->
             ensureSourceFileDirective ()
 
             let traitAndMembers =
@@ -672,8 +656,9 @@ let private parseFixtureDirective (sourceKind: KpFixtureDirectiveSource) (filePa
             if List.isEmpty expectedMembers then
                 invalidOp $"assertTraitMembers expects at least one member ({filePath}:{lineNumber})."
 
-            Some(AssertionDirective(AssertTraitMembers(traitAndMembers[0], expectedMembers, filePath, lineNumber)))
-        | "assertContainsTokenKinds" ->
+            Some(assertionDirective (AssertTraitMembers(traitAndMembers[0], expectedMembers, filePath, lineNumber)))
+        | "assertContainsTokenKinds"
+        | "x-assertContainsTokenKinds" ->
             ensureSourceFileDirective ()
 
             let expectedKinds = parseFixtureList directiveBody
@@ -681,8 +666,9 @@ let private parseFixtureDirective (sourceKind: KpFixtureDirectiveSource) (filePa
             if List.isEmpty expectedKinds then
                 invalidOp $"assertContainsTokenKinds expects a comma-separated list of token kinds ({filePath}:{lineNumber})."
 
-            Some(AssertionDirective(AssertContainsTokenKinds(expectedKinds, filePath, lineNumber)))
-        | "assertContainsTokenTexts" ->
+            Some(assertionDirective (AssertContainsTokenKinds(expectedKinds, filePath, lineNumber)))
+        | "assertContainsTokenTexts"
+        | "x-assertContainsTokenTexts" ->
             ensureSourceFileDirective ()
 
             let expectedTexts = parseFixtureList directiveBody
@@ -690,7 +676,7 @@ let private parseFixtureDirective (sourceKind: KpFixtureDirectiveSource) (filePa
             if List.isEmpty expectedTexts then
                 invalidOp $"assertContainsTokenTexts expects a comma-separated list of token texts ({filePath}:{lineNumber})."
 
-            Some(AssertionDirective(AssertContainsTokenTexts(expectedTexts, filePath, lineNumber)))
+            Some(assertionDirective (AssertContainsTokenTexts(expectedTexts, filePath, lineNumber)))
         | other ->
             invalidOp $"Unsupported fixture assertion '{other}' at {filePath}:{lineNumber}."
 
@@ -805,6 +791,8 @@ let buildFixtureConfiguration (directives: KpFixtureDirective list) =
                         DumpFormat =
                             mergeFixtureConfigurationValue "dumpFormat" state.DumpFormat (dumpFormat, filePath, lineNumber) }
                 | AssertionDirective _ ->
+                    state
+                | ExtensionAssertionDirective _ ->
                     state
                 | IncrementalAssertionDirective _ ->
                     state)

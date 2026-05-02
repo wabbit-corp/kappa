@@ -36,6 +36,7 @@ let private discoverOrdinaryFixtureCase caseName caseDirectory =
             directives
             |> List.choose (function
                 | AssertionDirective assertion -> Some assertion
+                | ExtensionAssertionDirective(_, assertion) -> Some assertion
                 | _ -> None)
 
         if Set.isSubset configuration.RequiredCapabilities supportedCapabilities then
