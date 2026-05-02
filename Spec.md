@@ -15127,6 +15127,27 @@ Semantics:
 * The subpattern may use any ordinary pattern valid at the result type, including constructor patterns, record patterns,
   variant patterns, and nested active patterns.
 
+Grouped total-view matching:
+
+* If two or more adjacent cases for the same outer scrutinee are all headed by the same total active pattern `P` with
+  definitionally equal pattern arguments, elaboration groups them by evaluating `P` on the scrutinee exactly once and
+  then matching the returned view against the listed subpatterns in source order.
+* In such a grouped block, fallthrough between the adjacent `P (...)` cases is ordinary fallthrough within the returned
+  view match, not fallthrough of the original scrutinee.
+* Cases headed by different total active patterns, or by the same total active pattern with non-definitionally-equal
+  arguments, do not form one grouped total-view match.
+
+Linear fallthrough restriction for consuming total views:
+
+* If a total active pattern consumes its scrutinee at quantity `@1`, then an outer case headed by that pattern may fall
+  through only when either:
+  * its subpattern is irrefutable for the returned view type; or
+  * it belongs to a grouped total-view match whose grouped subpatterns are exhaustive for that returned view type.
+* Therefore a consuming total active pattern with a refutable subpattern MUST NOT fall through to a later outer case not
+  headed by that same grouped total active pattern.
+* A consuming active pattern that must preserve owned fallthrough residue across failure MUST instead return `Match a r`
+  and use the threading rule of §7.7.3.
+
 Exhaustiveness:
 
 * If all cases for a given scrutinee are headed by the same total active pattern `P` with definitionally equal pattern
@@ -15147,8 +15168,14 @@ Active patterns are functions, so their scrutinee parameters obey the ordinary q
 
 2. Total consumption:
    * If a total active pattern consumes its scrutinee at quantity `@1`, then successful matching consumes that resource
-     permanently.
-   * The payload variables bound in the branch represent the owned components yielded by the view.
+      permanently.
+   * A refutable subpattern on such a consuming total view is permitted only when the surrounding outer cases are
+     elaborated as one grouped total-view match that is exhaustive for the returned view type, or when the subpattern is
+     itself irrefutable.
+   * Otherwise failure of the subpattern would require outer fallthrough after the original scrutinee has been consumed,
+     and the program is ill-formed. A pattern that needs linear fallthrough must return `Match a r`.
+   * In a grouped total-view match, the payload variables bound in the selected inner branch represent the owned
+     components yielded by the view.
 
 3. Zero-cost view elision:
    * If a total active pattern merely re-exposes an opaque representation through a transparent `data` / variant view,
