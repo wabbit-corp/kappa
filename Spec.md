@@ -693,6 +693,9 @@ E_INDEXED_IMPOSSIBLE_REACHABLE
 E_QUOTE_MALFORMED_SYNTAX
 E_GENERATED_SYNTAX_INVALID
 E_GENERATED_NAME_COLLISION
+E_HOLE_UNSOLVED
+E_HOLE_INCONSISTENT_EXPECTED_TYPE
+I_HOLE_GOAL_AVAILABLE
 
 E_UNSUPPORTED_DETERMINISTIC
 E_INTERACTIVE_PROTOCOL_VIOLATION
@@ -730,6 +733,12 @@ Meanings:
 * `E_GENERATED_SYNTAX_INVALID` is emitted when macro-generated syntax cannot be elaborated as ordinary source syntax at
   the splice site.
 * `E_GENERATED_NAME_COLLISION` is emitted when frontend-generated names collide in a user-observable scope.
+* `E_HOLE_UNSOLVED` is emitted when an expression hole remains unsolved at the end of elaboration of its enclosing
+  declaration or local right-hand side.
+* `E_HOLE_INCONSISTENT_EXPECTED_TYPE` is emitted when repeated occurrences of the same named hole do not receive one
+  definitionally equal expected type.
+* `I_HOLE_GOAL_AVAILABLE` MAY be emitted as an informational diagnostic or tooling-visible status indicating that a
+  queryable hole goal is available at a hole occurrence.
 * `E_UNSUPPORTED_DETERMINISTIC` is emitted when an implementation or harness deterministically reports that a requested
   feature or action is unsupported.
 * `E_INTERACTIVE_PROTOCOL_VIOLATION` is reserved for implementations that expose a machine-readable interactive
@@ -2163,6 +2172,28 @@ Payload MUST include:
 * inhabitance summary when available; and
 * completion candidates when the inhabitance summary is `Contractible` or `Finite n` within the implementation's
   completion threshold.
+
+The diagnostic MUST use portable alias `E_HOLE_UNSOLVED`.
+
+Family:
+
+```text
+kappa.hole.inconsistent
+```
+
+Used when repeated occurrences of the same named hole cannot be assigned one definitionally equal expected type.
+
+Payload MUST include:
+
+* hole name;
+* enclosing declaration or local right-hand-side identity;
+* all hole occurrence origins;
+* expected type at each occurrence;
+* normalized expected type at each occurrence when available;
+* mismatch path between expected types when available;
+* outstanding obligations that prevented equality when the mismatch is blocked rather than concrete.
+
+The diagnostic MUST use portable alias `E_HOLE_INCONSISTENT_EXPECTED_TYPE`.
 
 Family:
 
@@ -13749,6 +13780,86 @@ unsolved hole accepted source code.
 Kappa does not provide placeholder-abstraction sugar based on holes in v1. Users should write an ordinary lambda
 explicitly when abstraction is intended, or use existing section forms such as operator sections (§5.5.1.1) and
 projection sections (§16.1.1).
+
+First-class hole objects:
+
+Each source hole elaborates to a first-class compiler hole object during frontend analysis.
+
+A hole object has the conceptual shape:
+
+```text
+Hole =
+    (id              : HoleId,
+     spelling        : HoleSpelling,
+     owner           : DeclarationSymbolId,
+     occurrences     : List Origin,
+     phase           : KFrontIRPhase,
+     goal            : Option HoleGoal,
+     constraints     : List ObligationId,
+     recovery        : Option RecoveryNode,
+     solvedBy        : Option HoleSolution)
+```
+
+`HoleSpelling` is one of:
+
+```text
+anonymous
+named String
+```
+
+`HoleGoal` has the conceptual shape:
+
+```text
+HoleGoal =
+    (expected              : RenderedSemanticFragment,
+     normalizedExpected    : Option RenderedSemanticFragment,
+     localExplicitContext  : List HoleContextBinding,
+     localImplicitContext  : List HoleImplicitCandidate,
+     activeRefinements     : List RefinementFact,
+     activeEffects         : Option RenderedSemanticFragment,
+     activeCaptureSet      : Option RenderedSemanticFragment,
+     ambientDemand         : Option Quantity,
+     outstandingGoals      : List ObligationId,
+     blockedMetavariables  : List MetavariableSummary,
+     imports               : EffectiveImportEnvironmentSummary,
+     completionCandidates  : List HoleCompletionCandidate)
+```
+
+`HoleContextBinding` records at least:
+
+```text
+(name        : String,
+ symbol      : Option DeclarationSymbolId,
+ type        : RenderedSemanticFragment,
+ quantity    : Option Quantity,
+ access      : BinderAccess,
+ origin      : Origin)
+```
+
+Rules:
+
+* Hole goal queries MUST be available for named and anonymous holes in incomplete files when enough context is available.
+* Hole goal queries MUST use the same KFrontIR, KCore, import environment, implicit context, refinement facts, and
+  query dependency graph as ordinary compilation.
+* Hole goal queries MUST NOT use a separate editor-only typechecker.
+* Repeated occurrences of a named hole MUST share one `HoleId`.
+* If repeated occurrences of a named hole receive incompatible expected types, compilation fails with diagnostic family
+  `kappa.hole.inconsistent`.
+* The diagnostic for an inconsistent named hole MUST include every occurrence and every distinct expected type.
+* Hole completion candidates MUST be deterministic for fixed source, build configuration, import environment, query
+  thresholds, and implementation version.
+* A hole completion candidate MUST distinguish:
+
+  * exact inhabitant;
+  * local variable;
+  * implicit candidate;
+  * constructor form;
+  * record literal form;
+  * lambda skeleton;
+  * case split;
+  * placeholder edit requiring user input.
+* A hole completion candidate marked machine-applicable MUST be represented as a `DiagnosticFix` and satisfy §3.1.6.
+* Unsolved holes remain compile-time errors unless a future feature gate explicitly defines a deferred-hole mode.
 
 <!-- expressions.implicit_parameters.implicit_resolution_instance_proof_search -->
 #### 16.3.3 Implicit resolution (instance/proof search)
