@@ -5153,6 +5153,36 @@ Rules:
   must agree: `M.x` and, after `let m = M`, `m.x` denote the same member
   whenever both are well-formed.
 
+Source-level module signature type:
+
+* For every module declaration `M`, Kappa provides a contextual type form:
+
+  ```kappa
+  moduleSig M : Type
+  ```
+
+* In type position, `moduleSig M` resolves `M` by ordinary lookup in module position and elaborates to the source-level
+  signature type of the corresponding module value.
+* The reified module value of `M` has type `moduleSig M`.
+  Thus both `M` in term position and `module M` in term position elaborate as ordinary values of type `moduleSig M`.
+* `moduleSig M` is a closed signature record type determined by the canonical exported member surface of `M`'s visible
+  module interface.
+* Its ordinary fields are the exported members available through qualified access on `M`, including runtime members,
+  compile-time members, reified static-object facets, and reified module facets as applicable.
+* In addition to ordinary field signatures, `moduleSig M` carries the interface-visible opacity, visibility, fixity, and
+  static-object identity metadata required so that projection from the module value agrees with ordinary qualified access.
+* Two module signature types are definitionally equal iff their canonical exported member signatures, opacity metadata,
+  importable fixity metadata, static-object identities, reified module facets, and module-interface fingerprints align.
+
+Example:
+
+```kappa
+import std.math as math
+
+let m : moduleSig math = math
+let useMath (m : moduleSig math) = m.sin 1.0
+```
+
 Additional rule:
 
 * A bridge-bound foreign surface returned at runtime under §17.7.7 is not
@@ -5305,6 +5335,7 @@ let, let?, in, if, then, elif, else,
 match, case, is, impossible,
 try, except, finally,
 data, type, trait, module,
+moduleSig,
 import, export, as, except,
 do, block, return, open,
 forall, exists,
@@ -5324,6 +5355,7 @@ Effect-row surface syntax (§5.3.2) introduces no additional keywords; it uses r
 Keywords are **soft** (contextual) keywords:
 
 `captures` is a soft keyword used only in type positions for the capture-annotation form of §5.1.6.1.
+`moduleSig` is a soft keyword used only in type positions for the module-signature form of §2.8.5.
 
 * The lexer recognizes the keyword tokens, but implementations must permit their use as ordinary identifiers in contexts
   where a keyword is not syntactically expected.
@@ -24312,8 +24344,13 @@ A module interface artifact MUST record at least:
   * the canonical visible `decreases` measure, or
   * an equivalent stable termination-certificate payload sufficient for downstream totality decisions, unfolding
     decisions, hashing, and reproducible separate compilation;
-* enough metadata to reconstruct the reified-module view of §2.8.5, including the kind-tagged exported-member surface
-  and the opaque-vs-transparent classification needed for local qualified access and module-value projection.
+* enough metadata to reconstruct the reified-module view and source-level `moduleSig` type of §2.8.5, including:
+  * the kind-tagged exported-member surface;
+  * exported-member signatures;
+  * importable fixity metadata;
+  * static-object and reified-module identities; and
+  * the opaque-vs-transparent classification and module-interface fingerprint needed for local qualified access,
+    module-value projection, and definitional equality of `moduleSig`.
 
 An exported constructor default may reference private declarations of the defining module through its elaborated core
 term. This does not make those private declarations name-resolvable to importing modules.
@@ -28882,12 +28919,23 @@ Rules:
   * the selected effect-interface identity;
   * the operation identity; and
   * the elaborated operation type.
+* A reified module declaration lowers to a `ModuleObject` value whose source-level type is `moduleSig M`, preserving:
+  * the canonical exported member surface;
+  * exported member signatures and opacity classification;
+  * importable fixity metadata;
+  * reified static-object and reified-module member identities; and
+  * the module-interface fingerprint governing definitional equality of `moduleSig M`.
 * Application of a reified effect operation value lowers to the same effect-operation invocation node as direct
   `label.op` application.
 * Dotted static-member selection on a reified type object consults the preserved static-member table identity.
 * Rebinding, record construction, package construction, sealing, opening, and projection of reified static-object values
   preserve the corresponding semantic-object identity.
-* All such values are compile-time only unless explicitly carried by a runtime reification type supplied elsewhere.
+* Reified type, trait, effect-label, effect-operation, and projector objects are compile-time only unless explicitly
+  carried by a runtime reification type supplied elsewhere.
+* A `ModuleObject` behaves as an ordinary first-class value with runtime members and compile-time members according to
+  `moduleSig M`.
+  Its compile-time members erase under the ordinary erasure rules; its runtime members remain ordinary package-like
+  members.
 
 <!-- compiler.kcore.provenance_explainability -->
 #### 17.3.2 KCore provenance and explainability
