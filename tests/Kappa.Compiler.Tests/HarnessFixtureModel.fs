@@ -12,6 +12,7 @@ type KpFixtureMode =
 type KpFixtureDirectiveSource =
     | KpSourceFile
     | SuiteDirectiveFile
+    | IncrementalDirectiveFile
 
 type KpFixtureRelation =
     | Equal
@@ -57,6 +58,7 @@ type KpFixtureAssertion =
     | AssertDiagnosticExplainExists of code: DiagnosticCode * filePath: string * lineNumber: int
     | AssertType of target: string * expectedTypeText: string * filePath: string * lineNumber: int
     | AssertFileDeclarationKinds of relativePath: string * expectedKinds: string list * filePath: string * lineNumber: int
+    | AssertStageDump of checkpoint: string * relativePath: string * filePath: string * lineNumber: int
     | AssertEval of target: string * expectedValueText: string * filePath: string * lineNumber: int
     | AssertEvalErrorContains of target: string * expectedText: string * filePath: string * lineNumber: int
     | AssertExecute of target: string * expectedValueText: string * filePath: string * lineNumber: int
@@ -65,6 +67,7 @@ type KpFixtureAssertion =
     | AssertStdoutFile of relativePath: string * filePath: string * lineNumber: int
     | AssertStdoutContains of expectedOutputText: string * filePath: string * lineNumber: int
     | AssertStderrContains of expectedOutputText: string * filePath: string * lineNumber: int
+    | AssertStderrFile of relativePath: string * filePath: string * lineNumber: int
     | AssertExitCode of expectedCode: int * filePath: string * lineNumber: int
     | AssertTraceCount of eventName: string * subjectName: string * relation: KpFixtureRelation * expectedCount: int * filePath: string * lineNumber: int
     | AssertModule of expectedModuleText: string * filePath: string * lineNumber: int
@@ -79,11 +82,26 @@ type KpFixtureAssertion =
     | AssertContainsTokenKinds of expectedKinds: string list * filePath: string * lineNumber: int
     | AssertContainsTokenTexts of expectedTexts: string list * filePath: string * lineNumber: int
 
+type KpIncrementalFixtureAssertion =
+    | AssertStepNoErrors of stepIndex: int * filePath: string * lineNumber: int
+    | AssertStepErrorCount of stepIndex: int * expectedCount: int * filePath: string * lineNumber: int
+    | AssertStepWarningCount of stepIndex: int * expectedCount: int * filePath: string * lineNumber: int
+    | AssertStepTraceCount of stepIndex: int * eventName: string * subjectName: string * relation: KpFixtureRelation * expectedCount: int * filePath: string * lineNumber: int
+
 type KpFixtureCase =
     { Name: string
       Root: string
       SourceFiles: string list
       Configuration: KpFixtureConfiguration
       Assertions: KpFixtureAssertion list }
+
+    override this.ToString() = this.Name
+
+type KpIncrementalFixtureCase =
+    { Name: string
+      Root: string
+      RequiredCapabilities: Set<string>
+      Steps: KpFixtureCase list
+      Assertions: KpIncrementalFixtureAssertion list }
 
     override this.ToString() = this.Name

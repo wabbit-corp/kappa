@@ -15,6 +15,7 @@
     <Compile Include="HarnessFixturesFacade.fs" />
     <Compile Include="HarnessExecution.fs" />
     <Compile Include="Harness.fs" />
+    <Compile Include="AppendixTHarnessTests.fs" />
     <Compile Include="DiagnosticTestSupport.fs" />
     <Compile Include="ResourceModelTests.fs" />
     <Compile Include="SymbolicIdentityTests.fs" />

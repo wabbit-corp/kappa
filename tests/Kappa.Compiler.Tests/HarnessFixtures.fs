@@ -195,6 +195,7 @@ type KpFixtureDirective =
     | SetStdinFile of relativePath: string * filePath: string * lineNumber: int
     | SetDumpFormat of dumpFormat: StageDumpFormat * filePath: string * lineNumber: int
     | AssertionDirective of KpFixtureAssertion
+    | IncrementalAssertionDirective of KpIncrementalFixtureAssertion
 
 let private legacyDirectiveAliases =
     Map.ofList
@@ -229,6 +230,10 @@ let private parseFixtureDirective (sourceKind: KpFixtureDirectiveSource) (filePa
         let ensureSourceFileDirective () =
             if sourceKind <> KpFixtureDirectiveSource.KpSourceFile then
                 invalidOp $"{directiveName} is only valid in .kp source files ({filePath}:{lineNumber})."
+
+        let ensureIncrementalDirective () =
+            if sourceKind <> KpFixtureDirectiveSource.IncrementalDirectiveFile then
+                invalidOp $"{directiveName} is only valid in incremental.ktest ({filePath}:{lineNumber})."
 
         let parseRelativePathAndList () =
             let tokens =
@@ -423,6 +428,14 @@ let private parseFixtureDirective (sourceKind: KpFixtureDirectiveSource) (filePa
         | "assertFileDeclKinds" ->
             let relativePath, expectedKinds = parseRelativePathAndList ()
             Some(AssertionDirective(AssertFileDeclarationKinds(relativePath, expectedKinds, filePath, lineNumber)))
+        | "assertStageDump" ->
+            let tokens =
+                directiveBody.Split([| ' '; '\t' |], StringSplitOptions.RemoveEmptyEntries)
+
+            if tokens.Length <> 3 || not (String.Equals(tokens[1], "equals", StringComparison.Ordinal)) then
+                invalidOp $"assertStageDump expects '<checkpoint> equals <path>' ({filePath}:{lineNumber})."
+
+            Some(AssertionDirective(AssertStageDump(tokens[0], tokens[2], filePath, lineNumber)))
         | "assertEval" ->
             let target, expectedValueText = parseTargetAndBody "assertEval" filePath lineNumber directiveBody
             Some(AssertionDirective(AssertEval(target, expectedValueText, filePath, lineNumber)))
@@ -485,6 +498,16 @@ let private parseFixtureDirective (sourceKind: KpFixtureDirectiveSource) (filePa
                     )
                 )
             )
+        | "assertStderrFile" ->
+            Some(
+                AssertionDirective(
+                    AssertStderrFile(
+                        parseSingleBareArgument directiveName filePath lineNumber directiveBody,
+                        filePath,
+                        lineNumber
+                    )
+                )
+            )
         | "assertExitCode" ->
             Some(AssertionDirective(AssertExitCode(parseNonNegativeInt directiveName filePath lineNumber directiveBody, filePath, lineNumber)))
         | "assertTraceCount" ->
@@ -501,6 +524,78 @@ let private parseFixtureDirective (sourceKind: KpFixtureDirectiveSource) (filePa
                         tokens[1],
                         parseFixtureRelation filePath lineNumber tokens[2],
                         parseNonNegativeInt directiveName filePath lineNumber tokens[3],
+                        filePath,
+                        lineNumber
+                    )
+                )
+            )
+        | "assertStepNoErrors" ->
+            ensureIncrementalDirective ()
+
+            Some(
+                IncrementalAssertionDirective(
+                    AssertStepNoErrors(
+                        parseNonNegativeInt directiveName filePath lineNumber directiveBody,
+                        filePath,
+                        lineNumber
+                    )
+                )
+            )
+        | "assertStepErrorCount" ->
+            ensureIncrementalDirective ()
+
+            let tokens =
+                directiveBody.Split([| ' '; '\t' |], StringSplitOptions.RemoveEmptyEntries)
+
+            if tokens.Length <> 2 then
+                invalidOp $"{directiveName} expects '<step> <n>' ({filePath}:{lineNumber})."
+
+            Some(
+                IncrementalAssertionDirective(
+                    AssertStepErrorCount(
+                        parseNonNegativeInt directiveName filePath lineNumber tokens[0],
+                        parseNonNegativeInt directiveName filePath lineNumber tokens[1],
+                        filePath,
+                        lineNumber
+                    )
+                )
+            )
+        | "assertStepWarningCount" ->
+            ensureIncrementalDirective ()
+
+            let tokens =
+                directiveBody.Split([| ' '; '\t' |], StringSplitOptions.RemoveEmptyEntries)
+
+            if tokens.Length <> 2 then
+                invalidOp $"{directiveName} expects '<step> <n>' ({filePath}:{lineNumber})."
+
+            Some(
+                IncrementalAssertionDirective(
+                    AssertStepWarningCount(
+                        parseNonNegativeInt directiveName filePath lineNumber tokens[0],
+                        parseNonNegativeInt directiveName filePath lineNumber tokens[1],
+                        filePath,
+                        lineNumber
+                    )
+                )
+            )
+        | "assertStepTraceCount" ->
+            ensureIncrementalDirective ()
+
+            let tokens =
+                directiveBody.Split([| ' '; '\t' |], StringSplitOptions.RemoveEmptyEntries)
+
+            if tokens.Length <> 5 then
+                invalidOp $"{directiveName} expects '<step> <event> <subject> <relop> <n>' ({filePath}:{lineNumber})."
+
+            Some(
+                IncrementalAssertionDirective(
+                    AssertStepTraceCount(
+                        parseNonNegativeInt directiveName filePath lineNumber tokens[0],
+                        tokens[1],
+                        tokens[2],
+                        parseFixtureRelation filePath lineNumber tokens[3],
+                        parseNonNegativeInt directiveName filePath lineNumber tokens[4],
                         filePath,
                         lineNumber
                     )
@@ -604,6 +699,8 @@ let loadFixtureDirectives (sourceKind: KpFixtureDirectiveSource) (filePath: stri
         match sourceKind with
         | KpFixtureDirectiveSource.SuiteDirectiveFile ->
             File.ReadAllLines(filePath)
+        | KpFixtureDirectiveSource.IncrementalDirectiveFile ->
+            File.ReadAllLines(filePath)
         | KpFixtureDirectiveSource.KpSourceFile ->
             let utf8Strict = UTF8Encoding(false, true)
 
@@ -619,7 +716,7 @@ let loadFixtureDirectives (sourceKind: KpFixtureDirectiveSource) (filePath: stri
         let lineNumber = index + 1
         let trimmed = lineText.Trim()
 
-        if sourceKind = KpFixtureDirectiveSource.SuiteDirectiveFile then
+        if sourceKind = KpFixtureDirectiveSource.SuiteDirectiveFile || sourceKind = KpFixtureDirectiveSource.IncrementalDirectiveFile then
             if String.IsNullOrWhiteSpace(trimmed) || trimmed.StartsWith("--", StringComparison.Ordinal) then
                 parseFixtureDirective sourceKind filePath lineNumber lineText
             else
@@ -708,6 +805,8 @@ let buildFixtureConfiguration (directives: KpFixtureDirective list) =
                         DumpFormat =
                             mergeFixtureConfigurationValue "dumpFormat" state.DumpFormat (dumpFormat, filePath, lineNumber) }
                 | AssertionDirective _ ->
+                    state
+                | IncrementalAssertionDirective _ ->
                     state)
             emptyFixtureConfigurationAccumulator
 

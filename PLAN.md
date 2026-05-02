@@ -29,8 +29,8 @@ Explicit term/type/constructor import-boundary coverage already exists in the fi
 
 ## 5. Appendix T standard harness
 
-- [ ] Finish the remaining Appendix-T gaps without overstating current conformance. Already implemented: `suite.ktest`, `incremental.ktest`, `mode`, `packageMode`, `scriptMode`, `backend`, `entry`, `runArgs`, `stdinFile`, `dumpFormat`, `requires`, `assertDiagnostic*`, `assertType` by definitional equality, `assertFileDeclKinds`, and trace-count assertions.
-- [ ] Implement the remaining standard assertions we still lack, especially stage-dump assertions and any incremental cross-step assertions that are still outside the current harness model.
+- [ ] Finish the remaining Appendix-T gaps without overstating current conformance. Already implemented: `suite.ktest`, `incremental.ktest` parsing plus step-suite execution, `mode`, `packageMode`, `scriptMode`, `backend`, `entry`, `runArgs`, `stdinFile`, `dumpFormat`, `requires`, `assertDiagnostic*`, `assertType` by definitional equality, `assertFileDeclKinds`, `assertStageDump`, `assertStderrFile`, trace-count assertions, and the cross-step assertions `assertStepNoErrors`, `assertStepErrorCount`, `assertStepWarningCount`, and `assertStepTraceCount`.
+- [ ] Keep the `incremental` capability unsupported until the compiler/harness actually preserve reusable cross-step state and can honestly produce `reuse` trace evidence. The current T.7 runner executes ordered step snapshots and applies the standard cross-step assertions over each step's real diagnostics and pipeline trace, but it does not yet preserve caches, interfaces, KCore units, KBackendIR units, or target-lowering units between steps.
 - [ ] Keep existing `x-...` directives explicitly marked as extensions rather than letting them silently stand in for missing standard behavior.
 
 ## 6. Milestone 4 (`Effects` + handlers + row polymorphism)

@@ -6,8 +6,11 @@ type KpFixtureRelation = HarnessFixtureModel.KpFixtureRelation
 type KpFixtureConfiguration = HarnessFixtureModel.KpFixtureConfiguration
 type KpFixtureAssertion = HarnessFixtureModel.KpFixtureAssertion
 type KpFixtureCase = HarnessFixtureModel.KpFixtureCase
+type KpIncrementalFixtureAssertion = HarnessFixtureModel.KpIncrementalFixtureAssertion
+type KpIncrementalFixtureCase = HarnessFixtureModel.KpIncrementalFixtureCase
 
 module KpFixtureConfiguration =
     let defaultValue = HarnessFixtureModel.KpFixtureConfiguration.defaultValue
 
 let discoverKpFixtureCases = HarnessFixtureDiscovery.discoverKpFixtureCases
+let discoverIncrementalKpFixtureCases = HarnessFixtureDiscovery.discoverIncrementalKpFixtureCases

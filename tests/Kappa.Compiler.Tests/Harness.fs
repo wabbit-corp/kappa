@@ -4,6 +4,7 @@ module Harness
 open System
 open System.IO
 open System.Text
+open System.Text.Json
 open System.Text.RegularExpressions
 open HarnessFixtureModel
 open HarnessFixtures
@@ -19,6 +20,7 @@ let compileInMemoryWorkspaceWithUnsafeConsume = HarnessWorkspace.compileInMemory
 let compileInMemoryWorkspaceWithPackageMode = HarnessWorkspace.compileInMemoryWorkspaceWithPackageMode
 let evaluateInMemoryBinding = HarnessWorkspace.evaluateInMemoryBinding
 let discoverKpFixtureCases = HarnessFixtures.discoverKpFixtureCases
+let discoverIncrementalKpFixtureCases = HarnessFixtures.discoverIncrementalKpFixtureCases
 
 type InMemoryFileSystem = HarnessWorkspace.InMemoryFileSystem
 type KpFixtureMode = HarnessFixtures.KpFixtureMode
@@ -27,6 +29,8 @@ type KpFixtureRelation = HarnessFixtures.KpFixtureRelation
 type KpFixtureConfiguration = HarnessFixtures.KpFixtureConfiguration
 type KpFixtureAssertion = HarnessFixtures.KpFixtureAssertion
 type KpFixtureCase = HarnessFixtures.KpFixtureCase
+type KpIncrementalFixtureAssertion = HarnessFixtures.KpIncrementalFixtureAssertion
+type KpIncrementalFixtureCase = HarnessFixtures.KpIncrementalFixtureCase
 
 module KpFixtureConfiguration =
     let defaultValue = HarnessFixtures.KpFixtureConfiguration.defaultValue
@@ -1002,6 +1006,152 @@ let private requireFixtureDocumentByRelativePath
 let private compileFixtureWorkspace = HarnessExecution.compileFixtureWorkspace
 let private executeFixtureRun = HarnessExecution.executeFixtureRun
 
+type private CanonicalJson =
+    | CanonicalJsonNull
+    | CanonicalJsonBool of bool
+    | CanonicalJsonNumber of string
+    | CanonicalJsonString of string
+    | CanonicalJsonArray of CanonicalJson list
+    | CanonicalJsonObject of Map<string, CanonicalJson>
+
+type private CanonicalSexpr =
+    | CanonicalSexprAtom of string
+    | CanonicalSexprString of string
+    | CanonicalSexprList of CanonicalSexpr list
+
+let private canonicalizeJsonElement (element: JsonElement) =
+    let rec loop (element: JsonElement) =
+        match element.ValueKind with
+        | JsonValueKind.Null
+        | JsonValueKind.Undefined -> CanonicalJsonNull
+        | JsonValueKind.True -> CanonicalJsonBool true
+        | JsonValueKind.False -> CanonicalJsonBool false
+        | JsonValueKind.Number -> CanonicalJsonNumber(element.GetRawText())
+        | JsonValueKind.String -> CanonicalJsonString(element.GetString())
+        | JsonValueKind.Array ->
+            element.EnumerateArray() |> Seq.map loop |> Seq.toList |> CanonicalJsonArray
+        | JsonValueKind.Object ->
+            element.EnumerateObject()
+            |> Seq.map (fun property -> property.Name, loop property.Value)
+            |> Map.ofSeq
+            |> CanonicalJsonObject
+        | other ->
+            invalidOp $"Unexpected JSON value kind '{other}' while canonicalizing a stage dump."
+
+    loop element
+
+let private parseCanonicalJson assertionName filePath lineNumber sourceDescription (text: string) =
+    try
+        use document = JsonDocument.Parse(text)
+        canonicalizeJsonElement document.RootElement
+    with :? JsonException as ex ->
+        invalidOp $"{assertionName} expected valid JSON in {sourceDescription} ({filePath}:{lineNumber}): {ex.Message}"
+
+let private parseCanonicalSexpr assertionName filePath lineNumber sourceDescription (text: string) =
+    let mutable index = 0
+
+    let rec skipWhitespace () =
+        while index < text.Length && Char.IsWhiteSpace(text[index]) do
+            index <- index + 1
+
+    let rec parseString () =
+        let builder = StringBuilder()
+        let mutable escaped = false
+        let mutable closed = false
+        index <- index + 1
+
+        while index < text.Length && not closed do
+            let current = text[index]
+
+            if escaped then
+                let decoded =
+                    match current with
+                    | '"' -> '"'
+                    | '\\' -> '\\'
+                    | 'n' -> '\n'
+                    | 'r' -> '\r'
+                    | 't' -> '\t'
+                    | other -> other
+
+                builder.Append(decoded) |> ignore
+                escaped <- false
+                index <- index + 1
+            elif current = '\\' then
+                escaped <- true
+                index <- index + 1
+            elif current = '"' then
+                closed <- true
+                index <- index + 1
+            else
+                builder.Append(current) |> ignore
+                index <- index + 1
+
+        if not closed then
+            invalidOp $"{assertionName} expected a valid S-expression in {sourceDescription} ({filePath}:{lineNumber}): unterminated string literal."
+
+        CanonicalSexprString(builder.ToString())
+
+    let parseAtom () =
+        let start = index
+
+        while index < text.Length && not (Char.IsWhiteSpace(text[index]) || text[index] = '(' || text[index] = ')') do
+            index <- index + 1
+
+        if start = index then
+            invalidOp $"{assertionName} expected a valid S-expression in {sourceDescription} ({filePath}:{lineNumber})."
+
+        CanonicalSexprAtom(text.Substring(start, index - start))
+
+    let rec parseExpression () =
+        skipWhitespace ()
+
+        if index >= text.Length then
+            invalidOp $"{assertionName} expected a valid S-expression in {sourceDescription} ({filePath}:{lineNumber}): unexpected end of input."
+
+        match text[index] with
+        | '(' ->
+            index <- index + 1
+            let items = ResizeArray<CanonicalSexpr>()
+            skipWhitespace ()
+
+            while index < text.Length && text[index] <> ')' do
+                items.Add(parseExpression ())
+                skipWhitespace ()
+
+            if index >= text.Length || text[index] <> ')' then
+                invalidOp $"{assertionName} expected a valid S-expression in {sourceDescription} ({filePath}:{lineNumber}): missing closing ')'."
+
+            index <- index + 1
+            CanonicalSexprList(List.ofSeq items)
+        | ')' ->
+            invalidOp $"{assertionName} expected a valid S-expression in {sourceDescription} ({filePath}:{lineNumber}): unexpected ')'."
+        | '"' ->
+            parseString ()
+        | _ ->
+            parseAtom ()
+
+    let parsed = parseExpression ()
+    skipWhitespace ()
+
+    if index <> text.Length then
+        invalidOp $"{assertionName} expected a valid S-expression in {sourceDescription} ({filePath}:{lineNumber}): trailing input."
+
+    parsed
+
+let private stageDumpFormatForAssertion defaultFormat (relativePath: string) =
+    match Path.GetExtension(relativePath).ToLowerInvariant() with
+    | ".json" -> StageDumpFormat.Json
+    | ".sexpr" -> StageDumpFormat.SExpression
+    | _ -> defaultFormat
+
+let private portableFixtureTraceCount (workspace: WorkspaceCompilation) (eventName: string) (subjectName: string) =
+    Compilation.pipelineTrace workspace
+    |> List.filter isPortableFixtureTraceStep
+    |> List.filter (fun step ->
+        String.Equals(PipelineTraceEvent.toPortableName step.Event, eventName, StringComparison.Ordinal)
+        && String.Equals(PipelineTraceSubject.toPortableName step.Subject, subjectName, StringComparison.Ordinal))
+    |> List.length
+
 let private compareFixtureRelation relation actual expected =
     match relation with
     | KpFixtureRelation.Equal -> actual = expected
@@ -1176,6 +1326,40 @@ let runKpFixtureCase (fixtureCase: KpFixtureCase) =
                 |> List.map normalizeFixtureText
 
             Assert.Equal<string list>(expected, actual)
+        | AssertStageDump(checkpoint, relativePath, filePath, lineNumber) ->
+            let expectedFilePath = rootedFilePath fixtureCase.Root relativePath |> Path.GetFullPath
+            let expectedText = File.ReadAllText(expectedFilePath)
+            let dumpFormat = stageDumpFormatForAssertion fixtureCase.Configuration.DumpFormat relativePath
+
+            let actualText =
+                match Compilation.dumpStage workspace checkpoint dumpFormat with
+                | Result.Ok dumpText -> dumpText
+                | Result.Error message ->
+                    failwithf
+                        "Expected stage dump '%s' for fixture '%s', but the compiler reported '%s' (%s:%d)."
+                        checkpoint
+                        fixtureCase.Name
+                        message
+                        filePath
+                        lineNumber
+
+            match dumpFormat with
+            | StageDumpFormat.Json ->
+                let actualJson =
+                    parseCanonicalJson "assertStageDump" filePath lineNumber $"stage dump '{checkpoint}'" actualText
+
+                let expectedJson =
+                    parseCanonicalJson "assertStageDump" filePath lineNumber $"expected file '{relativePath}'" expectedText
+
+                Assert.Equal<CanonicalJson>(expectedJson, actualJson)
+            | StageDumpFormat.SExpression ->
+                let actualSexpr =
+                    parseCanonicalSexpr "assertStageDump" filePath lineNumber $"stage dump '{checkpoint}'" actualText
+
+                let expectedSexpr =
+                    parseCanonicalSexpr "assertStageDump" filePath lineNumber $"expected file '{relativePath}'" expectedText
+
+                Assert.Equal<CanonicalSexpr>(expectedSexpr, actualSexpr)
         | AssertEval(target, expectedValueText, filePath, lineNumber) ->
             let bindingTarget, evaluation = evaluateFixtureBinding workspace filePath target
 
@@ -1264,17 +1448,20 @@ let runKpFixtureCase (fixtureCase: KpFixtureCase) =
                 runResult.Value.StandardError,
                 StringComparison.Ordinal
             )
+        | AssertStderrFile(relativePath, filePath, _) ->
+            requireRunMode "assertStderrFile"
+
+            let expectedOutputText =
+                rootedSiblingPath filePath relativePath
+                |> File.ReadAllText
+                |> normalizeLineEndings
+
+            Assert.Equal(expectedOutputText, runResult.Value.StandardError)
         | AssertExitCode(expectedCode, _, _) ->
             requireRunMode "assertExitCode"
             Assert.Equal(expectedCode, runResult.Value.ExitCode)
         | AssertTraceCount(eventName, subjectName, relation, expectedCount, filePath, lineNumber) ->
-            let actualCount =
-                Compilation.pipelineTrace workspace
-                |> List.filter isPortableFixtureTraceStep
-                |> List.filter (fun step ->
-                    String.Equals(PipelineTraceEvent.toPortableName step.Event, eventName, StringComparison.Ordinal)
-                    && String.Equals(PipelineTraceSubject.toPortableName step.Subject, subjectName, StringComparison.Ordinal))
-                |> List.length
+            let actualCount = portableFixtureTraceCount workspace eventName subjectName
 
             Assert.True(
                 compareFixtureRelation relation actualCount expectedCount,
@@ -1445,3 +1632,49 @@ let runKpFixtureCase (fixtureCase: KpFixtureCase) =
                     normalizedExpectedText,
                     actualTexts
                 )
+
+let runIncrementalKpFixtureCase (fixtureCase: KpIncrementalFixtureCase) =
+    Assert.NotEmpty(fixtureCase.Steps)
+    Assert.NotEmpty(fixtureCase.Assertions)
+
+    let stepWorkspaces =
+        fixtureCase.Steps
+        |> List.map (fun stepFixture ->
+            let workspace = compileFixtureWorkspace stepFixture
+            runKpFixtureCase stepFixture
+            workspace)
+
+    let tryGetStepWorkspace stepIndex =
+        stepWorkspaces |> List.tryItem stepIndex
+
+    for assertion in fixtureCase.Assertions do
+        match assertion with
+        | AssertStepNoErrors(stepIndex, filePath, lineNumber) ->
+            match tryGetStepWorkspace stepIndex with
+            | Some workspace ->
+                Assert.Equal(0, countDiagnosticsBySeverity DiagnosticSeverity.Error workspace.Diagnostics)
+            | None ->
+                failwithf "Incremental fixture '%s' does not contain step%d (%s:%d)." fixtureCase.Name stepIndex filePath lineNumber
+        | AssertStepErrorCount(stepIndex, expectedCount, filePath, lineNumber) ->
+            match tryGetStepWorkspace stepIndex with
+            | Some workspace ->
+                Assert.Equal(expectedCount, countDiagnosticsBySeverity DiagnosticSeverity.Error workspace.Diagnostics)
+            | None ->
+                failwithf "Incremental fixture '%s' does not contain step%d (%s:%d)." fixtureCase.Name stepIndex filePath lineNumber
+        | AssertStepWarningCount(stepIndex, expectedCount, filePath, lineNumber) ->
+            match tryGetStepWorkspace stepIndex with
+            | Some workspace ->
+                Assert.Equal(expectedCount, countDiagnosticsBySeverity DiagnosticSeverity.Warning workspace.Diagnostics)
+            | None ->
+                failwithf "Incremental fixture '%s' does not contain step%d (%s:%d)." fixtureCase.Name stepIndex filePath lineNumber
+        | AssertStepTraceCount(stepIndex, eventName, subjectName, relation, expectedCount, filePath, lineNumber) ->
+            match tryGetStepWorkspace stepIndex with
+            | Some workspace ->
+                let actualCount = portableFixtureTraceCount workspace eventName subjectName
+
+                Assert.True(
+                    compareFixtureRelation relation actualCount expectedCount,
+                    $"Step trace count assertion failed for step{stepIndex} ({eventName}, {subjectName}) in '{fixtureCase.Name}' ({filePath}:{lineNumber}). Actual count: {actualCount}."
+                )
+            | None ->
+                failwithf "Incremental fixture '%s' does not contain step%d (%s:%d)." fixtureCase.Name stepIndex filePath lineNumber
