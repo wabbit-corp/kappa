@@ -17514,6 +17514,198 @@ do
 
 A `var`-bound identifier may not appear in type positions or elaboration-time macro positions.
 
+<!-- effects.loops.mutable_variables_tracked_current_values -->
+#### 8.5.1A Tracked local `var` current values for flow typing
+
+The `var` semantics of §8.5.1 are unchanged.
+
+A `var`-bound identifier still denotes the underlying `Ref` object. This
+subsection does not introduce implicit auto-dereferencing, does not make a
+`var` name a stable place, and does not affect borrowing, consumption, or
+`inout` admissibility.
+
+This subsection adds only a flow-sensitive refinement representative for the
+current contents of certain local `var` cells.
+
+Definitions:
+
+A **tracked local var cell** is a `Ref` cell introduced by a surface declaration
+
+```kappa
+var x = init
+```
+
+inside a `do` block, provided that the cell remains fresh, local, and unescaped.
+
+For each tracked local var cell `x`, elaboration maintains an abstract
+current-value representative:
+
+```text
+VarCurrent(x, n)
+```
+
+where:
+
+* `x` identifies the `var` cell introduced by the declaration; and
+* `n` is the current version of that cell in the enclosing control-flow graph.
+
+`VarCurrent(x, n)` is a stable scrutinee representative for flow typing,
+constructor refinement, branch-local normalization, and constructor-field
+projection.
+
+`VarCurrent(x, n)` is not:
+
+* a source-level expression;
+* a stable place under §5.1.7.1;
+* a borrow root;
+* a first-class reference;
+* a value that can be named, returned, captured, projected, or passed by user
+  code.
+
+Recognized reads:
+
+A read occurrence is associated with `VarCurrent(x, n)` iff all of the following
+hold:
+
+* `x` resolves to a tracked local var cell;
+* after overload resolution and implicit-evidence insertion, the callee is the
+  `readRef` member of the same `MonadRef` evidence used to elaborate the
+  enclosing `var`;
+* the explicit cell argument is exactly the source binding `x`, not an alias,
+  projection, field, package member, or computed expression;
+* the read occurs in the same user-written function or lambda body as the
+  `var` declaration;
+* the read is written as either:
+
+  ```kappa
+  let y <- readRef x
+  ```
+
+  or:
+
+  ```kappa
+  !(readRef x)
+  ```
+
+  or is an observationally equivalent compiler-generated form; and
+* no invalidation event for `x` occurs on any reachable control-flow path
+  between the source of the refinement fact and the read occurrence.
+
+When a recognized read appears as the scrutinee of a constructor test, boolean
+test, or `match`, branch evidence is attached to `VarCurrent(x, n)`.
+
+When a later recognized read of the same tracked cell version appears in a
+position that can use branch-local refinement evidence, that occurrence may use
+the facts attached to `VarCurrent(x, n)`.
+
+A monadic bind of a recognized read into a simple local identifier also records
+that identifier as a flow-typing alias of the current-value representative:
+
+```kappa
+let y <- readRef x
+```
+
+records `y` as a stable flow alias of `VarCurrent(x, n)` for the remainder of
+the scope, subject to the same invalidation rules.
+
+This is a flow-typing relation only. It does not introduce source-visible
+propositional equality between two executions of `readRef x`.
+
+Invalidation:
+
+A tracked local var cell `x` receives a fresh current-value version and loses
+all prior current-value facts when any of the following occurs:
+
+* surface pure assignment:
+
+  ```kappa
+  x = rhs
+  ```
+
+* surface monadic assignment:
+
+  ```kappa
+  x <- action
+  ```
+
+* a direct recognized write:
+
+  ```kappa
+  writeRef x rhs
+  ```
+
+* an `inout` operation whose write-back footprint includes a place originating
+  from `x`;
+
+* a record patch, projection-section update, accessor-bundle update, or
+  computed place update whose write-back footprint includes a place originating
+  from `x`;
+
+* a control-flow join where reachable predecessor paths have different
+  current-value versions for `x`;
+
+* a loop back-edge where the body may write to `x` or escape `x`;
+
+* a multi-shot effect-operation invocation whose captured continuation includes
+  the current-value fact, as specified below.
+
+At a control-flow join, current-value facts for `x` survive only when every
+reachable predecessor maps `x` to the same current-value version and the same
+fact is present in every reachable predecessor environment. Otherwise those
+facts are discarded. An implementation may conservatively discard facts at more
+joins, but it must not retain a fact unless the fact is valid on every
+reachable incoming path.
+
+Escape:
+
+The cell `x` is marked escaped, and stops participating in current-value flow
+typing for the rest of its lexical lifetime, when any of the following occurs:
+
+* the `Ref` value denoted by `x` is bound to another ordinary variable;
+* the `Ref` value denoted by `x` is passed as an argument to any operation
+  other than a direct recognized `readRef x` or direct recognized `writeRef x
+  rhs`;
+* the `Ref` value denoted by `x` is stored in a record, constructor, variant,
+  package, existential package, array, collection, closure, handler clause,
+  deferred action, finalizer, promise, fiber-local value, or other runtime
+  value;
+* the `Ref` value denoted by `x` is returned;
+* the `Ref` value denoted by `x` is captured by a user-written lambda, local
+  function, handler clause, `defer` action, `finally` body, resource-release
+  action, or other user-written computation that may run outside the
+  straight-line do-item sequence currently being checked;
+* the `Ref` value denoted by `x` is made reachable from another dynamic control
+  context, including through `fork`, `forkDaemon`, `forkIn`, a promise, a
+  monitor, a callback, a bridge-bound package, or another construct that can
+  run independently of the current do-item sequence.
+
+Compiler-generated closures introduced solely by specified desugarings do not
+by themselves count as escape, provided they do not make the `Ref` reachable
+outside the dynamic extent required by the desugaring.
+
+If `x` is escaped, recognized reads of `x` remain ordinary reads and recognized
+writes remain ordinary writes, but neither participates in current-value flow
+typing.
+
+Interaction with multi-shot resumptions:
+
+A current-value fact for a tracked local var cell does not survive across an
+effect-operation invocation whose declared resumption quantity permits more than
+one use of the captured continuation.
+
+At such an operation site, elaboration MUST invalidate current-value facts for
+every tracked local var cell whose current-value fact is live in the captured
+continuation.
+
+This rule is required because multi-shot resumption duplicates captured control
+state but does not roll back the ambient heap store. A later use of the same
+resumption may observe writes performed by an earlier use.
+
+One-shot operation invocations do not invalidate current-value facts merely
+because they are one-shot operation invocations. Ordinary writes, escapes,
+handler captures, finalizer captures, and control-flow joins still invalidate
+as specified above.
+
 <!-- effects.loops.else -->
 #### 8.5.2 Loop `else`
 
