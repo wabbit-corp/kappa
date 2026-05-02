@@ -554,6 +554,67 @@ identifier, even if the implementation's rendered diagnostic code is different.
 If a diagnostic is implementation-defined and has no standardized family, its family MUST be absent or must use an
 implementation-reserved prefix that cannot collide with `kappa.`.
 
+<!-- compiler.kfrontir.diagnostic_code_registry -->
+#### 3.1.2A Diagnostic code registry
+
+A conforming implementation MUST publish a machine-readable diagnostic code registry for every diagnostic code that may
+be emitted outside verbose internal-compiler tracing.
+
+The registry MUST be available without compiling an invalid program.
+
+A registry entry has the conceptual shape:
+
+```text
+DiagnosticRegistryEntry =
+    (code              : DiagnosticCode,
+     family            : Option DiagnosticFamily,
+     portableAliases   : List DiagnosticCode,
+     defaultSeverity   : DiagnosticSeverity,
+     stability         : DiagnosticCodeStability,
+     payloadSchema     : Option DiagnosticPayloadSchemaId,
+     explanation       : Option DiagnosticExplainKey,
+     introducedIn      : ImplementationVersion,
+     deprecatedIn      : Option ImplementationVersion,
+     replacedBy        : Option DiagnosticCode,
+     owner             : DiagnosticCodeOwner)
+```
+
+`DiagnosticCodeStability` is one of:
+
+```text
+stable
+experimental
+deprecated
+internal
+```
+
+Rules:
+
+* A diagnostic emitted in ordinary user-facing compilation MUST NOT use an unregistered code.
+* A stable diagnostic code MUST NOT be reused for a materially different diagnostic meaning.
+* A stable diagnostic code's payload schema MUST remain backward compatible unless the implementation increments the
+  diagnostic schema version and documents the migration.
+* An experimental diagnostic code MAY change, but its registry entry MUST say that it is experimental.
+* An internal diagnostic code MAY be omitted from ordinary documentation, but it MUST still be machine-readable when the
+  diagnostic is emitted.
+* A diagnostic code registry MUST include all portable aliases required by this specification.
+* A diagnostic family beginning with `kappa.` is reserved for this specification.
+* Implementation-defined families MUST use an implementation-reserved prefix.
+* Package- or macro-defined diagnostic families MUST use a package-qualified owner identity and MUST NOT collide with
+  `kappa.` or with implementation-reserved prefixes.
+
+The command:
+
+```text
+kappa explain <diagnostic-code>
+```
+
+or an implementation-defined equivalent MUST reject unknown diagnostic codes deterministically rather than silently
+falling back to prose search.
+
+Conformance tests MAY assert diagnostic families, portable aliases, payload fields, related-origin roles, and fix-it
+applicability without depending on human-readable diagnostic wording.
+
 <!-- compiler.kfrontir.unicode_diagnostics -->
 #### 3.1.3 Unicode diagnostics
 
@@ -775,23 +836,51 @@ A `DiagnosticFix` has at least:
 
 ```text
 DiagnosticFix =
-    (title         : String,
-     applicability : FixApplicability,
-     edits         : List SourceEdit)
+    (id             : DiagnosticFixId,
+     title          : String,
+     applicability  : FixApplicability,
+     edits          : List SourceEdit,
+     preconditions  : List FixPrecondition,
+     postcondition  : Option FixPostcondition)
 ```
 
 A `SourceEdit` has at least:
 
 ```text
 SourceEdit =
-    (origin      : Origin,
-     replacement : String)
+    (sourceIdentity : SourceIdentity,
+     range          : SourceRange,
+     expectedDigest : Option ContentDigest,
+     replacement    : String)
 ```
 
-The `origin` of a source edit MUST be a source origin. A fix MUST NOT directly edit a synthetic-only origin.
+`SourceIdentity` identifies the exact source file version used to compute the diagnostic. It MUST distinguish files with
+equal display paths under different roots.
 
-If a fix arises from generated code, it must be mapped back to a valid user-written source origin before it is exposed as
-an edit.
+`SourceRange` is a source range, not a synthetic origin. A fix MUST NOT directly edit a synthetic-only origin.
+
+`expectedDigest`, when present, is the digest of the source text covered by `range` in the source version used to
+produce the diagnostic. If a tool applies a fix to a source version where the digest does not match, the tool MUST treat
+the fix as stale unless it can prove an equivalent range mapping.
+
+`FixPrecondition` includes at least:
+
+```text
+source-version-matches
+range-text-matches
+feature-gate-still-active
+import-environment-still-equivalent
+semantic-object-still-resolves
+```
+
+`FixPostcondition` includes at least:
+
+```text
+diagnostic-removed
+diagnostic-family-removed
+program-checks-through-phase CompilationStage
+placeholder-remains-for-user
+```
 
 `FixApplicability` is one of:
 
@@ -805,19 +894,23 @@ not-machine-applicable
 
 Rules:
 
-* `machine-applicable` means the edit set contains no placeholders, applies cleanly to the source version used for the
-  diagnostic, and is intended to preserve the programmer's likely meaning.
-* `maybe-applicable` means the edit is concrete but may not preserve intent in all cases.
-* `placeholder` means at least one replacement contains a placeholder or schematic term that requires user input.
-* `unsafe` means the edit may change behavior, erase proof obligations, loosen checking, use an unsafe/debug escape, or
-  otherwise require deliberate review.
-* `not-machine-applicable` means the fix is informational only.
+* Edits inside one fix are applied as one atomic edit set.
+* Edits in one fix MUST be non-overlapping after sorting by `(sourceIdentity, startOffset, endOffset)`.
+* If two edits would overlap, they MUST be represented as separate alternative fixes.
+* A `machine-applicable` fix MUST:
 
-A fix marked `machine-applicable` MUST be accepted by the standard diagnostic-fix test mode of Appendix T when that fix
-is covered by a standard test.
+  * contain no placeholders;
+  * edit only source origins;
+  * apply cleanly to the source version used for the diagnostic;
+  * preserve unrelated concrete syntax and trivia where possible;
+  * satisfy all stated preconditions; and
+  * be accepted by the standard diagnostic-fix test mode when covered by a standard test.
+* A `placeholder` fix MUST mark the placeholder spans in the replacement text in a machine-readable way.
+* An `unsafe` fix MUST NOT be grouped into the same alternative as a `machine-applicable` fix.
+* A tool MUST NOT mark a fix as applied unless every edit in the fix was applied.
 
-A diagnostic MAY contain multiple fixes. If fixes conflict by overlapping edit ranges, the diagnostic record MUST make
-each fix a separate alternative rather than one combined edit set.
+A human-readable renderer MAY display fix titles and snippets. Tools MUST consume the structured edit records rather
+than parsing human-readable snippets.
 
 <!-- compiler.kfrontir.local_repair_ranking -->
 #### 3.1.7 Local repair ranking
