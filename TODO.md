@@ -709,3 +709,92 @@ Duplicates are merged. The organization below is by compiler stage rather than b
   - `new-tests/` is explicitly a staging area for spec-derived tests that are not yet wired into `tests/Kappa.Compiler.Tests/Fixtures`.
   - Move tests into the live fixture suite as support lands, and keep the promotion checklist current.
   - Sources: `new-tests/README.md`.
+
+
+----------------
+
+## A. Add conformance tests
+
+Add these as compile-pass:
+
+```kappa
+do
+    var x = Some 1
+    if !(readRef x) is Some then
+        (!(readRef x)).value
+    else
+        0
+````
+
+```kappa
+do
+    var x = Some 1
+    if !(readRef x) is None then
+        0
+    else
+        (!(readRef x)).value
+```
+
+```kappa
+do
+    var x = Some 1
+    if !(readRef x) is Some then
+        let y <- readRef x
+        y.value
+    else
+        0
+```
+
+Add these as compile-fail:
+
+```kappa
+do
+    var x = Some 1
+    if !(readRef x) is Some then
+        x = None
+        (!(readRef x)).value
+    else
+        0
+```
+
+```kappa
+do
+    var x = Some 1
+    let r = x
+    if !(readRef x) is Some then
+        (!(readRef x)).value
+    else
+        0
+```
+
+```kappa
+do
+    var x = Some 1
+    if x is Some then
+        x.value
+    else
+        0
+```
+
+```kappa
+do
+    var x = Some 1
+    if !(readRef x) is Some then
+        let f = \() -> x
+        (!(readRef x)).value
+    else
+        0
+```
+
+The last one should fail because capturing the `Ref` in a closure marks the tracked cell escaped before the second read.
+
+## Net effect
+
+This gives the ergonomic win:
+
+```kappa
+if !(readRef x) is Some then
+    (!(readRef x)).value
+```
+
+without pretending `x` is an immutable stable alias. The spec stays aligned with the current uniform-reference design, preserves the stable-place discipline, and avoids the particular swamp where mutable heap facts survive writes, escapes, or multi-shot continuation reuse.
