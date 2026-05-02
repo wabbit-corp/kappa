@@ -18524,8 +18524,16 @@ Rules:
     * an error that propagates out of the `try`,
     * a `break`/`continue` propagating through the `try`,
     * a `return` propagating through the `try`.
-* Let `E = MonadError.Error m`. The error type `E` must be a closed data type or a closed variant type.
-* `except` clauses are checked for exhaustiveness exactly as an ordinary `match` over `E`.
+* Let `E = MonadError.Error m`. Error-handler coverage is checked from the known shape of `E`:
+  * If `E` is a closed data type or a closed variant / union type, `except` clauses are checked for ordinary
+    exhaustiveness exactly as an ordinary `match` over `E`.
+  * If `E` is an open variant / union type `(| ... | r |)`, coverage requires either an ordinary catch-all pattern `_`
+    or a residual-row pattern `except (| ..rest |) -> handler`. In that residual branch, `rest : Variant r`, exactly
+    as in §5.4.4.
+  * If `E` is abstract, infinite, or otherwise not known to be closed, coverage requires an ordinary catch-all pattern
+    `_`.
+* A single `except` clause without `_` or `(| ..rest |)` is accepted only when the applicable coverage rule above proves
+  it exhaustive.
 * The `finally` clause is implemented via `defer` and therefore requires `MonadFinally m`.
 
 Semantics sketch:
