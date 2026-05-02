@@ -29098,18 +29098,42 @@ rules.
 At minimum, it contains:
 
 ```text
-BoolIsTrue  b
-BoolIsFalse b
-HasCtorFact   s tag
-LacksCtorFact s tag
-CtorIndexEq   equality
-StableAliasEq equality
+BoolIsTrue     b
+BoolIsFalse    b
+HasCtorFact    s tag
+LacksCtorFact  s tag
+CtorIndexEq    equality
+StableAliasEq  equality
+VarCurrentVersion cell version
 ```
 
 where `s` is a stable refinement subject and `tag : CtorTag`.
 
+For ordinary term-backed refinement subjects, `s` denotes the corresponding
+term subject.
+
+For a tracked local var current-value representative, `s` may denote an internal
+subject of the form:
+
+```text
+VarCurrentSubject cell version
+```
+
+Such a subject is compile-time only. It is not a KCore runtime value and is not
+available to user source.
+
+Facts over `VarCurrentSubject cell version` may be consumed by constructor-field
+projection and branch-local normalization at recognized read occurrences of the
+same tracked cell version under §8.5.1A.
+
+`VarCurrentVersion cell version` records the active current-value version for a
+tracked local var cell. It is used only to decide whether facts about
+`VarCurrentSubject cell version` may be consumed at a later recognized read.
+
 The implementation may represent these facts as erased proof terms, side-table entries, context annotations, or another
 observationally equivalent representation.
+
+No runtime representation is introduced.
 
 However:
 
