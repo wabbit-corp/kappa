@@ -8040,7 +8040,9 @@ introduced `rho`. Escape points include:
 * assignment to a `var` declared in an outer scope,
 * passing the value as an argument to a function whose parameter does not itself mention `rho` (that is, the parameter
   is not known to be downward-only with respect to `rho`),
-* storing the value inside another data structure or closure that would outlive `rho`.
+* storing the value inside another data structure or closure that would outlive `rho`, and
+* scheduling the value or computation into an outer `do`-scope frame via `defer@L` when that target frame may outlive
+  `rho`.
 
 If elaboration attempts any of the above, it produces a skolem-escape error naming the offending `rho` and the construct
 that tried to escape it. This check is performed locally during elaboration of the enclosing block; no whole-program
@@ -17648,6 +17650,10 @@ Semantics:
 * `defer@label e` schedules `e` in the deferred-action stack of the labeled enclosing `do`-scope. If that labeled scope
   is outer to the current one, `e` remains pending across exits of inner scopes and runs only when the targeted scope
   itself exits (§8.7.2.1).
+* `defer@label e` is checked as a computation value escaping to the target `do`-scope frame named by `label`.
+  Consequently, the captured region environment of `e` must be valid at that target frame. Capturing an anonymous rigid
+  region introduced in an inner scope, or any value whose `captures (...)` set is not live until the target frame
+  unwinds, is a skolem-escape error under §5.1.6.
 
 Restrictions:
 * The deferred action `e` MUST NOT contain any abrupt control flow (`return`, `break`, or `continue`) that targets any
@@ -17830,6 +17836,10 @@ construct that targets it.
 A deferred action scheduled by `defer@L` into an outer frame remains pending while inner frames exit. It runs only when
 the target frame `L` itself is unwound. If `L` names the current `do`-scope, `defer@L e` is observationally equivalent
 to ordinary `defer e`.
+
+Because the deferred action is stored in the target frame rather than the inner frame that scheduled it, `defer@L e` is
+checked against the lifetime of `L`. Any borrow or captured-region dependency of `e` that is not live until `L`
+unwinds is rejected by the ordinary skolem-escape and `captures (...)` rules of §5.1.6.
 
 The in-flight unwinding sequence cannot itself be replaced by a new abrupt control transfer originating from a deferred
 action. By the restriction of §8.6, a deferred or `finally` action may complete normally or propagate a monadic error,
