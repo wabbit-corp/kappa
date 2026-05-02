@@ -11559,6 +11559,41 @@ In particular:
 * a failed staged-code dynamic check after a successful cast remains a deterministic stage error, not undefined behavior
   and not a host-runtime exception outside Kappa's diagnostic model.
 
+<!-- types.gradual.capability_sensitive_representations -->
+#### 5.10.2A Capability-sensitive dynamic representations
+
+Some runtime values are valid only relative to a runtime capability.
+
+Examples include:
+
+* objects owned by a particular Python interpreter;
+* objects owned by a particular Ruby or Perl runtime;
+* objects tied to a CLR assembly load context;
+* JNI local or global references;
+* native handles whose validity depends on a loaded library instance;
+* callback tokens registered in a particular runtime; and
+* bridge objects whose methods close over a specific transport or
+  process.
+
+Rules:
+
+* If the validity of a value depends on a runtime capability, then either:
+  * the value's Kappa type MUST mention that capability through a region,
+    capture annotation, owner token, nominal wrapper, `BridgePackage`, or
+    another explicit carrier; or
+  * the value MUST be exposed as an opaque or dynamic surface whose
+    operations re-check the capability at every use.
+* A `DynRep a` MUST NOT erase capability identity when capability
+  identity is necessary for safe use of values of type `a`.
+* A checked cast between two capability-sensitive dynamic values MUST
+  fail unless the target representation can prove that the stored value
+  is valid for the demanded capability.
+* A bridge contract MAY intentionally marshal or copy a value from one
+  capability to another, but that operation is a boundary conversion, not
+  representation identity.
+* A copied, marshalled, or normalized value produced by such a conversion
+  is Exact, Conservative, or Lossy according to §17.7.4A.
+
 <!-- types.gradual.dynamic_values_compile_time_positions -->
 #### 5.10.3 Dynamic values in compile-time positions
 
@@ -31546,6 +31581,41 @@ Rules:
 * Runtime bridge lookup MUST NOT discover or synthesize compile-time-only members from the foreign runtime.
 * A bridge contract whose apparent result type would require runtime discovery of compile-time-only members is
   ill-formed unless those members are represented by explicit runtime carriers in the exposed type.
+
+<!-- compiler.ffi.bridge_contract_formation.error_translation -->
+#### Error translation for bridge-bound members
+
+A bridge contract MUST specify how failures are represented at every
+boundary it creates.
+
+Rules:
+
+* The error type of `bindModule` or `bindModuleOwned` is the selected
+  `BridgeHandle.Error`.
+* The error type of a later package member call is determined by that
+  member's exposed Kappa type.
+* If a package member exposes an effectful type such as:
+
+  ```kappa
+  args -> IO E result
+  ```
+
+  then the bridge contract MUST specify how member lookup failure,
+  argument marshalling failure, result marshalling failure, foreign
+  runtime failure, contract violation, timeout, transport failure, and
+  higher-order monitor failure are represented as `E`, as
+  `std.bridge.BridgeFailure`, as `std.gradual.CastBlame`, or as a defect.
+
+* A precise member surface is ill-formed if its exposed error type cannot
+  represent failures that the bridge contract admits as ordinary expected
+  failures.
+* If a member's type has no expected-error channel and the bridge contract
+  cannot prove that invocation is total, nonblocking, nonthrowing,
+  already linked, and free of bridge failure, the member MUST NOT be
+  exposed as pure.
+* An overlay MAY intentionally translate multiple foreign failures into
+  one Kappa error constructor, but such translation MUST be documented by
+  the contract.
 
 <!-- compiler.ffi.bridge_contract_formation.static_skeleton -->
 #### Static skeleton
