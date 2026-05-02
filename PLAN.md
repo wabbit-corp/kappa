@@ -125,7 +125,8 @@ Current M4 status note: started, not complete. The compiler now has a real effec
   `Compilation.fs` backend-runtime capability checks, `CompilationCheckpoints.fs` target-checkpoint diagnostics, `KBackendLowering.fs` lowering failures, the plain/effectful CLR emitter-input-typing-emission stack, the Zig emit/support/artifact stack, and the public `Compilation.dumpStage` unknown-checkpoint path now all route through typed evidence and centralized formatting in `Diagnostics.fs`.
 - [x] Convert checkpoint verification and target-checkpoint diagnostics to typed evidence ADTs with centralized formatting.
   `CompilationCheckpoints.fs` target-checkpoint diagnostics and `CheckpointVerification.fs` checkpoint-verification diagnostics now route through typed evidence end-to-end. The verifier no longer emits raw `DiagnosticFact.simple`, `detail`, or `codeDetail` diagnostics.
-- [ ] Preserve machine-readable payload structure as the primary contract, and keep tests asserting codes/families/payload fields rather than exact prose except where the spec mandates wording-sensitive content.
+- [x] Preserve machine-readable payload structure as the primary contract, and keep tests asserting codes/families/payload fields rather than exact prose except where the spec mandates wording-sensitive content.
+  The broad behavioral suites now assert diagnostic codes, payload kinds, and payload fields through shared helpers in `tests/Kappa.Compiler.Tests/DiagnosticTestSupport.fs` instead of matching prose fragments. Exact message text remains pinned only in the formatter/normalization tests and in API surfaces that still intentionally return plain strings rather than `Diagnostic` records.
 
 ## 10. Foundations and frontend spec coverage
 

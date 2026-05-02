@@ -5,6 +5,7 @@ open System
 open System.Numerics
 open System.Text
 open Kappa.Compiler
+open DiagnosticTestSupport
 open Harness
 open Xunit
 
@@ -559,8 +560,13 @@ module CoreTestsShard0 =
                 ]
 
         Assert.True(workspace.HasErrors, "Expected ordinary lexical ambiguity to be rejected during compilation.")
-        Assert.Contains(workspace.Diagnostics, fun diagnostic -> diagnostic.Code = DiagnosticCode.NameAmbiguous)
-        Assert.Contains(workspace.Diagnostics, fun diagnostic -> diagnostic.Message.Contains("value", StringComparison.Ordinal))
+        Assert.Contains(
+            workspace.Diagnostics,
+            fun diagnostic ->
+                diagnostic.Code = DiagnosticCode.NameAmbiguous
+                && diagnostic.Payload.Kind = "name-ambiguous"
+                && hasPayloadText "spelling" "value" diagnostic
+        )
 
 
     [<Fact>]
@@ -598,8 +604,13 @@ module CoreTestsShard0 =
                 ]
 
         Assert.True(workspace.HasErrors, "Expected the mixed term/module binding group to be ambiguous in term position.")
-        Assert.Contains(workspace.Diagnostics, fun diagnostic -> diagnostic.Code = DiagnosticCode.NameAmbiguous)
-        Assert.Contains(workspace.Diagnostics, fun diagnostic -> diagnostic.Message.Contains("item", StringComparison.Ordinal))
+        Assert.Contains(
+            workspace.Diagnostics,
+            fun diagnostic ->
+                diagnostic.Code = DiagnosticCode.NameAmbiguous
+                && diagnostic.Payload.Kind = "name-ambiguous"
+                && hasPayloadText "spelling" "item" diagnostic
+        )
 
 
     [<Fact>]
@@ -1431,7 +1442,8 @@ module CoreTestsShard2 =
             workspace.Diagnostics,
             fun diagnostic ->
                 diagnostic.Code = DiagnosticCode.TypeEqualityMismatch
-                && diagnostic.Message.Contains("Trait constraint 'Score Int' could not be resolved.", StringComparison.Ordinal)
+                && hasPayloadText "reason" "trait-constraint-unresolved" diagnostic
+                && hasPayloadText "constraint-text" "Score Int" diagnostic
         )
 
 

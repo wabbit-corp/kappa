@@ -5,16 +5,9 @@ open System
 open System.IO
 open System.Text.Json
 open Kappa.Compiler
+open DiagnosticTestSupport
 open Harness
 open Xunit
-
-let private hasDiagnosticCode code (diagnostic: Diagnostic) =
-    diagnostic.Code = code
-
-let private diagnosticsText diagnostics =
-    diagnostics
-    |> List.map (fun diagnostic -> diagnostic.Message)
-    |> String.concat Environment.NewLine
 
 let rec private containsCoreSyntheticRecordApply expression =
     match expression with
@@ -1368,8 +1361,16 @@ module ObservabilityTestsShard1 =
                 ]
 
         Assert.True(workspace.HasErrors, "Expected missing imported module to become a frontend compile diagnostic.")
-        Assert.Contains(workspace.Diagnostics, hasDiagnosticCode DiagnosticCode.ModuleNameUnresolved)
-        Assert.Contains("Neither module 'missing.mod' nor item 'mod' from module 'missing' was found", diagnosticsText workspace.Diagnostics)
+        Assert.Contains(
+            workspace.Diagnostics,
+            fun diagnostic ->
+                diagnostic.Code = DiagnosticCode.ModuleNameUnresolved
+                && diagnostic.Payload.Kind = "import-module-name-unresolved"
+                && hasPayloadText "reason" "bare-import-target-not-found" diagnostic
+                && hasPayloadText "full-module-name" "missing.mod" diagnostic
+                && hasPayloadText "parent-module-name" "missing" diagnostic
+                && hasPayloadText "item-name" "mod" diagnostic
+        )
 
 
     [<Fact>]
@@ -1392,7 +1393,8 @@ module ObservabilityTestsShard1 =
 
         Assert.True(workspace.HasErrors, "Expected non-callable application to become a frontend compile diagnostic.")
         Assert.Contains(workspace.Diagnostics, hasDiagnosticCode DiagnosticCode.ApplicationNonCallable)
-        Assert.DoesNotContain("requires a backend module", diagnosticsText workspace.Diagnostics)
+        Assert.DoesNotContain(workspace.Diagnostics, hasDiagnosticCode DiagnosticCode.TargetCheckpoint)
+        Assert.DoesNotContain(workspace.Diagnostics, hasDiagnosticCode DiagnosticCode.CheckpointVerification)
 
 
     [<Fact>]
@@ -1965,8 +1967,14 @@ module ObservabilityTestsShard2 =
                 ]
 
         Assert.True(workspace.HasErrors, "Expected unresolved top-level alias to become a frontend compile diagnostic.")
-        Assert.Contains(workspace.Diagnostics, hasDiagnosticCode DiagnosticCode.NameUnresolved)
-        Assert.Contains("Name 'I1' is not in scope", diagnosticsText workspace.Diagnostics)
+        Assert.Contains(
+            workspace.Diagnostics,
+            fun diagnostic ->
+                diagnostic.Code = DiagnosticCode.NameUnresolved
+                && diagnostic.Payload.Kind = "name-unresolved"
+                && hasPayloadText "reference-kind" "ordinary-name" diagnostic
+                && hasPayloadText "spelling" "I1" diagnostic
+        )
 
 
     [<Fact>]
@@ -2592,9 +2600,16 @@ module ObservabilityTestsShard3 =
                 ]
 
         Assert.True(workspace.HasErrors, "Expected unresolved applied name to become a frontend compile diagnostic.")
-        Assert.Contains(workspace.Diagnostics, hasDiagnosticCode DiagnosticCode.NameUnresolved)
-        Assert.Contains("Name 'I1' is not in scope", diagnosticsText workspace.Diagnostics)
-        Assert.DoesNotContain("requires a backend module", diagnosticsText workspace.Diagnostics)
+        Assert.Contains(
+            workspace.Diagnostics,
+            fun diagnostic ->
+                diagnostic.Code = DiagnosticCode.NameUnresolved
+                && diagnostic.Payload.Kind = "name-unresolved"
+                && hasPayloadText "reference-kind" "ordinary-name" diagnostic
+                && hasPayloadText "spelling" "I1" diagnostic
+        )
+        Assert.DoesNotContain(workspace.Diagnostics, hasDiagnosticCode DiagnosticCode.TargetCheckpoint)
+        Assert.DoesNotContain(workspace.Diagnostics, hasDiagnosticCode DiagnosticCode.CheckpointVerification)
 
 
     [<Fact>]
@@ -3144,9 +3159,16 @@ module ObservabilityTestsShard4 =
                 ]
 
         Assert.True(workspace.HasErrors, "Expected unresolved lowercase applied name to become a frontend compile diagnostic.")
-        Assert.Contains(workspace.Diagnostics, hasDiagnosticCode DiagnosticCode.NameUnresolved)
-        Assert.Contains("Name 'i0' is not in scope", diagnosticsText workspace.Diagnostics)
-        Assert.DoesNotContain("requires a backend module", diagnosticsText workspace.Diagnostics)
+        Assert.Contains(
+            workspace.Diagnostics,
+            fun diagnostic ->
+                diagnostic.Code = DiagnosticCode.NameUnresolved
+                && diagnostic.Payload.Kind = "name-unresolved"
+                && hasPayloadText "reference-kind" "ordinary-name" diagnostic
+                && hasPayloadText "spelling" "i0" diagnostic
+        )
+        Assert.DoesNotContain(workspace.Diagnostics, hasDiagnosticCode DiagnosticCode.TargetCheckpoint)
+        Assert.DoesNotContain(workspace.Diagnostics, hasDiagnosticCode DiagnosticCode.CheckpointVerification)
 
 
     [<Fact>]
@@ -3770,8 +3792,14 @@ module ObservabilityTestsShard5 =
                 ]
 
         Assert.True(workspace.HasErrors, "Expected a bare module name in term position to be rejected during frontend validation.")
-        Assert.Contains(workspace.Diagnostics, hasDiagnosticCode DiagnosticCode.NameUnresolved)
-        Assert.Contains("Name 'main' is not in scope", diagnosticsText workspace.Diagnostics)
+        Assert.Contains(
+            workspace.Diagnostics,
+            fun diagnostic ->
+                diagnostic.Code = DiagnosticCode.NameUnresolved
+                && diagnostic.Payload.Kind = "name-unresolved"
+                && hasPayloadText "reference-kind" "ordinary-name" diagnostic
+                && hasPayloadText "spelling" "main" diagnostic
+        )
 
 
     [<Fact>]
@@ -3906,8 +3934,13 @@ module ObservabilityTestsShard5 =
         let diagnostics = Compilation.verifyCheckpoint malformedWorkspace "KRuntimeIR"
 
         Assert.Single(diagnostics) |> ignore
-        Assert.Contains(diagnostics, hasDiagnosticCode DiagnosticCode.CheckpointVerification)
-        Assert.Contains("direct deep-handle runtime nodes", diagnosticsText diagnostics)
+        Assert.Contains(
+            diagnostics,
+            fun diagnostic ->
+                diagnostic.Code = DiagnosticCode.CheckpointVerification
+                && diagnostic.Payload.Kind = "checkpoint-verification-diagnostic"
+                && hasPayloadText "reason" "deep-runtime-handler-must-be-desugared" diagnostic
+        )
 
 
     [<Fact>]
@@ -4292,11 +4325,13 @@ module ObservabilityTestsShard6 =
                 ]
 
         Assert.True(workspace.HasErrors, "Expected dotted access on an ordinary value root to be rejected before runtime.")
-        Assert.Contains(workspace.Diagnostics, hasDiagnosticCode DiagnosticCode.NameUnresolved)
-        let diagnostics = diagnosticsText workspace.Diagnostics
-        Assert.True(
-            diagnostics.Contains("Name 'i0' is not in scope") || diagnostics.Contains("Name 'right' is not in scope"),
-            $"Expected an unresolved-name diagnostic for the invalid dotted value root, but saw:{Environment.NewLine}{diagnostics}"
+        Assert.Contains(
+            workspace.Diagnostics,
+            fun diagnostic ->
+                diagnostic.Code = DiagnosticCode.NameUnresolved
+                && diagnostic.Payload.Kind = "name-unresolved"
+                && hasPayloadText "reference-kind" "ordinary-name" diagnostic
+                && (hasPayloadText "spelling" "i0" diagnostic || hasPayloadText "spelling" "right" diagnostic)
         )
 
 
@@ -4464,8 +4499,18 @@ module ObservabilityTestsShard6 =
         let diagnostics = Compilation.verifyCheckpoint malformedWorkspace "KBackendIR"
 
         Assert.NotEmpty(diagnostics)
-        Assert.Contains(diagnostics, hasDiagnosticCode DiagnosticCode.CheckpointVerification)
-        Assert.Contains("pre-erasure runtime metadata", diagnosticsText diagnostics)
+        Assert.Contains(
+            diagnostics,
+            fun diagnostic ->
+                diagnostic.Code = DiagnosticCode.CheckpointVerification
+                && diagnostic.Payload.Kind = "checkpoint-verification-diagnostic"
+                && tryFindPayloadText "reason" diagnostic
+                   |> Option.exists (fun reason ->
+                       reason = "pre-erasure-parameter-type-metadata-leak"
+                       || reason = "pre-erasure-return-type-metadata-leak"
+                       || reason = "pre-erasure-constructor-field-type-metadata-leak"
+                       || reason = "pre-erasure-instance-head-type-metadata-leak")
+        )
 
 
     [<Fact>]
@@ -4851,8 +4896,14 @@ module ObservabilityTestsShard7 =
             let diagnostics = Compilation.verifyCheckpoint workspace checkpoint
 
             Assert.NotEmpty(diagnostics)
-            Assert.Contains(diagnostics, hasDiagnosticCode DiagnosticCode.TargetCheckpoint)
-            Assert.Contains("workspace with diagnostics", diagnosticsText diagnostics)
+            Assert.Contains(
+                diagnostics,
+                fun diagnostic ->
+                    diagnostic.Code = DiagnosticCode.TargetCheckpoint
+                    && diagnostic.Payload.Kind = "target-checkpoint-diagnostic"
+                    && hasPayloadText "reason" "target-checkpoint-workspace-has-diagnostics" diagnostic
+                    && hasPayloadText "checkpoint" checkpoint diagnostic
+            )
 
 
     [<Fact>]
@@ -4871,9 +4922,16 @@ module ObservabilityTestsShard7 =
                 ]
 
         Assert.True(workspace.HasErrors, "Expected unresolved dotted receiver to become a frontend compile diagnostic.")
-        Assert.Contains(workspace.Diagnostics, hasDiagnosticCode DiagnosticCode.NameUnresolved)
-        Assert.Contains("Module qualifier 'I0' is not in scope", diagnosticsText workspace.Diagnostics)
-        Assert.DoesNotContain("requires a backend module", diagnosticsText workspace.Diagnostics)
+        Assert.Contains(
+            workspace.Diagnostics,
+            fun diagnostic ->
+                diagnostic.Code = DiagnosticCode.NameUnresolved
+                && diagnostic.Payload.Kind = "name-unresolved"
+                && hasPayloadText "reference-kind" "module-qualifier" diagnostic
+                && hasPayloadText "spelling" "I0" diagnostic
+        )
+        Assert.DoesNotContain(workspace.Diagnostics, hasDiagnosticCode DiagnosticCode.TargetCheckpoint)
+        Assert.DoesNotContain(workspace.Diagnostics, hasDiagnosticCode DiagnosticCode.CheckpointVerification)
 
 
     [<Fact>]
@@ -4931,8 +4989,13 @@ module ObservabilityTestsShard7 =
                 ]
 
         Assert.True(workspace.HasErrors, "Expected unsigned recursion to become a frontend compile diagnostic.")
-        Assert.Contains(workspace.Diagnostics, hasDiagnosticCode DiagnosticCode.RecursionRequiresSignature)
-        Assert.Contains("recursive but has no preceding signature declaration", diagnosticsText workspace.Diagnostics)
+        Assert.Contains(
+            workspace.Diagnostics,
+            fun diagnostic ->
+                diagnostic.Code = DiagnosticCode.RecursionRequiresSignature
+                && diagnostic.Payload.Kind = "surface-elaboration-diagnostic"
+                && hasPayloadText "reason" "top-level-recursive-binding-requires-preceding-signature" diagnostic
+        )
 
 
     [<Fact>]

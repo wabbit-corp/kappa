@@ -8,6 +8,7 @@ open System.Reflection
 open System.Runtime.InteropServices
 open Microsoft.FSharp.Reflection
 open Kappa.Compiler
+open DiagnosticTestSupport
 open Harness
 open Xunit
 
@@ -65,26 +66,6 @@ let private diagnosticsSummary diagnostics =
     diagnostics
     |> List.map (fun diagnostic -> $"{DiagnosticCode.toIdentifier diagnostic.Code}: {diagnostic.Message}")
     |> String.concat Environment.NewLine
-
-let private tryFindPayloadText fieldName (diagnostic: Diagnostic) =
-    diagnostic.Payload.Fields
-    |> List.tryPick (fun field ->
-        if field.Name <> fieldName then
-            None
-        else
-            match field.Value with
-            | DiagnosticPayloadText value -> Some value
-            | DiagnosticPayloadTextList _ -> None)
-
-let private tryFindPayloadTextList fieldName (diagnostic: Diagnostic) =
-    diagnostic.Payload.Fields
-    |> List.tryPick (fun field ->
-        if field.Name <> fieldName then
-            None
-        else
-            match field.Value with
-            | DiagnosticPayloadText _ -> None
-            | DiagnosticPayloadTextList values -> Some values)
 
 let rec private tryFindLocalScopedEffect expression =
     match expression with
@@ -360,8 +341,18 @@ module SmokeTestsShard0 =
             [ DiagnosticCode.ExpectedSyntaxToken; DiagnosticCode.ExpectedSyntaxToken ],
             parsed.Diagnostics |> List.map (fun diagnostic -> diagnostic.Code)
         )
-        Assert.Contains(parsed.Diagnostics, fun diagnostic -> diagnostic.Message.Contains("type alias body"))
-        Assert.Contains(parsed.Diagnostics, fun diagnostic -> diagnostic.Message.Contains("trait member"))
+        Assert.Contains(
+            parsed.Diagnostics,
+            fun diagnostic ->
+                diagnostic.Payload.Kind = "parser-syntax"
+                && hasPayloadText "reason" "expected-valid-type-alias-body" diagnostic
+        )
+        Assert.Contains(
+            parsed.Diagnostics,
+            fun diagnostic ->
+                diagnostic.Payload.Kind = "parser-syntax"
+                && hasPayloadText "reason" "expected-trait-member-signature-or-default-definition" diagnostic
+        )
 
 
     [<Fact>]
@@ -445,8 +436,15 @@ module SmokeTestsShard0 =
                 ]
 
         Assert.True(workspace.HasErrors, "Expected ambiguous bare dotted import to become a compile-time error.")
-        Assert.Contains(workspace.Diagnostics, fun diagnostic -> diagnostic.Code = DiagnosticCode.ImportAmbiguous)
-        Assert.Contains(workspace.Diagnostics, fun diagnostic -> diagnostic.Message.Contains("a.b.c", StringComparison.Ordinal))
+        Assert.Contains(
+            workspace.Diagnostics,
+            fun diagnostic ->
+                diagnostic.Code = DiagnosticCode.ImportAmbiguous
+                && diagnostic.Payload.Kind = "import-ambiguous"
+                && hasPayloadText "full-module-name" "a.b.c" diagnostic
+                && hasPayloadText "parent-module-name" "a.b" diagnostic
+                && hasPayloadText "item-name" "c" diagnostic
+        )
 
 
     [<Fact>]
@@ -746,7 +744,12 @@ module SmokeTestsShard0 =
                 diagnostic.Code = DiagnosticCode.TypeEqualityMismatch
                 && tryFindPayloadText "reason" diagnostic = Some "prefixed-string-prefix-must-resolve-to-interpolated-macro"
         )
-        Assert.DoesNotContain(workspace.Diagnostics, fun diagnostic -> diagnostic.Code = DiagnosticCode.NameUnresolved && diagnostic.Message.Contains("'f'", StringComparison.Ordinal))
+        Assert.DoesNotContain(
+            workspace.Diagnostics,
+            fun diagnostic ->
+                diagnostic.Code = DiagnosticCode.NameUnresolved
+                && hasPayloadText "spelling" "f" diagnostic
+        )
 
 
     [<Fact>]
@@ -987,7 +990,8 @@ module SmokeTestsShard1 =
             workspace.Diagnostics,
             fun diagnostic ->
                 diagnostic.Code = DiagnosticCode.ImportUnhideRequiresBuildSetting
-                && diagnostic.Message.Contains("allow_unhiding", StringComparison.Ordinal)
+                && diagnostic.Payload.Kind = "import-modifier-build-setting"
+                && hasPayloadText "required-setting" "allow_unhiding" diagnostic
         )
 
 
@@ -1083,8 +1087,15 @@ module SmokeTestsShard1 =
                 ]
 
         Assert.True(workspace.HasErrors, "Expected ambiguous bare dotted export to become a compile-time error.")
-        Assert.Contains(workspace.Diagnostics, fun diagnostic -> diagnostic.Code = DiagnosticCode.ImportAmbiguous)
-        Assert.Contains(workspace.Diagnostics, fun diagnostic -> diagnostic.Message.Contains("a.b.c", StringComparison.Ordinal))
+        Assert.Contains(
+            workspace.Diagnostics,
+            fun diagnostic ->
+                diagnostic.Code = DiagnosticCode.ImportAmbiguous
+                && diagnostic.Payload.Kind = "import-ambiguous"
+                && hasPayloadText "full-module-name" "a.b.c" diagnostic
+                && hasPayloadText "parent-module-name" "a.b" diagnostic
+                && hasPayloadText "item-name" "c" diagnostic
+        )
 
 
     [<Fact>]
@@ -2290,7 +2301,7 @@ module SmokeTestsShard2 =
         Assert.Equal(2, urlDiagnostics.Length)
         Assert.All(
             urlDiagnostics,
-            fun diagnostic -> Assert.Contains("https://example.com/lib", diagnostic.Message, StringComparison.Ordinal)
+            fun diagnostic -> Assert.Equal(Some "https://example.com/lib", tryFindPayloadText "specifier-text" diagnostic)
         )
 
 
@@ -3823,7 +3834,8 @@ module SmokeTestsShard3 =
             fun diagnostic ->
                 diagnostic.Code = DiagnosticCode.ElaborationFailed
                 && diagnostic.Payload.Kind = "macro-expansion-diagnostic"
-                && diagnostic.Message.Contains("macro rejected this declaration", StringComparison.Ordinal)
+                && hasPayloadText "reason" "fail-elab" diagnostic
+                && hasPayloadText "message" "macro rejected this declaration" diagnostic
         )
 
         let diagnostic =
@@ -8273,7 +8285,8 @@ module SmokeTestsShard4 =
             workspace.Diagnostics,
             fun diagnostic ->
                 diagnostic.Code = DiagnosticCode.ImportClarifyRequiresBuildSetting
-                && diagnostic.Message.Contains("allow_clarify", StringComparison.Ordinal)
+                && diagnostic.Payload.Kind = "import-modifier-build-setting"
+                && hasPayloadText "required-setting" "allow_clarify" diagnostic
         )
 
 
@@ -8298,7 +8311,12 @@ module SmokeTestsShard4 =
         Assert.Empty(lexed.Diagnostics)
         Assert.NotEmpty(parsed.Diagnostics)
         Assert.All(parsed.Diagnostics, fun diagnostic -> Assert.Equal(DiagnosticCode.ExpectedSyntaxToken, diagnostic.Code))
-        Assert.Contains(parsed.Diagnostics, fun diagnostic -> diagnostic.Message.Contains("Expected ')'"))
+        Assert.Contains(
+            parsed.Diagnostics,
+            fun diagnostic ->
+                diagnostic.Payload.Kind = "parser-syntax"
+                && hasPayloadText "reason" "unsupported-constructor-parameter-syntax" diagnostic
+        )
 
 
     [<Fact>]
@@ -8342,7 +8360,14 @@ module SmokeTestsShard4 =
                 ]
 
         Assert.True(workspace.HasErrors, "Expected host.dotnet imports to be rejected on backends that do not provide host.dotnet.")
-        Assert.Contains(workspace.Diagnostics, fun diagnostic -> diagnostic.Message.Contains("host.dotnet", StringComparison.Ordinal))
+        Assert.Contains(
+            workspace.Diagnostics,
+            fun diagnostic ->
+                diagnostic.Code = DiagnosticCode.HostModuleUnsupportedBackend
+                && diagnostic.Payload.Kind = "host-module-unsupported-backend"
+                && hasPayloadText "host-binding-root" "host.dotnet" diagnostic
+                && hasPayloadText "backend-profile" "interpreter" diagnostic
+        )
 
 
     [<Fact>]
@@ -8943,7 +8968,8 @@ module SmokeTestsShard5 =
             workspace.Diagnostics,
             fun diagnostic ->
                 diagnostic.Code = DiagnosticCode.ImportItemModifierReexportForbidden
-                && diagnostic.Message.Contains("must not be re-exported", StringComparison.Ordinal)
+                && diagnostic.Payload.Kind = "import-item-modifier-reexport-forbidden"
+                && hasPayloadText "item-text" "clarify type Id" diagnostic
         )
 
 
@@ -8968,7 +8994,12 @@ module SmokeTestsShard5 =
 
         Assert.Empty(lexed.Diagnostics)
         Assert.Equal<DiagnosticCode list>([ DiagnosticCode.ExpectedSyntaxToken ], parsed.Diagnostics |> List.map (fun diagnostic -> diagnostic.Code))
-        Assert.Contains(parsed.Diagnostics, fun diagnostic -> diagnostic.Message.Contains("valid signature type"))
+        Assert.Contains(
+            parsed.Diagnostics,
+            fun diagnostic ->
+                diagnostic.Payload.Kind = "parser-syntax"
+                && hasPayloadText "reason" "expected-valid-signature-type" diagnostic
+        )
 
 
     [<Fact>]
@@ -9015,7 +9046,13 @@ module SmokeTestsShard5 =
                 ]
 
         Assert.True(workspace.HasErrors, "Expected source-defined modules under reserved host roots to be rejected.")
-        Assert.Contains(workspace.Diagnostics, fun diagnostic -> diagnostic.Message.Contains("reserved host", StringComparison.OrdinalIgnoreCase))
+        Assert.Contains(
+            workspace.Diagnostics,
+            fun diagnostic ->
+                diagnostic.Code = DiagnosticCode.HostModuleReservedRoot
+                && diagnostic.Payload.Kind = "host-module-reserved-root"
+                && hasPayloadText "module-name" "host.dotnet.System.Text.StringBuilder" diagnostic
+        )
 
 
     [<Fact>]
@@ -9532,7 +9569,12 @@ module SmokeTestsShard6 =
 
         Assert.Empty(lexed.Diagnostics)
         Assert.Equal<DiagnosticCode list>([ DiagnosticCode.ExpectedSyntaxToken ], parsed.Diagnostics |> List.map (fun diagnostic -> diagnostic.Code))
-        Assert.Contains(parsed.Diagnostics, fun diagnostic -> diagnostic.Message.Contains("ctorAll may not be combined with an alias"))
+        Assert.Contains(
+            parsed.Diagnostics,
+            fun diagnostic ->
+                diagnostic.Payload.Kind = "parser-syntax"
+                && hasPayloadText "reason" "ctor-all-cannot-be-combined-with-alias" diagnostic
+        )
 
 
     [<Fact>]
@@ -10208,7 +10250,14 @@ module SmokeTestsShard6 =
                 ]
 
         Assert.True(workspace.HasErrors, "Expected runtime trait evidence parameters to be rejected as prefixed-string handlers.")
-        Assert.Contains(workspace.Diagnostics, fun diagnostic -> diagnostic.Code = DiagnosticCode.TypeEqualityMismatch && diagnostic.Message.Contains("Elab", StringComparison.Ordinal))
+        Assert.Contains(
+            workspace.Diagnostics,
+            fun diagnostic ->
+                diagnostic.Code = DiagnosticCode.TypeEqualityMismatch
+                && diagnostic.Payload.Kind = "surface-elaboration-diagnostic"
+                && hasPayloadText "reason" "prefixed-string-prefix-must-resolve-to-interpolated-macro" diagnostic
+                && hasPayloadText "prefix" "prefix" diagnostic
+        )
 
     [<Fact>]
     let ``prefixed strings surface failElabWith from direct trait evidence handlers`` () =
@@ -10542,8 +10591,20 @@ module SmokeTestsShard7 =
             [ DiagnosticCode.ExpectedSyntaxToken; DiagnosticCode.ExpectedSyntaxToken ],
             parsed.Diagnostics |> List.map (fun diagnostic -> diagnostic.Code)
         )
-        Assert.Contains(parsed.Diagnostics, fun diagnostic -> diagnostic.Message.Contains("Duplicate 'unhide'"))
-        Assert.Contains(parsed.Diagnostics, fun diagnostic -> diagnostic.Message.Contains("Duplicate 'clarify'"))
+        Assert.Contains(
+            parsed.Diagnostics,
+            fun diagnostic ->
+                diagnostic.Payload.Kind = "parser-syntax"
+                && hasPayloadText "reason" "duplicate-import-item-modifier" diagnostic
+                && hasPayloadText "modifier-keyword" "unhide" diagnostic
+        )
+        Assert.Contains(
+            parsed.Diagnostics,
+            fun diagnostic ->
+                diagnostic.Payload.Kind = "parser-syntax"
+                && hasPayloadText "reason" "duplicate-import-item-modifier" diagnostic
+                && hasPayloadText "modifier-keyword" "clarify" diagnostic
+        )
 
 
     [<Fact>]
@@ -10563,7 +10624,12 @@ module SmokeTestsShard7 =
 
         Assert.Empty(lexed.Diagnostics)
         Assert.Equal<DiagnosticCode list>([ DiagnosticCode.ExpectedSyntaxToken ], parsed.Diagnostics |> List.map (fun diagnostic -> diagnostic.Code))
-        Assert.Contains(parsed.Diagnostics, fun diagnostic -> diagnostic.Message.Contains("type alias body"))
+        Assert.Contains(
+            parsed.Diagnostics,
+            fun diagnostic ->
+                diagnostic.Payload.Kind = "parser-syntax"
+                && hasPayloadText "reason" "expected-valid-type-alias-body" diagnostic
+        )
 
 
     [<Fact>]
@@ -10925,7 +10991,13 @@ module SmokeTestsShard7 =
                 ]
 
         Assert.True(workspace.HasErrors, "Expected malformed prefixed-string macro usage to be rejected in frontend validation.")
-        Assert.Contains(workspace.Diagnostics, fun diagnostic -> diagnostic.Code = DiagnosticCode.NameUnresolved && diagnostic.Message.Contains("'i0'", StringComparison.Ordinal))
+        Assert.Contains(
+            workspace.Diagnostics,
+            fun diagnostic ->
+                diagnostic.Code = DiagnosticCode.NameUnresolved
+                && diagnostic.Payload.Kind = "name-unresolved"
+                && hasPayloadText "spelling" "i0" diagnostic
+        )
         Assert.Contains(
             workspace.Diagnostics,
             fun diagnostic ->

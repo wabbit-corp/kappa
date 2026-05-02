@@ -4,13 +4,9 @@ module MilestoneFourTestSupport
 open System
 open System.IO
 open Kappa.Compiler
+open DiagnosticTestSupport
 open Harness
 open Xunit
-
-let private diagnosticsText diagnostics =
-    diagnostics
-    |> List.map (fun diagnostic -> $"{DiagnosticCode.toIdentifier diagnostic.Code}: {diagnostic.Message}")
-    |> String.concat Environment.NewLine
 
 let rec private containsDeepCoreHandle expression =
     match expression with
@@ -686,7 +682,12 @@ module MilestoneFourTestsShard0 =
             workspace.Diagnostics,
             fun diagnostic ->
                 diagnostic.Code = DiagnosticCode.TypeEqualityMismatch
-                && diagnostic.Message.Contains("Eff", StringComparison.Ordinal)
+                && hasPayloadText "reason" "declared-type-inferred-type-mismatch" diagnostic
+                && hasPayloadText "context" "Local binding value type mismatch" diagnostic
+                && (tryFindPayloadText "declared-type-text" diagnostic
+                    |> Option.exists (fun text -> text.StartsWith("Eff", StringComparison.Ordinal)))
+                && (tryFindPayloadText "inferred-type-text" diagnostic
+                    |> Option.exists (fun text -> text.StartsWith("Eff", StringComparison.Ordinal)))
         )
 
 
@@ -2476,7 +2477,8 @@ module MilestoneFourTestsShard3 =
             workspace.Diagnostics,
             fun diagnostic ->
                 diagnostic.Code = DiagnosticCode.HandlerEffectRowMismatch
-                && diagnostic.Message.Contains("expects the handled computation to carry label", StringComparison.Ordinal)
+                && hasPayloadText "reason" "handler-effect-row-missing-label" diagnostic
+                && hasPayloadText "effect-name" "Choice" diagnostic
         )
 
 

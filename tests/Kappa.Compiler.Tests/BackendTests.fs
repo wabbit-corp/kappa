@@ -6,6 +6,7 @@ open System.IO
 open System.Reflection
 open System.Text.Json
 open Kappa.Compiler
+open DiagnosticTestSupport
 open Harness
 open Xunit
 
@@ -413,7 +414,9 @@ module BackendTestsShard2 =
             workspace.Diagnostics,
             fun diagnostic ->
                 diagnostic.Code = DiagnosticCode.OrPatternBinderTypeMismatch
-                && diagnostic.Message.IndexOf("Binder 'value' has type", StringComparison.OrdinalIgnoreCase) >= 0
+                && diagnostic.Payload.Kind = "surface-elaboration-diagnostic"
+                && hasPayloadText "reason" "or-pattern-binder-types-disagree" diagnostic
+                && hasPayloadText "binder-name" "value" diagnostic
         )
 
 
