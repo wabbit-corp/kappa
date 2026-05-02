@@ -16214,6 +16214,27 @@ If a multi-shot operation is rejected because the backend lacks `rt-multishot-ef
 This rejection is a feature-gating rejection under §1.2 and belongs to diagnostic family `kappa.feature.gated` with code
 `E_FEATURE_BACKEND_CAPABILITY_MISSING`.
 
+<!-- effects.monadic_core.effect_declarations.resumption_classes -->
+##### 8.1.7B.1 Abortive, one-shot, and multi-shot classes
+
+For an operation declaration with resumption quantity `q`:
+
+* the operation is **abortive** iff `q = 0`;
+* the operation is **one-shot** iff `q` permits at most one use and `q ≠ 0`;
+* the operation is **multi-shot** iff `q` permits more than one use.
+
+Consequences:
+
+* In an abortive operation clause, the bound resumption value `k` has quantity `0` and is therefore unusable by the
+  ordinary quantity rules.
+* Abortive operations do not require backend capability `rt-multishot-effects`.
+* One-shot operations remain the default under §8.1.7B.
+* Multi-shot operations remain explicitly declared and capability-gated under §8.1.7B.
+
+This classification is semantic, not merely diagnostic.
+Backends MAY use it when selecting resumption representations, but they MUST still preserve the abandonment, cleanup,
+and handler-boundary obligations of §§14.8.5, 14.8.6, 14.8.6A, 14.8.6B, 14.8.6C, 14.8.7, 14.8.8, and 14.8.8A.
+
 <!-- effects.monadic_core.effect_labels.identity_and_handler_matching -->
 #### 8.1.7C Effect-label identity and handler matching
 
@@ -16311,14 +16332,20 @@ by `q`.
 
 Call-site capture rule:
 
-* The computation from the `op` call site to the end of the handled block MUST be valid when the reified continuation is
+* The captured suffix for an operation occurrence is the dynamic segment defined by §14.8.5, not merely the lexically
+  free variables of the surrounding source expression.
+* This check ranges over all runtime-relevant state in that suffix, including live local bindings, stable-place /
+  projected-path borrows, partially consumed owned paths, active `do`-scope frames, and pending exit-action
+  obligations.
+* The computation from the `op` call site to the end of the handled block MUST be valid when that entire suffix is
   treated as a captured resumption value permitted to be used according to `q`.
-* This check uses the ordinary closure-capture and borrow rules of §§5.1.5, 5.1.6, and 7.2.1.
-* In particular, if `q` permits more than one use of the continuation, such as `ω` or `>=1`, then the continuation MUST
-  NOT capture any live variables with quantity `1` or `&` from the surrounding lexical environment.
-* If the compiler detects that an operation with a multi-shot resumption quantity is invoked in a scope where live
-  linear or borrowed resources would be captured by the continuation, compilation fails with a quantity error at the
-  operation site.
+* A conforming implementation MAY discharge this obligation using ordinary closure-capture checking plus borrow / region
+  checking, or by an equivalent control-flow analysis that accepts exactly the same programs.
+* In particular, if `q` permits more than one use of the continuation, such as `ω` or `>=1`, then every
+  runtime-relevant captured value in that suffix MUST be duplicable and free of outstanding borrow-lifetime
+  obligations.
+* If the compiler detects that a multi-shot operation would capture non-duplicable state, compilation fails with a
+  quantity / control-flow-linearity error at the operation site.
 
 This rule guarantees that multi-shot continuations cannot clone linear resources or extend borrow lifetimes unsoundly.
 
@@ -16666,6 +16693,31 @@ Backend-local multi-return / join-point lowering is permitted by §17.4.7A but i
 
 Implementations MAY realize handlers using such operators internally, but those operators are not part of portable
 source syntax, module interfaces, or the portability contract of this specification.
+
+<!-- effects.monadic_core.expert_control_extension_lane -->
+#### 8.1.10B Reserved expert-control extension lane
+
+A future version of Kappa MAY standardize an expert-control extension behind its own owning feature gate and standard
+module surface, for example `std.control`.
+
+Any such extension MUST satisfy all of the following:
+
+* it classifies continuation values explicitly as abortive, one-shot, or multi-shot;
+* it specifies delimiter or prompt identity with the same exactness that §§8.1.7C and 14.8 require for effect-label
+  selection and captured-continuation boundaries;
+* it specifies interaction with quantities, borrow escape, `defer`, `using`, interruption masks, and handler
+  reinstallation; and
+* it does not retroactively change the semantics of portable handlers of §§8.1.9-8.1.10 when the feature gate is
+  inactive.
+
+Clarification:
+
+* the canonical self label of `scoped effect` is a declaration-site effect-label identity, not a runtime-fresh prompt;
+* therefore a future multi-prompt control extension MUST introduce explicit prompt values or prompt-allocation forms
+  rather than reinterpreting `scoped effect` as prompt generation.
+
+Absent that future feature gate, names such as `shift`, `reset`, `control`, `prompt`, `newPrompt`, and
+`subcontinuation` have no reserved source meaning beyond ordinary identifiers.
 
 Rationale:
 
@@ -23683,6 +23735,24 @@ Clarification:
 * the stricter restriction on live linear or borrowed captures applies to cloning required for multi-shot reuse;
 * one-shot resumptions remain governed by the ordinary quantity, borrow, and escape rules and do not by themselves
   require blanket rejection of owned or borrowed captured state.
+
+<!-- core_semantics.runtime_model.abortive_realization -->
+#### 14.8.6C Abortive realization
+
+If an operation's resumption quantity is `0`, the operation is abortive in the sense of §8.1.7B.1.
+
+A conforming implementation MAY realize an abortive clause without allocating a resumable continuation object, using an
+observationally equivalent direct escape, jump, or equivalent strategy.
+
+However:
+
+* the captured-continuation boundary is still that of §14.8.5 for purposes of abandonment and cleanup;
+* exiting the clause without resumption still unwinds any captured `do`-scope frames exactly as specified by
+  §§14.8.8 and 14.8.8A;
+* deep-handler semantics are preserved because no resumption use occurs, not because the handler boundary disappears;
+  and
+* an implementation MUST NOT realize an abortive clause by dropping the captured segment without the required
+  exit-action behavior.
 
 <!-- core_semantics.runtime_model.store_interaction -->
 #### 14.8.7 Store interaction
