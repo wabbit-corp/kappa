@@ -17,6 +17,7 @@
     <Compile Include="Harness.fs" />
     <Compile Include="AppendixTHarnessTests.fs" />
     <Compile Include="DiagnosticTestSupport.fs" />
+    <Compile Include="LspTests.fs" />
     <Compile Include="ResourceModelTests.fs" />
     <Compile Include="SymbolicIdentityTests.fs" />
     <Compile Include="StandardLibraryCatalogTests.fs" />
@@ -49,6 +50,7 @@
   <ItemGroup>
     <ProjectReference Include="..\..\src\Kappa.Compiler\Kappa.Compiler.fsproj" />
     <ProjectReference Include="..\..\src\Kappa.Compiler.Cli\Kappa.Compiler.Cli.fsproj" />
+    <ProjectReference Include="..\..\src\Kappa.LSP\Kappa.LSP.fsproj" />
   </ItemGroup>
 
 </Project>

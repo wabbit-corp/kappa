@@ -1,0 +1,106 @@
+{
+  "$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
+  "name": "Kappa",
+  "scopeName": "source.kappa",
+  "patterns": [
+    {
+      "include": "#comments"
+    },
+    {
+      "include": "#strings"
+    },
+    {
+      "include": "#numbers"
+    },
+    {
+      "include": "#keywords"
+    },
+    {
+      "include": "#types"
+    },
+    {
+      "include": "#operators"
+    }
+  ],
+  "repository": {
+    "comments": {
+      "patterns": [
+        {
+          "name": "comment.line.double-dash.kappa",
+          "match": "--.*$"
+        },
+        {
+          "name": "comment.block.kappa",
+          "begin": "\\{\\-",
+          "end": "\\-\\}"
+        }
+      ]
+    },
+    "strings": {
+      "patterns": [
+        {
+          "name": "string.quoted.double.kappa",
+          "begin": "#*\"",
+          "end": "\"#*",
+          "patterns": [
+            {
+              "name": "constant.character.escape.kappa",
+              "match": "\\\\."
+            }
+          ]
+        },
+        {
+          "name": "string.quoted.double.kappa",
+          "begin": "\"",
+          "end": "\"",
+          "patterns": [
+            {
+              "name": "constant.character.escape.kappa",
+              "match": "\\\\."
+            }
+          ]
+        }
+      ]
+    },
+    "numbers": {
+      "patterns": [
+        {
+          "name": "constant.numeric.kappa",
+          "match": "\\b\\d+(?:\\.\\d+)?\\b"
+        }
+      ]
+    },
+    "keywords": {
+      "patterns": [
+        {
+          "name": "keyword.control.kappa",
+          "match": "\\b(module|import|export|let|type|data|trait|instance|effect|match|case|if|then|else|do|while|for|return|handle|with|where|expect)\\b"
+        },
+        {
+          "name": "keyword.operator.word.kappa",
+          "match": "\\b(and|or|not)\\b"
+        }
+      ]
+    },
+    "types": {
+      "patterns": [
+        {
+          "name": "storage.type.kappa",
+          "match": "\\b(Type|Unit|Bool|Int|Integer|String|Char|Float|Double)\\b"
+        },
+        {
+          "name": "constant.language.kappa",
+          "match": "\\b(True|False|None|Some|Ok|Err|Nil|refl)\\b"
+        }
+      ]
+    },
+    "operators": {
+      "patterns": [
+        {
+          "name": "keyword.operator.kappa",
+          "match": "->|=>|:=|=|\\\\|\\|>|<\\[|\\]>|\\|"
+        }
+      ]
+    }
+  }
+}

@@ -1,0 +1,78 @@
+{
+  "name": "kappa-vscode",
+  "displayName": "Kappa",
+  "description": "VS Code support for the Kappa language.",
+  "version": "0.1.0",
+  "publisher": "kappa",
+  "license": "UNLICENSED",
+  "engines": {
+    "vscode": "^1.90.0"
+  },
+  "categories": [
+    "Programming Languages"
+  ],
+    "activationEvents": [
+      "onLanguage:kappa",
+      "onCommand:kappa.restartLanguageServer",
+      "onCommand:kappa.interpretFunctionAtCursor"
+  ],
+  "main": "./extension.js",
+  "contributes": {
+    "languages": [
+      {
+        "id": "kappa",
+        "aliases": [
+          "Kappa",
+          "kappa"
+        ],
+        "extensions": [
+          ".kp"
+        ],
+        "configuration": "./language-configuration.json"
+      }
+    ],
+    "grammars": [
+      {
+        "language": "kappa",
+        "scopeName": "source.kappa",
+        "path": "./syntaxes/kappa.tmGrammar.json"
+      }
+    ],
+    "commands": [
+      {
+        "command": "kappa.restartLanguageServer",
+        "title": "Kappa: Restart Language Server"
+      },
+      {
+        "command": "kappa.interpretFunctionAtCursor",
+        "title": "Kappa: Interpret Function Under Cursor"
+      }
+    ],
+    "configuration": {
+      "title": "Kappa",
+      "properties": {
+        "kappa.languageServer.dotnetCommand": {
+          "type": "string",
+          "default": "dotnet",
+          "description": "Command used to launch the Kappa language server."
+        },
+        "kappa.languageServer.projectPath": {
+          "type": "string",
+          "default": "",
+          "description": "Optional absolute path to Kappa.LSP.fsproj. When empty, the extension resolves the server project from the repository layout."
+        },
+        "kappa.languageServer.serverDllPath": {
+          "type": "string",
+          "default": "",
+          "description": "Optional absolute path to a built Kappa.LSP.dll. When set, the extension launches it with dotnet exec instead of dotnet run."
+        }
+      }
+    }
+  },
+  "dependencies": {
+    "vscode-languageclient": "^9.0.1"
+  },
+  "devDependencies": {
+    "@vscode/vsce": "^3.9.1"
+  }
+}
