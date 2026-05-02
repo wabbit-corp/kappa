@@ -118,6 +118,82 @@ raw foreign value
 A less precise boundary is acceptable when it is explicit. A precise boundary is acceptable only when the specification,
 implementation, or trusted summary states how that precision is enforced.
 
+<!-- design.typed_compiler_contract -->
+### 1.2 Typed compiler artifacts, not stringly-typed compilation
+
+Kappa compiler artifacts are typed semantic data structures. Human-readable strings are renderings, not semantic
+identities.
+
+A conforming implementation MUST NOT use ordinary strings as the authoritative representation of any of the following
+after the phase that introduces the corresponding semantic object:
+
+* declaration identity;
+* module identity;
+* provider identity;
+* import environment identity;
+* source-file identity;
+* semantic object identity;
+* diagnostic code identity;
+* diagnostic family identity;
+* diagnostic label role;
+* diagnostic related-origin role;
+* feature-gate identity;
+* KFrontIR phase identity;
+* compilation-stage identity;
+* query kind;
+* query key;
+* obligation kind;
+* obligation introduction cause;
+* hole identity;
+* macro expansion identity;
+* generated-name identity;
+* backend profile identity;
+* target artifact identity.
+
+Strings may be used for:
+
+* raw source text;
+* source spellings before resolution;
+* user-facing messages;
+* JSON, S-expression, or command-line serialization of typed values;
+* intentionally string-valued source-language data such as `String`.
+
+After `DECLARATION_SHAPES`, every declaration occurrence that is not unresolved MUST be represented by a typed
+declaration symbol identity rather than by a spelling string.
+
+After `IMPORTS`, every module provider selected by the build MUST be represented by a typed provider identity rather
+than by a path string, URL string, or module-name string alone.
+
+After `BODY_RESOLVE`, every resolved reference MUST target a declaration symbol, semantic object identity, or explicitly
+recorded unresolved-reference object. It MUST NOT target a spelling string.
+
+A stage dump, diagnostic payload, interface artifact, query trace, macro transcript, or reproducer bundle MAY render
+typed identities as strings, but the rendering MUST be accompanied by enough typed tag information for tools to
+distinguish at least:
+
+```text
+source spelling
+declaration symbol identity
+semantic object identity
+module identity
+provider identity
+field label identity
+effect label identity
+diagnostic code
+diagnostic family
+query key digest
+artifact identity
+```
+
+A conforming implementation MUST document the typed identity spaces it exposes through machine-readable outputs.
+
+If an implementation serializes a typed identity as a string in JSON, the field name or adjacent tag MUST identify the
+identity space. For example, a field named `symbolId` is acceptable; a field named `name` carrying either a spelling or a
+symbol identity depending on context is not.
+
+A source-level spelling and a resolved semantic identity are never interchangeable. A source spelling may resolve to no
+identity, one identity, or several candidate identities. A resolved identity may be rendered using many spellings.
+
 <!-- conformance.profiles -->
 ## 2. Language Profiles, Feature Gates, Versions, and Conformance
 
@@ -331,6 +407,92 @@ Diagnostic =
 
 A conforming implementation MAY use a different internal representation, but the JSON output MUST expose fields
 observationally equivalent to the fields above.
+
+<!-- compiler.kfrontir.diagnostic_related_origins -->
+#### 3.1.1A Related origins and multi-span records
+
+A diagnostic is multi-span by default.
+
+The `primary` origin identifies the most local source location whose source-level construct is being rejected or
+questioned. It is not required to be the only relevant location.
+
+The `related` field contains structured related origins. A related origin has the conceptual shape:
+
+```text
+RelatedOrigin =
+    (origin       : Origin,
+     role         : RelatedOriginRole,
+     message      : Option String,
+     object       : Option SemanticObjectId,
+     symbol       : Option DeclarationSymbolId,
+     obligation   : Option ObligationId,
+     provenance   : Option ProvenanceId)
+```
+
+`RelatedOriginRole` includes at least:
+
+```text
+definition-site
+declaration-site
+signature-site
+use-site
+call-site
+binder-site
+field-declaration-site
+constructor-declaration-site
+trait-declaration-site
+instance-declaration-site
+implicit-candidate-site
+selected-candidate-site
+rejected-candidate-site
+import-site
+export-site
+feature-gate-site
+macro-invocation-site
+macro-definition-site
+generated-site
+desugared-from
+obligation-introduced-here
+obligation-required-here
+obligation-blocked-here
+normalization-blocked-here
+flow-fact-introduced-here
+flow-fact-used-here
+borrow-start
+borrow-conflict
+borrow-escape-site
+consumed-here
+used-after-consume
+fix-target
+```
+
+Implementations MAY add related-origin roles, but standardized roles MUST preserve their meanings.
+
+A diagnostic MUST include all related origins necessary to explain a two-site or multi-site source-level relationship.
+In particular:
+
+* unresolved-name diagnostics SHOULD include the use site and any rejected near-match definition sites;
+* ambiguous-name diagnostics MUST include all candidate definition sites;
+* type-mismatch diagnostics MUST include the actual expression site and the source origin of the expected type when
+  available;
+* application diagnostics MUST include the call site and the declaration or inferred callable type site when available;
+* implicit-resolution diagnostics MUST include the goal site and all surviving or near-surviving candidate sites;
+* trait-coherence diagnostics MUST include every surviving incoherent instance declaration site;
+* borrow, path, and ownership diagnostics MUST include the borrow or consume introduction site and the failing later use
+  or escape site;
+* record-update diagnostics MUST include the updated field, copied field, and invalidated dependent field when
+  available;
+* feature-gate diagnostics MUST include the construct site and the gate-setting provenance site when available;
+* macro diagnostics MUST include the macro invocation site and generated syntax site when available;
+* termination diagnostics MUST include the recursive declaration site and every failing recursive call site considered.
+
+If a required related origin is unavailable because the source program is incomplete, generated, redacted, or imported
+from an artifact that lacks source ranges, the diagnostic payload MUST record why that origin is unavailable.
+
+A human-readable renderer SHOULD display at least one related origin whenever the diagnostic contains any related origin
+whose role is not merely presentational.
+
+A machine-readable renderer MUST preserve all related origins.
 
 Required meanings:
 
