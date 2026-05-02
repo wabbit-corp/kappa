@@ -159,16 +159,16 @@ module internal ZigCcBackendArtifact =
     let internal buildTranslationUnit (workspace: WorkspaceCompilation) (roots: (string * string) list option) =
         result {
             if workspace.HasErrors then
+                let detail = aggregateDiagnostics workspace.Diagnostics
                 return!
-                    Result.Error
-                        $"Cannot emit native code for a workspace with diagnostics:{Environment.NewLine}{aggregateDiagnostics workspace.Diagnostics}"
+                    Result.Error(DiagnosticFact.ZigArtifactEmitterError.message (ZigArtifactWorkspaceHasDiagnostics detail))
 
             let verificationDiagnostics = CheckpointVerification.verifyCheckpoint workspace "KBackendIR"
 
             if not (List.isEmpty verificationDiagnostics) then
+                let detail = aggregateDiagnostics verificationDiagnostics
                 return!
-                    Result.Error
-                        $"Cannot emit native code from malformed KBackendIR:{Environment.NewLine}{aggregateDiagnostics verificationDiagnostics}"
+                    Result.Error(DiagnosticFact.ZigArtifactEmitterError.message (ZigArtifactMalformedBackendIr detail))
 
             let effectiveRoots =
                 match roots with
@@ -281,7 +281,9 @@ module internal ZigCcBackendArtifact =
 
             let! entryFunctionName =
                 lookupFunctionName context entryModuleName entryBindingName
-                |> resultOfOption $"zig could not resolve emitted entry point '{entryPoint}'."
+                |> resultOfOption(
+                    DiagnosticFact.ZigBackendEmitterError.message (ZigEmittedEntryPointResolutionFailed entryPoint)
+                )
 
             let resolvedOutputDirectory = Path.GetFullPath(outputDirectory)
             Directory.CreateDirectory(resolvedOutputDirectory) |> ignore

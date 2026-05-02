@@ -142,7 +142,7 @@ module internal ZigCcBackendSupport =
 
         match segments with
         | [] ->
-            Result.Error "Expected a binding name to run."
+            Result.Error(DiagnosticFact.ZigBackendEmitterError.message ZigEntryPointBindingNameRequired)
         | [ bindingName ] ->
             let matches =
                 workspace.KBackendIR
@@ -156,11 +156,11 @@ module internal ZigCcBackendSupport =
 
             match matches with
             | [] ->
-                Result.Error $"No zero-argument binding named '{bindingName}' was found for zig."
+                Result.Error(DiagnosticFact.ZigBackendEmitterError.message (ZigEntryPointBindingNotFound bindingName))
             | [ moduleName, resolvedBindingName ] ->
                 Result.Ok(moduleName, resolvedBindingName)
             | _ ->
-                Result.Error $"Binding name '{bindingName}' is ambiguous. Use a fully qualified name."
+                Result.Error(DiagnosticFact.ZigBackendEmitterError.message (ZigEntryPointBindingAmbiguous bindingName))
         | _ ->
             let moduleName = segments |> List.take (segments.Length - 1) |> String.concat "."
             let bindingName = List.last segments
@@ -169,7 +169,11 @@ module internal ZigCcBackendSupport =
             | Some _ ->
                 Result.Ok(moduleName, bindingName)
             | None ->
-                Result.Error $"zig requires a zero-argument binding named '{bindingName}' in module '{moduleName}'."
+                Result.Error(
+                    DiagnosticFact.ZigBackendEmitterError.message (
+                        ZigQualifiedEntryPointBindingNotFound(moduleName, bindingName)
+                    )
+                )
 
     let internal buildContext (workspace: WorkspaceCompilation) =
         let functions =
@@ -212,7 +216,9 @@ module internal ZigCcBackendSupport =
     let internal lookupTypeId (context: GenerationContext) moduleName typeName =
         context.DataTypeIds
         |> Map.tryFind (moduleName, typeName)
-        |> resultOfOption $"zig could not resolve runtime type layout '{moduleName}.{typeName}'."
+        |> resultOfOption(
+            DiagnosticFact.ZigBackendEmitterError.message (ZigRuntimeTypeLayoutResolutionFailed(moduleName, typeName))
+        )
 
     let internal literalToBoxedExpression literal =
         match literal with

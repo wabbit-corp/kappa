@@ -804,6 +804,35 @@ type ClrArtifactEmitterErrorEvidence =
     | ClrArtifactWorkspaceHasDiagnostics of artifactKind: ClrArtifactKind * detail: string
     | ClrArtifactMalformedBackendIr of detail: string
 
+type ZigArtifactEmitterErrorEvidence =
+    | ZigArtifactWorkspaceHasDiagnostics of detail: string
+    | ZigArtifactMalformedBackendIr of detail: string
+
+type ZigBackendEmitterErrorEvidence =
+    | ZigEntryPointBindingNameRequired
+    | ZigEntryPointBindingNotFound of bindingName: string
+    | ZigEntryPointBindingAmbiguous of bindingName: string
+    | ZigQualifiedEntryPointBindingNotFound of moduleName: string * bindingName: string
+    | ZigEmittedEntryPointResolutionFailed of entryPoint: string
+    | ZigRuntimeTypeLayoutResolutionFailed of moduleName: string * typeName: string
+    | ZigLocalRuntimeNameResolutionFailed of name: string
+    | ZigGlobalRuntimeBindingResolutionFailed of moduleName: string * bindingName: string
+    | ZigHandlerCapturedLocalResolutionFailed of captureName: string
+    | ZigClosureCapturedLocalResolutionFailed of captureName: string
+    | ZigRecursiveClosureCapturedLocalResolutionFailed of captureName: string
+    | ZigCapturedTraitDictionaryUnsupported of moduleName: string * traitName: string * instanceKey: string
+    | ZigPrefixedStringUnsupported of prefix: string
+    | ZigIntrinsicFirstClassValueUnsupported of intrinsicName: string
+    | ZigConstructorFirstClassValueUnsupported of moduleName: string * typeName: string * arity: int
+    | ZigIntrinsicArityMismatch of intrinsicName: string * expectedArity: int * actualArity: int
+    | ZigIntrinsicUnsupported of intrinsicName: string
+    | ZigIntrinsicIsRequiresConstructorName
+    | ZigCalleeResolutionFailed of moduleName: string * bindingName: string
+    | ZigConstructorArityMismatch of moduleName: string * typeName: string * expectedArity: int * actualArity: int
+    | ZigMissingBindingBody of moduleName: string * bindingName: string
+    | ZigOrPatternAlternativesBindDifferentNames
+    | ZigOrPatternBinderRepresentationMismatch of binderName: string
+
 type BackendDiagnosticEvidence =
     | EffectRuntimeUnsupportedBackend of backendProfile: string * declarationName: string * effectUse: BackendRuntimeEffectUseEvidence
     | KBackendLoweringFailed of moduleName: string * error: BackendLoweringErrorEvidence
@@ -1669,6 +1698,65 @@ module DiagnosticFact =
                 $"Cannot emit {artifactKindText artifactKind} for a workspace with diagnostics:{System.Environment.NewLine}{detail}"
             | ClrArtifactMalformedBackendIr detail ->
                 $"Cannot emit malformed KBackendIR:{System.Environment.NewLine}{detail}"
+
+    module internal ZigArtifactEmitterError =
+        let message evidence =
+            match evidence with
+            | ZigArtifactWorkspaceHasDiagnostics detail ->
+                $"Cannot emit native code for a workspace with diagnostics:{System.Environment.NewLine}{detail}"
+            | ZigArtifactMalformedBackendIr detail ->
+                $"Cannot emit native code from malformed KBackendIR:{System.Environment.NewLine}{detail}"
+
+    module internal ZigBackendEmitterError =
+        let message evidence =
+            match evidence with
+            | ZigEntryPointBindingNameRequired ->
+                "Expected a binding name to run."
+            | ZigEntryPointBindingNotFound bindingName ->
+                $"No zero-argument binding named '{bindingName}' was found for zig."
+            | ZigEntryPointBindingAmbiguous bindingName ->
+                $"Binding name '{bindingName}' is ambiguous. Use a fully qualified name."
+            | ZigQualifiedEntryPointBindingNotFound(moduleName, bindingName) ->
+                $"zig requires a zero-argument binding named '{bindingName}' in module '{moduleName}'."
+            | ZigEmittedEntryPointResolutionFailed entryPoint ->
+                $"zig could not resolve emitted entry point '{entryPoint}'."
+            | ZigRuntimeTypeLayoutResolutionFailed(moduleName, typeName) ->
+                $"zig could not resolve runtime type layout '{moduleName}.{typeName}'."
+            | ZigLocalRuntimeNameResolutionFailed name ->
+                $"zig could not resolve local runtime name '{name}'."
+            | ZigGlobalRuntimeBindingResolutionFailed(moduleName, bindingName) ->
+                $"zig could not resolve global runtime binding '{moduleName}.{bindingName}'."
+            | ZigHandlerCapturedLocalResolutionFailed captureName ->
+                $"zig handler dispatcher could not resolve captured local '{captureName}'."
+            | ZigClosureCapturedLocalResolutionFailed captureName ->
+                $"zig closure could not resolve captured local '{captureName}'."
+            | ZigRecursiveClosureCapturedLocalResolutionFailed captureName ->
+                $"zig recursive closure could not resolve captured local '{captureName}'."
+            | ZigCapturedTraitDictionaryUnsupported(moduleName, traitName, instanceKey) ->
+                $"zig does not yet support captured dictionaries for trait instance '{moduleName}.{traitName}.{instanceKey}'."
+            | ZigPrefixedStringUnsupported prefix ->
+                $"zig does not support prefixed string backend expression '{prefix}\"...\"' yet."
+            | ZigIntrinsicFirstClassValueUnsupported intrinsicName ->
+                $"zig does not yet support using intrinsic '{intrinsicName}' as a first-class value."
+            | ZigConstructorFirstClassValueUnsupported(moduleName, typeName, arity) ->
+                $"zig does not yet support using constructor '{moduleName}.{typeName}' with arity {arity} as a first-class value."
+            | ZigIntrinsicArityMismatch(intrinsicName, expectedArity, actualArity) ->
+                let argumentSuffix = if expectedArity = 1 then "" else "s"
+                $"zig intrinsic '{intrinsicName}' expected exactly {expectedArity} argument{argumentSuffix}, but received {actualArity}."
+            | ZigIntrinsicUnsupported intrinsicName ->
+                $"zig does not yet support intrinsic '{intrinsicName}'."
+            | ZigIntrinsicIsRequiresConstructorName ->
+                "zig intrinsic 'is' expects a constructor name on the right-hand side."
+            | ZigCalleeResolutionFailed(moduleName, bindingName) ->
+                $"zig could not resolve callee '{moduleName}.{bindingName}'."
+            | ZigConstructorArityMismatch(moduleName, typeName, expectedArity, actualArity) ->
+                $"zig expected constructor '{moduleName}.{typeName}' to receive {expectedArity} argument(s), but received {actualArity}."
+            | ZigMissingBindingBody(moduleName, bindingName) ->
+                $"zig requires a body for '{moduleName}.{bindingName}'."
+            | ZigOrPatternAlternativesBindDifferentNames ->
+                "zig backend requires each or-pattern alternative to bind the same names."
+            | ZigOrPatternBinderRepresentationMismatch binderName ->
+                $"zig backend requires binder '{binderName}' to keep the same runtime representation across every or-pattern alternative."
 
     let private expectedActualMismatchKindText mismatchKind =
         match mismatchKind with

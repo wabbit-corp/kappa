@@ -602,6 +602,172 @@ module BackendTestsShard4 =
             )
 
     [<Fact>]
+    let ``zig backend reports structured workspace diagnostic failures`` () =
+        let workspace =
+            compileInMemoryWorkspaceWithBackend
+                "memory-zig-workspace-diagnostics-root"
+                "zig"
+                [
+                    "main.kp",
+                    [
+                        "module main"
+                        "let result = 1"
+                    ]
+                    |> String.concat "\n"
+                    "bad.kp",
+                    [
+                        "module bad"
+                        "let broken = missing"
+                    ]
+                    |> String.concat "\n"
+                ]
+
+        Assert.True(workspace.HasErrors, "Expected the workspace to retain frontend diagnostics.")
+
+        let outputDirectory = createScratchDirectory "zig-workspace-diagnostics"
+
+        match Backend.emitZigArtifact workspace "main.result" outputDirectory with
+        | Result.Ok artifact ->
+            failwithf "Expected zig artifact emission to reject a diagnostic workspace, but emitted '%s'." artifact.ExecutableFilePath
+        | Result.Error message ->
+            let detail =
+                workspace.Diagnostics
+                |> List.map (fun diagnostic -> diagnostic.Message)
+                |> String.concat Environment.NewLine
+
+            Assert.Equal(
+                $"Cannot emit native code for a workspace with diagnostics:{Environment.NewLine}{detail}",
+                message
+            )
+
+    [<Fact>]
+    let ``zig backend reports structured malformed backend IR failures`` () =
+        let workspace =
+            compileInMemoryWorkspaceWithBackend
+                "memory-zig-malformed-backendir-root"
+                "zig"
+                [
+                    "main.kp",
+                    [
+                        "module main"
+                        "result : Int"
+                        "let result = 1"
+                    ]
+                    |> String.concat "\n"
+                ]
+
+        Assert.False(workspace.HasErrors, sprintf "Expected no frontend diagnostics, got %A" workspace.Diagnostics)
+
+        let driftedBackendIR =
+            workspace.KBackendIR
+            |> List.map (fun moduleDump ->
+                if moduleDump.Name = "main" then
+                    { moduleDump with
+                        Functions =
+                            moduleDump.Functions
+                            |> List.map (fun binding ->
+                                if binding.Name = "result" then
+                                    { binding with Body = None }
+                                else
+                                    binding) }
+                else
+                    moduleDump)
+
+        let malformedWorkspace = { workspace with KBackendIR = driftedBackendIR }
+        let verificationDiagnostics = CheckpointVerification.verifyCheckpoint malformedWorkspace "KBackendIR"
+
+        Assert.NotEmpty(verificationDiagnostics)
+
+        let outputDirectory = createScratchDirectory "zig-malformed-backendir"
+
+        match Backend.emitZigArtifact malformedWorkspace "main.result" outputDirectory with
+        | Result.Ok artifact ->
+            failwithf "Expected zig artifact emission to reject malformed KBackendIR, but emitted '%s'." artifact.ExecutableFilePath
+        | Result.Error message ->
+            let detail =
+                verificationDiagnostics
+                |> List.map (fun diagnostic -> diagnostic.Message)
+                |> String.concat Environment.NewLine
+
+            Assert.Equal(
+                $"Cannot emit native code from malformed KBackendIR:{Environment.NewLine}{detail}",
+                message
+            )
+
+    [<Fact>]
+    let ``zig backend rejects entrypoints absent from the emitted backend model`` () =
+        let workspace =
+            compileInMemoryWorkspaceWithBackend
+                "memory-zig-entrypoint-backendir-missing-root"
+                "zig"
+                [
+                    "main.kp",
+                    [
+                        "module main"
+                        "let result = 42"
+                    ]
+                    |> String.concat "\n"
+                ]
+
+        let outputDirectory = createScratchDirectory "zig-entrypoint-backendir-missing"
+
+        match Backend.emitZigArtifact { workspace with KBackendIR = [] } "main.result" outputDirectory with
+        | Result.Ok artifact ->
+            failwithf "Expected zig entrypoint resolution from KBackendIR to fail, but emitted '%s'." artifact.ExecutableFilePath
+        | Result.Error message ->
+            Assert.Equal("zig requires a zero-argument binding named 'result' in module 'main'.", message)
+
+    [<Fact>]
+    let ``zig backend reports structured prefixed string support failures`` () =
+        let workspace =
+            compileInMemoryWorkspaceWithBackend
+                "memory-zig-prefixed-string-unsupported-root"
+                "zig"
+                [
+                    "main.kp",
+                    [
+                        "module main"
+                        "let result = f\"hello\""
+                    ]
+                    |> String.concat "\n"
+                ]
+
+        Assert.False(workspace.HasErrors, sprintf "Expected no frontend diagnostics, got %A" workspace.Diagnostics)
+
+        let outputDirectory = createScratchDirectory "zig-prefixed-string-unsupported"
+
+        match Backend.emitZigArtifact workspace "main.result" outputDirectory with
+        | Result.Ok artifact ->
+            failwithf "Expected zig artifact emission to reject prefixed strings, but emitted '%s'." artifact.ExecutableFilePath
+        | Result.Error message ->
+            Assert.Equal("zig does not support prefixed string backend expression 'f\"...\"' yet.", message)
+
+    [<Fact>]
+    let ``zig backend reports structured first class intrinsic failures`` () =
+        let workspace =
+            compileInMemoryWorkspaceWithBackend
+                "memory-zig-first-class-intrinsic-unsupported-root"
+                "zig"
+                [
+                    "main.kp",
+                    [
+                        "module main"
+                        "let result = print"
+                    ]
+                    |> String.concat "\n"
+                ]
+
+        Assert.False(workspace.HasErrors, sprintf "Expected no frontend diagnostics, got %A" workspace.Diagnostics)
+
+        let outputDirectory = createScratchDirectory "zig-first-class-intrinsic-unsupported"
+
+        match Backend.emitZigArtifact workspace "main.result" outputDirectory with
+        | Result.Ok artifact ->
+            failwithf "Expected zig artifact emission to reject first-class intrinsics, but emitted '%s'." artifact.ExecutableFilePath
+        | Result.Error message ->
+            Assert.Equal("zig does not yet support using intrinsic 'print' as a first-class value.", message)
+
+    [<Fact>]
     let ``dotnet backend reports structured closure support failures`` () =
         let workspace =
             compileInMemoryWorkspaceWithBackend

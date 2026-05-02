@@ -190,13 +190,17 @@ module internal ZigCcBackendEmit =
             if List.isEmpty captures then
                 emitDictionaryValueExpression context moduleName traitName instanceKey
             else
-                Result.Error(sprintf "zig does not yet support captured dictionaries for trait instance '%s.%s.%s'." moduleName traitName instanceKey)
+                Result.Error(
+                    DiagnosticFact.ZigBackendEmitterError.message (
+                        ZigCapturedTraitDictionaryUnsupported(moduleName, traitName, instanceKey)
+                    )
+                )
         | BackendTraitCall(traitName, memberName, dictionary, arguments, _) ->
             emitTraitDispatchExpression context scope traitName memberName dictionary arguments
         | BackendConstructData(moduleName, typeName, _, tag, fields, _) ->
             emitConstructDataExpression context scope moduleName typeName tag fields
         | BackendPrefixedString(prefix, _, _) ->
-            Result.Error(sprintf "zig does not support prefixed string backend expression '%s\"...\"' yet." prefix)
+            Result.Error(DiagnosticFact.ZigBackendEmitterError.message (ZigPrefixedStringUnsupported prefix))
 
     and internal emitExpressions (context: GenerationContext) (scope: EmitScope) (expressions: KBackendExpression list) : Result<EmittedExpression list, string> =
         let rec loop remaining emitted =
@@ -219,7 +223,9 @@ module internal ZigCcBackendEmit =
             |> Option.map (fun expression ->
                 { Statements = []
                   ValueExpression = expression })
-            |> resultOfOption $"zig could not resolve local runtime name '{name}'."
+            |> resultOfOption(
+                DiagnosticFact.ZigBackendEmitterError.message (ZigLocalRuntimeNameResolutionFailed name)
+            )
         | BackendGlobalBindingName(moduleName, bindingName, _) ->
             match lookupFunction context moduleName bindingName, lookupFunctionName context moduleName bindingName with
             | Some functionDump, Some emittedName ->
@@ -230,7 +236,11 @@ module internal ZigCcBackendEmit =
                       ValueExpression =
                         $"kappa_make_closure(&{emittedName}, NULL, {functionDump.Parameters.Length}, \"{debugName}\")" }
             | _ ->
-                Result.Error $"zig could not resolve global runtime binding '{moduleName}.{bindingName}'."
+                Result.Error(
+                    DiagnosticFact.ZigBackendEmitterError.message (
+                        ZigGlobalRuntimeBindingResolutionFailed(moduleName, bindingName)
+                    )
+                )
         | BackendIntrinsicName(_, bindingName, _) ->
             match bindingName with
             | "True" ->
@@ -242,11 +252,15 @@ module internal ZigCcBackendEmit =
                     { Statements = []
                       ValueExpression = "kappa_box_bool(0)" }
             | other ->
-                Result.Error $"zig does not yet support using intrinsic '{other}' as a first-class value."
+                Result.Error(
+                    DiagnosticFact.ZigBackendEmitterError.message (ZigIntrinsicFirstClassValueUnsupported other)
+                )
         | BackendConstructorName(moduleName, typeName, _, tag, arity, _) ->
             if arity <> 0 then
                 Result.Error
-                    $"zig does not yet support using constructor '{moduleName}.{typeName}' with arity {arity} as a first-class value."
+                    (DiagnosticFact.ZigBackendEmitterError.message (
+                        ZigConstructorFirstClassValueUnsupported(moduleName, typeName, arity)
+                    ))
             else
                 match tryEmitPreludeBoolConstructor moduleName typeName tag [] with
                 | Some valueExpression ->
@@ -522,7 +536,11 @@ module internal ZigCcBackendEmit =
                     |> List.mapi (fun index captureName ->
                         scope.Bindings
                         |> Map.tryFind captureName
-                        |> resultOfOption $"zig handler dispatcher could not resolve captured local '{captureName}'."
+                        |> resultOfOption(
+                            DiagnosticFact.ZigBackendEmitterError.message (
+                                ZigHandlerCapturedLocalResolutionFailed captureName
+                            )
+                        )
                         |> Result.map (fun capturedExpression ->
                             $"{environmentVariable}->capture_{index} = {capturedExpression};"))
                     |> List.fold
@@ -653,7 +671,11 @@ module internal ZigCcBackendEmit =
                         let capturedExpression =
                             scope.Bindings
                             |> Map.tryFind capture.Name
-                            |> resultOfOption $"zig closure could not resolve captured local '{capture.Name}'."
+                            |> resultOfOption(
+                                DiagnosticFact.ZigBackendEmitterError.message (
+                                    ZigClosureCapturedLocalResolutionFailed capture.Name
+                                )
+                            )
 
                         capturedExpression
                         |> Result.map (fun expression ->
@@ -871,7 +893,11 @@ module internal ZigCcBackendEmit =
                                 else
                                     prefixScope.Bindings
                                     |> Map.tryFind capture.Name
-                                    |> resultOfOption $"zig recursive closure could not resolve captured local '{capture.Name}'."
+                                    |> resultOfOption(
+                                        DiagnosticFact.ZigBackendEmitterError.message (
+                                            ZigRecursiveClosureCapturedLocalResolutionFailed capture.Name
+                                        )
+                                    )
                                     |> Result.map (fun expression -> Some $"{environmentVariable}->capture_{index} = {expression};"))
                             |> List.fold
                                 (fun state item ->
@@ -1144,6 +1170,13 @@ module internal ZigCcBackendEmit =
             let argumentValues =
                 emittedArguments |> List.map (fun emitted -> emitted.ValueExpression)
 
+            let intrinsicArityError expectedArity =
+                Result.Error(
+                    DiagnosticFact.ZigBackendEmitterError.message (
+                        ZigIntrinsicArityMismatch(bindingName, expectedArity, argumentValues.Length)
+                    )
+                )
+
             let chooseBinaryNumericHelper intHelper floatHelper =
                 if
                     convention.ResultRepresentation = Some BackendRepFloat64
@@ -1172,7 +1205,7 @@ module internal ZigCcBackendEmit =
                         { Statements = argumentStatements @ statements
                           ValueExpression = resultValue }
                 | _ ->
-                    Result.Error $"zig intrinsic '{bindingName}' expected exactly 2 arguments."
+                    intrinsicArityError 2
 
             let unaryIntCall prefix helper =
                 match argumentValues with
@@ -1184,7 +1217,7 @@ module internal ZigCcBackendEmit =
                         { Statements = argumentStatements @ statements
                           ValueExpression = resultValue }
                 | _ ->
-                    Result.Error $"zig intrinsic '{bindingName}' expected exactly 1 argument."
+                    intrinsicArityError 1
 
             let binaryBoolCall prefix helper =
                 match argumentValues with
@@ -1196,7 +1229,7 @@ module internal ZigCcBackendEmit =
                         { Statements = argumentStatements @ statements
                           ValueExpression = resultValue }
                 | _ ->
-                    Result.Error $"zig intrinsic '{bindingName}' expected exactly 2 arguments."
+                    intrinsicArityError 2
 
             let unaryBoolCall prefix helper =
                 match argumentValues with
@@ -1208,7 +1241,7 @@ module internal ZigCcBackendEmit =
                         { Statements = argumentStatements @ statements
                           ValueExpression = resultValue }
                 | _ ->
-                    Result.Error $"zig intrinsic '{bindingName}' expected exactly 1 argument."
+                    intrinsicArityError 1
 
             match bindingName with
             | "+" ->
@@ -1245,14 +1278,14 @@ module internal ZigCcBackendEmit =
             | "or" -> return! binaryBoolCall "or" "kappa_bool_or"
             | "True" ->
                 if not (List.isEmpty argumentValues) then
-                    return! Result.Error "zig intrinsic 'True' does not take arguments."
+                    return! intrinsicArityError 0
                 else
                     return
                         { Statements = argumentStatements
                           ValueExpression = "kappa_box_bool(1)" }
             | "False" ->
                 if not (List.isEmpty argumentValues) then
-                    return! Result.Error "zig intrinsic 'False' does not take arguments."
+                    return! intrinsicArityError 0
                 else
                     return
                         { Statements = argumentStatements
@@ -1273,7 +1306,7 @@ module internal ZigCcBackendEmit =
                             @ [ $"KValue* {resultValue} = kappa_make_data({listTypeId}, 1, 2, {argumentArray});" ]
                           ValueExpression = resultValue }
                 | _ ->
-                    return! Result.Error "zig intrinsic '::' expected exactly 2 arguments."
+                    return! intrinsicArityError 2
             | "pure" ->
                 match argumentValues with
                 | [ value ] ->
@@ -1284,7 +1317,7 @@ module internal ZigCcBackendEmit =
                         { Statements = argumentStatements @ statements
                           ValueExpression = resultValue }
                 | _ ->
-                    return! Result.Error "zig intrinsic 'pure' expected exactly 1 argument."
+                    return! intrinsicArityError 1
             | ">>" ->
                 match argumentValues with
                 | [ left; right ] ->
@@ -1295,7 +1328,7 @@ module internal ZigCcBackendEmit =
                         { Statements = argumentStatements @ statements
                           ValueExpression = resultValue }
                 | _ ->
-                    return! Result.Error "zig intrinsic '>>' expected exactly 2 arguments."
+                    return! intrinsicArityError 2
             | ">>=" ->
                 match argumentValues with
                 | [ value; binder ] ->
@@ -1306,7 +1339,7 @@ module internal ZigCcBackendEmit =
                         { Statements = argumentStatements @ statements
                           ValueExpression = resultValue }
                 | _ ->
-                    return! Result.Error "zig intrinsic '>>=' expected exactly 2 arguments."
+                    return! intrinsicArityError 2
             | "print" ->
                 match argumentValues with
                 | [ value ] ->
@@ -1317,7 +1350,7 @@ module internal ZigCcBackendEmit =
                         { Statements = argumentStatements @ statements
                           ValueExpression = resultValue }
                 | _ ->
-                    return! Result.Error "zig intrinsic 'print' expected exactly 1 argument."
+                    return! intrinsicArityError 1
             | "println" ->
                 match argumentValues with
                 | [ value ] ->
@@ -1328,7 +1361,7 @@ module internal ZigCcBackendEmit =
                         { Statements = argumentStatements @ statements
                           ValueExpression = resultValue }
                 | _ ->
-                    return! Result.Error "zig intrinsic 'println' expected exactly 1 argument."
+                    return! intrinsicArityError 1
             | "primitiveIntToString" ->
                 match argumentValues with
                 | [ value ] ->
@@ -1339,7 +1372,7 @@ module internal ZigCcBackendEmit =
                         { Statements = argumentStatements @ statements
                           ValueExpression = resultValue }
                 | _ ->
-                    return! Result.Error "zig intrinsic 'primitiveIntToString' expected exactly 1 argument."
+                    return! intrinsicArityError 1
             | "unsafeConsume" ->
                 match argumentValues with
                 | [ _ ] ->
@@ -1347,7 +1380,7 @@ module internal ZigCcBackendEmit =
                         { Statements = argumentStatements
                           ValueExpression = "kappa_unit()" }
                 | _ ->
-                    return! Result.Error "zig intrinsic 'unsafeConsume' expected exactly 1 argument."
+                    return! intrinsicArityError 1
             | "openFile" ->
                 match argumentValues with
                 | [ _ ] ->
@@ -1358,7 +1391,7 @@ module internal ZigCcBackendEmit =
                         { Statements = argumentStatements @ statements
                           ValueExpression = resultValue }
                 | _ ->
-                    return! Result.Error "zig intrinsic 'openFile' expected exactly 1 argument."
+                    return! intrinsicArityError 1
             | "primitiveReadData"
             | "readData" ->
                 match argumentValues with
@@ -1370,7 +1403,7 @@ module internal ZigCcBackendEmit =
                         { Statements = argumentStatements @ statements
                           ValueExpression = resultValue }
                 | _ ->
-                    return! Result.Error $"zig intrinsic '{bindingName}' expected exactly 1 argument."
+                    return! intrinsicArityError 1
             | "primitiveCloseFile" ->
                 match argumentValues with
                 | [ _ ] ->
@@ -1385,7 +1418,7 @@ module internal ZigCcBackendEmit =
                             @ statements
                           ValueExpression = resultValue }
                 | _ ->
-                    return! Result.Error "zig intrinsic 'primitiveCloseFile' expected exactly 1 argument."
+                    return! intrinsicArityError 1
             | "newRef" ->
                 match argumentValues with
                 | [ value ] ->
@@ -1396,7 +1429,7 @@ module internal ZigCcBackendEmit =
                         { Statements = argumentStatements @ statements
                           ValueExpression = resultValue }
                 | _ ->
-                    return! Result.Error "zig intrinsic 'newRef' expected exactly 1 argument."
+                    return! intrinsicArityError 1
             | "readRef" ->
                 match argumentValues with
                 | [ value ] ->
@@ -1407,7 +1440,7 @@ module internal ZigCcBackendEmit =
                         { Statements = argumentStatements @ statements
                           ValueExpression = resultValue }
                 | _ ->
-                    return! Result.Error "zig intrinsic 'readRef' expected exactly 1 argument."
+                    return! intrinsicArityError 1
             | "writeRef" ->
                 match argumentValues with
                 | [ referenceValue; value ] ->
@@ -1418,7 +1451,7 @@ module internal ZigCcBackendEmit =
                         { Statements = argumentStatements @ statements
                           ValueExpression = resultValue }
                 | _ ->
-                    return! Result.Error "zig intrinsic 'writeRef' expected exactly 2 arguments."
+                    return! intrinsicArityError 2
             | intrinsicName when intrinsicName = KnownPreludeSemantics.BuiltinPreludeCompareHelperName ->
                 match argumentValues with
                 | [ leftValue; rightValue ] ->
@@ -1429,7 +1462,7 @@ module internal ZigCcBackendEmit =
                         { Statements = argumentStatements @ statements
                           ValueExpression = resultValue }
                 | _ ->
-                    return! Result.Error $"zig intrinsic '{intrinsicName}' expected exactly 2 arguments."
+                    return! intrinsicArityError 2
             | intrinsicName when intrinsicName = KnownPreludeSemantics.BuiltinPreludeShowHelperName ->
                 match argumentValues with
                 | [ value ] ->
@@ -1440,9 +1473,12 @@ module internal ZigCcBackendEmit =
                         { Statements = argumentStatements @ statements
                           ValueExpression = resultValue }
                 | _ ->
-                    return! Result.Error $"zig intrinsic '{intrinsicName}' expected exactly 1 argument."
+                    return! intrinsicArityError 1
             | other ->
-                return! Result.Error $"zig does not yet support intrinsic '{other}'."
+                return!
+                    Result.Error(
+                        DiagnosticFact.ZigBackendEmitterError.message (ZigIntrinsicUnsupported other)
+                    )
         }
 
     and internal emitCallExpression
@@ -1467,9 +1503,13 @@ module internal ZigCcBackendEmit =
                           ValueExpression = resultValue }
                 }
             | [ _; _ ] ->
-                Result.Error "zig intrinsic 'is' expects a constructor name on the right-hand side."
+                Result.Error(DiagnosticFact.ZigBackendEmitterError.message ZigIntrinsicIsRequiresConstructorName)
             | _ ->
-                Result.Error "zig intrinsic 'is' expected exactly 2 arguments."
+                Result.Error(
+                    DiagnosticFact.ZigBackendEmitterError.message (
+                        ZigIntrinsicArityMismatch("is", 2, arguments.Length)
+                    )
+                )
         | BackendName(BackendGlobalBindingName(moduleName, bindingName, _)) ->
             result {
                 let! emittedArguments = emitExpressions context scope arguments
@@ -1485,7 +1525,11 @@ module internal ZigCcBackendEmit =
 
                 let! emittedName =
                     lookupFunctionName context moduleName bindingName
-                    |> resultOfOption $"zig could not resolve callee '{moduleName}.{bindingName}'."
+                    |> resultOfOption(
+                        DiagnosticFact.ZigBackendEmitterError.message (
+                            ZigCalleeResolutionFailed(moduleName, bindingName)
+                        )
+                    )
 
                 let resultValue = freshTemp context "call"
 
@@ -1501,7 +1545,9 @@ module internal ZigCcBackendEmit =
         | BackendName(BackendConstructorName(moduleName, typeName, _, tag, arity, _)) ->
             if arity <> arguments.Length then
                 Result.Error
-                    $"zig expected constructor '{moduleName}.{typeName}' to receive {arity} argument(s), but received {arguments.Length}."
+                    (DiagnosticFact.ZigBackendEmitterError.message (
+                        ZigConstructorArityMismatch(moduleName, typeName, arity, arguments.Length)
+                    ))
             else
                 emitConstructDataExpression context scope moduleName typeName tag arguments
         | _ ->
@@ -1595,7 +1641,10 @@ module internal ZigCcBackendEmit =
                                         let candidateNames = candidateBindings |> Map.keys |> Set.ofSeq
 
                                         if candidateNames <> firstNames then
-                                            Result.Error "zig backend requires each or-pattern alternative to bind the same names."
+                                            Result.Error(
+                                                DiagnosticFact.ZigBackendEmitterError.message
+                                                    ZigOrPatternAlternativesBindDifferentNames
+                                            )
                                         else
                                             firstBindings
                                             |> Map.fold
@@ -1608,7 +1657,9 @@ module internal ZigCcBackendEmit =
                                                             Result.Ok()
                                                         else
                                                             Result.Error
-                                                                $"zig backend requires binder '{name}' to keep the same runtime representation across every or-pattern alternative."))
+                                                                (DiagnosticFact.ZigBackendEmitterError.message (
+                                                                    ZigOrPatternBinderRepresentationMismatch name
+                                                                ))))
                                                 (Result.Ok())
                                             |> Result.map (fun () -> agreedBindings))
                                 )
@@ -1751,7 +1802,11 @@ module internal ZigCcBackendEmit =
         result {
             let! body =
                 functionDump.Body
-                |> resultOfOption $"zig requires a body for '{moduleName}.{functionDump.Name}'."
+                |> resultOfOption(
+                    DiagnosticFact.ZigBackendEmitterError.message (
+                        ZigMissingBindingBody(moduleName, functionDump.Name)
+                    )
+                )
 
             let emittedName =
                 context.FunctionNames[moduleName, functionDump.Name]
