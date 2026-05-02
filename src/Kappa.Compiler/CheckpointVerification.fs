@@ -76,15 +76,6 @@ module CheckpointVerification =
         | [] ->
             makeStructuredDiagnostic evidence
 
-    let private tryParseTypeText text =
-        let source = SourceText.From("__checkpoint_type__.kp", text)
-        let lexResult = Lexer.tokenize source
-
-        if not (List.isEmpty lexResult.Diagnostics) then
-            None
-        else
-            TypeSignatures.parseType lexResult.Tokens
-
     let availableCheckpointNames =
         [
             "surface-source"
@@ -269,20 +260,7 @@ module CheckpointVerification =
 
         verify Set.empty pattern
 
-    let private runtimeTypeLeaksErasureMetadata allowEffectRows (typeText: string) =
-        let isCompileTimeOnlyKnownType knownType =
-            match knownType with
-            | CompilerKnownSymbols.UniverseType
-            | CompilerKnownSymbols.ConstraintType
-            | CompilerKnownSymbols.QuantityType
-            | CompilerKnownSymbols.RegionType
-            | CompilerKnownSymbols.RecRowType
-            | CompilerKnownSymbols.VarRowType
-            | CompilerKnownSymbols.EffRowType
-            | CompilerKnownSymbols.LabelType
-            | CompilerKnownSymbols.EffLabelType -> true
-            | _ -> false
-
+    let private runtimeTypeLeaksErasureMetadata allowEffectRows typeExpr =
         let rec loop typeExpr =
             match typeExpr with
             | TypeSignatures.TypeLevelLiteral _ ->
@@ -305,11 +283,8 @@ module CheckpointVerification =
                 loop target
             | TypeSignatures.TypeVariable _ ->
                 false
-            | TypeSignatures.TypeName(name, arguments) ->
+            | TypeSignatures.TypeName(_, arguments) ->
                 arguments |> List.exists loop
-                || (name
-                    |> CompilerKnownSymbols.KnownTypes.tryClassifyName
-                    |> Option.exists isCompileTimeOnlyKnownType)
             | TypeSignatures.TypeArrow(quantity, parameterType, resultType) ->
                 quantity <> QuantityOmega || loop parameterType || loop resultType
             | TypeSignatures.TypeEquality _ ->
@@ -324,16 +299,7 @@ module CheckpointVerification =
             | TypeSignatures.TypeUnion members ->
                 members |> List.exists loop
 
-        match tryParseTypeText typeText with
-        | Some parsed ->
-            loop parsed
-        | None ->
-            typeText.Contains("captures (", StringComparison.Ordinal)
-            || typeText.Contains(CompilerKnownSymbols.KnownTypeNames.Region, StringComparison.Ordinal)
-            || typeText.Contains(CompilerKnownSymbols.KnownTypeNames.Constraint, StringComparison.Ordinal)
-            || typeText.Contains(CompilerKnownSymbols.KnownTypeNames.Quantity, StringComparison.Ordinal)
-            || typeText.Contains("&[", StringComparison.Ordinal)
-            || typeText.Contains("(&", StringComparison.Ordinal)
+        loop typeExpr
 
     let private verifyRuntimeExpression documents checkpoint bindingLabel bindingOrigin (expression: KRuntimeExpression) =
         let rec verify locals runtimeExpression =
@@ -779,45 +745,62 @@ module CheckpointVerification =
                 for runtimeModule in workspace.KRuntimeIR do
                     for binding in runtimeModule.Bindings do
                         for parameter in binding.Parameters do
-                            match parameter.TypeText with
-                            | Some typeText when runtimeTypeLeaksErasureMetadata allowEffectRowMetadata typeText ->
+                            match parameter.Type with
+                            | Some typeExpr when runtimeTypeLeaksErasureMetadata allowEffectRowMetadata typeExpr ->
                                 yield
                                     makeStructuredOriginDiagnostic
                                         workspace.Documents
                                         binding.Provenance
-                                        (PreErasureParameterTypeMetadataLeak("KBackendIR", $"{runtimeModule.Name}.{binding.Name}", parameter.Name, typeText))
+                                        (PreErasureParameterTypeMetadataLeak(
+                                            "KBackendIR",
+                                            $"{runtimeModule.Name}.{binding.Name}",
+                                            parameter.Name,
+                                            TypeSignatures.toText typeExpr
+                                         ))
                             | _ ->
                                 ()
 
-                        match binding.ReturnTypeText with
-                        | Some typeText when runtimeTypeLeaksErasureMetadata allowEffectRowMetadata typeText ->
+                        match binding.ReturnType with
+                        | Some typeExpr when runtimeTypeLeaksErasureMetadata allowEffectRowMetadata typeExpr ->
                             yield
                                 makeStructuredOriginDiagnostic
                                     workspace.Documents
                                     binding.Provenance
-                                    (PreErasureReturnTypeMetadataLeak("KBackendIR", $"{runtimeModule.Name}.{binding.Name}", typeText))
+                                    (PreErasureReturnTypeMetadataLeak(
+                                        "KBackendIR",
+                                        $"{runtimeModule.Name}.{binding.Name}",
+                                        TypeSignatures.toText typeExpr
+                                     ))
                         | _ ->
                             ()
 
                     for dataType in runtimeModule.DataTypes do
                         for constructor in dataType.Constructors do
-                            for index, fieldTypeText in constructor.FieldTypeTexts |> List.indexed do
-                                if runtimeTypeLeaksErasureMetadata allowEffectRowMetadata fieldTypeText then
+                            for index, fieldType in constructor.FieldTypes |> List.indexed do
+                                if runtimeTypeLeaksErasureMetadata allowEffectRowMetadata fieldType then
                                     yield
                                         makeStructuredOriginDiagnostic
                                             workspace.Documents
                                             constructor.Provenance
-                                            (PreErasureConstructorFieldMetadataLeak("KBackendIR", $"{runtimeModule.Name}.{constructor.Name}[{index}]", fieldTypeText))
+                                            (PreErasureConstructorFieldMetadataLeak(
+                                                "KBackendIR",
+                                                $"{runtimeModule.Name}.{constructor.Name}[{index}]",
+                                                TypeSignatures.toText fieldType
+                                             ))
 
                     for instanceInfo in runtimeModule.TraitInstances do
-                        for index, headTypeText in instanceInfo.HeadTypeTexts |> List.indexed do
-                            if runtimeTypeLeaksErasureMetadata allowEffectRowMetadata headTypeText then
+                        for index, headType in instanceInfo.HeadTypes |> List.indexed do
+                            if runtimeTypeLeaksErasureMetadata allowEffectRowMetadata headType then
                                 yield
                                     makeStructuredModuleDiagnostic
                                         workspace.Documents
                                         (renderedModuleIdentity runtimeModule.Name)
                                         runtimeModule.SourceFile
-                                        (PreErasureInstanceHeadMetadataLeak("KBackendIR", $"{runtimeModule.Name}.{instanceInfo.TraitName}[{index}]", headTypeText))
+                                        (PreErasureInstanceHeadMetadataLeak(
+                                            "KBackendIR",
+                                            $"{runtimeModule.Name}.{instanceInfo.TraitName}[{index}]",
+                                            TypeSignatures.toText headType
+                                         ))
             ]
 
         let constructorExists moduleName typeName constructorName tag fieldCount =

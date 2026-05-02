@@ -7,6 +7,16 @@ open System.Reflection
 
 // Synthesizes backend-provided host binding module surfaces from CLR metadata.
 module HostBindings =
+    let private parseHostTypeText text =
+        let source = SourceText.From("__host_type__.kp", text)
+        let lexed = Lexer.tokenize source
+
+        if not (List.isEmpty lexed.Diagnostics) then
+            invalidOp $"Could not parse synthesized host type '{text}'."
+        else
+            TypeSignatures.parseType lexed.Tokens
+            |> Option.defaultWith (fun () -> invalidOp $"Could not parse synthesized host type '{text}'.")
+
     type HostRoot =
         | HostJvm
         | HostJvmJni
@@ -543,8 +553,8 @@ module HostBindings =
                     binding.Parameters
                     |> List.map (fun parameter ->
                         { Name = parameter.Name
-                          TypeText = Some parameter.TypeText })
-                  ReturnTypeText = Some binding.ReturnTypeText
+                          Type = Some(parseHostTypeText parameter.TypeText) })
+                  ReturnType = Some(parseHostTypeText binding.ReturnTypeText)
                   ExternalBinding = binding.ExternalBinding
                   Body = None
                   Intrinsic = false

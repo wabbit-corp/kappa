@@ -160,25 +160,14 @@ module internal KRuntimeLowering =
         | TypeSignatures.TypeName(nameSegments, [ inner ]) when matchesKnownType CompilerKnownSymbols.UIOType nameSegments -> inner
         | other -> other
 
-    let private eraseRuntimeTypeText (text: string) =
-        match tryParseTypeText text with
-        | Some parsed ->
-            parsed |> eraseRuntimeTypeExpr |> TypeSignatures.toText
-        | None ->
-            text
-
-    let private runtimeValueTypeText (text: string) =
-        match tryParseTypeText text with
-        | Some parsed ->
-            parsed |> runtimeValueTypeExpr |> TypeSignatures.toText
-        | None ->
-            text
-
     let private normalizeTypeTokens (tokens: Token list) =
-        tokens
-        |> TypeSignatures.parseType
-        |> Option.map (eraseRuntimeTypeExpr >> TypeSignatures.toText)
-        |> Option.defaultValue (tokensText tokens)
+        match tokens |> TypeSignatures.parseType with
+        | Some parsed ->
+            parsed |> eraseRuntimeTypeExpr
+        | None ->
+            // Error recovery: malformed source types are already diagnosed upstream.
+            // Keep runtime lowering total by substituting a structured runtime placeholder.
+            TypeSignatures.knownType CompilerKnownSymbols.UnitType []
 
     let private significantTokens (tokens: Token list) =
         tokens
@@ -232,7 +221,7 @@ module internal KRuntimeLowering =
 
     let private lowerRuntimeParameter (parameter: KCoreParameter) : KRuntimeParameter =
         { Name = parameter.Name
-          TypeText = parameter.TypeText |> Option.map eraseRuntimeTypeText }
+          Type = parameter.Type |> Option.map eraseRuntimeTypeExpr }
 
     let private isCompileTimeParameterType parameterType =
         match parameterType with
@@ -485,10 +474,10 @@ module internal KRuntimeLowering =
                     |> List.zip valueParameterNames
                     |> List.map (fun (parameterName, parameterType) ->
                         { Name = parameterName
-                          TypeText = Some(parameterType |> eraseRuntimeTypeExpr |> TypeSignatures.toText) })
+                          Type = Some(parameterType |> eraseRuntimeTypeExpr) })
 
                 let selfDictionaryType =
-                    TypeSignatures.TypeName([ spec.TraitName ], headTypeExprs) |> TypeSignatures.toText
+                    TypeSignatures.TypeName([ spec.TraitName ], headTypeExprs)
 
                 let body =
                     match lowering, valueParameterNames with
@@ -509,9 +498,9 @@ module internal KRuntimeLowering =
                  { Name = bindingName
                    Parameters =
                      { Name = "__kappa_self_dict"
-                       TypeText = Some selfDictionaryType }
+                       Type = Some selfDictionaryType }
                      :: valueParameters
-                   ReturnTypeText = Some(resultType |> runtimeValueTypeExpr |> TypeSignatures.toText)
+                   ReturnType = Some(resultType |> runtimeValueTypeExpr)
                    ExternalBinding = None
                    Body = Some body
                    Intrinsic = false
@@ -534,8 +523,8 @@ module internal KRuntimeLowering =
                         |> List.map (buildMemberBinding traitDeclaration spec instanceKey)
                         |> List.unzip
 
-                    let dictionaryHeadTypeText =
-                        TypeSignatures.TypeName([ spec.TraitName ], [ parseHeadType headTypeText ]) |> TypeSignatures.toText
+                    let dictionaryHeadType =
+                        TypeSignatures.TypeName([ spec.TraitName ], [ parseHeadType headTypeText ])
 
                     let dictionaryBindingName =
                         TraitRuntime.instanceDictionaryBindingName spec.TraitName instanceKey
@@ -543,7 +532,7 @@ module internal KRuntimeLowering =
                     let dictionaryBinding : KRuntimeBinding =
                         { Name = dictionaryBindingName
                           Parameters = []
-                          ReturnTypeText = Some dictionaryHeadTypeText
+                          ReturnType = Some dictionaryHeadType
                           ExternalBinding = None
                           Body = Some(KRuntimeDictionaryValue(coreModule.Name, spec.TraitName, instanceKey, []))
                           Intrinsic = false
@@ -552,7 +541,7 @@ module internal KRuntimeLowering =
                     let traitInstance : KRuntimeTraitInstance =
                         { TraitName = spec.TraitName
                           InstanceKey = instanceKey
-                          HeadTypeTexts = [ headTypeText ]
+                          HeadTypes = [ parseHeadType headTypeText ]
                           MemberBindings =
                             List.zip
                                 memberBindingNames
@@ -734,7 +723,9 @@ module internal KRuntimeLowering =
             KRuntimeDeferred(lowerKRuntimeExpression runtimeParameterMasks expression)
         | KCoreRelease(resourceTypeText, release, resource) ->
             KRuntimeRelease(
-                resourceTypeText,
+                resourceTypeText
+                |> Option.bind tryParseTypeText
+                |> Option.map eraseRuntimeTypeExpr,
                 lowerKRuntimeExpression runtimeParameterMasks release,
                 lowerKRuntimeExpression runtimeParameterMasks resource
             )
@@ -1051,17 +1042,17 @@ module internal KRuntimeLowering =
                     | _ ->
                         None)
 
-    let private constructorFieldTypeTexts (constructor: DataConstructor) =
+    let private constructorFieldTypes (constructor: DataConstructor) =
         match tryConstructorRuntimeSignatureFieldTypes constructor with
         | Some fieldTypes ->
-            fieldTypes |> List.map TypeSignatures.toText
+            fieldTypes
         | None ->
             runtimeConstructorParameters constructor
             |> List.map (function
                 | Choice1Of2 parameter ->
-                    normalizeTypeTokens parameter.ParameterTypeTokens |> eraseRuntimeTypeText
+                    normalizeTypeTokens parameter.ParameterTypeTokens
                 | Choice2Of2 groupTokens ->
-                    runtimeConstructorParameterTypeTokens groupTokens |> normalizeTypeTokens |> eraseRuntimeTypeText)
+                    runtimeConstructorParameterTypeTokens groupTokens |> normalizeTypeTokens)
 
     let private isCompileTimeOnlyBindingBody body =
         match body with
@@ -1069,9 +1060,9 @@ module internal KRuntimeLowering =
         | _ -> false
 
     let private tryEtaExpandClosureBinding
-        returnTypeText
+        returnType
         body
-        : (KRuntimeParameter list * string option * KRuntimeExpression option) option =
+        : (KRuntimeParameter list * TypeSignatures.TypeExpr option * KRuntimeExpression option) option =
         let rec flattenArrows typeExpr =
             match typeExpr with
             | TypeSignatures.TypeArrow(_, parameterType, resultType) ->
@@ -1080,28 +1071,26 @@ module internal KRuntimeLowering =
             | other ->
                 [], other
 
-        match returnTypeText, body with
-        | Some returnTypeText, Some(KRuntimeClosure(parameterNames, closureBody)) ->
-            tryParseTypeText returnTypeText
-            |> Option.bind (fun returnType ->
-                let parameterTypes, resultType = flattenArrows returnType
+        match returnType, body with
+        | Some returnType, Some(KRuntimeClosure(parameterNames, closureBody)) ->
+            let parameterTypes, resultType = flattenArrows returnType
 
-                if List.length parameterNames = List.length parameterTypes then
-                    let etaParameters : KRuntimeParameter list =
-                        parameterNames
-                        |> List.zip parameterTypes
-                        |> List.map (fun (parameterType, parameterName) ->
-                            ({ Name = parameterName
-                               TypeText = Some(TypeSignatures.toText parameterType |> eraseRuntimeTypeText) }
-                             : KRuntimeParameter))
+            if List.length parameterNames = List.length parameterTypes then
+                let etaParameters : KRuntimeParameter list =
+                    parameterNames
+                    |> List.zip parameterTypes
+                    |> List.map (fun (parameterType, parameterName) ->
+                        ({ Name = parameterName
+                           Type = Some(eraseRuntimeTypeExpr parameterType) }
+                         : KRuntimeParameter))
 
-                    Some(
-                        etaParameters,
-                        Some(TypeSignatures.toText resultType |> runtimeValueTypeText),
-                        Some closureBody
-                    )
-                else
-                    None)
+                Some(
+                    etaParameters,
+                    Some(runtimeValueTypeExpr resultType),
+                    Some closureBody
+                )
+            else
+                None
         | _ ->
             None
 
@@ -1116,9 +1105,9 @@ module internal KRuntimeLowering =
                 |> List.filter (isCompileTimeParameterType >> not)
                 |> List.mapi (fun index parameterType ->
                     { Name = $"arg{index}"
-                      TypeText = Some(TypeSignatures.toText parameterType |> eraseRuntimeTypeText) })
+                      Type = Some(eraseRuntimeTypeExpr parameterType) })
 
-            parameters, Some(runtimeValueTypeExpr resultType |> TypeSignatures.toText))
+            parameters, Some(runtimeValueTypeExpr resultType))
 
     let buildSharedRuntimeParameterMasks (coreModules: KCoreModule list) : Map<string, bool list> =
         coreModules
@@ -1220,11 +1209,11 @@ module internal KRuntimeLowering =
                         binding.Body
                         |> Option.map (lowerKRuntimeExpression runtimeParameterMasks >> specializeBuiltinPreludeRuntimeExpression)
                     let loweredParameters = binding.Parameters |> filterRuntimeParameters |> List.map lowerRuntimeParameter
-                    let loweredReturnType = binding.ReturnTypeText |> Option.map runtimeValueTypeText
+                    let loweredReturnType = binding.ReturnType |> Option.map runtimeValueTypeExpr
                     let parameters, returnType, body =
                         match loweredParameters with
                         | [] ->
-                            tryEtaExpandClosureBinding binding.ReturnTypeText loweredBody
+                            tryEtaExpandClosureBinding binding.ReturnType loweredBody
                             |> Option.defaultValue (loweredParameters, loweredReturnType, loweredBody)
                         | _ ->
                             loweredParameters, loweredReturnType, loweredBody
@@ -1232,7 +1221,7 @@ module internal KRuntimeLowering =
                     Some
                         ({ Name = binding.Name.Value
                            Parameters = parameters
-                           ReturnTypeText = returnType
+                           ReturnType = returnType
                            ExternalBinding = None
                            Body = body
                            Intrinsic = false
@@ -1262,12 +1251,12 @@ module internal KRuntimeLowering =
             coreModule.IntrinsicTerms
             |> List.filter intrinsicSignatures.ContainsKey
             |> List.map (fun name ->
-                let parameters, returnTypeText =
+                let parameters, returnType =
                     intrinsicSignatures[name]
 
                 { Name = name
                   Parameters = parameters
-                  ReturnTypeText = returnTypeText
+                  ReturnType = returnType
                   ExternalBinding = None
                   Body = None
                   Intrinsic = true
@@ -1286,13 +1275,13 @@ module internal KRuntimeLowering =
                         let constructors : KRuntimeConstructor list =
                             dataDeclaration.Constructors
                             |> List.map (fun constructor ->
-                                let fieldTypeTexts = constructorFieldTypeTexts constructor
+                                let fieldTypes = constructorFieldTypes constructor
 
                                 { Name = constructor.Name
-                                  Arity = fieldTypeTexts.Length
+                                  Arity = fieldTypes.Length
                                   TypeName = dataDeclaration.Name
                                   FieldNames = constructorFieldNames constructor
-                                  FieldTypeTexts = fieldTypeTexts
+                                  FieldTypes = fieldTypes
                                   Provenance =
                                     { declaration.Provenance with
                                         DeclarationName = Some constructor.Name
@@ -1314,7 +1303,12 @@ module internal KRuntimeLowering =
                           Arity = dataType.FieldNames.Length
                           TypeName = dataType.Name
                           FieldNames = dataType.FieldNames |> List.map Some
-                          FieldTypeTexts = dataType.FieldTypeTexts |> List.map eraseRuntimeTypeText
+                          FieldTypes =
+                            dataType.FieldTypeTexts
+                            |> List.map (fun fieldTypeText ->
+                                match tryParseTypeText fieldTypeText with
+                                | Some parsed -> eraseRuntimeTypeExpr parsed
+                                | None -> invalidOp $"Could not parse synthetic runtime field type '{fieldTypeText}'.")
                           Provenance = dataType.Provenance }
 
                     { Name = dataType.Name
@@ -1356,7 +1350,7 @@ module internal KRuntimeLowering =
                         |> Map.tryFind instanceDeclaration.TraitName
                         |> Option.defaultValue 1
 
-                    let headTypeTexts =
+                    let headTypes =
                         instanceDeclaration.HeaderTokens
                         |> splitLeadingTypeArgumentTokens argumentCount
                         |> List.map normalizeTypeTokens
@@ -1375,7 +1369,7 @@ module internal KRuntimeLowering =
                     Some
                         ({ TraitName = instanceDeclaration.TraitName
                            InstanceKey = instanceKey
-                           HeadTypeTexts = headTypeTexts
+                           HeadTypes = headTypes
                            MemberBindings = memberBindings }
                          : KRuntimeTraitInstance)
                 | _ ->
@@ -1468,7 +1462,7 @@ module internal KRuntimeLowering =
                               Arity = rewrittenFields.Length
                               TypeName = typeName
                               FieldNames = rewrittenFields |> List.map (fun field -> Some field.Name)
-                              FieldTypeTexts = rewrittenFields |> List.map (fun field -> TypeSignatures.toText field.Type)
+                              FieldTypes = rewrittenFields |> List.map (fun field -> field.Type)
                               Provenance = syntheticRecordOrigin typeName }
 
                         runtimeRecordTypes.Value <-
@@ -1486,15 +1480,6 @@ module internal KRuntimeLowering =
                 | TypeSignatures.TypeUnion members ->
                     TypeSignatures.TypeUnion(members |> List.map rewriteRuntimeTypeExpr)
 
-            let rewriteRuntimeTypeText text =
-                match tryParseTypeText text with
-                | Some parsed ->
-                    parsed
-                    |> rewriteRuntimeTypeExpr
-                    |> TypeSignatures.toText
-                | None ->
-                    text
-
             let rewrittenDataTypes =
                 dataTypes
                 |> List.map (fun dataType ->
@@ -1503,7 +1488,7 @@ module internal KRuntimeLowering =
                             dataType.Constructors
                             |> List.map (fun constructor ->
                                 { constructor with
-                                    FieldTypeTexts = constructor.FieldTypeTexts |> List.map rewriteRuntimeTypeText }) })
+                                    FieldTypes = constructor.FieldTypes |> List.map rewriteRuntimeTypeExpr }) })
 
             let rewrittenBindings =
                 termBindings
@@ -1513,14 +1498,14 @@ module internal KRuntimeLowering =
                             binding.Parameters
                             |> List.map (fun parameter ->
                                 { parameter with
-                                    TypeText = parameter.TypeText |> Option.map rewriteRuntimeTypeText })
-                        ReturnTypeText = binding.ReturnTypeText |> Option.map rewriteRuntimeTypeText })
+                                    Type = parameter.Type |> Option.map rewriteRuntimeTypeExpr })
+                        ReturnType = binding.ReturnType |> Option.map rewriteRuntimeTypeExpr })
 
             let rewrittenTraitInstances =
                 traitInstances
                 |> List.map (fun instanceDeclaration ->
                     { instanceDeclaration with
-                        HeadTypeTexts = instanceDeclaration.HeadTypeTexts |> List.map rewriteRuntimeTypeText })
+                        HeadTypes = instanceDeclaration.HeadTypes |> List.map rewriteRuntimeTypeExpr })
 
             rewrittenDataTypes @ (runtimeRecordTypes.Value |> Map.toList |> List.map snd), rewrittenBindings, rewrittenTraitInstances
 

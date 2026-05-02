@@ -214,7 +214,7 @@ type KBackendTraitInstance =
     { ModuleName: string
       TraitName: string
       InstanceKey: string
-      HeadTypeTexts: string list
+      HeadTypes: TypeSignatures.TypeExpr list
       MemberBindings: (string * string) list }
 
 type KBackendModule =

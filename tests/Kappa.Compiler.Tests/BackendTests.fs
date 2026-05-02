@@ -10,6 +10,15 @@ open DiagnosticTestSupport
 open Harness
 open Xunit
 
+let private parseTypeText (text: string) =
+    let source = createSource "__backend_type_signature_test__.kp" text
+    let lexed = Lexer.tokenize source
+    Assert.Empty(lexed.Diagnostics)
+
+    match TypeSignatures.parseType lexed.Tokens with
+    | Some parsed -> parsed
+    | None -> failwithf "Failed to parse type text: %s" text
+
 
 module BackendTestsShard0 =
 
@@ -955,7 +964,7 @@ module BackendTestsShard4 =
                                 if binding.Name = "result" then
                                     { binding with
                                         Body = None
-                                        ReturnTypeText = None }
+                                        ReturnType = None }
                                 else
                                     binding) }
                 else
@@ -1003,7 +1012,7 @@ module BackendTestsShard4 =
                                     { binding with
                                         Parameters =
                                             binding.Parameters
-                                            |> List.map (fun parameter -> { parameter with TypeText = None }) }
+                                            |> List.map (fun parameter -> { parameter with Type = None }) }
                                 else
                                     binding) }
                 else
@@ -1050,7 +1059,7 @@ module BackendTestsShard4 =
                                 if binding.Name = "f" then
                                     { binding with
                                         Body = None
-                                        ReturnTypeText = None }
+                                        ReturnType = None }
                                 else
                                     binding) }
                 else
@@ -1094,7 +1103,7 @@ module BackendTestsShard4 =
                             moduleDump.Bindings
                             |> List.map (fun binding ->
                                 if binding.Name = "result" then
-                                    { binding with ReturnTypeText = Some "String" }
+                                    { binding with ReturnType = Some(parseTypeText "String") }
                                 else
                                     binding) }
                 else
@@ -1139,7 +1148,7 @@ module BackendTestsShard4 =
                             moduleDump.Bindings
                             |> List.map (fun binding ->
                                 if binding.Name = "helper" then
-                                    { binding with ReturnTypeText = Some "Missing" }
+                                    { binding with ReturnType = Some(parseTypeText "Missing") }
                                 else
                                     binding) }
                 else
@@ -1153,51 +1162,6 @@ module BackendTestsShard4 =
         | Result.Error message ->
             Assert.Equal(
                 "The CLR-backed dotnet profile could not lower 'main.result': The CLR dotnet backend could not resolve type 'Missing'.",
-                message
-            )
-
-    [<Fact>]
-    let ``dotnet backend reports structured malformed declared type text failures`` () =
-        let workspace =
-            compileInMemoryWorkspaceWithBackend
-                "memory-dotnet-malformed-declared-type-root"
-                "dotnet"
-                [
-                    "main.kp",
-                    [
-                        "module main"
-                        "helper : Int -> Int"
-                        "let helper x = x"
-                        "let result = helper 1"
-                    ]
-                    |> String.concat "\n"
-                ]
-
-        Assert.False(workspace.HasErrors, sprintf "Expected no frontend diagnostics, got %A" workspace.Diagnostics)
-
-        let driftedClrAssemblyIR =
-            workspace.ClrAssemblyIR
-            |> List.map (fun moduleDump ->
-                if moduleDump.Name = "main" then
-                    { moduleDump with
-                        Bindings =
-                            moduleDump.Bindings
-                            |> List.map (fun binding ->
-                                if binding.Name = "helper" then
-                                    { binding with ReturnTypeText = Some "(" }
-                                else
-                                    binding) }
-                else
-                    moduleDump)
-
-        let outputDirectory = createScratchDirectory "dotnet-malformed-declared-type"
-
-        match Backend.emitDotNetArtifact { workspace with ClrAssemblyIR = driftedClrAssemblyIR } "main.result" outputDirectory DotNetDeployment.Managed with
-        | Result.Ok artifact ->
-            failwithf "Expected dotnet artifact emission to reject malformed declared type text, but emitted '%s'." artifact.GeneratedFilePath
-        | Result.Error message ->
-            Assert.Equal(
-                "The CLR-backed dotnet profile could not lower 'main.result': Expected ')' to close the type.",
                 message
             )
 
@@ -1229,7 +1193,7 @@ module BackendTestsShard4 =
                             moduleDump.Bindings
                             |> List.map (fun binding ->
                                 if binding.Name = "helper" then
-                                    { binding with ReturnTypeText = Some "Int String" }
+                                    { binding with ReturnType = Some(parseTypeText "Int String") }
                                 else
                                     binding) }
                 else
@@ -1383,7 +1347,7 @@ module BackendTestsShard4 =
                             moduleDump.Bindings
                             |> List.map (fun binding ->
                                 if binding.Name = "result" then
-                                    { binding with ReturnTypeText = Some "List (Int -> Int)" }
+                                    { binding with ReturnType = Some(parseTypeText "List (Int -> Int)") }
                                 else
                                     binding) }
                 else
@@ -1429,7 +1393,7 @@ module BackendTestsShard4 =
                             moduleDump.Bindings
                             |> List.map (fun binding ->
                                 if binding.Name = "result" then
-                                    { binding with ReturnTypeText = None }
+                                    { binding with ReturnType = None }
                                 else
                                     binding) }
                 else
@@ -1476,7 +1440,7 @@ module BackendTestsShard4 =
                                 if binding.Name = "helper" then
                                     { binding with
                                         Body = None
-                                        ReturnTypeText = Some "a" }
+                                        ReturnType = Some(parseTypeText "a") }
                                 else
                                     binding) }
                 else
@@ -1522,7 +1486,7 @@ module BackendTestsShard4 =
                             moduleDump.Bindings
                             |> List.map (fun binding ->
                                 if binding.Name = "result" then
-                                    { binding with ReturnTypeText = Some "String" }
+                                    { binding with ReturnType = Some(parseTypeText "String") }
                                 else
                                     binding) }
                 else
@@ -1568,7 +1532,7 @@ module BackendTestsShard4 =
                             moduleDump.Bindings
                             |> List.map (fun binding ->
                                 if binding.Name = "result" then
-                                    { binding with ReturnTypeText = Some "String" }
+                                    { binding with ReturnType = Some(parseTypeText "String") }
                                 else
                                     binding) }
                 else

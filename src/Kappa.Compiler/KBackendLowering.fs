@@ -4,15 +4,6 @@ open System
 
 // Lowers KRuntimeIR into target-neutral runtime-facing KBackendIR.
 module internal KBackendLowering =
-    let private tryParseTypeText (text: string) =
-        let source = SourceText.From("<backend-type>", text)
-        let lexed = Lexer.tokenize source
-
-        if not (List.isEmpty lexed.Diagnostics) then
-            None
-        else
-            TypeSignatures.parseType lexed.Tokens
-
     let rec private isFunctionLikeType typeExpr =
         match typeExpr with
         | TypeSignatures.TypeArrow _ -> true
@@ -64,18 +55,19 @@ module internal KBackendLowering =
         | ResourceModel.ResourceQuantity.Variable _ ->
             false
 
-    let private tryBackendRepresentationFromTypeText (typeText: string option) =
-        let tryTypeHead (text: string) =
-            text.Replace("(", " ")
-                .Replace(")", " ")
-                .Split([| ' '; '\t' |], StringSplitOptions.RemoveEmptyEntries)
-            |> Array.tryHead
+    let private tryBackendRepresentationFromTypeExpr typeExpr =
+        let tryTypeHead typeExpr =
+            match typeExpr with
+            | TypeSignatures.TypeName(nameSegments, _) when not (List.isEmpty nameSegments) ->
+                List.tryLast nameSegments
+            | _ ->
+                None
 
-        match typeText |> Option.bind tryParseTypeText with
+        match typeExpr with
         | Some parsedType when isFunctionLikeType parsedType ->
             Some(backendOpaqueRepresentation (Some "Function"))
         | _ ->
-            match typeText |> Option.bind tryTypeHead with
+            match typeExpr |> Option.bind tryTypeHead with
             | Some head when head = Stdlib.KnownTypeNames.Int -> Some BackendRepInt64
             | Some head when head = Stdlib.KnownTypeNames.Nat -> Some BackendRepInt64
             | Some head when head = Stdlib.KnownTypeNames.Integer -> Some BackendRepInt64
@@ -193,39 +185,55 @@ module internal KBackendLowering =
         | KRuntimePrefixedString _ ->
             BackendRepString
 
-    let private selectionImportsRuntimeTermName selection name =
+    let private importedItemLocalName (item: ImportItem) =
+        item.Alias |> Option.defaultValue item.Name
+
+    let private itemImportsRuntimeTermName (item: ImportItem) =
+        item.Namespace.IsNone || item.Namespace = Some ImportNamespace.Term
+
+    let private itemImportsRuntimeConstructorName (item: ImportItem) =
+        item.Namespace = Some ImportNamespace.Constructor
+
+    let private selectionImportedRuntimeTermName selection name =
         let exceptMatches namespaceName (item: ExceptItem) =
             String.Equals(item.Name, name, StringComparison.Ordinal)
             && (item.Namespace.IsNone || item.Namespace = Some namespaceName)
 
         match selection with
         | QualifiedOnly ->
-            false
+            None
         | Items items ->
             items
-            |> List.exists (fun item ->
-                String.Equals(item.Name, name, StringComparison.Ordinal)
-                && (item.Namespace.IsNone || item.Namespace = Some ImportNamespace.Term))
+            |> List.tryFind (fun item ->
+                String.Equals(importedItemLocalName item, name, StringComparison.Ordinal)
+                && itemImportsRuntimeTermName item)
+            |> Option.map (fun item -> item.Name)
         | All ->
-            true
+            Some name
         | AllExcept excludedItems ->
-            not (excludedItems |> List.exists (exceptMatches ImportNamespace.Term))
+            if (excludedItems |> List.exists (exceptMatches ImportNamespace.Term)) then
+                None
+            else
+                Some name
 
-    let private selectionImportsRuntimeConstructorName selection name typeName =
+    let private selectionImportedRuntimeConstructorName selection name typeName =
         match selection with
         | QualifiedOnly ->
-            false
+            None
         | Items items ->
             items
-            |> List.exists (fun item ->
-                ((String.Equals(item.Name, name, StringComparison.Ordinal)
-                  && item.Namespace = Some ImportNamespace.Constructor)
-                 || (item.IncludeConstructors
-                     && item.Namespace = Some ImportNamespace.Type
-                     && String.Equals(item.Name, typeName, StringComparison.Ordinal))))
+            |> List.tryFind (fun item ->
+                String.Equals(importedItemLocalName item, name, StringComparison.Ordinal)
+                && (itemImportsRuntimeConstructorName item
+                    || (item.IncludeConstructors
+                        && item.Namespace = Some ImportNamespace.Type
+                        && String.Equals(item.Name, typeName, StringComparison.Ordinal))
+                    || (item.Namespace.IsNone
+                        && String.Equals(item.Name, typeName, StringComparison.Ordinal))))
+            |> Option.map (fun item -> item.Name)
         | All
         | AllExcept _ ->
-            false
+            None
 
     let private buildBackendLoweringContext (kRuntimeIR: KRuntimeModule list) =
         let runtimeModules =
@@ -242,7 +250,7 @@ module internal KBackendLowering =
                         if binding.Intrinsic then
                             IntrinsicCatalog.intrinsicResultRepresentation binding.Name
                         else
-                            tryBackendRepresentationFromTypeText binding.ReturnTypeText
+                            tryBackendRepresentationFromTypeExpr binding.ReturnType
                             |> Option.orElseWith (fun () ->
                                 binding.Body |> Option.map inferKRuntimeExpressionRepresentation)
 
@@ -388,14 +396,19 @@ module internal KBackendLowering =
                                 let importedModuleName = SyntaxFacts.moduleNameToText moduleSegments
 
                                 match context.RuntimeModules |> Map.tryFind importedModuleName with
-                                | Some importedModule when selectionImportsRuntimeTermName spec.Selection name ->
-                                    tryResolveModuleMember importedModule name |> Option.map (fun resolved -> importedModuleName, resolved)
                                 | Some importedModule ->
-                                    match importedModule.Constructors |> List.tryFind (fun constructorInfo -> String.Equals(constructorInfo.Name, name, StringComparison.Ordinal)) with
-                                    | Some constructorInfo when selectionImportsRuntimeConstructorName spec.Selection name constructorInfo.TypeName ->
-                                        tryResolveModuleMember importedModule name |> Option.map (fun resolved -> importedModuleName, resolved)
-                                    | _ ->
-                                        None
+                                    match selectionImportedRuntimeTermName spec.Selection name with
+                                    | Some importedName ->
+                                        tryResolveModuleMember importedModule importedName
+                                        |> Option.map (fun resolved -> importedModuleName, resolved)
+                                    | None ->
+                                        importedModule.Constructors
+                                        |> List.tryPick (fun constructorInfo ->
+                                            selectionImportedRuntimeConstructorName spec.Selection name constructorInfo.TypeName
+                                            |> Option.filter (fun importedName -> String.Equals(constructorInfo.Name, importedName, StringComparison.Ordinal))
+                                            |> Option.bind (fun importedName ->
+                                                tryResolveModuleMember importedModule importedName))
+                                            |> Option.map (fun resolved -> importedModuleName, resolved)
                                 | _ ->
                                     None)
                         |> List.distinctBy fst
@@ -467,15 +480,15 @@ module internal KBackendLowering =
                                 match context.RuntimeModules |> Map.tryFind importedModuleName with
                                 | Some importedModule ->
                                     importedModule.Constructors
-                                    |> List.tryFind (fun constructorInfo ->
-                                        String.Equals(constructorInfo.Name, constructorName, StringComparison.Ordinal)
-                                        && selectionImportsRuntimeConstructorName
+                                    |> List.tryPick (fun constructorInfo ->
+                                        selectionImportedRuntimeConstructorName
                                             spec.Selection
                                             constructorName
-                                            constructorInfo.TypeName)
-                                    |> Option.bind (fun _ ->
-                                        tryResolveModuleConstructor importedModule constructorName
-                                        |> Option.map (fun resolved -> importedModuleName, resolved))
+                                            constructorInfo.TypeName
+                                        |> Option.filter (fun importedName -> String.Equals(constructorInfo.Name, importedName, StringComparison.Ordinal))
+                                        |> Option.bind (fun importedName ->
+                                            tryResolveModuleConstructor importedModule importedName
+                                            |> Option.map (fun resolved -> importedModuleName, resolved)))
                                 | None ->
                                     None)
                         |> List.distinctBy fst
@@ -1611,7 +1624,7 @@ module internal KBackendLowering =
                         |> List.map (fun parameter ->
                             { Name = parameter.Name
                               Representation =
-                                tryBackendRepresentationFromTypeText parameter.TypeText
+                                tryBackendRepresentationFromTypeExpr parameter.Type
                                 |> Option.defaultValue (backendOpaqueRepresentation None) })
 
                 let convention =
@@ -1691,7 +1704,7 @@ module internal KBackendLowering =
                         { ModuleName = runtimeModule.Name
                           TraitName = instanceInfo.TraitName
                           InstanceKey = instanceInfo.InstanceKey
-                          HeadTypeTexts = instanceInfo.HeadTypeTexts
+                          HeadTypes = instanceInfo.HeadTypes
                           MemberBindings = instanceInfo.MemberBindings })
 
                 { Name = runtimeModule.Name

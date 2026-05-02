@@ -210,8 +210,11 @@ module internal IrText =
         match action with
         | KRuntimeDeferred expression ->
             $"(deferred {runtimeExpressionText expression})"
-        | KRuntimeRelease(resourceTypeText, release, resource) ->
-            let typeText = resourceTypeText |> Option.defaultValue "unknown"
+        | KRuntimeRelease(resourceType, release, resource) ->
+            let typeText =
+                resourceType
+                |> Option.map TypeSignatures.toText
+                |> Option.defaultValue "unknown"
             $"(release (type {typeText}) (handler {runtimeExpressionText release}) (resource {runtimeExpressionText resource}))"
 
     and runtimeExpressionText expression =

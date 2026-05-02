@@ -2,13 +2,13 @@ namespace Kappa.Compiler
 
 type ClrAssemblyParameter =
     { Name: string
-      TypeText: string option }
+      Type: TypeSignatures.TypeExpr option }
 
 type ClrAssemblyConstructor =
     { Name: string
       Arity: int
       TypeName: string
-      FieldTypeTexts: string list
+      FieldTypes: TypeSignatures.TypeExpr list
       Provenance: KCoreOrigin }
 
 type ClrAssemblyDataType =
@@ -20,13 +20,13 @@ type ClrAssemblyDataType =
 type ClrAssemblyTraitInstance =
     { TraitName: string
       InstanceKey: string
-      HeadTypeTexts: string list
+      HeadTypes: TypeSignatures.TypeExpr list
       MemberBindings: (string * string) list }
 
 type ClrAssemblyBinding =
     { Name: string
       Parameters: ClrAssemblyParameter list
-      ReturnTypeText: string option
+      ReturnType: TypeSignatures.TypeExpr option
       ExternalBinding: ExternalRuntimeBinding option
       Body: KRuntimeExpression option
       Intrinsic: bool
@@ -55,13 +55,13 @@ module ClrAssemblyIR =
 
     let private ofRuntimeParameter (parameter: KRuntimeParameter) : ClrAssemblyParameter =
         { Name = parameter.Name
-          TypeText = parameter.TypeText }
+          Type = parameter.Type }
 
     let private ofRuntimeConstructor (constructor: KRuntimeConstructor) : ClrAssemblyConstructor =
         { Name = constructor.Name
           Arity = constructor.Arity
           TypeName = constructor.TypeName
-          FieldTypeTexts = constructor.FieldTypeTexts
+          FieldTypes = constructor.FieldTypes
           Provenance = constructor.Provenance }
 
     let private ofRuntimeDataType (dataType: KRuntimeDataType) : ClrAssemblyDataType =
@@ -73,13 +73,13 @@ module ClrAssemblyIR =
     let private ofRuntimeTraitInstance (instanceDeclaration: KRuntimeTraitInstance) : ClrAssemblyTraitInstance =
         { TraitName = instanceDeclaration.TraitName
           InstanceKey = instanceDeclaration.InstanceKey
-          HeadTypeTexts = instanceDeclaration.HeadTypeTexts
+          HeadTypes = instanceDeclaration.HeadTypes
           MemberBindings = instanceDeclaration.MemberBindings }
 
     let private ofRuntimeBinding (binding: KRuntimeBinding) : ClrAssemblyBinding =
         { Name = binding.Name
           Parameters = binding.Parameters |> List.map ofRuntimeParameter
-          ReturnTypeText = binding.ReturnTypeText
+          ReturnType = binding.ReturnType
           ExternalBinding = binding.ExternalBinding
           Body = binding.Body
           Intrinsic = binding.Intrinsic

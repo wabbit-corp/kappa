@@ -149,23 +149,30 @@ module internal ClrAssemblyLowering =
         | _ ->
             KRuntimeDeferred(lowerExpression cleanup)
 
-    let private typeTextFromRepresentation representation =
+    let private typeExprFromRepresentation representation =
         let rec render rep =
             match rep with
-            | BackendRepInt64 -> Some Stdlib.KnownTypeNames.Int
-            | BackendRepFloat64 -> Some Stdlib.KnownTypeNames.Float
-            | BackendRepBoolean -> Some Stdlib.KnownTypeNames.Bool
-            | BackendRepString -> Some Stdlib.KnownTypeNames.String
-            | BackendRepChar -> Some Stdlib.KnownTypeNames.Char
-            | BackendRepUnit -> Some Stdlib.KnownTypeNames.Unit
+            | BackendRepInt64 -> Some(TypeSignatures.knownType CompilerKnownSymbols.IntType [])
+            | BackendRepFloat64 -> Some(TypeSignatures.knownType CompilerKnownSymbols.FloatType [])
+            | BackendRepBoolean -> Some(TypeSignatures.knownType CompilerKnownSymbols.BoolType [])
+            | BackendRepString -> Some(TypeSignatures.knownType CompilerKnownSymbols.StringType [])
+            | BackendRepChar -> Some(TypeSignatures.knownType CompilerKnownSymbols.CharType [])
+            | BackendRepUnit -> Some(TypeSignatures.knownType CompilerKnownSymbols.UnitType [])
             | BackendRepRef elementRepresentation ->
-                render elementRepresentation |> Option.map (fun elementText -> $"{Stdlib.KnownTypeNames.Ref} {elementText}")
+                render elementRepresentation
+                |> Option.map (fun elementType ->
+                    TypeSignatures.knownType CompilerKnownSymbols.RefType [ elementType ])
             | BackendRepDictionary traitName ->
-                Some(TraitRuntime.dictionaryTypeName traitName)
+                Some(TypeSignatures.TypeName([ TraitRuntime.dictionaryTypeName traitName ], []))
             | BackendRepTaggedData(moduleName, typeName) ->
-                Some($"{moduleName}.{typeName}")
+                Some(
+                    TypeSignatures.TypeName(
+                        (ModuleIdentity.ofDottedTextUnchecked moduleName |> ModuleIdentity.segments) @ [ typeName ],
+                        []
+                    )
+                )
             | BackendRepIOAction ->
-                Some $"{Stdlib.KnownTypeNames.IO} {Stdlib.KnownTypeNames.Unit}"
+                Some(TypeSignatures.knownType CompilerKnownSymbols.IOType [ TypeSignatures.knownType CompilerKnownSymbols.UnitType [] ])
             | BackendRepEffectLabel
             | BackendRepEffectOperation ->
                 None
@@ -173,7 +180,7 @@ module internal ClrAssemblyLowering =
             | BackendRepOpaque None ->
                 None
             | BackendRepOpaque(Some name) ->
-                Some name
+                Some(TypeSignatures.TypeName([ name ], []))
 
         render representation
 
@@ -191,8 +198,8 @@ module internal ClrAssemblyLowering =
                 backendFunction.Parameters
                 |> List.map (fun parameter ->
                     { Name = parameter.Name
-                      TypeText = typeTextFromRepresentation parameter.Representation })
-              ReturnTypeText = backendFunction.ReturnRepresentation |> Option.bind typeTextFromRepresentation
+                      Type = typeExprFromRepresentation parameter.Representation })
+              ReturnType = backendFunction.ReturnRepresentation |> Option.bind typeExprFromRepresentation
               ExternalBinding = None
               Body = backendFunction.Body |> Option.map lowerExpression
               Intrinsic = backendFunction.Intrinsic

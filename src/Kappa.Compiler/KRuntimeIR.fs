@@ -66,7 +66,7 @@ type KRuntimeExpression =
 
 and KRuntimeExitAction =
     | KRuntimeDeferred of KRuntimeExpression
-    | KRuntimeRelease of resourceTypeText: string option * release: KRuntimeExpression * resource: KRuntimeExpression
+    | KRuntimeRelease of resourceType: TypeSignatures.TypeExpr option * release: KRuntimeExpression * resource: KRuntimeExpression
 
 and KRuntimeStringPart =
     | KRuntimeStringText of string
@@ -92,14 +92,14 @@ and KRuntimeEffectHandlerClause =
 
 type KRuntimeParameter =
     { Name: string
-      TypeText: string option }
+      Type: TypeSignatures.TypeExpr option }
 
 type KRuntimeConstructor =
     { Name: string
       Arity: int
       TypeName: string
       FieldNames: string option list
-      FieldTypeTexts: string list
+      FieldTypes: TypeSignatures.TypeExpr list
       Provenance: KCoreOrigin }
 
 type KRuntimeDataType =
@@ -115,13 +115,13 @@ type KRuntimeTrait =
 type KRuntimeTraitInstance =
     { TraitName: string
       InstanceKey: string
-      HeadTypeTexts: string list
+      HeadTypes: TypeSignatures.TypeExpr list
       MemberBindings: (string * string) list }
 
 type KRuntimeBinding =
     { Name: string
       Parameters: KRuntimeParameter list
-      ReturnTypeText: string option
+      ReturnType: TypeSignatures.TypeExpr option
       ExternalBinding: ExternalRuntimeBinding option
       Body: KRuntimeExpression option
       Intrinsic: bool

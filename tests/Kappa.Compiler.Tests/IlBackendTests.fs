@@ -226,6 +226,87 @@ module IlBackendTestsShard0 =
         Assert.Equal(42L, twiceMethod.Invoke(null, [| box 21L |]) |> unbox<int64>)
         Assert.Equal(42L, resultMethod.Invoke(null, [||]) |> unbox<int64>)
 
+    [<Fact>]
+    let ``il backend resolves selective imported term aliases by alias spelling`` () =
+        let workspace =
+            compileInMemoryWorkspace
+                "memory-il-selective-term-alias-root"
+                [
+                    "math.kp",
+                    [
+                        "module math"
+                        "twice : Int -> Int"
+                        "let twice value = value * 2"
+                    ]
+                    |> String.concat "\n"
+                    "main.kp",
+                    [
+                        "module main"
+                        "import math.(twice as double)"
+                        "let result = double 21"
+                    ]
+                    |> String.concat "\n"
+                ]
+
+        let outputDirectory = createScratchDirectory "il-selective-term-alias"
+
+        let artifact =
+            match Backend.emitIlAssemblyArtifact workspace outputDirectory with
+            | Result.Ok artifact -> artifact
+            | Result.Error message -> failwith message
+
+        use loaded = loadManagedAssembly artifact.AssemblyFilePath
+
+        let moduleType = loaded.Assembly.GetType("Kappa.Generated.main", throwOnError = true, ignoreCase = false)
+        let resultMethod = moduleType.GetMethod("result", BindingFlags.Public ||| BindingFlags.Static)
+
+        Assert.NotNull(resultMethod)
+        Assert.Equal(typeof<int64>, resultMethod.ReturnType)
+        Assert.Equal(42L, resultMethod.Invoke(null, [||]) |> unbox<int64>)
+
+    [<Fact>]
+    let ``il backend preserves same-spelling imported aliases through type and constructor lowering`` () =
+        let workspace =
+            compileInMemoryWorkspace
+                "memory-il-same-spelling-alias-root"
+                [
+                    "library.kp",
+                    [
+                        "module library"
+                        "data Box ="
+                        "    Box"
+                    ]
+                    |> String.concat "\n"
+                    "main.kp",
+                    [
+                        "module main"
+                        "import library.(Box as AliasBox)"
+                        "boxed : AliasBox"
+                        "let boxed = AliasBox"
+                        "isAliasBox : Bool"
+                        "let isAliasBox ="
+                        "    match boxed"
+                        "      case AliasBox -> True"
+                    ]
+                    |> String.concat "\n"
+                ]
+
+        let outputDirectory = createScratchDirectory "il-same-spelling-alias"
+
+        let artifact =
+            match Backend.emitIlAssemblyArtifact workspace outputDirectory with
+            | Result.Ok artifact -> artifact
+            | Result.Error message -> failwith message
+
+        use loaded = loadManagedAssembly artifact.AssemblyFilePath
+
+        let moduleType = loaded.Assembly.GetType("Kappa.Generated.main", throwOnError = true, ignoreCase = false)
+        let resultMethod = moduleType.GetMethod("isAliasBox", BindingFlags.Public ||| BindingFlags.Static)
+
+        Assert.NotNull(resultMethod)
+        Assert.Equal(typeof<bool>, resultMethod.ReturnType)
+        Assert.True(resultMethod.Invoke(null, [||]) |> unbox<bool>)
+
 
     [<Fact>]
     let ``il backend emits constructors for multi parameter data types when constructors mention only a subset of parameters`` () =

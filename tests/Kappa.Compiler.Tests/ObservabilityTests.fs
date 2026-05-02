@@ -9,6 +9,15 @@ open DiagnosticTestSupport
 open Harness
 open Xunit
 
+let private parseTypeText (text: string) =
+    let source = createSource "__observability_type_signature_test__.kp" text
+    let lexed = Lexer.tokenize source
+    Assert.Empty(lexed.Diagnostics)
+
+    match TypeSignatures.parseType lexed.Tokens with
+    | Some parsed -> parsed
+    | None -> failwithf "Failed to parse type text: %s" text
+
 let rec private containsCoreSyntheticRecordApply expression =
     match expression with
     | KCoreAppSpine(KCoreName [ constructorName ], arguments)
@@ -879,7 +888,7 @@ module ObservabilityTestsShard0 =
         let malformedPreludeBinding: KRuntimeBinding =
             { Name = "mysteryIntrinsic"
               Parameters = []
-              ReturnTypeText = None
+              ReturnType = None
               ExternalBinding = None
               Body = None
               Intrinsic = true
@@ -1283,7 +1292,7 @@ module ObservabilityTestsShard1 =
             runtimeModule.TraitInstances
             |> List.find (fun instanceInfo -> instanceInfo.TraitName = "Pairing")
 
-        Assert.Equal<string list>([ "Int"; "Bool" ], pairingInstance.HeadTypeTexts)
+        Assert.Equal<TypeSignatures.TypeExpr list>([ parseTypeText "Int"; parseTypeText "Bool" ], pairingInstance.HeadTypes)
 
 
     [<Fact>]
@@ -1839,7 +1848,7 @@ module ObservabilityTestsShard2 =
                     KRuntimeScheduleExit(
                         _,
                         KRuntimeRelease(
-                            Some "File",
+                            Some resourceType,
                             KRuntimeTraitCall(
                                 "Releasable",
                                 "release",
@@ -1853,6 +1862,7 @@ module ObservabilityTestsShard2 =
                 )
             )
           ) ->
+            Assert.Equal(parseTypeText "File", resourceType)
             Assert.Equal(hiddenOwnedName, releasedName)
         | other ->
             failwithf "Expected KRuntimeIR to preserve using release schedule, got %A" other
@@ -3975,10 +3985,10 @@ module ObservabilityTestsShard5 =
                                                     binding.Parameters
                                                     |> List.map (fun parameter ->
                                                         if parameter.Name = "value" then
-                                                            { parameter with TypeText = Some "Int captures (s)" }
+                                                            { parameter with Type = Some(parseTypeText "Int captures (s)") }
                                                         else
                                                             parameter)
-                                                ReturnTypeText = Some "((Unit -> Int) captures (s))" }
+                                                ReturnType = Some(parseTypeText "((Unit -> Int) captures (s))") }
                                         else
                                             binding) }
                         else
@@ -4490,7 +4500,7 @@ module ObservabilityTestsShard6 =
                                     |> List.map (fun binding ->
                                         if binding.Name = "id" then
                                             { binding with
-                                                ReturnTypeText = Some "Eff <[Ask : Ask]> Int" }
+                                                ReturnType = Some(parseTypeText "Eff <[Ask : Ask]> Int") }
                                         else
                                             binding) }
                         else

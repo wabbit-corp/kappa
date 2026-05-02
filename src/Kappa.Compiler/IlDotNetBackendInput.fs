@@ -167,6 +167,9 @@ module internal IlDotNetBackendInput =
     let internal itemImportsConstructorName (item: ImportItem) =
         item.Namespace = Some ImportNamespace.Constructor
 
+    let internal importedItemLocalName (item: ImportItem) =
+        item.Alias |> Option.defaultValue item.Name
+
     let internal itemImportsConstructorsOfType typeName (item: ImportItem) =
         item.IncludeConstructors
         && item.Namespace = Some ImportNamespace.Type
@@ -176,47 +179,58 @@ module internal IlDotNetBackendInput =
         String.Equals(item.Name, name, StringComparison.Ordinal)
         && (item.Namespace.IsNone || item.Namespace = Some namespaceName)
 
-    let internal selectionImportsTypeName selection name =
+    let internal selectionImportedTypeName selection name =
         match selection with
         | QualifiedOnly ->
-            false
+            None
         | Items items ->
             items
-            |> List.exists (fun item ->
-                String.Equals(item.Name, name, StringComparison.Ordinal)
+            |> List.tryFind (fun item ->
+                String.Equals(importedItemLocalName item, name, StringComparison.Ordinal)
                 && itemImportsTypeName item)
+            |> Option.map (fun item -> item.Name)
         | All ->
-            true
+            Some name
         | AllExcept excludedItems ->
-            not (excludedItems |> List.exists (exceptMatches ImportNamespace.Type name))
+            if (excludedItems |> List.exists (exceptMatches ImportNamespace.Type name)) then
+                None
+            else
+                Some name
 
-    let internal selectionImportsTermName selection name =
+    let internal selectionImportedTermName selection name =
         match selection with
         | QualifiedOnly ->
-            false
+            None
         | Items items ->
             items
-            |> List.exists (fun item ->
-                String.Equals(item.Name, name, StringComparison.Ordinal)
+            |> List.tryFind (fun item ->
+                String.Equals(importedItemLocalName item, name, StringComparison.Ordinal)
                 && itemImportsTermName item)
+            |> Option.map (fun item -> item.Name)
         | All ->
-            true
+            Some name
         | AllExcept excludedItems ->
-            not (excludedItems |> List.exists (exceptMatches ImportNamespace.Term name))
+            if (excludedItems |> List.exists (exceptMatches ImportNamespace.Term name)) then
+                None
+            else
+                Some name
 
-    let internal selectionImportsConstructorName selection name constructorTypeName =
+    let internal selectionImportedConstructorName selection name constructorTypeName =
         match selection with
         | QualifiedOnly ->
-            false
+            None
         | Items items ->
             items
-            |> List.exists (fun item ->
-                ((String.Equals(item.Name, name, StringComparison.Ordinal)
-                  && itemImportsConstructorName item)
-                 || itemImportsConstructorsOfType constructorTypeName item))
+            |> List.tryFind (fun item ->
+                String.Equals(importedItemLocalName item, name, StringComparison.Ordinal)
+                && (itemImportsConstructorName item
+                    || itemImportsConstructorsOfType constructorTypeName item
+                    || (item.Namespace.IsNone
+                        && String.Equals(item.Name, constructorTypeName, StringComparison.Ordinal))))
+            |> Option.map (fun item -> item.Name)
         | All
         | AllExcept _ ->
-            false
+            None
 
     let private classifyDataTypeRepresentation (constructors: RawConstructorInfo list) typeParameters =
         if List.isEmpty typeParameters
@@ -252,7 +266,7 @@ module internal IlDotNetBackendInput =
                             { Identity =
                                 DeclarationIdentity.topLevel moduleIdentity constructor.Name ConstructorDeclaration
                               ResultType = dataTypeIdentity
-                              FieldTypeTexts = constructor.FieldTypeTexts
+                              FieldTypeTexts = constructor.FieldTypes |> List.map TypeSignatures.toText
                               Arity = constructor.Arity
                               CaseOrdinal = classifyConstructorOrdinal dataTypeIdentity constructor.Name index })
 
@@ -333,10 +347,12 @@ module internal IlDotNetBackendInput =
                 let importedModuleName = SyntaxFacts.moduleNameToText moduleSegments
 
                 match rawModules |> Map.tryFind importedModuleName with
-                | Some importedModule
-                    when selectionImportsTypeName spec.Selection name
-                         && importedModule.TypeExports.Contains(name) ->
-                    Some(TypeIdentity.ofDottedTextUnchecked importedModuleName name)
+                | Some importedModule ->
+                    match selectionImportedTypeName spec.Selection name with
+                    | Some importedName when importedModule.TypeExports.Contains(importedName) ->
+                        Some(TypeIdentity.ofDottedTextUnchecked importedModuleName importedName)
+                    | _ ->
+                        None
                 | _ ->
                     None)
         |> List.distinct
@@ -764,8 +780,8 @@ module internal IlDotNetBackendInput =
             moduleDump.Bindings
             |> List.map (fun binding ->
                 (moduleDump.Name, binding.Name),
-                ({ ParameterTypes = binding.Parameters |> List.map (fun parameter -> parameter.TypeText)
-                   ReturnType = binding.ReturnTypeText }: DeclaredBindingTexts)))
+                ({ ParameterTypes = binding.Parameters |> List.map (fun parameter -> parameter.Type |> Option.map TypeSignatures.toText)
+                   ReturnType = binding.ReturnType |> Option.map TypeSignatures.toText }: DeclaredBindingTexts)))
         |> Map.ofList
 
     let internal buildTraitInstances (rawModules: Map<string, RawModuleInfo>) (modules: ClrAssemblyModule list) =
@@ -785,12 +801,16 @@ module internal IlDotNetBackendInput =
                                     let! collected = instancesResult
 
                                     let! headTypes =
-                                        instanceDeclaration.HeadTypeTexts
+                                        instanceDeclaration.HeadTypes
                                         |> List.fold
-                                            (fun headTypesResult headTypeText ->
+                                            (fun headTypesResult headTypeExpr ->
                                                 result {
                                                     let! parsedHeadTypes = headTypesResult
-                                                    let! headType = parseTypeText rawModules moduleDump.Name headTypeText
+                                                    let! headType =
+                                                        parseTypeText
+                                                            rawModules
+                                                            moduleDump.Name
+                                                            (TypeSignatures.toText headTypeExpr)
                                                     return headType :: parsedHeadTypes
                                                 })
                                             (Result.Ok [])
@@ -928,12 +948,14 @@ module internal IlDotNetBackendInput =
                 let importedModuleName = SyntaxFacts.moduleNameToText moduleSegments
 
                 match modules |> Map.tryFind importedModuleName with
-                | Some importedModule
-                    when selectionImportsTermName spec.Selection name
-                         && importedModule.Exports.Contains(name) ->
-                    importedModule.Bindings
-                    |> Map.tryFind name
-                    |> Option.map (fun binding -> ModuleIdentity.text importedModule.Identity, binding)
+                | Some importedModule ->
+                    match selectionImportedTermName spec.Selection name with
+                    | Some importedName when importedModule.Exports.Contains(importedName) ->
+                        importedModule.Bindings
+                        |> Map.tryFind importedName
+                        |> Option.map (fun binding -> ModuleIdentity.text importedModule.Identity, binding)
+                    | _ ->
+                        None
                 | _ ->
                     None)
         |> List.distinctBy fst
@@ -982,15 +1004,18 @@ module internal IlDotNetBackendInput =
                 let importedModuleName = SyntaxFacts.moduleNameToText moduleSegments
 
                 match modules |> Map.tryFind importedModuleName with
-                | Some importedModule when importedModule.Exports.Contains(name) ->
+                | Some importedModule ->
                     importedModule.Constructors
-                    |> Map.tryFind name
-                    |> Option.filter (fun constructorInfo ->
-                        selectionImportsConstructorName
+                    |> Map.toList
+                    |> List.tryPick (fun (constructorName, constructorInfo) ->
+                        selectionImportedConstructorName
                             spec.Selection
                             name
-                            (TypeIdentity.name constructorInfo.ResultType))
-                    |> Option.map (fun constructorInfo -> ModuleIdentity.text importedModule.Identity, constructorInfo)
+                            (TypeIdentity.name constructorInfo.ResultType)
+                        |> Option.filter (fun importedName ->
+                            String.Equals(constructorName, importedName, StringComparison.Ordinal)
+                            && importedModule.Exports.Contains(importedName))
+                        |> Option.map (fun _ -> ModuleIdentity.text importedModule.Identity, constructorInfo))
                 | _ ->
                     None)
         |> List.distinctBy fst
