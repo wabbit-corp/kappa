@@ -11098,9 +11098,6 @@ warnElabWith :
     (related : List SyntaxOrigin) ->
     Elab Unit
 
-DiagnosticSeverity : Type
-DiagnosticFixApplicability : Type
-
 data DiagnosticSeverity : Type =
     DiagnosticError
     DiagnosticWarning
