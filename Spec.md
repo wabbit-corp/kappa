@@ -818,6 +818,70 @@ rejected-candidate
 
 Implementations MAY add roles, but standardized roles MUST preserve their meanings.
 
+<!-- compiler.kfrontir.provenance_frames -->
+#### 3.1.5A Provenance frames
+
+Origins identify locations. Provenance explains how a compiler fact came to exist.
+
+A conforming implementation MUST preserve provenance frames for generated syntax, inserted terms, generated obligations,
+macro output, desugarings, recovery placeholders, implicit insertions, equality transports, derived declarations, and
+backend helper obligations.
+
+A provenance frame has the conceptual shape:
+
+```text
+ProvenanceFrame =
+    (id              : ProvenanceId,
+     kind            : ProvenanceKind,
+     step            : CompilationStepId,
+     query           : Option QueryKeyDigest,
+     inputs          : List Origin,
+     inputObjects    : List SemanticObjectId,
+     output          : Origin,
+     generatedObject : Option SemanticObjectId,
+     explanation     : Option String)
+```
+
+`ProvenanceKind` includes at least:
+
+```text
+source
+parser-recovery
+desugaring
+implicit-prelude-insertion
+implicit-argument-insertion
+expected-type-directed-insertion
+equality-transport-insertion
+macro-expansion
+splice-elaboration
+prefixed-string-elaboration
+quotation-elaboration
+record-update-reconstruction
+projection-lowering
+accessor-lowering
+case-split-generation
+derive-generation
+bridge-binding-generation
+backend-helper-generation
+diagnostic-recovery-placeholder
+```
+
+Every synthetic origin MUST either carry or reference a provenance frame.
+
+Every generated obligation that may produce a diagnostic MUST carry the provenance frame that introduced it.
+
+Every diagnostic caused by a generated obligation MUST expose the nearest faithful user-written origin as `primary` and
+the provenance frame as a related origin or payload entry.
+
+A provenance chain MUST be acyclic.
+
+When several generated steps occur, the implementation MUST preserve the chain, not merely the nearest source range.
+
+A verbose diagnostic mode SHOULD render the provenance chain from user-written source to generated construct.
+
+A machine-readable diagnostic MUST expose enough provenance identifiers for a tool to reconstruct that chain from stage
+dumps or query traces produced for the same compilation session.
+
 <!-- compiler.kfrontir.messages_notes_help_fixits -->
 #### 3.1.6 Messages, notes, help, and fix-its
 
@@ -1424,6 +1488,62 @@ the later failure.
 A typechecker, implicit solver, quantity checker, borrow checker, effect-row checker, or termination checker MAY use
 salvage-mode solving to collect additional facts after an obligation fails. Salvage mode is diagnostic-only. It MUST NOT
 change the accepted elaboration of a valid program.
+
+<!-- compiler.kfrontir.minimum_recovery_contract -->
+#### 3.1.14A Minimum recovery contract
+
+A conforming implementation MUST implement recovery as a typed frontend state, not as discarded parser trivia.
+
+For syntactically incomplete or invalid files, `analyze` and editor-oriented queries MUST attempt to construct KFrontIR
+containing typed recovery nodes for the following recoverable conditions:
+
+* missing closing delimiters;
+* missing indentation block after a block introducer;
+* unexpected indentation or dedentation;
+* missing expression after `=`, `->`, `<-`, `then`, `else`, `case`, `return`, or a field initializer;
+* malformed import or export item;
+* malformed binder annotation;
+* malformed record field, constructor field, or patch item;
+* malformed application argument;
+* malformed named constructor application field;
+* malformed quotation or prefixed-string interpolation body;
+* unresolved import provider, when the rest of the file can still be parsed;
+* failed macro expansion whose splice boundary is known.
+
+A recovery node has the conceptual shape:
+
+```text
+RecoveryNode =
+    (origin        : Origin,
+     expected      : RecoveryExpected,
+     inserted      : Option RecoveryInsertion,
+     skipped       : List SourceRange,
+     confidence    : RecoveryConfidence,
+     rootCause     : Option DiagnosticCode,
+     blocksPhases  : List KFrontIRPhase)
+```
+
+`RecoveryConfidence` is one of:
+
+```text
+certain
+likely
+speculative
+```
+
+Rules:
+
+* Recovery MUST NOT cause an invalid program to be accepted.
+* A recovery insertion MUST be represented as synthetic syntax with provenance, not as if the user had written it.
+* A downstream diagnostic that depends only on speculative recovery SHOULD be suppressed under the root recovery
+  diagnostic.
+* A diagnostic caused by a recovery node MUST identify that recovery node in structured payload.
+* Recovery choices MUST be deterministic for fixed source text, source identity, active profile, and implementation
+  version.
+* Recovery MUST preserve enough surrounding source structure to support hover, go-to-definition, hole-goal queries,
+  completion, and diagnostics for unaffected neighboring declarations.
+* If recovery cannot preserve neighboring declaration boundaries, the implementation MUST say so with a structured
+  diagnostic rather than returning misleading semantic answers.
 
 <!-- compiler.kfrontir.nondeferrable_correctness_failures -->
 #### 3.1.15 Non-deferrable correctness failures
