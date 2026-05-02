@@ -28,6 +28,8 @@ type KpFixtureConfiguration =
       BackendProfile: string
       AllowUnsafeConsume: bool
       RequiredCapabilities: Set<string>
+      RequiredBackendProfiles: Set<string>
+      RequiredPackageModes: Set<bool>
       EntryPoint: string option
       RunArgs: string list
       StdinFile: string option
@@ -40,6 +42,8 @@ module KpFixtureConfiguration =
           BackendProfile = "interpreter"
           AllowUnsafeConsume = false
           RequiredCapabilities = Set.empty
+          RequiredBackendProfiles = Set.empty
+          RequiredPackageModes = Set.empty
           EntryPoint = None
           RunArgs = []
           StdinFile = None
@@ -110,6 +114,8 @@ type KpIncrementalFixtureCase =
     { Name: string
       Root: string
       RequiredCapabilities: Set<string>
+      RequiredBackendProfiles: Set<string>
+      RequiredPackageModes: Set<bool>
       Steps: KpFixtureCase list
       Assertions: KpIncrementalFixtureAssertion list }
 

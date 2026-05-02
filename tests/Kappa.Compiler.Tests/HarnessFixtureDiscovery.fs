@@ -12,6 +12,13 @@ let private fixturesRoot =
 let private supportedCapabilities =
     Set.ofList [ "pipelineTrace"; "runTask" ]
 
+let private requirementsSatisfied (configuration: KpFixtureConfiguration) =
+    Set.isSubset configuration.RequiredCapabilities supportedCapabilities
+    && (Set.isEmpty configuration.RequiredBackendProfiles
+        || Set.contains configuration.BackendProfile configuration.RequiredBackendProfiles)
+    && (Set.isEmpty configuration.RequiredPackageModes
+        || Set.contains configuration.PackageMode configuration.RequiredPackageModes)
+
 let private discoverOrdinaryFixtureCase caseName caseDirectory =
     let sourceFiles =
         Directory.EnumerateFiles(caseDirectory, "*.kp", SearchOption.AllDirectories)
@@ -39,7 +46,7 @@ let private discoverOrdinaryFixtureCase caseName caseDirectory =
                 | ExtensionAssertionDirective(_, assertion) -> Some assertion
                 | _ -> None)
 
-        if Set.isSubset configuration.RequiredCapabilities supportedCapabilities then
+        if requirementsSatisfied configuration then
             Some
                 { Name = caseName
                   Root = caseDirectory
@@ -57,6 +64,20 @@ let private discoverIncrementalFixtureCase caseName caseDirectory incrementalDir
         directives
         |> List.choose (function
             | RequireCapability(capability, _, _) -> Some capability
+            | _ -> None)
+        |> Set.ofList
+
+    let requiredBackendProfiles =
+        directives
+        |> List.choose (function
+            | RequireBackend(backendProfile, _, _) -> Some backendProfile
+            | _ -> None)
+        |> Set.ofList
+
+    let requiredPackageModes =
+        directives
+        |> List.choose (function
+            | RequirePackageMode(packageMode, _, _) -> Some packageMode
             | _ -> None)
         |> Set.ofList
 
@@ -100,11 +121,17 @@ let private discoverIncrementalFixtureCase caseName caseDirectory incrementalDir
 
     if List.length steps <> List.length stepDirectories then
         None
-    elif Set.isSubset requiredCapabilities supportedCapabilities then
+    elif
+        Set.isSubset requiredCapabilities supportedCapabilities
+        && (Set.isEmpty requiredBackendProfiles || steps |> List.forall (fun step -> Set.contains step.Configuration.BackendProfile requiredBackendProfiles))
+        && (Set.isEmpty requiredPackageModes || steps |> List.forall (fun step -> Set.contains step.Configuration.PackageMode requiredPackageModes))
+    then
         Some
             { Name = caseName
               Root = caseDirectory
               RequiredCapabilities = requiredCapabilities
+              RequiredBackendProfiles = requiredBackendProfiles
+              RequiredPackageModes = requiredPackageModes
               Steps = steps
               Assertions = assertions }
     else

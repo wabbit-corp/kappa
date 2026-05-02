@@ -19,6 +19,22 @@ let private withScratchFixture name action =
         if Directory.Exists(root) then
             Directory.Delete(root, true)
 
+let private fixturesRoot =
+    Path.Combine(__SOURCE_DIRECTORY__, "Fixtures")
+
+let private withTemporaryRepositoryFixture name files action =
+    let root = Path.Combine(fixturesRoot, name)
+
+    if Directory.Exists(root) then
+        Directory.Delete(root, true)
+
+    try
+        writeWorkspaceFiles root files
+        action root
+    finally
+        if Directory.Exists(root) then
+            Directory.Delete(root, true)
+
 let private discoverFixtureCase root =
     let sourceFiles =
         Directory.EnumerateFiles(root, "*.kp", SearchOption.AllDirectories)
@@ -60,6 +76,20 @@ let private discoverIncrementalFixtureCase root =
             | _ -> None)
         |> Set.ofList
 
+    let requiredBackendProfiles =
+        directives
+        |> List.choose (function
+            | RequireBackend(backendProfile, _, _) -> Some backendProfile
+            | _ -> None)
+        |> Set.ofList
+
+    let requiredPackageModes =
+        directives
+        |> List.choose (function
+            | RequirePackageMode(packageMode, _, _) -> Some packageMode
+            | _ -> None)
+        |> Set.ofList
+
     let assertions =
         directives
         |> List.choose (function
@@ -75,6 +105,8 @@ let private discoverIncrementalFixtureCase root =
     { Name = Path.GetFileName(root)
       Root = root
       RequiredCapabilities = requiredCapabilities
+      RequiredBackendProfiles = requiredBackendProfiles
+      RequiredPackageModes = requiredPackageModes
       Steps = steps
       Assertions = assertions }
 
@@ -194,6 +226,73 @@ let ``suite directives accept standard assertStageDump assertions`` () =
                 (Path.Combine(root, "suite.ktest"))
 
         Assert.NotEmpty(directives))
+
+[<Fact>]
+let ``suite directives accept standard requires backend and mode preconditions`` () =
+    withScratchFixture "appendix-t-requires-parse" (fun root ->
+        writeWorkspaceFiles
+            root
+            [
+                "suite.ktest", "--! requires backend interpreter\n--! requires mode package\n"
+                "main.kp", "module main\nanswer : Int\nlet answer = 42\n"
+            ]
+
+        let directives =
+            loadFixtureDirectives
+                KpFixtureDirectiveSource.SuiteDirectiveFile
+                (Path.Combine(root, "suite.ktest"))
+
+        let configuration = buildFixtureConfiguration directives
+
+        Assert.Contains("interpreter", configuration.RequiredBackendProfiles)
+        Assert.Contains(true, configuration.RequiredPackageModes))
+
+[<Fact>]
+let ``conflicting selected mode and requires mode preconditions are ill formed`` () =
+    withScratchFixture "appendix-t-requires-conflict" (fun root ->
+        writeWorkspaceFiles
+            root
+            [
+                "suite.ktest", "--! scriptMode\n--! requires mode package\n"
+                "main.kp", "module main\nanswer : Int\nlet answer = 42\n"
+            ]
+
+        let directives =
+            loadFixtureDirectives
+                KpFixtureDirectiveSource.SuiteDirectiveFile
+                (Path.Combine(root, "suite.ktest"))
+
+        let error =
+            Assert.Throws<InvalidOperationException>(fun () -> buildFixtureConfiguration directives |> ignore)
+
+        Assert.Contains("mutually inconsistent", error.Message, StringComparison.OrdinalIgnoreCase))
+
+[<Fact>]
+let ``discovery skips fixtures whose standard requires preconditions are unsupported`` () =
+    let unsupportedName = $"appendix-t-requires-unsupported-{Guid.NewGuid():N}"
+    let supportedName = $"appendix-t-requires-supported-{Guid.NewGuid():N}"
+
+    withTemporaryRepositoryFixture
+        unsupportedName
+        [
+            "suite.ktest", "--! requires mode script\n"
+            "main.kp", "module main\nanswer : Int\nlet answer = 42\n"
+        ]
+        (fun _ ->
+            withTemporaryRepositoryFixture
+                supportedName
+                [
+                    "suite.ktest", "--! requires backend interpreter\n--! requires mode package\n"
+                    "main.kp", "module main\nanswer : Int\nlet answer = 42\n"
+                ]
+                (fun _ ->
+                    let ordinaryCases =
+                        discoverKpFixtureCases ()
+                        |> List.map _.Name
+                        |> Set.ofList
+
+                    Assert.DoesNotContain(unsupportedName, ordinaryCases)
+                    Assert.Contains(supportedName, ordinaryCases)))
 
 [<Fact>]
 let ``fixture harness evaluates assertDiagnosticAt exact ranges`` () =

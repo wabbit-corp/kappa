@@ -190,6 +190,8 @@ type KpFixtureDirective =
     | SetBackend of backendProfile: string * filePath: string * lineNumber: int
     | SetAllowUnsafeConsume of filePath: string * lineNumber: int
     | RequireCapability of capability: string * filePath: string * lineNumber: int
+    | RequireBackend of backendProfile: string * filePath: string * lineNumber: int
+    | RequirePackageMode of packageMode: bool * filePath: string * lineNumber: int
     | SetEntry of entryPoint: string * filePath: string * lineNumber: int
     | SetRunArgs of runArgs: string list * filePath: string * lineNumber: int
     | SetStdinFile of relativePath: string * filePath: string * lineNumber: int
@@ -279,8 +281,14 @@ let private parseFixtureDirective (sourceKind: KpFixtureDirectiveSource) (filePa
             match tokens with
             | [| "capability"; capability |] ->
                 Some(RequireCapability(parseFixtureCapability filePath lineNumber capability, filePath, lineNumber))
+            | [| "backend"; backendProfile |] ->
+                Some(RequireBackend(backendProfile, filePath, lineNumber))
+            | [| "mode"; "package" |] ->
+                Some(RequirePackageMode(true, filePath, lineNumber))
+            | [| "mode"; "script" |] ->
+                Some(RequirePackageMode(false, filePath, lineNumber))
             | _ ->
-                invalidOp $"requires expects 'capability <name>' ({filePath}:{lineNumber})."
+                invalidOp $"requires expects 'capability <name>', 'backend <profile>', or 'mode <package|script>' ({filePath}:{lineNumber})."
         | "entry" ->
             if String.IsNullOrWhiteSpace(directiveBody) then
                 invalidOp $"entry expects a qualified binding name ({filePath}:{lineNumber})."
@@ -733,6 +741,8 @@ type private KpFixtureConfigurationAccumulator =
       BackendProfile: (string * string * int) option
       AllowUnsafeConsume: (bool * string * int) option
       RequiredCapabilities: Set<string>
+      RequiredBackendProfiles: Set<string>
+      RequiredPackageModes: Set<bool>
       EntryPoint: (string * string * int) option
       RunArgs: (string list * string * int) option
       StdinFile: (string * string * int) option
@@ -744,6 +754,8 @@ let private emptyFixtureConfigurationAccumulator =
       BackendProfile = None
       AllowUnsafeConsume = None
       RequiredCapabilities = Set.empty
+      RequiredBackendProfiles = Set.empty
+      RequiredPackageModes = Set.empty
       EntryPoint = None
       RunArgs = None
       StdinFile = None
@@ -792,6 +804,12 @@ let buildFixtureConfiguration (directives: KpFixtureDirective list) =
                 | RequireCapability(capability, _, _) ->
                     { state with
                         RequiredCapabilities = Set.add capability state.RequiredCapabilities }
+                | RequireBackend(backendProfile, _, _) ->
+                    { state with
+                        RequiredBackendProfiles = Set.add backendProfile state.RequiredBackendProfiles }
+                | RequirePackageMode(packageMode, _, _) ->
+                    { state with
+                        RequiredPackageModes = Set.add packageMode state.RequiredPackageModes }
                 | SetEntry(entryPoint, filePath, lineNumber) ->
                     { state with
                         EntryPoint = mergeFixtureConfigurationValue "entry" state.EntryPoint (entryPoint, filePath, lineNumber) }
@@ -829,6 +847,8 @@ let buildFixtureConfiguration (directives: KpFixtureDirective list) =
                 |> Option.map (fun (value, _, _) -> value)
                 |> Option.defaultValue KpFixtureConfiguration.defaultValue.AllowUnsafeConsume
             RequiredCapabilities = accumulator.RequiredCapabilities
+            RequiredBackendProfiles = accumulator.RequiredBackendProfiles
+            RequiredPackageModes = accumulator.RequiredPackageModes
             EntryPoint = accumulator.EntryPoint |> Option.map (fun (value, _, _) -> value)
             RunArgs = accumulator.RunArgs |> Option.map (fun (value, _, _) -> value) |> Option.defaultValue []
             StdinFile = accumulator.StdinFile |> Option.map (fun (value, _, _) -> value)
@@ -836,6 +856,18 @@ let buildFixtureConfiguration (directives: KpFixtureDirective list) =
                 accumulator.DumpFormat
                 |> Option.map (fun (value, _, _) -> value)
                 |> Option.defaultValue KpFixtureConfiguration.defaultValue.DumpFormat }
+
+    if Set.count configuration.RequiredPackageModes > 1 then
+        invalidOp "Fixture requirements are mutually inconsistent: both package and script mode are required."
+
+    let packageModeWasExplicit = accumulator.PackageMode.IsSome
+    let backendWasExplicit = accumulator.BackendProfile.IsSome
+
+    if packageModeWasExplicit && not (Set.isEmpty configuration.RequiredPackageModes) && not (Set.contains configuration.PackageMode configuration.RequiredPackageModes) then
+        invalidOp "Fixture selected mode and requires mode preconditions are mutually inconsistent."
+
+    if backendWasExplicit && not (Set.isEmpty configuration.RequiredBackendProfiles) && not (Set.contains configuration.BackendProfile configuration.RequiredBackendProfiles) then
+        invalidOp "Fixture selected backend and requires backend preconditions are mutually inconsistent."
 
     match configuration.Mode with
     | KpFixtureMode.Run ->
