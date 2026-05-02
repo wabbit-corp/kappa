@@ -21632,19 +21632,27 @@ failElab :
 
 failElabWith :
     forall (@0 a : Type).
-    (code : String) ->
+    (code : DiagnosticCode) ->
     (message : String) ->
-    (related : List SyntaxOrigin) ->
+    (related : List ElabDiagnosticRelated) ->
     Elab a
 
 warnElab :
     String -> Elab Unit
 
 warnElabWith :
-    (code : String) ->
+    (code : DiagnosticCode) ->
     (message : String) ->
-    (related : List SyntaxOrigin) ->
+    (related : List ElabDiagnosticRelated) ->
     Elab Unit
+
+type DiagnosticCode : Type
+type DiagnosticFamily : Type
+type DiagnosticLabelRole : Type
+type DiagnosticRelatedRole : Type
+type DiagnosticExplainKey : Type
+type DiagnosticPayloadKind : Type
+type DiagnosticPayloadField : Type
 
 data DiagnosticSeverity : Type =
     DiagnosticError
@@ -21661,8 +21669,13 @@ data DiagnosticFixApplicability : Type =
 
 type ElabDiagnosticLabel : Type =
     (origin : SyntaxOrigin,
-     role : String,
+     role : DiagnosticLabelRole,
      message : String)
+
+type ElabDiagnosticRelated : Type =
+    (origin : SyntaxOrigin,
+     role : DiagnosticRelatedRole,
+     message : Option String)
 
 type ElabDiagnosticEdit : Type =
     (origin : SyntaxOrigin,
@@ -21673,16 +21686,22 @@ type ElabDiagnosticFix : Type =
      applicability : DiagnosticFixApplicability,
      edits : List ElabDiagnosticEdit)
 
+type ElabDiagnosticPayload : Type =
+    (kind : DiagnosticPayloadKind,
+     fields : List DiagnosticPayloadField)
+
 type ElabDiagnostic : Type =
-    (code : String,
-     family : Option String,
+    (code : DiagnosticCode,
+     family : Option DiagnosticFamily,
      severity : DiagnosticSeverity,
      message : String,
      labels : List ElabDiagnosticLabel,
-     related : List SyntaxOrigin,
+     related : List ElabDiagnosticRelated,
      notes : List String,
      helps : List String,
-     fixes : List ElabDiagnosticFix)
+     fixes : List ElabDiagnosticFix,
+     payload : Option ElabDiagnosticPayload,
+     explain : Option DiagnosticExplainKey)
 
 emitElabDiagnostic :
     ElabDiagnostic -> Elab Unit
@@ -21703,6 +21722,12 @@ ensureDefEqGoal :
     forall (@0 g : ElabGoal) (@0 a : Type) (@0 b : Type).
     Core g.ctx a -> Core g.ctx b -> Elab Unit
 ```
+
+Diagnostic identity values available to `Elab` are typed values, not strings.
+
+An implementation MUST provide constructors or checked smart constructors for package-defined diagnostic codes and
+families. These constructors MUST attach an owner identity, so package-defined diagnostics cannot collide with
+standardized `kappa.` families or implementation-reserved families.
 
 Implementations MUST provide coherent evidence for `Functor Elab`, `Applicative Elab`, and `Monad Elab`.
 
@@ -21727,29 +21752,43 @@ Rules:
 * `failElabDiagnostic d` emits the structured diagnostic `d` and aborts the current elaboration action.
   If `d.severity` is not `DiagnosticError`, the emitted diagnostic is treated as `DiagnosticError`.
 * `failElabWith code message related` and `warnElabWith code message related` emit structured diagnostics. The `code`
-  argument MUST satisfy the diagnostic-code requirements of §3.1. Each origin in `related` is attached as a related
-  origin in the emitted diagnostic, subject to the source / synthetic-origin model of §34.2.1.
+  argument MUST be a typed diagnostic code value satisfying the diagnostic-code requirements of §3.1. Each related entry
+  in `related` is attached as a related origin in the emitted diagnostic, subject to the source / synthetic-origin model
+  of §34.2.1.
 * `failElabWith code message related` is shorthand for `failElabDiagnostic` with:
   * `code = code`,
-  * `family = Some "kappa.macro.failure"` unless the implementation can assign a more specific family,
+  * `family = Some` the typed family value for `kappa.macro.failure` unless the implementation can assign a more
+    specific family,
   * `severity = DiagnosticError`,
   * `message = message`,
   * `labels = []`,
   * `related = related`,
   * `notes = []`,
   * `helps = []`,
-  * `fixes = []`.
+  * `fixes = []`,
+  * `payload = None`,
+  * `explain = None`.
 * `warnElabWith code message related` is shorthand for `emitElabDiagnostic` with:
   * `code = code`,
-  * `family = Some "kappa.macro.failure"` unless the implementation can assign a more specific family,
+  * `family = Some` the typed family value for `kappa.macro.failure` unless the implementation can assign a more
+    specific family,
   * `severity = DiagnosticWarning`,
   * `message = message`,
   * `labels = []`,
   * `related = related`,
   * `notes = []`,
   * `helps = []`,
-  * `fixes = []`.
+  * `fixes = []`,
+  * `payload = None`,
+  * `explain = None`.
 * A diagnostic emitted by `Elab` MUST satisfy the diagnostic-code and diagnostic-family requirements of §3.1.
+* `Elab` code MUST NOT fabricate diagnostic code strings.
+* A macro-defined diagnostic MUST use a registered package-owned diagnostic code.
+* A macro-defined diagnostic MAY use a standardized Kappa diagnostic family only when its payload satisfies that
+  family's required schema.
+* Diagnostic labels and related origins emitted from `Elab` MUST use typed roles.
+* Serialization MAY render diagnostic codes, families, and roles as strings, but the source-level `Elab` API exposes
+  typed values.
 * A diagnostic emitted by `Elab` MUST preserve the current source or synthetic-origin chain.
 * If a diagnostic emitted by `Elab` refers to syntax passed into the macro, prefixed-string handler, splice, or
   comprehension hook, the macro SHOULD attach that syntax's `SyntaxOrigin` as a label or related origin.
