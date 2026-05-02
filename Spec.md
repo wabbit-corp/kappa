@@ -32227,6 +32227,56 @@ Within one analysis session:
 Cross-session symbol identity is implementation-defined. Clients MUST NOT compare symbols from different analysis
 sessions for identity.
 
+<!-- compiler.kfrontir.typed_identity_invariants -->
+#### 34.2.1A Typed identity invariants
+
+KFrontIR stores spelling, syntax, and semantic identity separately.
+
+A KFrontIR name occurrence has one of the following states:
+
+```text
+UnresolvedName =
+    (spelling      : SourceSpelling,
+     admissible    : List DeclarationKind,
+     origin        : Origin,
+     lookupContext : LookupContextId)
+
+ResolvedName =
+    (spelling      : SourceSpelling,
+     target        : DeclarationSymbolId,
+     object        : Option SemanticObjectId,
+     origin        : Origin)
+
+AmbiguousName =
+    (spelling      : SourceSpelling,
+     candidates    : List DeclarationSymbolId,
+     origin        : Origin)
+```
+
+Rules:
+
+* A resolved name MUST NOT be represented only by its spelling.
+* An unresolved name MUST preserve admissible declaration kinds and lookup context.
+* An ambiguous name MUST preserve all candidates considered in the nearest relevant scope.
+* A generated name MUST carry a generated-name identity, generation provenance, and collision namespace.
+* A generated name's rendered spelling MUST NOT be used as its semantic identity.
+* Rename, find-usages, go-to-definition, hover, and refactoring queries MUST operate on declaration symbols or semantic
+  object identities, not on spelling strings.
+* A refactoring tool MAY search by spelling to find candidates, but any semantic edit MUST be keyed by resolved
+  identity.
+* Stage dumps MUST distinguish spelling fields from identity fields.
+
+KFrontIR MUST preserve the distinction between:
+
+* a source spelling that currently resolves to a symbol;
+* a semantic object imported through an interface;
+* a generated helper symbol;
+* a synthetic binder introduced by elaboration;
+* an unresolved spelling; and
+* an ambiguous spelling.
+
+An implementation MUST NOT conflate these cases in machine-readable output.
+
 <!-- compiler.kfrontir.resolve_phases -->
 #### 34.2.2 Resolve phases
 
@@ -32778,6 +32828,69 @@ Cycle handling:
   implementation MUST detect it and report a compiler diagnostic or internal-compiler diagnostic rather than deadlocking
   or spinning indefinitely.
 * The diagnostic SHOULD identify the query cycle in terms of declarations, modules, or phases when possible.
+
+<!-- compiler.kfrontir.query_trace_observability -->
+#### 34.2.8A Query trace observability and invalidation explanations
+
+A conforming implementation MUST expose a machine-readable query trace for any compilation, analysis, diagnostic,
+hole-goal, semantic-reflection, or tooling request when requested by the user or by a test harness.
+
+A query trace records the dependency-tracked computation actually used to answer the request.
+
+A query trace node has the conceptual shape:
+
+```text
+QueryTraceNode =
+    (query        : QueryKeyDigest,
+     kind         : QueryKind,
+     inputSummary : QueryInputSummary,
+     result       : QueryResultSummary,
+     dependencies : List QueryDependency,
+     cacheStatus  : QueryCacheStatus,
+     diagnostics  : List DiagnosticId,
+     checkpoint   : Option CompilationCheckpoint)
+```
+
+`QueryCacheStatus` is one of:
+
+```text
+computed
+reused-memory-cache
+reused-persistent-cache
+invalidated
+cancelled
+unsupported
+failed
+```
+
+`QueryDependency` is one of:
+
+```text
+query QueryKeyDigest
+fingerprint CompilerFingerprint
+source SourceIdentity
+interface ModuleInterfaceIdentity
+semantic-object SemanticObjectId
+macro-transcript MacroTranscriptIdentity
+external-observation ExternalObservationIdentity
+build-plan ResolvedBuildPlanIdentity
+```
+
+Rules:
+
+* Query traces MUST NOT expose unstable heap addresses, thread identifiers, hash-map bucket order, or worker scheduling
+  order as semantic facts.
+* Query trace ordering MUST be deterministic for fixed inputs and implementation version.
+* If a cached query result is reused, the trace MUST identify the recorded dependencies that justified reuse.
+* If a cached query result is invalidated, the trace MUST identify the earliest changed dependency that forced
+  invalidation when that information is available.
+* A `why-rebuilt` or equivalent query MUST be able to explain why a declaration, module interface, KCore unit,
+  KBackendIR unit, or target artifact was recomputed rather than reused.
+* A `why-not-rebuilt` or equivalent query SHOULD be able to explain why a result was reused.
+* If the implementation redacts sensitive query inputs, the trace MUST contain a stable redaction marker and digest.
+
+Query traces are observability artifacts. They do not change source-language semantics, interface identity, Easy
+Hashes, Hard Hashes, or backend output.
 
 <!-- compiler.kfrontir.parallel_execution_determinism -->
 #### 34.2.9 Parallel execution and determinism
