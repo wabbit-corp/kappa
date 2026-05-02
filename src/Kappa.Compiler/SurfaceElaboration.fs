@@ -18,7 +18,7 @@ module SurfaceElaboration =
 
     type private TraitInfo =
         { Identity: DeclarationIdentity
-          TypeParameters: string list
+          TypeParameters: TypeVariableName list
           Supertraits: TraitConstraint list
           Members: Map<string, TraitMemberInfo> }
         member this.ModuleIdentity = DeclarationIdentity.moduleIdentity this.Identity
@@ -35,7 +35,7 @@ module SurfaceElaboration =
     type private TypeAliasInfo =
         { Identity: DeclarationIdentity
           IsOpaque: bool
-          Parameters: string list
+          Parameters: TypeVariableName list
           Body: TypeExpr
           TerminationCertified: bool
           ConversionReducible: bool }
@@ -272,7 +272,7 @@ module SurfaceElaboration =
 
     type private ConstraintResolutionResult =
         | ConstraintUnresolved
-        | ConstraintResolved of InstanceInfo * Map<string, TypeExpr>
+        | ConstraintResolved of InstanceInfo * Map<TypeVariableName, TypeExpr>
         | ConstraintAmbiguous of TraitConstraint * InstanceInfo list
 
     let private tokensText (tokens: Token list) =
@@ -333,6 +333,24 @@ module SurfaceElaboration =
     let private moduleIdentityOfModuleSpecifier specifier =
         specifier |> SymbolicIdentity.moduleIdentityOfSpecifier
 
+    let private typeReference segments =
+        segments |> TypeSignatures.TypeReference.ofSegments
+
+    let private typeReferenceSegments =
+        TypeSignatures.TypeReference.segments
+
+    let private typeName segments arguments =
+        TypeName(typeReference segments, arguments)
+
+    let private typeVariableName text =
+        text |> TypeSignatures.TypeVariableName.create
+
+    let private typeVariableNameText =
+        TypeSignatures.TypeVariableName.text
+
+    let private fieldNameText =
+        TypeSignatures.FieldName.text
+
     let private topLevelDeclarationIdentity moduleIdentity name kind =
         DeclarationIdentity.topLevel moduleIdentity name kind
 
@@ -352,7 +370,9 @@ module SurfaceElaboration =
         TypeSignatures.TraitReference.text traitReference
 
     let private traitReferenceLocalName traitReference =
-        TypeSignatures.TraitReference.localName traitReference
+        traitReference
+        |> TypeSignatures.TraitReference.localName
+        |> TypeSignatures.ReferenceName.text
 
     let private traitReferenceCanonicalName traitReference =
         TypeSignatures.TraitReference.canonicalName traitReference
@@ -373,7 +393,7 @@ module SurfaceElaboration =
         traitReferenceRuntimeName constraintInfo.Trait
 
     let private traitConstraintTypeName (constraintInfo: TraitConstraint) =
-        TypeName(traitReferenceSegments constraintInfo.Trait, constraintInfo.Arguments)
+        typeName (traitReferenceSegments constraintInfo.Trait) constraintInfo.Arguments
 
     let private traitConstraintBinderStem (constraintInfo: TraitConstraint) =
         (traitConstraintText constraintInfo).Replace(".", "_", StringComparison.Ordinal)
@@ -504,9 +524,9 @@ module SurfaceElaboration =
     let private aliasImportedSameSpellingConstructorBinding localTypeName (bindingInfo: BindingSchemeInfo) =
         let originalTypeName = bindingInfo.ConstructorTypeName |> Option.defaultValue bindingInfo.Name
         let qualifiedOriginalType =
-            TypeName((ModuleIdentity.segments bindingInfo.ModuleIdentity) @ [ originalTypeName ], [])
+            typeName ((ModuleIdentity.segments bindingInfo.ModuleIdentity) @ [ originalTypeName ]) []
 
-        let substitution = Map.ofList [ originalTypeName, qualifiedOriginalType ]
+        let substitution = Map.ofList [ typeVariableName originalTypeName, qualifiedOriginalType ]
 
         { bindingInfo with
             ConstructorTypeName = Some localTypeName
@@ -534,7 +554,7 @@ module SurfaceElaboration =
         TypeSignatures.knownType knownType arguments
 
     let private matchesKnownType knownType nameSegments =
-        CompilerKnownSymbols.KnownTypes.matchesName knownType nameSegments
+        CompilerKnownSymbols.KnownTypes.matchesName knownType (TypeSignatures.TypeReference.segments nameSegments)
 
     let private declarationName (declaration: TopLevelDeclaration) =
         match declaration with
@@ -1100,7 +1120,7 @@ module SurfaceElaboration =
                 =
                 match remainingBinders, remainingLayouts with
                 | binder :: restBinders, layout :: restLayouts
-                    when String.Equals(binder.Name, layout.Name, StringComparison.Ordinal) ->
+                    when String.Equals(TypeSignatures.TypeVariableName.text binder.Name, layout.Name, StringComparison.Ordinal) ->
                     stripLeadingForallLayouts restBinders restLayouts
                 | _ ->
                     remainingLayouts
@@ -1113,12 +1133,8 @@ module SurfaceElaboration =
         =
         let constraintMatchesLayoutType (constraintInfo: TraitConstraint) layoutType =
             match layoutType with
-            | TypeName([ traitName ], arguments) ->
-                [ traitName ] = traitReferenceSegments constraintInfo.Trait
-                && List.length arguments = List.length constraintInfo.Arguments
-                && List.forall2 TypeSignatures.definitionallyEqual arguments constraintInfo.Arguments
-            | TypeName(qualifiedName, arguments) ->
-                qualifiedName = traitReferenceSegments constraintInfo.Trait
+            | TypeName(nameReference, arguments) ->
+                TypeSignatures.TypeReference.segments nameReference = traitReferenceSegments constraintInfo.Trait
                 && List.length arguments = List.length constraintInfo.Arguments
                 && List.forall2 TypeSignatures.definitionallyEqual arguments constraintInfo.Arguments
             | _ ->
@@ -1169,7 +1185,7 @@ module SurfaceElaboration =
             |> Option.exists (function
                 | TypeUniverse _ -> true
                 | TypeIntrinsic _ -> true
-                | TypeName([ "Type" ], []) -> true
+                | TypeName(nameReference, []) when TypeSignatures.TypeReference.segments nameReference = [ "Type" ] -> true
                 | _ -> false))
 
     let private annotateLambdaWithTypeTokens typeTokens value =
@@ -1516,14 +1532,12 @@ module SurfaceElaboration =
         TypeSignatures.collectLeadingTypeParameters declaration.HeaderTokens
 
     let private scopedEffectLabelType (declaration: EffectSemanticDeclaration) =
-        TypeName(scopedEffectLabelNameSegments declaration, [])
+        typeName (scopedEffectLabelNameSegments declaration) []
 
     let private scopedEffectInterfaceType (declaration: EffectSemanticDeclaration) =
-        TypeName(
-            scopedEffectInterfaceNameSegments declaration,
-            scopedEffectTypeParameters declaration
-            |> List.map TypeVariable
-        )
+        typeName
+            (scopedEffectInterfaceNameSegments declaration)
+            (scopedEffectTypeParameters declaration |> List.map TypeVariable)
 
     let private scopedEffectRowType (declaration: EffectSemanticDeclaration) =
         TypeEffectRow(
@@ -2453,7 +2467,7 @@ module SurfaceElaboration =
         knownTypeExpr CompilerKnownSymbols.RefType [ argumentType ]
 
     let private dictionaryType traitName argumentTypes =
-        TypeName([ TraitRuntime.dictionaryTypeName traitName ], argumentTypes)
+        typeName [ TraitRuntime.dictionaryTypeName traitName ] argumentTypes
 
     let private unwrapIoType typeExpr =
         match typeExpr with
@@ -2504,7 +2518,7 @@ module SurfaceElaboration =
     let private freshUnknownLocalType (freshCounter: int ref) =
         let name = $"__kappa_local_t{freshCounter.Value}"
         freshCounter.Value <- freshCounter.Value + 1
-        TypeVariable name
+        TypeVariable(typeVariableName name)
 
     let private inferFallbackLocalType (freshCounter: int ref) expression =
         match expression with
@@ -2645,18 +2659,22 @@ module SurfaceElaboration =
 
     let rec private rewriteAssociatedTraitMembersInType
         (traitName: string)
-        (traitTypeParameters: string list)
+        (traitTypeParameters: TypeVariableName list)
         (associatedStaticMembers: Set<string>)
         typeExpr
         =
         let traitHead =
-            TypeName([ traitName ], traitTypeParameters |> List.map TypeVariable)
+            typeName [ traitName ] (traitTypeParameters |> List.map TypeVariable)
 
         let rewrite = rewriteAssociatedTraitMembersInType traitName traitTypeParameters associatedStaticMembers
 
         match typeExpr with
-        | TypeName([ memberName ], []) when associatedStaticMembers.Contains memberName ->
-            TypeProject(traitHead, memberName)
+        | TypeName(nameReference, []) ->
+            match TypeSignatures.TypeReference.segments nameReference with
+            | [ memberName ] when associatedStaticMembers.Contains memberName ->
+                TypeProject(traitHead, TypeSignatures.FieldName.create memberName)
+            | _ ->
+                TypeName(nameReference, [])
         | TypeApply(callee, arguments) ->
             TypeApply(rewrite callee, arguments |> List.map rewrite)
         | TypeLambda(parameterName, parameterSort, body) ->
@@ -2692,7 +2710,7 @@ module SurfaceElaboration =
 
     let private rewriteAssociatedTraitMembersInScheme
         (traitName: string)
-        (traitTypeParameters: string list)
+        (traitTypeParameters: TypeVariableName list)
         (associatedStaticMembers: Set<string>)
         (scheme: TypeScheme)
         =
@@ -2850,7 +2868,7 @@ module SurfaceElaboration =
         TypeSignatures.parseType tokens
         |> Option.bind (function
             | TypeName(nameSegments, arguments) ->
-                Some(qualifiedTraitConstraint nameSegments arguments)
+                Some(qualifiedTraitConstraint (TypeSignatures.TypeReference.segments nameSegments) arguments)
             | _ ->
                 None)
 
@@ -2867,7 +2885,7 @@ module SurfaceElaboration =
         |> Option.bind (fun scheme ->
             match scheme.Body with
             | TypeName(name, headTypes) ->
-                Some(TypeSignatures.TraitReference.ofSegments name, scheme.Constraints, headTypes)
+                Some(TypeSignatures.TraitReference.ofSegments (TypeSignatures.TypeReference.segments name), scheme.Constraints, headTypes)
             | _ ->
                 None)
 
@@ -3109,7 +3127,7 @@ module SurfaceElaboration =
                 scheme
             | None ->
                 let typeParameters = TypeSignatures.collectLeadingTypeParameters dataDeclaration.HeaderTokens
-                let resultType = TypeName([ dataDeclaration.Name ], typeParameters |> List.map TypeVariable)
+                let resultType = typeName [ dataDeclaration.Name ] (typeParameters |> List.map TypeVariable)
 
                 let body =
                     constructor
@@ -3454,7 +3472,7 @@ module SurfaceElaboration =
                         | TypeIntrinsic LabelClassifier
                         | TypeIntrinsic EffLabelClassifier ->
                             true
-                        | TypeName([ "Type" ], []) ->
+                        | TypeName(nameSegments, []) when typeReferenceSegments nameSegments = [ "Type" ] ->
                             true
                         | TypeName(nameSegments, []) when
                             matchesKnownType CompilerKnownSymbols.ConstraintType nameSegments
@@ -3709,7 +3727,7 @@ module SurfaceElaboration =
 
                 traitInfo.Name,
                 { Identity = traitIdentity moduleIdentity traitInfo.Name
-                  TypeParameters = [ for index in 1 .. traitInfo.TypeParameterCount -> $"t{index}" ]
+                  TypeParameters = [ for index in 1 .. traitInfo.TypeParameterCount -> typeVariableName $"t{index}" ]
                   Supertraits = []
                   Members = members })
             |> Map.ofList
@@ -4975,22 +4993,28 @@ module SurfaceElaboration =
                 TypeUnion(members |> List.map (loop visited))
             | TypeName(nameSegments, [ inner ]) when matchesKnownType CompilerKnownSymbols.IOType nameSegments ->
                 TypeName(nameSegments, [ voidType; loop visited inner ])
-            | TypeName([ name ], arguments) ->
+            | TypeName(nameReference, arguments) ->
                 let normalizedArguments = arguments |> List.map (loop visited)
 
-                match aliases |> Map.tryFind name with
-                | Some aliasInfo
-                    when not (Set.contains name visited)
-                         && aliasInfo.ConversionReducible
-                         && List.length aliasInfo.Parameters = List.length normalizedArguments ->
-                    let substitution = List.zip aliasInfo.Parameters normalizedArguments |> Map.ofList
-                    aliasInfo.Body
-                    |> TypeSignatures.applySubstitution substitution
-                    |> loop (Set.add name visited)
+                match TypeSignatures.TypeReference.segments nameReference with
+                | [ name ] ->
+                    match aliases |> Map.tryFind name with
+                    | Some aliasInfo
+                        when not (Set.contains name visited)
+                             && aliasInfo.ConversionReducible
+                             && List.length aliasInfo.Parameters = List.length normalizedArguments ->
+                        let substitution =
+                            List.zip aliasInfo.Parameters normalizedArguments
+                            |> List.map (fun (parameterName, argumentType) -> parameterName, argumentType)
+                            |> Map.ofList
+
+                        aliasInfo.Body
+                        |> TypeSignatures.applySubstitution substitution
+                        |> loop (Set.add name visited)
+                    | _ ->
+                        TypeName(nameReference, normalizedArguments)
                 | _ ->
-                    TypeName([ name ], normalizedArguments)
-            | TypeName(name, arguments) ->
-                TypeName(name, arguments |> List.map (loop visited))
+                    TypeName(nameReference, normalizedArguments)
 
         loop Set.empty
 
@@ -5011,16 +5035,18 @@ module SurfaceElaboration =
 
         collectHeadAndArguments argumentType
         |> Option.bind (fun (nameSegments, arguments) ->
+            let nameSegmentsText = typeReferenceSegments nameSegments
+
             let resolvedTrait =
-                match nameSegments with
+                match nameSegmentsText with
                 | [ traitName ] ->
                     environment.VisibleTraits |> Map.tryFind traitName
                 | _ ->
-                    environment.VisibleQualifiedTraits |> Map.tryFind nameSegments
+                    environment.VisibleQualifiedTraits |> Map.tryFind nameSegmentsText
 
             resolvedTrait
             |> Option.filter (fun traitInfo -> List.length traitInfo.TypeParameters = List.length arguments)
-            |> Option.map (fun traitInfo -> traitInfo, nameSegments, arguments))
+            |> Option.map (fun traitInfo -> traitInfo, nameSegmentsText, arguments))
 
     let rec private tryUnwrapBindablePayloadType
         (aliases: Map<string, TypeAliasInfo>)
@@ -5536,8 +5562,8 @@ module SurfaceElaboration =
             layout
 
     let private composeTypeSubstitution
-        (existing: Map<string, TypeExpr>)
-        (next: Map<string, TypeExpr>)
+        (existing: Map<TypeVariableName, TypeExpr>)
+        (next: Map<TypeVariableName, TypeExpr>)
         =
         let rewrittenExisting =
             existing
@@ -5567,7 +5593,7 @@ module SurfaceElaboration =
         | TypeIntrinsic LabelClassifier
         | TypeIntrinsic EffLabelClassifier ->
             true
-        | TypeName([ "Type" ], []) ->
+        | TypeName(nameSegments, []) when TypeSignatures.TypeReference.segments nameSegments = [ "Type" ] ->
             true
         | TypeName(nameSegments, []) when
             matchesKnownType CompilerKnownSymbols.ConstraintType nameSegments
@@ -5599,7 +5625,7 @@ module SurfaceElaboration =
             | TypeIntrinsic LabelClassifier
             | TypeIntrinsic EffLabelClassifier ->
                 true
-            | TypeName([ "Type" ], []) ->
+            | TypeName(nameSegments, []) when TypeSignatures.TypeReference.segments nameSegments = [ "Type" ] ->
                 true
             | TypeName(nameSegments, []) when
                 matchesKnownType CompilerKnownSymbols.ConstraintType nameSegments
@@ -5654,20 +5680,21 @@ module SurfaceElaboration =
             | TypeProject(target, fieldName) ->
                 TypeProject(loop target, fieldName)
             | TypeName(nameSegments, arguments) ->
-                match tryResolveHandledEffectDeclaration environment (Name nameSegments), nameSegments with
+                let currentSegments = TypeSignatures.TypeReference.segments nameSegments
+                match tryResolveHandledEffectDeclaration environment (Name currentSegments), currentSegments with
                 | Some declaration, _ ->
-                    TypeName(scopedEffectInterfaceNameSegments declaration, arguments |> List.map loop)
+                    typeName (scopedEffectInterfaceNameSegments declaration) (arguments |> List.map loop)
                 | None, [ name ] ->
                     match tryFindVisibleStaticGroup environment [ name ] with
                     | Some group when group.StaticObject |> Option.exists (fun staticObject -> staticObject.ObjectKind = TypeObject) ->
                         let staticObject = group.StaticObject.Value
-                        TypeName(staticObject.NameSegments, arguments |> List.map loop)
+                        typeName staticObject.NameSegments (arguments |> List.map loop)
                     | Some group when group.TypeFacet.IsSome ->
                         let typeFacet = group.TypeFacet.Value
                         let qualifiedName =
                             (ModuleIdentity.segments typeFacet.ModuleIdentity) @ [ typeFacet.Name ]
 
-                        TypeName(qualifiedName, arguments |> List.map loop)
+                        typeName qualifiedName (arguments |> List.map loop)
                     | _ ->
                         let aliasedSameSpellingTypeName =
                             environment.VisibleConstructors
@@ -5683,7 +5710,7 @@ module SurfaceElaboration =
 
                         match aliasedSameSpellingTypeName with
                         | Some localAlias ->
-                            TypeName([ localAlias ], arguments |> List.map loop)
+                            typeName [ localAlias ] (arguments |> List.map loop)
                         | None ->
                             TypeName(nameSegments, arguments |> List.map loop)
                 | _ ->
@@ -5716,8 +5743,8 @@ module SurfaceElaboration =
 
         and qualifyScopedEffectLabel current =
             match normalizeTypeAliases environment.VisibleTypeAliases current with
-            | TypeName(nameSegments, []) when not (List.isEmpty nameSegments) ->
-                match tryResolveHandledEffectDeclaration environment (Name nameSegments) with
+            | TypeName(nameSegments, []) when not (List.isEmpty (TypeSignatures.TypeReference.segments nameSegments)) ->
+                match tryResolveHandledEffectDeclaration environment (Name(TypeSignatures.TypeReference.segments nameSegments)) with
                 | Some declaration -> scopedEffectLabelType declaration
                 | None -> loop current
             | _ ->
@@ -5816,7 +5843,7 @@ module SurfaceElaboration =
                         |> List.fold (fun state field ->
                             let fieldType =
                                 recordFields
-                                |> List.tryFind (fun recordField -> String.Equals(recordField.Name, field.Name, StringComparison.Ordinal))
+                                |> List.tryFind (fun recordField -> String.Equals(TypeSignatures.FieldName.text recordField.Name, field.Name, StringComparison.Ordinal))
                                 |> Option.map (fun recordField -> recordField.Type)
 
                             loop state fieldType field.Pattern) locals
@@ -5828,7 +5855,7 @@ module SurfaceElaboration =
 
                         let residualFields =
                             recordFields
-                            |> List.filter (fun field -> not (Set.contains field.Name mentioned))
+                            |> List.filter (fun field -> not (Set.contains (TypeSignatures.FieldName.text field.Name) mentioned))
 
                         Map.add name (TypeRecord residualFields) afterFields
                     | _ ->
@@ -6053,7 +6080,7 @@ module SurfaceElaboration =
                 =
                 match remainingBinders, remainingParameters with
                 | binder :: restBinders, parameter :: restParameters
-                    when String.Equals(binder.Name, parameter.Name, StringComparison.Ordinal) ->
+                    when String.Equals(typeVariableNameText binder.Name, parameter.Name, StringComparison.Ordinal) ->
                     loop restBinders restParameters (parameter :: consumed)
                 | _ ->
                     List.rev consumed, remainingParameters
@@ -6112,7 +6139,7 @@ module SurfaceElaboration =
             match scheme with
             | Some scheme ->
                 scheme.Forall
-                |> List.map (fun binder -> binder.Name, binder.Sort)
+                |> List.map (fun binder -> typeVariableNameText binder.Name, binder.Sort)
             | None ->
                 []
 
@@ -6333,7 +6360,7 @@ module SurfaceElaboration =
                 Some normalizedType
             | fieldName :: rest, TypeRecord fields ->
                 fields
-                |> List.tryFind (fun field -> String.Equals(field.Name, fieldName, StringComparison.Ordinal))
+                |> List.tryFind (fun field -> String.Equals(fieldNameText field.Name, fieldName, StringComparison.Ordinal))
                 |> Option.bind (fun field -> loop field.Type rest)
             | _ ->
                 None
@@ -6472,9 +6499,9 @@ module SurfaceElaboration =
     let rec private tryParseTypeLikeSurfaceExpression expression =
         match expression with
         | Name segments when not (List.isEmpty segments) ->
-            Some(TypeName(segments, []))
+            Some(typeName segments [])
         | NumericLiteral(SurfaceIntegerLiteral(value, _, None)) when value = 0I || value = 1I ->
-            Some(TypeName([ value.ToString() ], []))
+            Some(typeName [ value.ToString() ] [])
         | Apply(head, arguments) ->
             match tryParseTypeLikeSurfaceExpression head, arguments |> List.map tryParseTypeLikeSurfaceExpression with
             | Some(TypeName(name, existingArguments)), parsedArguments when parsedArguments |> List.forall Option.isSome ->
@@ -6630,7 +6657,7 @@ module SurfaceElaboration =
                     loop { currentMode with Card = QuerySemantics.filterCard currentMode.Card } currentLocals currentQuantities rest
                 | GroupByClause(_, _, intoName) ->
                     let nextLocals =
-                        Map.add intoName (TypeVariable $"__kappa_group_{intoName}") Map.empty
+                        Map.add intoName (TypeVariable(typeVariableName $"__kappa_group_{intoName}")) Map.empty
 
                     loop currentMode nextLocals Map.empty rest
                 | OrderByClause _ ->
@@ -6645,35 +6672,32 @@ module SurfaceElaboration =
                     trySourceInfo currentLocals source
                     |> Option.bind (fun sourceInfo ->
                         let intoQueryType =
-                            TypeName(
-                                CompilerKnownSymbols.KnownTypePaths.bare CompilerKnownSymbols.KnownTypeNames.QueryCore,
+                            typeName
+                                (CompilerKnownSymbols.KnownTypePaths.bare CompilerKnownSymbols.KnownTypeNames.QueryCore)
                                 [
-                                    TypeName(
-                                        [ CompilerKnownSymbols.KnownTypeNames.QueryMode; CompilerKnownSymbols.KnownTypeNames.QueryMode ],
+                                    typeName
+                                        [ CompilerKnownSymbols.KnownTypeNames.QueryMode
+                                          CompilerKnownSymbols.KnownTypeNames.QueryMode ]
                                         [
-                                            TypeName(
+                                            typeName
                                                 [ CompilerKnownSymbols.KnownTypeNames.QueryUse
                                                   match sourceInfo.Query.Mode.Use with
                                                   | QuerySemantics.Reusable -> CompilerKnownSymbols.KnownTypeNames.QueryModeReusable
-                                                  | QuerySemantics.OneShot -> CompilerKnownSymbols.KnownTypeNames.QueryModeOneShot ],
+                                                  | QuerySemantics.OneShot -> CompilerKnownSymbols.KnownTypeNames.QueryModeOneShot ]
                                                 []
-                                            )
-                                            TypeName(
+                                            typeName
                                                 [ CompilerKnownSymbols.KnownTypeNames.QueryCard
                                                   match sourceInfo.Query.Mode.Card with
                                                   | QuerySemantics.QZero -> CompilerKnownSymbols.KnownTypeNames.QueryCardZero
                                                   | QuerySemantics.QOne -> CompilerKnownSymbols.KnownTypeNames.QueryCardOne
                                                   | QuerySemantics.QZeroOrOne -> CompilerKnownSymbols.KnownTypeNames.QueryCardZeroOrOne
                                                   | QuerySemantics.QOneOrMore -> CompilerKnownSymbols.KnownTypeNames.QueryCardOneOrMore
-                                                  | QuerySemantics.QZeroOrMore -> CompilerKnownSymbols.KnownTypeNames.QueryCardZeroOrMore ],
+                                                  | QuerySemantics.QZeroOrMore -> CompilerKnownSymbols.KnownTypeNames.QueryCardZeroOrMore ]
                                                 []
-                                            )
                                         ]
-                                    )
-                                    TypeName([ ResourceQuantity.toSurfaceText sourceInfo.Query.ItemQuantity ], [])
+                                    typeName [ ResourceQuantity.toSurfaceText sourceInfo.Query.ItemQuantity ] []
                                     sourceInfo.Query.ItemType
                                 ]
-                            )
 
                         let nextLocals = Map.add intoName intoQueryType currentLocals
                         loop currentMode nextLocals currentQuantities rest)
@@ -6696,35 +6720,32 @@ module SurfaceElaboration =
         |> Option.bind (fun carrier ->
             tryInferComprehensionPlanShape environment freshCounter localTypes inferExpressionType carrier.Comprehension
             |> Option.map (fun plan ->
-                TypeName(
-                    CompilerKnownSymbols.KnownTypePaths.bare CompilerKnownSymbols.KnownTypeNames.QueryCore,
+                typeName
+                    (CompilerKnownSymbols.KnownTypePaths.bare CompilerKnownSymbols.KnownTypeNames.QueryCore)
                     [
-                        TypeName(
-                            [ CompilerKnownSymbols.KnownTypeNames.QueryMode; CompilerKnownSymbols.KnownTypeNames.QueryMode ],
+                        typeName
+                            [ CompilerKnownSymbols.KnownTypeNames.QueryMode
+                              CompilerKnownSymbols.KnownTypeNames.QueryMode ]
                             [
-                                TypeName(
+                                typeName
                                     [ CompilerKnownSymbols.KnownTypeNames.QueryUse
                                       match carrier.ExpectedMode.Use with
                                       | QuerySemantics.Reusable -> CompilerKnownSymbols.KnownTypeNames.QueryModeReusable
-                                      | QuerySemantics.OneShot -> CompilerKnownSymbols.KnownTypeNames.QueryModeOneShot ],
+                                      | QuerySemantics.OneShot -> CompilerKnownSymbols.KnownTypeNames.QueryModeOneShot ]
                                     []
-                                )
-                                TypeName(
+                                typeName
                                     [ CompilerKnownSymbols.KnownTypeNames.QueryCard
                                       match carrier.ExpectedMode.Card with
                                       | QuerySemantics.QZero -> CompilerKnownSymbols.KnownTypeNames.QueryCardZero
                                       | QuerySemantics.QOne -> CompilerKnownSymbols.KnownTypeNames.QueryCardOne
                                       | QuerySemantics.QZeroOrOne -> CompilerKnownSymbols.KnownTypeNames.QueryCardZeroOrOne
                                       | QuerySemantics.QOneOrMore -> CompilerKnownSymbols.KnownTypeNames.QueryCardOneOrMore
-                                      | QuerySemantics.QZeroOrMore -> CompilerKnownSymbols.KnownTypeNames.QueryCardZeroOrMore ],
+                                      | QuerySemantics.QZeroOrMore -> CompilerKnownSymbols.KnownTypeNames.QueryCardZeroOrMore ]
                                     []
-                                )
                             ]
-                        )
-                        TypeName([ ResourceQuantity.toSurfaceText carrier.ExpectedItemQuantity ], [])
+                        typeName [ ResourceQuantity.toSurfaceText carrier.ExpectedItemQuantity ] []
                         plan.InferredItemType
-                    ]
-                )))
+                    ]))
 
     type private TypedQueryOrderedness =
         | TypedKnownOrdered
@@ -6766,11 +6787,13 @@ module SurfaceElaboration =
 
             let rec renderTypedTypeText current =
                 let renderTypeName name =
-                    if List.length name = List.length CompilerKnownSymbols.KnownModules.Prelude + 1
-                       && (CompilerKnownSymbols.KnownTypes.tryClassifyName name |> Option.isSome) then
-                        List.last name
+                    let segments = typeReferenceSegments name
+
+                    if List.length segments = List.length CompilerKnownSymbols.KnownModules.Prelude + 1
+                       && (CompilerKnownSymbols.KnownTypes.tryClassifyName segments |> Option.isSome) then
+                        List.last segments
                     else
-                        SyntaxFacts.moduleNameToText name
+                        SyntaxFacts.moduleNameToText segments
 
                 let renderArgument current =
                     match current with
@@ -6830,7 +6853,7 @@ module SurfaceElaboration =
                 let missingType prefix =
                     let id = freshCounter.Value
                     freshCounter.Value <- freshCounter.Value + 1
-                    TypeVariable $"{prefix}{id}"
+                    TypeVariable(typeVariableName $"{prefix}{id}")
 
                 match rowNames with
                 | [] ->
@@ -6838,13 +6861,12 @@ module SurfaceElaboration =
                 | [ name ] ->
                     currentLocals |> Map.tryFind name |> Option.defaultValue (missingType "queryRow")
                 | name :: rest ->
-                    TypeName(
-                        CompilerKnownSymbols.KnownTypePaths.bare CompilerKnownSymbols.KnownTypeNames.Res,
+                    typeName
+                        (CompilerKnownSymbols.KnownTypePaths.bare CompilerKnownSymbols.KnownTypeNames.Res)
                         [
                             currentLocals |> Map.tryFind name |> Option.defaultValue (missingType "queryRow")
                             rowTypeOf rest currentLocals
                         ]
-                    )
 
             let listType itemType = knownTypeExpr CompilerKnownSymbols.ListType [ itemType ]
 
@@ -6960,7 +6982,7 @@ module SurfaceElaboration =
                                     let itemType =
                                         sourceInfo
                                         |> Option.map (fun info -> info.Query.ItemType)
-                                        |> Option.defaultValue (TypeVariable "QueryItem")
+                                        |> Option.defaultValue (TypeVariable(typeVariableName "QueryItem"))
                                     let sourceItemsType =
                                         inferExpressionType currentLocals enumeratedSourceExpression
                                         |> Option.defaultValue (listType itemType)
@@ -6988,7 +7010,7 @@ module SurfaceElaboration =
                                 | LetClause(_, binding, valueExpression) ->
                                     let valueType =
                                         inferExpressionType currentLocals valueExpression
-                                        |> Option.defaultValue (TypeVariable "QueryLet")
+                                        |> Option.defaultValue (TypeVariable(typeVariableName "QueryLet"))
                                     let typedBinding = cloneBindingWithTypeIfMissing binding valueType
                                     let nextLocals =
                                         extendBindingLocalTypes environment freshCounter currentLocals typedBinding (Some valueType)
@@ -7021,7 +7043,11 @@ module SurfaceElaboration =
                 let sourceItemsName = freshSyntheticName "__query_for_source_items"
                 let currentRowType = rowTypeOf state.RowNames state.CurrentLocals
                 let sourceInfo = trySourceInfo state.CurrentLocals sourceExpression
-                let itemType = sourceInfo |> Option.map (fun info -> info.Query.ItemType) |> Option.defaultValue (TypeVariable "QueryItem")
+                let itemType =
+                    sourceInfo
+                    |> Option.map (fun info -> info.Query.ItemType)
+                    |> Option.defaultValue (TypeVariable(typeVariableName "QueryItem"))
+
                 let nextLocals = extendBindingLocalTypes environment freshCounter state.CurrentLocals binding (Some itemType)
                 let nextRowType = rowTypeOf nextRowNames nextLocals
                 let currentRowsType = listType currentRowType
@@ -7090,7 +7116,7 @@ module SurfaceElaboration =
                 let currentRowsType = listType currentRowType
                 let valueType =
                     inferExpressionType state.CurrentLocals valueExpression
-                    |> Option.defaultValue (TypeVariable "QueryLet")
+                    |> Option.defaultValue (TypeVariable(typeVariableName "QueryLet"))
                 let typedBinding = cloneBindingWithTypeIfMissing binding valueType
                 let nextLocals = extendBindingLocalTypes environment freshCounter state.CurrentLocals typedBinding (Some valueType)
                 let nextRowType = rowTypeOf nextRowNames nextLocals
@@ -7183,7 +7209,7 @@ module SurfaceElaboration =
                 let rowsType = listType currentRowType
                 let keyType =
                     inferExpressionType state.CurrentLocals keyExpression
-                    |> Option.defaultValue (TypeVariable "QueryOrderKey")
+                    |> Option.defaultValue (TypeVariable(typeVariableName "QueryOrderKey"))
                 let pairType = knownTypeExpr CompilerKnownSymbols.ResType [ keyType; currentRowType ]
                 let pairListType = listType pairType
                 let insertType = functionType [ pairType; pairListType ] pairListType
@@ -7344,7 +7370,7 @@ module SurfaceElaboration =
                 let currentRowType = rowTypeOf state.RowNames state.CurrentLocals
                 let yieldedType =
                     inferExpressionType state.CurrentLocals yieldedExpression
-                    |> Option.defaultValue (TypeVariable "QueryYield")
+                    |> Option.defaultValue (TypeVariable(typeVariableName "QueryYield"))
                 let rowsType = listType currentRowType
                 let resultRowsType = listType yieldedType
                 let loopType = functionType [ rowsType ] resultRowsType
@@ -7477,12 +7503,17 @@ module SurfaceElaboration =
                         None))
 
         match normalizeTypeAliases environment.VisibleTypeAliases receiverType with
-        | TypeName([ traitName ], arguments) ->
+        | TypeName(nameReference, arguments) when typeReferenceSegments nameReference |> List.length = 1 ->
+            let traitName = nameReference |> typeReferenceSegments |> List.head
             tryResolveVisibleTraitByRoot environment traitName
             |> Option.bind (fun _ -> tryFindOwnerTrait (TypeSignatures.TraitReference.unqualified traitName) arguments memberName)
         | TypeName(qualifiedName, arguments) ->
-            tryResolveVisibleTraitInfo environment qualifiedName
-            |> Option.bind (fun _ -> tryFindOwnerTrait (TypeSignatures.TraitReference.ofSegments qualifiedName) arguments memberName)
+            tryResolveVisibleTraitInfo environment (typeReferenceSegments qualifiedName)
+            |> Option.bind (fun _ ->
+                tryFindOwnerTrait
+                    (TypeSignatures.TraitReference.ofSegments (typeReferenceSegments qualifiedName))
+                    arguments
+                    memberName)
         | _ ->
             None
 
@@ -7695,7 +7726,7 @@ module SurfaceElaboration =
             tryLowerCompilerIssuedTraitEvidence environment body
             |> Option.map (fun loweredBody ->
                 KCoreLambda(
-                    [ lowerSyntheticKCoreParameter parameterName (Some QuantityZero) false (Some parameterSort) ],
+                    [ lowerSyntheticKCoreParameter (typeVariableNameText parameterName) (Some QuantityZero) false (Some parameterSort) ],
                     loweredBody
                 ))
         | TypeName(nameSegments, [ argumentType ]) when matchesKnownType CompilerKnownSymbols.IsTraitType nameSegments ->
@@ -7941,7 +7972,8 @@ module SurfaceElaboration =
                   Arguments = arguments }
         | None ->
             match normalizeTypeAliases environment.VisibleTypeAliases parameterType with
-            | TypeName([ traitName ], arguments) ->
+            | TypeName(nameReference, arguments) when typeReferenceSegments nameReference |> List.length = 1 ->
+                let traitName = nameReference |> typeReferenceSegments |> List.head
                 environment.VisibleTraits
                 |> Map.toSeq
                 |> Seq.tryFind (fun (_, traitInfo) ->
@@ -8288,11 +8320,11 @@ module SurfaceElaboration =
 
                 match normalizedCurrent with
                 | TypeName(nameSegments, []) ->
-                    tryFindVisibleStaticObject environment nameSegments
+                    tryFindVisibleStaticObject environment (typeReferenceSegments nameSegments)
                     |> Option.bind (fun staticObject ->
                         match staticObject.ObjectKind with
                         | TypeObject ->
-                            loop visited (TypeName(staticObject.NameSegments, []))
+                            loop visited (typeName staticObject.NameSegments [])
                         | _ ->
                             None)
                     |> Option.orElseWith (fun () ->
@@ -8395,15 +8427,15 @@ module SurfaceElaboration =
 
             match isLocalCompileTimeBinder, inferArgumentType expression with
             | true, _ ->
-                Some(TypeVariable name)
+                Some(TypeVariable(typeVariableName name))
             | false, Some inferredType when isCompileTimeArgumentType environment.VisibleTypeAliases inferredType ->
-                Some(TypeName([ name ], []))
+                Some(typeName [ name ] [])
             | _ ->
-                Some(TypeName([ name ], []))
+                Some(typeName [ name ] [])
         | Name segments when not (List.isEmpty segments) ->
-            Some(TypeName(segments, []))
+            Some(typeName segments [])
         | NumericLiteral(SurfaceIntegerLiteral(value, _, None)) when value = 0I || value = 1I ->
-            Some(TypeName([ value.ToString() ], []))
+            Some(typeName [ value.ToString() ] [])
         | Apply(head, arguments) ->
             match
                 tryParseVisibleCompileTimeArgumentType environment localTypes inferArgumentType head,
@@ -8430,7 +8462,7 @@ module SurfaceElaboration =
         let rec loop
             (pendingForall: TypeSignatures.ForallBinder list)
             (pendingArguments: SurfaceExpression list)
-            (substitution: Map<string, TypeExpr>)
+            (substitution: Map<TypeVariableName, TypeExpr>)
             =
             match pendingForall, pendingArguments with
             | binder :: restForall, ExplicitImplicitArgument explicitArgument :: restArguments ->
@@ -8451,8 +8483,8 @@ module SurfaceElaboration =
 
     type private SpecializedBindingApplication =
         { InstantiatedScheme: TypeScheme
-          ExplicitTypeApplicationSubstitution: Map<string, TypeExpr>
-          LayoutTypeSubstitution: Map<string, TypeExpr>
+          ExplicitTypeApplicationSubstitution: Map<TypeVariableName, TypeExpr>
+          LayoutTypeSubstitution: Map<TypeVariableName, TypeExpr>
           RemainingArguments: SurfaceExpression list }
 
     let private trySpecializeBindingApplication
@@ -8533,10 +8565,12 @@ module SurfaceElaboration =
                 current
             | TypeUniverse(Some universeExpr) ->
                 TypeUniverse(Some(rewrite bound universeExpr))
-            | TypeName([ name ], [])
-                when Set.contains name compileTimeLocalNames
-                     && not (Set.contains name bound) ->
-                TypeVariable name
+            | TypeName(nameReference, []) ->
+                match typeReferenceSegments nameReference with
+                | [ name ] when Set.contains name compileTimeLocalNames && not (Set.contains (typeVariableName name) bound) ->
+                    TypeVariable(typeVariableName name)
+                | _ ->
+                    TypeName(nameReference, [])
             | TypeName(nameSegments, arguments) ->
                 TypeName(nameSegments, arguments |> List.map (rewrite bound))
             | TypeApply(callee, arguments) ->
@@ -8700,7 +8734,7 @@ module SurfaceElaboration =
 
     let private tryAlignParameterTypesWithLayouts
         (environment: BindingLoweringEnvironment)
-        (layoutTypeSubstitution: Map<string, TypeExpr>)
+        (layoutTypeSubstitution: Map<TypeVariableName, TypeExpr>)
         (layouts: Parameter list)
         (parameterTypes: TypeExpr list)
         =
@@ -8750,7 +8784,7 @@ module SurfaceElaboration =
 
     let private tryBuildParameterAlignmentSlots
         (environment: BindingLoweringEnvironment)
-        (layoutTypeSubstitution: Map<string, TypeExpr>)
+        (layoutTypeSubstitution: Map<TypeVariableName, TypeExpr>)
         (layouts: Parameter list)
         (parameterTypes: TypeExpr list)
         =
@@ -9293,7 +9327,7 @@ module SurfaceElaboration =
                                             substitution <-
                                                 composeTypeSubstitution
                                                     substitution
-                                                    (Map.ofList [ parameterLayout.Name, explicitTypeArgument ])
+                                                    (Map.ofList [ typeVariableName parameterLayout.Name, explicitTypeArgument ])
                                             preparedParameters.Add(
                                                 { Layout = Some parameterLayout
                                                   ParameterType = parameterType
@@ -9319,7 +9353,7 @@ module SurfaceElaboration =
                                                         localImplicitTypes
                                                         inferArgumentType
                                                         explicitArgument
-                                                    |> Option.map (fun argumentType -> Map.ofList [ parameterLayout.Name, argumentType ])
+                                                    |> Option.map (fun argumentType -> Map.ofList [ typeVariableName parameterLayout.Name, argumentType ])
                                                     |> Option.defaultValue Map.empty
 
                                                 substitution <-
@@ -9363,7 +9397,7 @@ module SurfaceElaboration =
                                         substitution <-
                                             composeTypeSubstitution
                                                 substitution
-                                                (Map.ofList [ parameterLayout.Name, explicitTypeArgument ])
+                                                (Map.ofList [ typeVariableName parameterLayout.Name, explicitTypeArgument ])
                                         preparedParameters.Add(
                                             { Layout = Some parameterLayout
                                               ParameterType = parameterType
@@ -9385,7 +9419,7 @@ module SurfaceElaboration =
                                             substitution <-
                                                 composeTypeSubstitution
                                                     substitution
-                                                    (Map.ofList [ parameterLayout.Name, explicitTypeArgument ])
+                                                    (Map.ofList [ typeVariableName parameterLayout.Name, explicitTypeArgument ])
                                             preparedParameters.Add(
                                                 { Layout = Some parameterLayout
                                                   ParameterType = parameterType
@@ -9454,7 +9488,7 @@ module SurfaceElaboration =
                                                     localImplicitTypes
                                                     inferArgumentType
                                                     nextArgument
-                                                |> Option.map (fun argumentType -> Map.ofList [ parameterLayout.Name, argumentType ])
+                                                |> Option.map (fun argumentType -> Map.ofList [ typeVariableName parameterLayout.Name, argumentType ])
                                                 |> Option.defaultValue Map.empty
 
                                             substitution <-
@@ -9884,7 +9918,7 @@ module SurfaceElaboration =
 
             match normalizeTypeAliases environment.VisibleTypeAliases resultType with
             | TypeName(resultName, _) ->
-                tryResolveVisibleTypeFacetInfo environment resultName
+                tryResolveVisibleTypeFacetInfo environment (typeReferenceSegments resultName)
                 |> Option.exists (fun resultTypeFacet -> resultTypeFacet.Identity = typeFacetInfo.Identity)
             | _ ->
                 false
@@ -10052,7 +10086,7 @@ module SurfaceElaboration =
             | None ->
                 Some(inferSurfaceNumericLiteralType literal)
         | TypeSyntaxTokens tokens ->
-            TypeSignatures.parseType tokens |> Option.map (fun _ -> TypeName([ "Type" ], []))
+            TypeSignatures.parseType tokens |> Option.map (fun _ -> typeName [ "Type" ] [])
         | SyntaxQuote inner ->
             inferValidationExpressionTypeWithContext environment freshCounter localTypes localImplicitTypes inner
             |> Option.map syntaxType
@@ -10343,7 +10377,7 @@ module SurfaceElaboration =
                 |> List.map (fun parameter ->
                     tryParseParameterType parameter
                     |> Option.map (qualifyVisibleTypeNames environment)
-                    |> Option.defaultValue (TypeVariable $"lambda{freshCounter.Value}"))
+                    |> Option.defaultValue (TypeVariable(typeVariableName $"lambda{freshCounter.Value}")))
 
             let parameterQuantities =
                 parameters
@@ -10403,7 +10437,7 @@ module SurfaceElaboration =
                 |> List.map (fun field ->
                     inferValidationExpressionTypeWithContext environment freshCounter localTypes localImplicitTypes field.Value
                     |> Option.map (fun fieldType ->
-                        ({ Name = field.Name
+                        ({ Name = TypeSignatures.FieldName.create field.Name
                            Quantity = if field.IsImplicit then QuantityZero else QuantityOmega
                            Type = fieldType }: TypeSignatures.RecordField)))
 
@@ -11011,7 +11045,7 @@ module SurfaceElaboration =
                         remainingParameters
                         |> List.zip (fields |> List.skip 1)
                         |> List.forall (fun (field, parameter) ->
-                            String.Equals(parameter.Name, field.Name, StringComparison.Ordinal)
+                            String.Equals(parameter.Name, fieldNameText field.Name, StringComparison.Ordinal)
                             && (parameter.TypeTokens
                                 |> Option.bind TypeSignatures.parseType
                                 |> Option.map (fun parameterType ->
@@ -11023,7 +11057,7 @@ module SurfaceElaboration =
                         false
 
                 let firstParameterMatchesFirstField =
-                    String.Equals(firstParameter.Name, fields.Head.Name, StringComparison.Ordinal)
+                    String.Equals(firstParameter.Name, fieldNameText fields.Head.Name, StringComparison.Ordinal)
 
                 if not firstParameterMatchesFirstField
                    || not (collapsedLegacyRecordParameter || (parameterCountMatches && trailingParametersMatchFieldTypes)) then
@@ -11045,9 +11079,9 @@ module SurfaceElaboration =
                             AnonymousRecordPattern(
                                 fields
                                 |> List.map (fun field ->
-                                    { Name = field.Name
+                                    { Name = fieldNameText field.Name
                                       IsImplicit = false
-                                      Pattern = NamePattern field.Name }),
+                                      Pattern = NamePattern(fieldNameText field.Name) }),
                                 None
                             )
                           Quantity = None
@@ -11271,7 +11305,7 @@ module SurfaceElaboration =
                 fields
                 |> List.exists (fun field ->
                     field.Quantity = QuantityOne
-                    && String.Equals(field.Name, parameterName, StringComparison.Ordinal))
+                    && String.Equals(fieldNameText field.Name, parameterName, StringComparison.Ordinal))
             | _ ->
                 false
 
@@ -12532,17 +12566,15 @@ module SurfaceElaboration =
                         | QuerySemantics.QOneOrMore -> "QOneOrMore"
                         | QuerySemantics.QZeroOrMore -> "QZeroOrMore"
 
-                    TypeName(
-                        CompilerKnownSymbols.KnownTypePaths.bare CompilerKnownSymbols.KnownTypeNames.QueryCore,
+                    typeName
+                        (CompilerKnownSymbols.KnownTypePaths.bare CompilerKnownSymbols.KnownTypeNames.QueryCore)
                         [
-                            TypeName(
-                                CompilerKnownSymbols.KnownTypePaths.bare CompilerKnownSymbols.KnownTypeNames.QueryMode,
-                                [ TypeName([ useName ], []); TypeName([ cardName ], []) ]
-                            )
-                            TypeName([ ResourceQuantity.toSurfaceText queryType.ItemQuantity ], [])
+                            typeName
+                                (CompilerKnownSymbols.KnownTypePaths.bare CompilerKnownSymbols.KnownTypeNames.QueryMode)
+                                [ typeName [ useName ] []; typeName [ cardName ] [] ]
+                            typeName [ ResourceQuantity.toSurfaceText queryType.ItemQuantity ] []
                             canonicalize queryType.ItemType
                         ]
-                    )
                 | None ->
                     match normalized with
                     | TypeName(nameSegments, arguments) ->
@@ -13127,7 +13159,7 @@ module SurfaceElaboration =
             let tryRecordInfoFromType typeExpr =
                 match typeExpr with
                 | TypeName(nameSegments, []) ->
-                    nameSegments
+                    typeReferenceSegments nameSegments
                     |> List.tryLast
                     |> Option.bind (fun name -> environment.VisibleRecordTypes |> Map.tryFind name)
                     |> Option.orElseWith (fun () ->
@@ -13137,7 +13169,7 @@ module SurfaceElaboration =
                                 { Fields =
                                     fields
                                     |> List.map (fun field ->
-                                        { Name = field.Name
+                                        { Name = fieldNameText field.Name
                                           IsOpaque = false
                                           IsImplicit = field.Quantity = QuantityZero
                                           TypeTokens = [] })
@@ -13356,7 +13388,8 @@ module SurfaceElaboration =
 
         let typeHeadName typeExpr =
             match typeExpr with
-            | TypeName(nameSegments, _) when not (List.isEmpty nameSegments) -> Some(List.last nameSegments)
+            | TypeName(nameSegments, _) when not (List.isEmpty (typeReferenceSegments nameSegments)) ->
+                Some(List.last (typeReferenceSegments nameSegments))
             | _ -> None
 
         let rec finalResultType typeExpr =
@@ -13494,7 +13527,7 @@ module SurfaceElaboration =
         let tryRecordInfoFromTypeExpr typeExpr =
             match typeExpr with
             | TypeName(nameSegments, []) ->
-                nameSegments
+                typeReferenceSegments nameSegments
                 |> List.tryLast
                 |> Option.bind tryRecordInfoFromTypeName
                 |> Option.orElseWith (fun () ->
@@ -13504,7 +13537,7 @@ module SurfaceElaboration =
                             { Fields =
                                 fields
                                 |> List.map (fun field ->
-                                    { Name = field.Name
+                                    { Name = fieldNameText field.Name
                                       IsOpaque = false
                                       IsImplicit = field.Quantity = QuantityZero
                                       TypeTokens = [] })
@@ -13518,7 +13551,7 @@ module SurfaceElaboration =
                         { Fields =
                             fields
                             |> List.map (fun field ->
-                                { Name = field.Name
+                                { Name = fieldNameText field.Name
                                   IsOpaque = false
                                   IsImplicit = field.Quantity = QuantityZero
                                   TypeTokens = [] })
@@ -13562,8 +13595,8 @@ module SurfaceElaboration =
             | Name(root :: _) -> tryRecordInfoForRoot locals root
             | _ -> None
 
-        let trueTermType = TypeName([ "True" ], [])
-        let falseTermType = TypeName([ "False" ], [])
+        let trueTermType = typeName [ "True" ] []
+        let falseTermType = typeName [ "False" ] []
         let emptyStableAliases: Map<string, string> = Map.empty
         let emptyStaticAliases: Map<string list, StaticObjectInfo> = Map.empty
         let emptyConstructorFacts: Map<string, string option * Set<string>> = Map.empty
@@ -13606,7 +13639,7 @@ module SurfaceElaboration =
         let visibleConstructorsForType typeExpr =
             match normalizeTypeAliases environment.VisibleTypeAliases typeExpr with
             | TypeName(nameSegments, _) ->
-                match List.tryLast nameSegments with
+                match List.tryLast (typeReferenceSegments nameSegments) with
                 | Some typeName ->
                     environment.VisibleConstructors
                     |> Map.values
@@ -13818,7 +13851,7 @@ module SurfaceElaboration =
             | TypeProject(target, _) ->
                 typeContainsLocalTermVariable locals target
             | TypeVariable name ->
-                Map.containsKey name locals
+                Map.containsKey (typeVariableNameText name) locals
             | TypeName(_, arguments) ->
                 arguments |> List.exists (typeContainsLocalTermVariable locals)
             | TypeArrow(_, parameterType, resultType) ->
@@ -13975,7 +14008,7 @@ module SurfaceElaboration =
         let rec tryValidationTypeShape typeExpr =
             match normalizeTypeAliases environment.VisibleTypeAliases typeExpr with
             | TypeName(nameSegments, _) ->
-                Some("name:" + (String.concat "." nameSegments))
+                Some("name:" + (String.concat "." (typeReferenceSegments nameSegments)))
             | TypeApply(callee, _) ->
                 tryValidationTypeShape callee
             | TypeCapture(inner, _) ->
@@ -14212,14 +14245,16 @@ module SurfaceElaboration =
             match normalizeTypeAliases environment.VisibleTypeAliases typeExpr with
             | TypeIntrinsic _ ->
                 true
-            | TypeName(root :: _, []) ->
-                not (
-                    Map.containsKey root locals
-                    || environment.VisibleBindings.ContainsKey(root)
-                    || environment.VisibleConstructors.ContainsKey(root)
-                )
-            | TypeName([], []) ->
-                true
+            | TypeName(nameSegments, []) ->
+                match typeReferenceSegments nameSegments with
+                | root :: _ ->
+                    not (
+                        Map.containsKey root locals
+                        || environment.VisibleBindings.ContainsKey(root)
+                        || environment.VisibleConstructors.ContainsKey(root)
+                    )
+                | [] ->
+                    true
             | _ ->
                 false
 
@@ -14457,8 +14492,8 @@ module SurfaceElaboration =
                                 resolvedConstraintInfo.Trait
                             && match resolvedConstraintInfo.Arguments with
                                | [ TypeVariable row; TypeVariable label ] ->
-                                   String.Equals(row, rowName, StringComparison.Ordinal)
-                                   && String.Equals(label, labelName, StringComparison.Ordinal)
+                                   String.Equals(typeVariableNameText row, rowName, StringComparison.Ordinal)
+                                   && String.Equals(typeVariableNameText label, labelName, StringComparison.Ordinal)
                                | _ ->
                                    false
                         | None ->
@@ -14466,9 +14501,9 @@ module SurfaceElaboration =
                             | TypeName(nameSegments, [ TypeVariable row; TypeVariable label ]) ->
                                 KnownPreludeSemantics.traitNameMatches
                                     KnownPreludeSemantics.LacksRecTraitReference
-                                    nameSegments
-                                && String.Equals(row, rowName, StringComparison.Ordinal)
-                                && String.Equals(label, labelName, StringComparison.Ordinal)
+                                    (typeReferenceSegments nameSegments)
+                                && String.Equals(typeVariableNameText row, rowName, StringComparison.Ordinal)
+                                && String.Equals(typeVariableNameText label, labelName, StringComparison.Ordinal)
                             | _ ->
                                 false))
 
@@ -14482,8 +14517,8 @@ module SurfaceElaboration =
                             (attachResolvedTraitConstraint environment constraintInfo).Trait
                         && match constraintInfo.Arguments with
                            | [ TypeVariable row; TypeVariable label ] ->
-                               String.Equals(row, rowName, StringComparison.Ordinal)
-                               && String.Equals(label, labelName, StringComparison.Ordinal)
+                               String.Equals(typeVariableNameText row, rowName, StringComparison.Ordinal)
+                               && String.Equals(typeVariableNameText label, labelName, StringComparison.Ordinal)
                            | _ ->
                                false))
 
@@ -15845,7 +15880,7 @@ module SurfaceElaboration =
                             with
                             | Some(parameterTypes, []) ->
                                 let remainingArguments = ref specialized.RemainingArguments
-                                let substitution = ref Map.empty<string, TypeExpr>
+                                let substitution = ref Map.empty<TypeVariableName, TypeExpr>
                                 let diagnostics = ResizeArray<Diagnostic>()
 
                                 for parameterLayout, rawParameterType in List.zip parameterLayouts parameterTypes do
@@ -15871,7 +15906,7 @@ module SurfaceElaboration =
                                                 substitution :=
                                                     composeTypeSubstitution
                                                         !substitution
-                                                        (Map.ofList [ parameterLayout.Name, typeArgument ])
+                                                        (Map.ofList [ typeVariableName parameterLayout.Name, typeArgument ])
                                             | None ->
                                                 ()
                                         | [] ->
@@ -15939,7 +15974,7 @@ module SurfaceElaboration =
                                                         substitution :=
                                                             composeTypeSubstitution
                                                                 !substitution
-                                                                (Map.ofList [ parameterLayout.Name, termArgument ])
+                                                                (Map.ofList [ typeVariableName parameterLayout.Name, termArgument ])
                                                     | None ->
                                                         match tryUnifyVisibleTypes environment.VisibleTypeAliases [ parameterType, argumentType ] with
                                                         | Some inferredSubstitution ->
@@ -16255,7 +16290,7 @@ module SurfaceElaboration =
                         |> List.fold (fun state parameter ->
                             let parameterType =
                                 tryParseParameterType parameter
-                                |> Option.defaultValue (TypeVariable $"lambda{freshCounter.Value}")
+                                |> Option.defaultValue (TypeVariable(typeVariableName $"lambda{freshCounter.Value}"))
 
                             Map.add parameter.Name parameterType state) currentLocals
 
@@ -16741,7 +16776,7 @@ module SurfaceElaboration =
                                     validateExpressionWithFlow currentLocals refinements currentLexical aliases staticAliases constructorFacts field.Value)
 
                             let nextLocals =
-                                Map.add intoName (TypeSignatures.TypeVariable $"__kappa_group_{intoName}") Map.empty
+                                Map.add intoName (TypeVariable(typeVariableName $"__kappa_group_{intoName}")) Map.empty
 
                             let nextLexical = Set.singleton intoName
 
@@ -16780,7 +16815,7 @@ module SurfaceElaboration =
                                 validateExpressionWithFlow joinLocals refinements joinLexical aliases staticAliases constructorFacts condition
 
                             let nextLocals =
-                                Map.add intoName (TypeSignatures.TypeVariable $"__kappa_left_join_{intoName}") currentLocals
+                                Map.add intoName (TypeVariable(typeVariableName $"__kappa_left_join_{intoName}")) currentLocals
 
                             let nextLexical = Set.add intoName currentLexical
                             let remainderComprehension =
@@ -17625,7 +17660,7 @@ module SurfaceElaboration =
                     handledBodyType
                     |> Option.bind tryUnwrapEffType
                     |> Option.map snd
-                    |> Option.defaultValue (TypeVariable $"handlePayload{freshCounter.Value}")
+                    |> Option.defaultValue (TypeVariable(typeVariableName $"handlePayload{freshCounter.Value}"))
 
                 let handledEffectSplit =
                     match tryResolveHandledEffectDeclaration environment label, handledBodyType with
@@ -18396,7 +18431,7 @@ module SurfaceElaboration =
                         let parameterType =
                             tryParseParameterType parameter
                             |> Option.map (qualifyVisibleTypeNames environment)
-                            |> Option.defaultValue (TypeVariable $"lambda{freshCounter.Value}")
+                            |> Option.defaultValue (TypeVariable(typeVariableName $"lambda{freshCounter.Value}"))
 
                         Map.add parameter.Name parameterType state) locals
 
@@ -18418,11 +18453,11 @@ module SurfaceElaboration =
                 let trueRefinements, falseRefinements =
                     match condition with
                     | Name [ conditionName ] when locals |> Map.containsKey conditionName ->
-                        Map.add conditionName trueTermType refinements,
-                        Map.add conditionName falseTermType refinements
+                        Map.add (typeVariableName conditionName) trueTermType refinements,
+                        Map.add (typeVariableName conditionName) falseTermType refinements
                     | Unary("not", Name [ conditionName ]) when locals |> Map.containsKey conditionName ->
-                        Map.add conditionName falseTermType refinements,
-                        Map.add conditionName trueTermType refinements
+                        Map.add (typeVariableName conditionName) falseTermType refinements,
+                        Map.add (typeVariableName conditionName) trueTermType refinements
                     | _ ->
                         refinements, refinements
 
@@ -21595,7 +21630,7 @@ module SurfaceElaboration =
                             | TypeProject(target, _) ->
                                 yield! referencedTypeNames target
                             | TypeName(name, arguments) ->
-                                match name with
+                                match typeReferenceSegments name with
                                 | [ localName ] -> yield localName
                                 | _ -> ()
 
@@ -21640,7 +21675,7 @@ module SurfaceElaboration =
                             referencedTypeNames aliasInfo.Body
                             |> Seq.filter (fun referencedName ->
                                 Map.containsKey referencedName localAliases
-                                && not (List.contains referencedName aliasInfo.Parameters))
+                                && not (List.contains (typeVariableName referencedName) aliasInfo.Parameters))
                             |> Set.ofSeq)
 
                     let rec reaches start current visited =
@@ -21701,7 +21736,7 @@ module SurfaceElaboration =
                         |> List.exists (function
                             | TypeUniverse _ -> true
                             | TypeIntrinsic UniverseClassifier -> true
-                            | TypeName([ "Type" ], _) -> true
+                            | TypeName(nameSegments, _) when typeReferenceSegments nameSegments = [ "Type" ] -> true
                             | _ -> false)
 
                     let constructorHasMalformedShape (constructor: DataConstructor) =
@@ -21934,7 +21969,7 @@ module SurfaceElaboration =
                                     |> List.collect (fun field ->
                                         let fieldType =
                                             recordFields
-                                            |> List.tryFind (fun recordField -> String.Equals(recordField.Name, field.Name, StringComparison.Ordinal))
+                                            |> List.tryFind (fun recordField -> recordField.Name = TypeSignatures.FieldName.create field.Name)
                                             |> Option.map (fun recordField -> recordField.Type)
 
                                         loop fieldType field.Pattern)
@@ -23158,7 +23193,7 @@ module SurfaceElaboration =
                                         |> List.map (fun field ->
                                             parseType field.TypeTokens
                                             |> Option.map (fun parsedType ->
-                                                { Name = field.Name
+                                                { Name = TypeSignatures.FieldName.create field.Name
                                                   Quantity = QuantityOmega
                                                   Type = parsedType }))
 
@@ -23832,7 +23867,7 @@ module SurfaceElaboration =
                 | None ->
                     Some(inferSurfaceNumericLiteralType literal)
             | TypeSyntaxTokens tokens ->
-                TypeSignatures.parseType tokens |> Option.map (fun _ -> TypeName([ "Type" ], []))
+                TypeSignatures.parseType tokens |> Option.map (fun _ -> typeName [ "Type" ] [])
             | SyntaxQuote inner ->
                 inferExpressionType localTypes inner
                 |> Option.map syntaxType
@@ -24086,7 +24121,7 @@ module SurfaceElaboration =
                     |> List.map (fun parameter ->
                         tryParseParameterType parameter
                         |> Option.map (qualifyVisibleTypeNames environment)
-                        |> Option.defaultValue (TypeVariable $"lambda{freshCounter.Value}"))
+                        |> Option.defaultValue (TypeVariable(typeVariableName $"lambda{freshCounter.Value}")))
 
                 let parameterQuantities =
                     lambdaParameters
@@ -24125,7 +24160,7 @@ module SurfaceElaboration =
                     |> List.map (fun field ->
                         inferExpressionType localTypes field.Value
                         |> Option.map (fun fieldType ->
-                            ({ Name = field.Name
+                            ({ Name = TypeSignatures.FieldName.create field.Name
                                Quantity = if field.IsImplicit then QuantityZero else QuantityOmega
                                Type = fieldType }: TypeSignatures.RecordField)))
 
@@ -24986,7 +25021,9 @@ module SurfaceElaboration =
                             match tryCanonicalRecordType environment.VisibleTypeAliases siteResultType with
                             | Some(TypeRecord resultFields as resultRecordType) ->
                                 let inoutNames =
-                                    inoutParameters |> List.map (fun (_, layout, _, _) -> layout.Name) |> Set.ofList
+                                    inoutParameters
+                                    |> List.map (fun (_, layout, _, _) -> TypeSignatures.FieldName.create layout.Name)
+                                    |> Set.ofList
 
                                 let residualFields =
                                     resultFields
@@ -25019,7 +25056,7 @@ module SurfaceElaboration =
                                     let mutable rewrittenArguments = ResizeArray<SurfaceExpression>()
                                     let mutable callLocalTypes = localTypes
                                     let preludeBindings = ResizeArray<string * TypeExpr * KCoreExpression>()
-                                    let restorePlans = ResizeArray<string * string * string list * bool>()
+                                    let restorePlans = ResizeArray<FieldName * string * string list * bool>()
 
                                     for _, parameterLayout, _, argument in explicitParameters do
                                         match parameterLayout.IsInout, argument with
@@ -25041,10 +25078,10 @@ module SurfaceElaboration =
                                                     )
 
                                                     callLocalTypes <- Map.add hiddenRootName refInnerType callLocalTypes
-                                                    restorePlans.Add(parameterLayout.Name, rootName, path, true)
+                                                    restorePlans.Add(TypeSignatures.FieldName.create parameterLayout.Name, rootName, path, true)
                                                     rewrittenArguments.Add(InoutArgument(Name(hiddenRootName :: path)))
                                                 | None ->
-                                                    restorePlans.Add(parameterLayout.Name, rootName, path, false)
+                                                    restorePlans.Add(TypeSignatures.FieldName.create parameterLayout.Name, rootName, path, false)
                                                     rewrittenArguments.Add(argument)
                                             | None ->
                                                 rewrittenArguments.Add(argument)
@@ -25057,7 +25094,7 @@ module SurfaceElaboration =
                                     let resultBindingName = freshSyntheticName "__kappa_inout_result_"
                                     let fieldBindingNames =
                                         layout.Fields
-                                        |> List.map (fun field -> field.Name, freshSyntheticName $"__kappa_inout_field_{field.Name}_")
+                                        |> List.map (fun field -> field.Name, freshSyntheticName $"__kappa_inout_field_{fieldNameText field.Name}_")
                                         |> Map.ofList
 
                                     let pattern =
@@ -25079,7 +25116,7 @@ module SurfaceElaboration =
                                     let restLocalTypes =
                                         restorePlans
                                         |> Seq.fold (fun state (formalName, rootName, path, isVarRoot) ->
-                                            match resultFields |> List.tryFind (fun field -> String.Equals(field.Name, formalName, StringComparison.Ordinal)) with
+                                            match resultFields |> List.tryFind (fun field -> field.Name = formalName) with
                                             | Some field when List.isEmpty path ->
                                                 if isVarRoot then
                                                     Map.add rootName (refType field.Type) state
@@ -25458,7 +25495,7 @@ module SurfaceElaboration =
 
                     let fieldPatterns =
                         fields
-                        |> List.map (fun field -> field.Name, field.Pattern)
+                        |> List.map (fun field -> TypeSignatures.FieldName.create field.Name, field.Pattern)
                         |> Map.ofList
 
                     KCoreConstructorPattern(
@@ -25516,11 +25553,11 @@ module SurfaceElaboration =
 
                 let boundFields =
                     layout.Fields
-                    |> List.map (fun field -> field.Name, freshSyntheticName $"__kappa_record_{field.Name}_")
+                    |> List.map (fun field -> field.Name, freshSyntheticName $"__kappa_record_{fieldNameText field.Name}_")
 
                 match
-                    fields |> List.tryFind (fun field -> String.Equals(field.Name, fieldName, StringComparison.Ordinal)),
-                    boundFields |> List.tryFind (fun (name, _) -> String.Equals(name, fieldName, StringComparison.Ordinal))
+                    fields |> List.tryFind (fun field -> field.Name = TypeSignatures.FieldName.create fieldName),
+                    boundFields |> List.tryFind (fun (name, _) -> name = TypeSignatures.FieldName.create fieldName)
                 with
                 | Some field, Some(_, bindingName) ->
                     let fieldValue = KCoreName [ bindingName ]
@@ -25606,8 +25643,8 @@ module SurfaceElaboration =
                 | Some(TypeName(nameSegments, [])) ->
                     KCoreStaticObject
                         { ObjectKind = KCoreTypeObject
-                          Name = nameSegments
-                          Type = Some(TypeName([ "Type" ], []))
+                          Name = typeReferenceSegments nameSegments
+                          Type = Some(typeName [ "Type" ] [])
                           TypeText = Some "Type" }
                 | _ ->
                     KCoreLiteral LiteralValue.Unit
@@ -25992,7 +26029,7 @@ module SurfaceElaboration =
                         tryParseParameterType parameter
                         |> Option.orElseWith (fun () ->
                             parameterTypeHints |> Option.bind (List.tryItem index))
-                        |> Option.defaultValue (TypeVariable $"lambda{freshCounter.Value}"))
+                        |> Option.defaultValue (TypeVariable(typeVariableName $"lambda{freshCounter.Value}")))
 
                 let lambdaLocals =
                     List.zip lambdaParameters resolvedParameterTypes
@@ -26268,7 +26305,7 @@ module SurfaceElaboration =
                     handledBodyType
                     |> Option.bind tryUnwrapEffType
                     |> Option.map snd
-                    |> Option.defaultValue (TypeVariable $"handlePayload{freshCounter.Value}")
+                    |> Option.defaultValue (TypeVariable(typeVariableName $"handlePayload{freshCounter.Value}"))
 
                 let handledEffectDeclaration =
                     tryResolveHandledEffectDeclaration environment label
@@ -26318,7 +26355,7 @@ module SurfaceElaboration =
                                     |> Option.map (qualifyVisibleTypeNames environment)
                                     |> Option.map TypeSignatures.functionParts
                                     |> Option.map (fun (parameterTypes, resultType) -> parameterTypes, resultType)))
-                            |> Option.defaultValue ([], TypeVariable $"opResult{freshCounter.Value}")
+                            |> Option.defaultValue ([], TypeVariable(typeVariableName $"opResult{freshCounter.Value}"))
 
                         let resumptionResultType =
                             if isDeep then
@@ -26649,7 +26686,7 @@ module SurfaceElaboration =
                     |> List.map (fun field ->
                         inferExpressionType localTypes field.Value
                         |> Option.map (fun fieldType ->
-                            { Name = field.Name
+                            { Name = TypeSignatures.FieldName.create field.Name
                               Quantity = if field.IsImplicit then QuantityZero else QuantityOmega
                               Type = fieldType }))
 
@@ -26660,7 +26697,7 @@ module SurfaceElaboration =
 
                     let fieldValues =
                         fields
-                        |> List.map (fun field -> field.Name, field.Value)
+                        |> List.map (fun field -> TypeSignatures.FieldName.create field.Name, field.Value)
                         |> Map.ofList
 
                     KCoreAppSpine(
@@ -26686,7 +26723,7 @@ module SurfaceElaboration =
 
                     let boundFields =
                         layout.Fields
-                        |> List.map (fun field -> field.Name, freshSyntheticName $"__kappa_record_{field.Name}_")
+                        |> List.map (fun field -> field.Name, freshSyntheticName $"__kappa_record_{fieldNameText field.Name}_")
 
                     let receiverSegments =
                         match receiver with
@@ -26714,7 +26751,7 @@ module SurfaceElaboration =
                                         | _ ->
                                             None)
 
-                                RecordUpdate(Name(segments @ [ topLevelName ]), nestedFields)
+                                RecordUpdate(Name(segments @ [ fieldNameText topLevelName ]), nestedFields)
                             | None ->
                                 group
                                 |> List.tryHead
@@ -26724,7 +26761,7 @@ module SurfaceElaboration =
                     let updatedFields =
                         fields
                         |> List.filter (fun field -> not field.IsExtension)
-                        |> List.groupBy (fun field -> field.Name)
+                        |> List.groupBy (fun field -> TypeSignatures.FieldName.create field.Name)
                         |> List.map (fun (name, group) -> name, ordinaryUpdateValue name group)
                         |> Map.ofList
 
@@ -26743,7 +26780,7 @@ module SurfaceElaboration =
                             |> Option.map (lowerExpression localTypes)
                             |> Option.defaultValue (
                                 boundFields
-                                |> List.find (fun (name, _) -> String.Equals(name, field.Name, StringComparison.Ordinal))
+                                |> List.find (fun (name, _) -> name = field.Name)
                                 |> snd
                                 |> fun bindingName -> KCoreName [ bindingName ]))
 
@@ -27949,7 +27986,7 @@ module SurfaceElaboration =
                             remainingParameters
                             |> List.zip (fields |> List.skip 1)
                             |> List.forall (fun (field, parameter) ->
-                                String.Equals(parameter.Name, field.Name, StringComparison.Ordinal)
+                                TypeSignatures.FieldName.create parameter.Name = field.Name
                                 && (parameter.TypeTokens
                                     |> Option.bind TypeSignatures.parseType
                                     |> Option.map (fun parameterType ->
@@ -27961,7 +27998,7 @@ module SurfaceElaboration =
                             false
 
                     let firstParameterMatchesFirstField =
-                        String.Equals(firstParameter.Name, fields.Head.Name, StringComparison.Ordinal)
+                        TypeSignatures.FieldName.create firstParameter.Name = fields.Head.Name
 
                     if not firstParameterMatchesFirstField
                        || not (collapsedLegacyRecordParameter || (parameterCountMatches && trailingParametersMatchFieldTypes)) then
@@ -27983,9 +28020,9 @@ module SurfaceElaboration =
                                 AnonymousRecordPattern(
                                     fields
                                     |> List.map (fun field ->
-                                        { Name = field.Name
+                                        { Name = fieldNameText field.Name
                                           IsImplicit = false
-                                          Pattern = NamePattern field.Name }),
+                                          Pattern = NamePattern(fieldNameText field.Name) }),
                                     None
                                 )
                               Quantity = None
@@ -28284,7 +28321,7 @@ module SurfaceElaboration =
                             memberInfo.Scheme |> TypeSignatures.applySchemeSubstitution substitution
 
                         let extraLocalTypes =
-                            [ selfDictionaryName, TypeName([ instanceTraitName ], instanceInfo.HeadTypes) ]
+                            [ selfDictionaryName, typeName [ instanceTraitName ] instanceInfo.HeadTypes ]
                             @ (hiddenConstraintEntries
                                |> List.map (fun (constraintInfo, dictionaryParameterName) ->
                                    dictionaryParameterName, traitConstraintTypeName constraintInfo))
@@ -28556,7 +28593,7 @@ module SurfaceElaboration =
                             { Name = layout.TypeName
                               TypeParameters = layout.TypeParameters
                               ConstructorName = layout.ConstructorName
-                              FieldNames = layout.Fields |> List.map (fun field -> field.Name)
+                              FieldNames = layout.Fields |> List.map (fun field -> fieldNameText field.Name)
                               FieldTypeTexts = layout.Fields |> List.map (fun field -> TypeSignatures.toText field.Type)
                               Provenance = layout.Provenance })
                       Ownership = frontendModule.Ownership

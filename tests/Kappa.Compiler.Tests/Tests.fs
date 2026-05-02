@@ -30,6 +30,38 @@ let private parseSchemeText (text: string) =
     | Some parsed -> parsed
     | None -> failwithf "Failed to parse scheme text: %s" text
 
+let private qualifiedReference segments =
+    TypeSignatures.QualifiedReference.ofSegments segments
+
+let private typeReference segments =
+    TypeSignatures.TypeReference.ofSegments segments
+
+let private typeName segments arguments =
+    TypeSignatures.TypeName(typeReference segments, arguments)
+
+let private typeVariableName text =
+    TypeSignatures.TypeVariableName.create text
+
+let private typeVariable text =
+    TypeSignatures.TypeVariable(typeVariableName text)
+
+let private typeLambda parameterName parameterSort body =
+    TypeSignatures.TypeLambda(typeVariableName parameterName, parameterSort, body)
+
+let private fieldName text =
+    TypeSignatures.FieldName.create text
+
+let private typeProject target field =
+    TypeSignatures.TypeProject(target, fieldName field)
+
+let private recordField name quantity fieldType : TypeSignatures.RecordField =
+    { Name = fieldName name
+      Quantity = quantity
+      Type = fieldType }
+
+let private assertTypeVariableNameText expected actual =
+    Assert.Equal(expected, TypeSignatures.TypeVariableName.text actual)
+
 let private tokensText (tokens: Token list) =
     tokens
     |> List.map (fun token -> token.Text)
@@ -651,40 +683,40 @@ module SmokeTestsShard0 =
         Assert.Collection(
             scheme.Forall,
             (fun (binder: TypeSignatures.ForallBinder) ->
-                Assert.Equal("q", binder.Name)
+                assertTypeVariableNameText "q" binder.Name
                 Assert.Equal(QuantityZero, binder.Quantity)
                 Assert.Equal(TypeSignatures.TypeIntrinsic TypeSignatures.QuantityClassifier, binder.Sort)),
             (fun (binder: TypeSignatures.ForallBinder) ->
-                Assert.Equal("r", binder.Name)
+                assertTypeVariableNameText "r" binder.Name
                 Assert.Equal(QuantityZero, binder.Quantity)
                 Assert.Equal(TypeSignatures.TypeIntrinsic TypeSignatures.EffRowClassifier, binder.Sort)),
             (fun (binder: TypeSignatures.ForallBinder) ->
-                Assert.Equal("s", binder.Name)
+                assertTypeVariableNameText "s" binder.Name
                 Assert.Equal(QuantityZero, binder.Quantity)
                 Assert.Equal(TypeSignatures.TypeIntrinsic TypeSignatures.RegionClassifier, binder.Sort)),
             (fun (binder: TypeSignatures.ForallBinder) ->
-                Assert.Equal("u", binder.Name)
+                assertTypeVariableNameText "u" binder.Name
                 Assert.Equal(QuantityZero, binder.Quantity)
                 Assert.Equal(TypeSignatures.TypeIntrinsic TypeSignatures.UniverseClassifier, binder.Sort)),
             (fun (binder: TypeSignatures.ForallBinder) ->
-                Assert.Equal("a", binder.Name)
+                assertTypeVariableNameText "a" binder.Name
                 Assert.Equal(QuantityZero, binder.Quantity)
-                Assert.Equal(TypeSignatures.TypeUniverse(Some(TypeSignatures.TypeVariable "u")), binder.Sort))
+                Assert.Equal(TypeSignatures.TypeUniverse(Some(typeVariable "u")), binder.Sort))
         )
 
 
     [<Fact>]
     let ``type unification matches higher kinded applications against applied named types`` () =
         let functionApplication =
-            TypeSignatures.TypeApply(TypeSignatures.TypeVariable "f", [ TypeSignatures.TypeVariable "a" ])
+            TypeSignatures.TypeApply(typeVariable "f", [ typeVariable "a" ])
 
         let concreteApplication =
-            TypeSignatures.TypeName([ "Option" ], [ TypeSignatures.TypeName([ "Int" ], []) ])
+            typeName [ "Option" ] [ typeName [ "Int" ] [] ]
 
         match TypeSignatures.tryUnifyMany [ functionApplication, concreteApplication ] with
         | Some substitution ->
-            Assert.Equal(TypeSignatures.TypeName([ "Option" ], []), substitution["f"])
-            Assert.Equal(TypeSignatures.TypeName([ "Int" ], []), substitution["a"])
+            Assert.Equal(typeName [ "Option" ] [], substitution[typeVariableName "f"])
+            Assert.Equal(typeName [ "Int" ] [], substitution[typeVariableName "a"])
         | None ->
             failwith "Expected higher-kinded application unification to succeed."
 
@@ -1317,16 +1349,13 @@ module SmokeTestsShard1 =
         let expectedConstraints : TypeSignatures.TraitConstraint list =
             [
                 { Trait = TypeSignatures.TraitReference.unqualified "Eq"
-                  Arguments = [ TypeSignatures.TypeVariable "a" ] }
+                  Arguments = [ typeVariable "a" ] }
                 { Trait = TypeSignatures.TraitReference.unqualified "Hashable"
-                  Arguments = [ TypeSignatures.TypeVariable "a" ] }
+                  Arguments = [ typeVariable "a" ] }
             ]
 
         let expectedBody =
-            TypeSignatures.TypeName(
-                [ "Hashable" ],
-                [ TypeSignatures.TypeName([ "Option" ], [ TypeSignatures.TypeVariable "a" ]) ]
-            )
+            typeName [ "Hashable" ] [ typeName [ "Option" ] [ typeVariable "a" ] ]
 
         Assert.Equal<TypeSignatures.TraitConstraint list>(expectedConstraints, grouped.Constraints)
         Assert.Equal<TypeSignatures.TraitConstraint list>(expectedConstraints, chained.Constraints)
@@ -2535,13 +2564,13 @@ module SmokeTestsShard2 =
         Assert.Equal(
             TypeSignatures.TypeArrow(
                 QuantityBorrow None,
-                TypeSignatures.TypeVariable "a",
+                typeVariable "a",
                 TypeSignatures.TypeEquality(
                     TypeSignatures.TypeApply(
-                        TypeSignatures.TypeName([ "~=" ], []),
-                        [ TypeSignatures.TypeVariable "x"; TypeSignatures.TypeVariable "x" ]
+                        typeName [ "~=" ] [],
+                        [ typeVariable "x"; typeVariable "x" ]
                     ),
-                    TypeSignatures.TypeName([ "True" ], [])
+                    typeName [ "True" ] []
                 )
             ),
             equivRefl.Body
@@ -2550,20 +2579,20 @@ module SmokeTestsShard2 =
         Assert.Equal(
             TypeSignatures.TypeArrow(
                 QuantityBorrow None,
-                TypeSignatures.TypeVariable "a",
+                typeVariable "a",
                 TypeSignatures.TypeArrow(
                     QuantityBorrow None,
-                    TypeSignatures.TypeVariable "a",
+                    typeVariable "a",
                     TypeSignatures.TypeArrow(
                         QuantityOmega,
                         TypeSignatures.TypeEquality(
                             TypeSignatures.TypeApply(
-                                TypeSignatures.TypeName([ "==" ], []),
-                                [ TypeSignatures.TypeVariable "x"; TypeSignatures.TypeVariable "y" ]
+                                typeName [ "==" ] [],
+                                [ typeVariable "x"; typeVariable "y" ]
                             ),
-                            TypeSignatures.TypeName([ "True" ], [])
+                            typeName [ "True" ] []
                         ),
-                        TypeSignatures.TypeEquality(TypeSignatures.TypeVariable "x", TypeSignatures.TypeVariable "y")
+                        TypeSignatures.TypeEquality(typeVariable "x", typeVariable "y")
                     )
                 )
             ),
@@ -2573,19 +2602,19 @@ module SmokeTestsShard2 =
         Assert.Equal(
             TypeSignatures.TypeArrow(
                 QuantityBorrow None,
-                TypeSignatures.TypeVariable "a",
+                typeVariable "a",
                 TypeSignatures.TypeArrow(
                     QuantityBorrow None,
-                    TypeSignatures.TypeVariable "a",
+                    typeVariable "a",
                     TypeSignatures.TypeArrow(
                         QuantityOmega,
-                        TypeSignatures.TypeEquality(TypeSignatures.TypeVariable "x", TypeSignatures.TypeVariable "y"),
+                        TypeSignatures.TypeEquality(typeVariable "x", typeVariable "y"),
                         TypeSignatures.TypeEquality(
                             TypeSignatures.TypeApply(
-                                TypeSignatures.TypeName([ "==" ], []),
-                                [ TypeSignatures.TypeVariable "x"; TypeSignatures.TypeVariable "y" ]
+                                typeName [ "==" ] [],
+                                [ typeVariable "x"; typeVariable "y" ]
                             ),
-                            TypeSignatures.TypeName([ "True" ], [])
+                            typeName [ "True" ] []
                         )
                     )
                 )
@@ -3804,11 +3833,11 @@ module SmokeTestsShard3 =
         Assert.Collection(
             instantiated.Forall,
             (fun (binder: TypeSignatures.ForallBinder) ->
-                Assert.Equal("t0", binder.Name)
+                assertTypeVariableNameText "t0" binder.Name
                 Assert.Equal(TypeSignatures.TypeIntrinsic TypeSignatures.UniverseClassifier, binder.Sort)),
             (fun (binder: TypeSignatures.ForallBinder) ->
-                Assert.Equal("t1", binder.Name)
-                Assert.Equal(TypeSignatures.TypeUniverse(Some(TypeSignatures.TypeVariable "t0")), binder.Sort))
+                assertTypeVariableNameText "t1" binder.Name
+                Assert.Equal(TypeSignatures.TypeUniverse(Some(typeVariable "t0")), binder.Sort))
         )
 
 
@@ -8473,7 +8502,7 @@ module SmokeTestsShard4 =
         Assert.Equal(TypeSignatures.TypeIntrinsic TypeSignatures.UniverseClassifier, parseTypeText "Universe")
         Assert.Equal(TypeSignatures.TypeIntrinsic TypeSignatures.QuantityClassifier, parseTypeText "Quantity")
         Assert.Equal(TypeSignatures.TypeIntrinsic TypeSignatures.RegionClassifier, parseTypeText "Region")
-        Assert.Equal(TypeSignatures.TypeName([ "Constraint" ], []), parseTypeText "Constraint")
+        Assert.Equal(typeName [ "Constraint" ] [], parseTypeText "Constraint")
         Assert.Equal(TypeSignatures.TypeIntrinsic TypeSignatures.RecRowClassifier, parseTypeText "RecRow")
         Assert.Equal(TypeSignatures.TypeIntrinsic TypeSignatures.VarRowClassifier, parseTypeText "VarRow")
         Assert.Equal(TypeSignatures.TypeIntrinsic TypeSignatures.EffRowClassifier, parseTypeText "EffRow")
@@ -8483,7 +8512,7 @@ module SmokeTestsShard4 =
         Assert.Equal(TypeSignatures.TypeUniverse None, parseTypeText "*")
         Assert.Equal(TypeSignatures.TypeUniverse(Some(TypeSignatures.TypeLevelLiteral 0)), parseTypeText "Type0")
         Assert.Equal(TypeSignatures.TypeUniverse(Some(TypeSignatures.TypeLevelLiteral 2)), parseTypeText "Type2")
-        Assert.Equal(TypeSignatures.TypeUniverse(Some(TypeSignatures.TypeVariable "u")), parseTypeText "Type u")
+        Assert.Equal(TypeSignatures.TypeUniverse(Some(typeVariable "u")), parseTypeText "Type u")
 
 
     [<Fact>]
@@ -8517,45 +8546,37 @@ module SmokeTestsShard4 =
 
     [<Fact>]
     let ``type signatures definitional equality reduces beta delta eta suspension and record projection forms`` () =
-        let intType = TypeSignatures.TypeName([ "Int" ], [])
-        let boolType = TypeSignatures.TypeName([ "Bool" ], [])
+        let intType = typeName [ "Int" ] []
+        let boolType = typeName [ "Bool" ] []
 
         let context =
             TypeSignatures.emptyDefinitionContext
-            |> TypeSignatures.addTransparentDefinition [ "Id" ] [ "a" ] (TypeSignatures.TypeVariable "a")
-            |> TypeSignatures.addTransparentDefinition [ "AliasInt" ] [] intType
+            |> TypeSignatures.addTransparentDefinition (qualifiedReference [ "Id" ]) [ typeVariableName "a" ] (typeVariable "a")
+            |> TypeSignatures.addTransparentDefinition (qualifiedReference [ "AliasInt" ]) [] intType
 
         let betaRedex =
             TypeSignatures.TypeApply(
-                TypeSignatures.TypeLambda("x", TypeSignatures.TypeUniverse None, TypeSignatures.TypeVariable "x"),
+                typeLambda "x" (TypeSignatures.TypeUniverse None) (typeVariable "x"),
                 [ intType ]
             )
 
         let etaExpanded =
-            TypeSignatures.TypeLambda(
-                "x",
-                TypeSignatures.TypeUniverse None,
-                TypeSignatures.TypeApply(TypeSignatures.TypeVariable "f", [ TypeSignatures.TypeVariable "x" ])
-            )
+            typeLambda
+                "x"
+                (TypeSignatures.TypeUniverse None)
+                (TypeSignatures.TypeApply(typeVariable "f", [ typeVariable "x" ]))
 
         let projectedRecord =
-            TypeSignatures.TypeProject(
-                TypeSignatures.TypeRecord(
-                    [ { Name = "value"
-                        Quantity = QuantityOmega
-                        Type = boolType } ]
-                ),
-                "value"
-            )
+            typeProject (TypeSignatures.TypeRecord([ recordField "value" QuantityOmega boolType ])) "value"
 
         Assert.True(TypeSignatures.definitionallyEqualIn context betaRedex intType)
-        Assert.True(TypeSignatures.definitionallyEqualIn context (TypeSignatures.TypeName([ "Id" ], [ intType ])) intType)
-        Assert.True(TypeSignatures.definitionallyEqualIn context (TypeSignatures.TypeName([ "AliasInt" ], [])) intType)
-        Assert.True(TypeSignatures.definitionallyEqualIn context (TypeSignatures.TypeVariable "f") etaExpanded)
+        Assert.True(TypeSignatures.definitionallyEqualIn context (typeName [ "Id" ] [ intType ]) intType)
+        Assert.True(TypeSignatures.definitionallyEqualIn context (typeName [ "AliasInt" ] []) intType)
+        Assert.True(TypeSignatures.definitionallyEqualIn context (typeVariable "f") etaExpanded)
         Assert.True(TypeSignatures.definitionallyEqualIn context (TypeSignatures.TypeForce(TypeSignatures.TypeDelay intType)) intType)
         Assert.True(TypeSignatures.definitionallyEqualIn context (TypeSignatures.TypeForce(TypeSignatures.TypeMemo intType)) intType)
         Assert.True(TypeSignatures.definitionallyEqualIn context projectedRecord boolType)
-        Assert.True(TypeSignatures.definitionallyEqualIn context (TypeSignatures.TypeRecord []) (TypeSignatures.TypeName([ "Unit" ], [])))
+        Assert.True(TypeSignatures.definitionallyEqualIn context (TypeSignatures.TypeRecord []) (typeName [ "Unit" ] []))
 
 
     [<Fact>]
@@ -9244,12 +9265,8 @@ module SmokeTestsShard5 =
     let ``type signatures refuse definitional equality for cyclic record telescopes`` () =
         let cyclicRecord =
             TypeSignatures.TypeRecord(
-                [ { Name = "x"
-                    Quantity = QuantityOmega
-                    Type = TypeSignatures.TypeProject(TypeSignatures.TypeVariable "this", "y") }
-                  { Name = "y"
-                    Quantity = QuantityOmega
-                    Type = TypeSignatures.TypeProject(TypeSignatures.TypeVariable "this", "x") } ]
+                [ recordField "x" QuantityOmega (typeProject (typeVariable "this") "y")
+                  recordField "y" QuantityOmega (typeProject (typeVariable "this") "x") ]
             )
 
         Assert.False(TypeSignatures.definitionallyEqual cyclicRecord cyclicRecord)
@@ -9778,19 +9795,19 @@ module SmokeTestsShard6 =
         Assert.Equal(TypeSignatures.TypeEffectRow([], None), emptyRow)
         Assert.Equal(
             TypeSignatures.TypeEffectRow(
-                [ { Label = TypeSignatures.TypeVariable "log"
-                    Effect = TypeSignatures.TypeName([ "Console" ], []) }
-                  { Label = TypeSignatures.TypeVariable "state"
-                    Effect = TypeSignatures.TypeName([ "State" ], []) } ],
+                [ { Label = typeVariable "log"
+                    Effect = typeName [ "Console" ] [] }
+                  { Label = typeVariable "state"
+                    Effect = typeName [ "State" ] [] } ],
                 None
             ),
             closedRow
         )
         Assert.Equal(
             TypeSignatures.TypeEffectRow(
-                [ { Label = TypeSignatures.TypeVariable "log"
-                    Effect = TypeSignatures.TypeName([ "Console" ], []) } ],
-                Some(TypeSignatures.TypeVariable "r")
+                [ { Label = typeVariable "log"
+                    Effect = typeName [ "Console" ] [] } ],
+                Some(typeVariable "r")
             ),
             openRow
         )
@@ -9853,12 +9870,12 @@ module SmokeTestsShard6 =
 
     [<Fact>]
     let ``type signatures unfold only conversion reducible transparent definitions`` () =
-        let intType = TypeSignatures.TypeName([ "Int" ], [])
+        let intType = typeName [ "Int" ] []
 
         let context =
             TypeSignatures.emptyDefinitionContext
             |> TypeSignatures.addDefinition
-                [ "CheckedAlias" ]
+                (qualifiedReference [ "CheckedAlias" ])
                 { ParameterNames = []
                   DefinitionBody = intType
                   Transparent = true
@@ -9866,7 +9883,7 @@ module SmokeTestsShard6 =
                   ConversionReducible = true
                   CertificationSource = Some TypeSignatures.CheckedDefinition }
             |> TypeSignatures.addDefinition
-                [ "AssertedOnly" ]
+                (qualifiedReference [ "AssertedOnly" ])
                 { ParameterNames = []
                   DefinitionBody = intType
                   Transparent = true
@@ -9874,7 +9891,7 @@ module SmokeTestsShard6 =
                   ConversionReducible = false
                   CertificationSource = Some TypeSignatures.AssertTerminatesUnverified }
             |> TypeSignatures.addDefinition
-                [ "OpaqueAlias" ]
+                (qualifiedReference [ "OpaqueAlias" ])
                 { ParameterNames = []
                   DefinitionBody = intType
                   Transparent = false
@@ -9882,9 +9899,9 @@ module SmokeTestsShard6 =
                   ConversionReducible = false
                   CertificationSource = Some TypeSignatures.CheckedDefinition }
 
-        Assert.True(TypeSignatures.definitionallyEqualIn context (TypeSignatures.TypeName([ "CheckedAlias" ], [])) intType)
-        Assert.False(TypeSignatures.definitionallyEqualIn context (TypeSignatures.TypeName([ "AssertedOnly" ], [])) intType)
-        Assert.False(TypeSignatures.definitionallyEqualIn context (TypeSignatures.TypeName([ "OpaqueAlias" ], [])) intType)
+        Assert.True(TypeSignatures.definitionallyEqualIn context (typeName [ "CheckedAlias" ] []) intType)
+        Assert.False(TypeSignatures.definitionallyEqualIn context (typeName [ "AssertedOnly" ] []) intType)
+        Assert.False(TypeSignatures.definitionallyEqualIn context (typeName [ "OpaqueAlias" ] []) intType)
 
 
     [<Fact>]
@@ -10898,36 +10915,34 @@ module SmokeTestsShard7 =
     [<Fact>]
     let ``type signatures treat alpha equivalent type lambdas as definitionally equal`` () =
         let left =
-            TypeSignatures.TypeLambda(
-                "x",
-                TypeSignatures.TypeUniverse None,
-                TypeSignatures.TypeApply(
-                    TypeSignatures.TypeName([ "IsTrait" ], []),
-                    [ TypeSignatures.TypeVariable "tc"
-                      TypeSignatures.TypeVariable "x" ]
-                )
-            )
+            typeLambda
+                "x"
+                (TypeSignatures.TypeUniverse None)
+                (TypeSignatures.TypeApply(
+                    typeName [ "IsTrait" ] [],
+                    [ typeVariable "tc"
+                      typeVariable "x" ]
+                ))
 
         let right =
-            TypeSignatures.TypeLambda(
-                "y",
-                TypeSignatures.TypeUniverse None,
-                TypeSignatures.TypeApply(
-                    TypeSignatures.TypeName([ "IsTrait" ], []),
-                    [ TypeSignatures.TypeVariable "tc"
-                      TypeSignatures.TypeVariable "y" ]
-                )
-            )
+            typeLambda
+                "y"
+                (TypeSignatures.TypeUniverse None)
+                (TypeSignatures.TypeApply(
+                    typeName [ "IsTrait" ] [],
+                    [ typeVariable "tc"
+                      typeVariable "y" ]
+                ))
 
         Assert.True(TypeSignatures.definitionallyEqual left right)
 
 
     [<Fact>]
     let ``raw type signature normalization does not treat Float as a builtin alias of Double`` () =
-        let floatType = TypeSignatures.TypeName([ "Float" ], [])
-        let doubleType = TypeSignatures.TypeName([ "Double" ], [])
-        let qualifiedFloatType = TypeSignatures.TypeName([ "std"; "prelude"; "Float" ], [])
-        let qualifiedDoubleType = TypeSignatures.TypeName([ "std"; "prelude"; "Double" ], [])
+        let floatType = typeName [ "Float" ] []
+        let doubleType = typeName [ "Double" ] []
+        let qualifiedFloatType = typeName [ "std"; "prelude"; "Float" ] []
+        let qualifiedDoubleType = typeName [ "std"; "prelude"; "Double" ] []
 
         Assert.False(TypeSignatures.definitionallyEqual floatType doubleType)
         Assert.False(TypeSignatures.definitionallyEqual qualifiedFloatType qualifiedDoubleType)

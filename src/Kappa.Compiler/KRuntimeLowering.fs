@@ -6,6 +6,27 @@ open System.Text
 
 // Lowers KCore into the implementation-defined KRuntimeIR checkpoint.
 module internal KRuntimeLowering =
+    let private typeReference segments =
+        TypeSignatures.TypeReference.ofSegments segments
+
+    let private typeReferenceSegments =
+        TypeSignatures.TypeReference.segments
+
+    let private mkTypeName segments arguments =
+        TypeSignatures.TypeName(typeReference segments, arguments)
+
+    let private referenceNameText =
+        TypeSignatures.ReferenceName.text
+
+    let private traitReferenceLocalName traitReference =
+        TypeSignatures.TraitReference.localName traitReference |> referenceNameText
+
+    let private typeVariableNameText =
+        TypeSignatures.TypeVariableName.text
+
+    let private fieldNameText =
+        TypeSignatures.FieldName.text
+
     let private matchesKnownType knownType nameSegments =
         CompilerKnownSymbols.KnownTypes.matchesName knownType nameSegments
 
@@ -43,7 +64,7 @@ module internal KRuntimeLowering =
         (traitReference: TypeSignatures.TraitReference)
         (nameSegments: string list)
         =
-        let localName = TypeSignatures.TraitReference.localName traitReference
+        let localName = traitReferenceLocalName traitReference
 
         match TypeSignatures.TraitReference.identity traitReference with
         | Some identity ->
@@ -79,7 +100,7 @@ module internal KRuntimeLowering =
         (compileTimeTraits: TypeSignatures.TraitReference list)
         =
         compileTimeTraits
-        |> List.map (TypeSignatures.TraitReference.localName >> TraitRuntime.dictionaryTypeName)
+        |> List.map (traitReferenceLocalName >> TraitRuntime.dictionaryTypeName)
         |> Set.ofList
 
     let private isCompileTimeOnlyNamedType nameSegments =
@@ -117,11 +138,13 @@ module internal KRuntimeLowering =
         | TypeSignatures.TypeVariable name ->
             TypeSignatures.TypeVariable name
         | TypeSignatures.TypeName(nameSegments, arguments) ->
-            match nameSegments with
-            | [ "Type" ]
-            | _ when isCompileTimeOnlyNamedType nameSegments ->
+            let nameSegmentTexts = typeReferenceSegments nameSegments
+            match nameSegmentTexts with
+            | [ "Type" ] ->
                 TypeSignatures.knownType CompilerKnownSymbols.UnitType []
-            | _ when isIntrinsicCompileTimeTraitName nameSegments ->
+            | _ when isCompileTimeOnlyNamedType nameSegmentTexts ->
+                TypeSignatures.knownType CompilerKnownSymbols.UnitType []
+            | _ when isIntrinsicCompileTimeTraitName nameSegmentTexts ->
                 TypeSignatures.knownType CompilerKnownSymbols.UnitType []
             | _ ->
                 TypeSignatures.TypeName(nameSegments, arguments |> List.map eraseRuntimeTypeExpr)
@@ -155,9 +178,9 @@ module internal KRuntimeLowering =
 
     let private runtimeValueTypeExpr typeExpr =
         match eraseRuntimeTypeExpr typeExpr with
-        | TypeSignatures.TypeName(nameSegments, [ inner ]) when matchesKnownType CompilerKnownSymbols.IOType nameSegments -> inner
-        | TypeSignatures.TypeName(nameSegments, [ _; inner ]) when matchesKnownType CompilerKnownSymbols.IOType nameSegments -> inner
-        | TypeSignatures.TypeName(nameSegments, [ inner ]) when matchesKnownType CompilerKnownSymbols.UIOType nameSegments -> inner
+        | TypeSignatures.TypeName(nameSegments, [ inner ]) when matchesKnownType CompilerKnownSymbols.IOType (typeReferenceSegments nameSegments) -> inner
+        | TypeSignatures.TypeName(nameSegments, [ _; inner ]) when matchesKnownType CompilerKnownSymbols.IOType (typeReferenceSegments nameSegments) -> inner
+        | TypeSignatures.TypeName(nameSegments, [ inner ]) when matchesKnownType CompilerKnownSymbols.UIOType (typeReferenceSegments nameSegments) -> inner
         | other -> other
 
     let private normalizeTypeTokens (tokens: Token list) =
@@ -225,21 +248,20 @@ module internal KRuntimeLowering =
 
     let private isCompileTimeParameterType parameterType =
         match parameterType with
-        | TypeSignatures.TypeUniverse _
-        | TypeSignatures.TypeIntrinsic TypeSignatures.UniverseClassifier
-        | TypeSignatures.TypeIntrinsic TypeSignatures.ConstraintClassifier
-        | TypeSignatures.TypeIntrinsic TypeSignatures.QuantityClassifier
-        | TypeSignatures.TypeIntrinsic TypeSignatures.RegionClassifier
-        | TypeSignatures.TypeIntrinsic TypeSignatures.RecRowClassifier
-        | TypeSignatures.TypeIntrinsic TypeSignatures.VarRowClassifier
-        | TypeSignatures.TypeIntrinsic TypeSignatures.EffRowClassifier
-        | TypeSignatures.TypeIntrinsic TypeSignatures.LabelClassifier
-        | TypeSignatures.TypeIntrinsic TypeSignatures.EffLabelClassifier
-        | TypeSignatures.TypeName([ "Type" ], []) ->
+        | TypeSignatures.TypeUniverse _ -> true
+        | TypeSignatures.TypeIntrinsic TypeSignatures.UniverseClassifier -> true
+        | TypeSignatures.TypeIntrinsic TypeSignatures.ConstraintClassifier -> true
+        | TypeSignatures.TypeIntrinsic TypeSignatures.QuantityClassifier -> true
+        | TypeSignatures.TypeIntrinsic TypeSignatures.RegionClassifier -> true
+        | TypeSignatures.TypeIntrinsic TypeSignatures.RecRowClassifier -> true
+        | TypeSignatures.TypeIntrinsic TypeSignatures.VarRowClassifier -> true
+        | TypeSignatures.TypeIntrinsic TypeSignatures.EffRowClassifier -> true
+        | TypeSignatures.TypeIntrinsic TypeSignatures.LabelClassifier -> true
+        | TypeSignatures.TypeIntrinsic TypeSignatures.EffLabelClassifier -> true
+        | TypeSignatures.TypeName(nameSegments, []) when typeReferenceSegments nameSegments = [ "Type" ] -> true
+        | TypeSignatures.TypeName(nameSegments, _) when isCompileTimeOnlyNamedType (typeReferenceSegments nameSegments) ->
             true
-        | TypeSignatures.TypeName(nameSegments, _) when isCompileTimeOnlyNamedType nameSegments ->
-            true
-        | TypeSignatures.TypeName(nameSegments, _) when isIntrinsicCompileTimeTraitName nameSegments ->
+        | TypeSignatures.TypeName(nameSegments, _) when isIntrinsicCompileTimeTraitName (typeReferenceSegments nameSegments) ->
             true
         | _ ->
             false
@@ -340,13 +362,14 @@ module internal KRuntimeLowering =
         let referencesSelf =
             match typeExpr with
             | TypeSignatures.TypeName(nameSegments, [ constraintType ])
-                when matchesKnownType CompilerKnownSymbols.DictType nameSegments ->
+                when matchesKnownType CompilerKnownSymbols.DictType (typeReferenceSegments nameSegments) ->
                 match constraintType with
                 | TypeSignatures.TypeName(traitNameSegments, _) ->
-                    compileTimeTraitContainsNameSegments compileTimeTraits traitNameSegments
+                    compileTimeTraitContainsNameSegments compileTimeTraits (typeReferenceSegments traitNameSegments)
                 | _ ->
                     false
-            | TypeSignatures.TypeName([ dictionaryTypeName ], _) ->
+            | TypeSignatures.TypeName(nameSegments, _) when typeReferenceSegments nameSegments |> List.length = 1 ->
+                let dictionaryTypeName = typeReferenceSegments nameSegments |> List.head
                 compileTimeTraitDictionaryTypeNames compileTimeTraits
                 |> Set.contains dictionaryTypeName
             | _ ->
@@ -477,7 +500,7 @@ module internal KRuntimeLowering =
                           Type = Some(parameterType |> eraseRuntimeTypeExpr) })
 
                 let selfDictionaryType =
-                    TypeSignatures.TypeName([ spec.TraitName ], headTypeExprs)
+                    mkTypeName [ spec.TraitName ] headTypeExprs
 
                 let body =
                     match lowering, valueParameterNames with
@@ -524,7 +547,7 @@ module internal KRuntimeLowering =
                         |> List.unzip
 
                     let dictionaryHeadType =
-                        TypeSignatures.TypeName([ spec.TraitName ], [ parseHeadType headTypeText ])
+                        mkTypeName [ spec.TraitName ] [ parseHeadType headTypeText ]
 
                     let dictionaryBindingName =
                         TraitRuntime.instanceDictionaryBindingName spec.TraitName instanceKey
@@ -960,11 +983,13 @@ module internal KRuntimeLowering =
         | TypeSignatures.TypeIntrinsic _ ->
             true
         | TypeSignatures.TypeName(nameSegments, _) ->
-            match nameSegments with
-            | [ "Type" ]
-            | _ when isCompileTimeOnlyNamedType nameSegments ->
+            let nameSegmentTexts = typeReferenceSegments nameSegments
+            match nameSegmentTexts with
+            | [ "Type" ] ->
                 true
-            | _ when isIntrinsicCompileTimeTraitName nameSegments ->
+            | _ when isCompileTimeOnlyNamedType nameSegmentTexts ->
+                true
+            | _ when isIntrinsicCompileTimeTraitName nameSegmentTexts ->
                 true
             | _ ->
                 false
@@ -1162,7 +1187,7 @@ module internal KRuntimeLowering =
                     None)
         let compileTimeOnlyTraitLocalNames =
             compileTimeOnlyTraits
-            |> List.map TypeSignatures.TraitReference.localName
+            |> List.map traitReferenceLocalName
             |> Set.ofList
 
         let visibleTraitArities = coreModule.VisibleTraitTypeParameterCounts
@@ -1289,7 +1314,9 @@ module internal KRuntimeLowering =
 
                         Some
                             { Name = dataDeclaration.Name
-                              TypeParameters = TypeSignatures.collectLeadingTypeParameters dataDeclaration.HeaderTokens
+                              TypeParameters =
+                                TypeSignatures.collectLeadingTypeParameters dataDeclaration.HeaderTokens
+                                |> List.map typeVariableNameText
                               Constructors = constructors
                               ExternalRuntimeTypeName = None }
                     | _ ->
@@ -1406,9 +1433,9 @@ module internal KRuntimeLowering =
                 | TypeSignatures.TypeName(name, arguments) ->
                     let rewrittenArguments = arguments |> List.map rewriteRuntimeTypeExpr
 
-                    match tryVisibleTraitRuntimeName name with
+                    match tryVisibleTraitRuntimeName (typeReferenceSegments name) with
                     | Some(traitName, arity) when rewrittenArguments.Length = arity ->
-                        TypeSignatures.TypeName([ TraitRuntime.dictionaryTypeName traitName ], rewrittenArguments)
+                        mkTypeName [ TraitRuntime.dictionaryTypeName traitName ] rewrittenArguments
                     | _ ->
                         TypeSignatures.TypeName(name, rewrittenArguments)
                 | TypeSignatures.TypeVariable _
@@ -1461,7 +1488,7 @@ module internal KRuntimeLowering =
                             { Name = typeName
                               Arity = rewrittenFields.Length
                               TypeName = typeName
-                              FieldNames = rewrittenFields |> List.map (fun field -> Some field.Name)
+                              FieldNames = rewrittenFields |> List.map (fun field -> Some(fieldNameText field.Name))
                               FieldTypes = rewrittenFields |> List.map (fun field -> field.Type)
                               Provenance = syntheticRecordOrigin typeName }
 
@@ -1476,7 +1503,7 @@ module internal KRuntimeLowering =
 
                         knownTypeNames.Value <- Set.add typeName knownTypeNames.Value
 
-                    TypeSignatures.TypeName([ typeName ], typeParameters |> List.map TypeSignatures.TypeVariable)
+                    mkTypeName [ typeName ] (typeParameters |> List.map TypeSignatures.TypeVariableName.create |> List.map TypeSignatures.TypeVariable)
                 | TypeSignatures.TypeUnion members ->
                     TypeSignatures.TypeUnion(members |> List.map rewriteRuntimeTypeExpr)
 

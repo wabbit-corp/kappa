@@ -458,11 +458,15 @@ let private resolveFixtureTypeExpr
             TypeSignatures.TypeProject(loop target, fieldName)
         | TypeSignatures.TypeVariable _ ->
             current
-        | TypeSignatures.TypeName([ name ], arguments) ->
-            let resolvedName = typeResolutions |> Map.tryFind name |> Option.defaultValue [ name ]
-            TypeSignatures.TypeName(resolvedName, arguments |> List.map loop)
         | TypeSignatures.TypeName(name, arguments) ->
-            TypeSignatures.TypeName(name, arguments |> List.map loop)
+            let resolvedArguments = arguments |> List.map loop
+
+            match TypeSignatures.TypeReference.segments name with
+            | [ localName ] ->
+                let resolvedName = typeResolutions |> Map.tryFind localName |> Option.defaultValue [ localName ]
+                TypeSignatures.TypeName(TypeSignatures.TypeReference.ofSegments resolvedName, resolvedArguments)
+            | _ ->
+                TypeSignatures.TypeName(name, resolvedArguments)
         | TypeSignatures.TypeArrow(quantity, parameterType, resultType) ->
             TypeSignatures.TypeArrow(quantity, loop parameterType, loop resultType)
         | TypeSignatures.TypeEquality(left, right) ->

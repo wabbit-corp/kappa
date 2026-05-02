@@ -4,6 +4,18 @@ open System
 open System.Numerics
 
 module internal ElaborationEvaluation =
+    let private typeReference segments =
+        TypeSignatures.TypeReference.ofSegments segments
+
+    let private typeReferenceSegments =
+        TypeSignatures.TypeReference.segments
+
+    let private typeVariableNameText =
+        TypeSignatures.TypeVariableName.text
+
+    let private fieldNameText =
+        TypeSignatures.FieldName.text
+
     type private ExportInventory =
         { Terms: Set<string>
           Types: Set<string>
@@ -187,7 +199,7 @@ module internal ElaborationEvaluation =
         |> Option.map (fun scheme ->
             scheme.Forall
             |> List.map (fun binder ->
-                { Name = binder.Name
+                { Name = typeVariableNameText binder.Name
                   TypeTokens = Some(typeTokensFromText (TypeSignatures.toText binder.Sort))
                   Quantity = Some binder.Quantity
                   IsImplicit = true
@@ -224,7 +236,7 @@ module internal ElaborationEvaluation =
                 | [] ->
                     [], []
                 | parameter :: rest ->
-                    match Map.tryFind parameter.Name forallByName with
+                    match Map.tryFind (TypeSignatures.TypeVariableName.create parameter.Name) forallByName with
                     | Some sort ->
                         let annotatedParameter, parameterType = assignParameterType parameter sort
                         let annotatedRest, remainingTypes = loop remainingBodyParameters rest
@@ -648,7 +660,7 @@ module internal ElaborationEvaluation =
 
     let rec private tryParseTypeLikeSurfaceExpression expression =
         match expression with
-        | Name segments when not (List.isEmpty segments) -> Some(TypeSignatures.TypeName(segments, []))
+        | Name segments when not (List.isEmpty segments) -> Some(TypeSignatures.TypeName(typeReference segments, []))
         | Apply(head, arguments) ->
             match tryParseTypeLikeSurfaceExpression head, arguments |> List.map tryParseTypeLikeSurfaceExpression with
             | Some(TypeSignatures.TypeName(name, existingArguments)), parsedArguments when parsedArguments |> List.forall Option.isSome ->
@@ -795,7 +807,7 @@ module internal ElaborationEvaluation =
         MetaData(
             CompilerKnownSymbols.KnownTypeNames.RecordShape,
             [ valueField "origin" MetaUnit
-              valueField "fields" (MetaList(fields |> List.map (fun field -> shapeFieldData field.Name field.Type))) ]
+              valueField "fields" (MetaList(fields |> List.map (fun field -> shapeFieldData (fieldNameText field.Name) field.Type))) ]
         )
 
     let private kindForDataDeclaration (declaration: DataDeclaration) =
@@ -860,9 +872,9 @@ module internal ElaborationEvaluation =
             match scheme.Body with
             | TypeSignatures.TypeName(name, headTypes) ->
                 let traitName =
-                    match name with
+                    match typeReferenceSegments name with
                     | [ singleName ] -> singleName
-                    | _ -> SyntaxFacts.moduleNameToText name
+                    | qualifiedName -> SyntaxFacts.moduleNameToText qualifiedName
                 Some(traitName, headTypes)
             | _ -> None)
 
@@ -916,7 +928,7 @@ module internal ElaborationEvaluation =
     let rec private normalizeVisibleType models inventories moduleIdentity typeSyntax =
         match typeSyntax with
         | ParsedTypeExpr(TypeSignatures.TypeName(name, arguments)) ->
-            let localName = SyntaxFacts.moduleNameToText name
+            let localName = SyntaxFacts.moduleNameToText (typeReferenceSegments name)
             match resolveVisibleTypeReference inventories models moduleIdentity localName with
             | Some(resolvedModule, resolvedName) ->
                 match (Map.find resolvedModule models).Types |> Map.tryFind resolvedName with
@@ -944,7 +956,7 @@ module internal ElaborationEvaluation =
     let private classifyAdtSyntax models inventories moduleIdentity typeSyntax =
         match normalizeVisibleType models inventories moduleIdentity typeSyntax with
         | ParsedTypeExpr(TypeSignatures.TypeName(name, _)) ->
-            let localName = SyntaxFacts.moduleNameToText name
+            let localName = SyntaxFacts.moduleNameToText (typeReferenceSegments name)
             match resolveVisibleTypeReference inventories models moduleIdentity localName with
             | Some(resolvedModule, resolvedName) ->
                 match (Map.find resolvedModule models).Types |> Map.tryFind resolvedName with
@@ -1321,11 +1333,12 @@ module internal ElaborationEvaluation =
                             typeSyntax
                             |> tryParseTypeSyntaxValue
                             |> Option.bind (function
-                                | TypeSignatures.TypeName(nameSegments, []) when not (List.isEmpty nameSegments) ->
-                                    let traitName = List.last nameSegments
+                                | TypeSignatures.TypeName(nameSegments, []) when not (List.isEmpty (typeReferenceSegments nameSegments)) ->
+                                    let resolvedSegments = typeReferenceSegments nameSegments
+                                    let traitName = List.last resolvedSegments
                                     let moduleName =
-                                        if List.length nameSegments > 1 then
-                                            SyntaxFacts.moduleNameToText (nameSegments |> List.take (List.length nameSegments - 1))
+                                        if List.length resolvedSegments > 1 then
+                                            SyntaxFacts.moduleNameToText (resolvedSegments |> List.take (List.length resolvedSegments - 1))
                                         else
                                             ""
 
@@ -1355,14 +1368,14 @@ module internal ElaborationEvaluation =
                     | Some [ binder ], _ ->
                         match tryMatchTraitWitnessBody bodyType with
                         | Some(traitBindingName, boundName)
-                            when String.Equals(boundName, binder.Name, StringComparison.Ordinal) ->
-                            tryResolveTraitValue traitBindingName
+                            when boundName = binder.Name ->
+                            tryResolveTraitValue (typeVariableNameText traitBindingName)
                         | _ ->
                             None
                     | None, _ ->
                         match tryMatchTraitWitnessBody bodyType with
                         | Some(traitBindingName, _) ->
-                            tryResolveTraitValue traitBindingName
+                            tryResolveTraitValue (typeVariableNameText traitBindingName)
                         | _ ->
                             None
                     | _ ->
@@ -1870,8 +1883,8 @@ module internal ElaborationEvaluation =
                 typeSyntax
                 |> tryParseTypeSyntaxValue
                 |> Option.bind (function
-                    | TypeSignatures.TypeName(nameSegments, []) when not (List.isEmpty nameSegments) ->
-                        Some(List.last nameSegments)
+                    | TypeSignatures.TypeName(nameSegments, []) when not (List.isEmpty (typeReferenceSegments nameSegments)) ->
+                        Some(List.last (typeReferenceSegments nameSegments))
                     | _ ->
                         None)
             | _ ->

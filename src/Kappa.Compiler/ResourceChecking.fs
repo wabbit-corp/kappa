@@ -26,7 +26,7 @@ module ResourceChecking =
           RemainingPlaceBinders: ProjectionPlaceBinder list }
 
     type private TypeAliasSummary =
-        { Parameters: string list
+        { Parameters: TypeSignatures.TypeVariableName list
           Body: TypeSignatures.TypeExpr }
 
     let private scopedEffects = AsyncLocal<Map<string list, EffectSemanticDeclaration> option>()
@@ -55,6 +55,15 @@ module ResourceChecking =
 
     let private tryFindScopedEffectDeclaration name =
         tryFindScopedEffectDeclarationSegments [ name ]
+
+    let private typeReferenceSegments = TypeSignatures.TypeReference.segments
+    let private typeVariableName text = text |> TypeSignatures.TypeVariableName.create
+    let private typeVariableNameText = TypeSignatures.TypeVariableName.text
+    let private fieldName text = text |> TypeSignatures.FieldName.create
+    let private fieldNameText = TypeSignatures.FieldName.text
+    let private captureName text = text |> TypeSignatures.CaptureName.create
+    let private captureNameText = TypeSignatures.CaptureName.text
+    let private typeReference segments = segments |> TypeSignatures.TypeReference.ofSegments
 
     let private withScopedEffectDeclaration (declaration: EffectSemanticDeclaration) work =
         let saved = currentScopedEffects ()
@@ -338,9 +347,9 @@ module ResourceChecking =
 
     let private unwrapIoType typeExpr =
         match typeExpr with
-        | TypeSignatures.TypeName(nameSegments, [ inner ]) when CompilerKnownSymbols.KnownTypes.matchesName CompilerKnownSymbols.IOType nameSegments -> inner
-        | TypeSignatures.TypeName(nameSegments, [ _; inner ]) when CompilerKnownSymbols.KnownTypes.matchesName CompilerKnownSymbols.IOType nameSegments -> inner
-        | TypeSignatures.TypeName(nameSegments, [ inner ]) when CompilerKnownSymbols.KnownTypes.matchesName CompilerKnownSymbols.UIOType nameSegments -> inner
+        | TypeSignatures.TypeName(typeReference, [ inner ]) when CompilerKnownSymbols.KnownTypes.matchesName CompilerKnownSymbols.IOType (typeReferenceSegments typeReference) -> inner
+        | TypeSignatures.TypeName(typeReference, [ _; inner ]) when CompilerKnownSymbols.KnownTypes.matchesName CompilerKnownSymbols.IOType (typeReferenceSegments typeReference) -> inner
+        | TypeSignatures.TypeName(typeReference, [ inner ]) when CompilerKnownSymbols.KnownTypes.matchesName CompilerKnownSymbols.UIOType (typeReferenceSegments typeReference) -> inner
         | other -> other
 
     let private unwrapBindPayloadType typeExpr =
@@ -1287,19 +1296,21 @@ module ResourceChecking =
         | TypeSignatures.TypeIntrinsic TypeSignatures.LabelClassifier
         | TypeSignatures.TypeIntrinsic TypeSignatures.EffLabelClassifier ->
             true
-        | TypeSignatures.TypeName([ "Type" ], []) ->
+        | TypeSignatures.TypeName(typeReference, []) when typeReferenceSegments typeReference = [ "Type" ] ->
             true
-        | TypeSignatures.TypeName(nameSegments, []) when
-            CompilerKnownSymbols.KnownTypes.matchesName CompilerKnownSymbols.ConstraintType nameSegments
-            || CompilerKnownSymbols.KnownTypes.matchesName CompilerKnownSymbols.QuantityType nameSegments
-            || CompilerKnownSymbols.KnownTypes.matchesName CompilerKnownSymbols.RegionType nameSegments
-            || CompilerKnownSymbols.KnownTypes.matchesName CompilerKnownSymbols.RecRowType nameSegments
-            || CompilerKnownSymbols.KnownTypes.matchesName CompilerKnownSymbols.VarRowType nameSegments
-            || CompilerKnownSymbols.KnownTypes.matchesName CompilerKnownSymbols.EffRowType nameSegments
-            || CompilerKnownSymbols.KnownTypes.matchesName CompilerKnownSymbols.LabelType nameSegments
-            || CompilerKnownSymbols.KnownTypes.matchesName CompilerKnownSymbols.EffLabelType nameSegments ->
+        | TypeSignatures.TypeName(typeReference, []) when
+            CompilerKnownSymbols.KnownTypes.matchesName CompilerKnownSymbols.ConstraintType (typeReferenceSegments typeReference)
+            || CompilerKnownSymbols.KnownTypes.matchesName CompilerKnownSymbols.QuantityType (typeReferenceSegments typeReference)
+            || CompilerKnownSymbols.KnownTypes.matchesName CompilerKnownSymbols.RegionType (typeReferenceSegments typeReference)
+            || CompilerKnownSymbols.KnownTypes.matchesName CompilerKnownSymbols.RecRowType (typeReferenceSegments typeReference)
+            || CompilerKnownSymbols.KnownTypes.matchesName CompilerKnownSymbols.VarRowType (typeReferenceSegments typeReference)
+            || CompilerKnownSymbols.KnownTypes.matchesName CompilerKnownSymbols.EffRowType (typeReferenceSegments typeReference)
+            || CompilerKnownSymbols.KnownTypes.matchesName CompilerKnownSymbols.LabelType (typeReferenceSegments typeReference)
+            || CompilerKnownSymbols.KnownTypes.matchesName CompilerKnownSymbols.EffLabelType (typeReferenceSegments typeReference) ->
             true
-        | TypeSignatures.TypeName(nameSegments, arguments) ->
+        | TypeSignatures.TypeName(typeReference, arguments) ->
+            let nameSegments = typeReferenceSegments typeReference
+
             CompilerKnownSymbols.KnownTypes.matchesName CompilerKnownSymbols.SyntaxType nameSegments
             || CompilerKnownSymbols.KnownTypes.matchesName CompilerKnownSymbols.SyntaxOriginType nameSegments
             || CompilerKnownSymbols.KnownTypes.matchesName CompilerKnownSymbols.SyntaxFragmentType nameSegments
@@ -1397,7 +1408,7 @@ module ResourceChecking =
                     =
                     match remainingBinders, remainingParameters with
                     | binder :: binderRest, parameter :: parameterRest
-                        when String.Equals(binder.Name, parameter.Name, StringComparison.Ordinal) ->
+                        when String.Equals(TypeSignatures.TypeVariableName.text binder.Name, parameter.Name, StringComparison.Ordinal) ->
                         countMatchedBinders (count + 1) binderRest parameterRest
                     | _ ->
                         count
@@ -1436,9 +1447,9 @@ module ResourceChecking =
             let terminal = segments |> List.last
 
             if segments.Length = 1 && terminal.Length > 0 && Char.IsLower terminal[0] then
-                Some(TypeSignatures.TypeVariable terminal)
+                Some(TypeSignatures.TypeVariable(typeVariableName terminal))
             else
-                Some(TypeSignatures.TypeName(segments, []))
+                Some(TypeSignatures.TypeName(typeReference segments, []))
         | Apply(head, arguments) ->
             match
                 tryParseTypeLikeSurfaceExpressionForChecking head,
@@ -1545,8 +1556,8 @@ module ResourceChecking =
 
         let tryOptionPayloadType typeExpr =
             match typeExpr with
-            | TypeSignatures.TypeName(nameSegments, [ payloadType ]) when
-                CompilerKnownSymbols.KnownTypes.matchesName CompilerKnownSymbols.OptionType nameSegments ->
+            | TypeSignatures.TypeName(typeReference, [ payloadType ]) when
+                CompilerKnownSymbols.KnownTypes.matchesName CompilerKnownSymbols.OptionType (typeReferenceSegments typeReference) ->
                 Some payloadType
             | _ ->
                 None
@@ -1565,7 +1576,7 @@ module ResourceChecking =
                 Some currentType
             | fieldName :: rest, TypeSignatures.TypeRecord fields ->
                 fields
-                |> List.tryFind (fun field -> String.Equals(field.Name, fieldName, StringComparison.Ordinal))
+                |> List.tryFind (fun field -> String.Equals(fieldNameText field.Name, fieldName, StringComparison.Ordinal))
                 |> Option.bind (fun field -> tryProjectRecordType field.Type rest)
             | _ ->
                 None
@@ -1601,7 +1612,7 @@ module ResourceChecking =
                     |> List.map (fun field ->
                         loop locals field.Value
                         |> Option.map (fun fieldType ->
-                            ({ Name = field.Name
+                            ({ Name = field.Name |> fieldName
                                Quantity = if field.IsImplicit then QuantityZero else QuantityOmega
                                Type = fieldType }: TypeSignatures.RecordField)))
 
@@ -1764,7 +1775,7 @@ module ResourceChecking =
                         |> List.fold (fun current field ->
                             let fieldType =
                                 recordFields
-                                |> List.tryFind (fun recordField -> String.Equals(recordField.Name, field.Name, StringComparison.Ordinal))
+                                |> List.tryFind (fun recordField -> String.Equals(fieldNameText recordField.Name, field.Name, StringComparison.Ordinal))
                                 |> Option.map (fun recordField -> recordField.Type)
 
                             loop current fieldType field.Pattern) locals
@@ -1778,7 +1789,7 @@ module ResourceChecking =
                         let mentioned = fields |> List.map (fun field -> field.Name) |> Set.ofList
                         let residualFields =
                             recordFields
-                            |> List.filter (fun field -> not (Set.contains field.Name mentioned))
+                            |> List.filter (fun field -> not (Set.contains (fieldNameText field.Name) mentioned))
 
                         Map.add name (TypeSignatures.TypeRecord residualFields) locals
                     | _ ->
@@ -1840,7 +1851,7 @@ module ResourceChecking =
     let private inferConservativeFallbackBindingType value =
         match value with
         | Lambda(parameters, _) ->
-            let resultType = TypeSignatures.TypeVariable "__kappa_shadow_result"
+            let resultType = TypeSignatures.TypeVariable(typeVariableName "__kappa_shadow_result")
 
             parameters
             |> List.rev
@@ -1849,7 +1860,7 @@ module ResourceChecking =
                     let parameterType =
                         parameter.TypeTokens
                         |> Option.bind TypeSignatures.parseType
-                        |> Option.defaultValue (TypeSignatures.TypeVariable $"__kappa_shadow_param_{parameter.Name}")
+                        |> Option.defaultValue (TypeSignatures.TypeVariable(typeVariableName $"__kappa_shadow_param_{parameter.Name}"))
 
                     let quantity =
                         if parameter.IsInout then
@@ -1860,7 +1871,7 @@ module ResourceChecking =
                     TypeSignatures.TypeArrow(quantity, parameterType, current))
                 resultType
         | _ ->
-            TypeSignatures.TypeVariable "__kappa_shadow_local"
+            TypeSignatures.TypeVariable(typeVariableName "__kappa_shadow_local")
 
     let rec private typeContainsCaptureAnnotation typeExpr =
         match typeExpr with
@@ -1900,7 +1911,7 @@ module ResourceChecking =
             seq {
                 match current with
                 | TypeSignatures.TypeCapture(inner, captures) ->
-                    yield! captures
+                    yield! captures |> List.map captureNameText
                     yield! loop visited inner
                 | TypeSignatures.TypeApply(callee, arguments) ->
                     yield! loop visited callee
@@ -1923,19 +1934,22 @@ module ResourceChecking =
                     yield! loop visited left
                     yield! loop visited right
                 | TypeSignatures.TypeName(nameSegments, TypeSignatures.TypeVariable regionName :: arguments)
-                    when CompilerKnownSymbols.KnownTypes.matchesName CompilerKnownSymbols.BorrowViewType nameSegments ->
-                    yield regionName
+                    when CompilerKnownSymbols.KnownTypes.matchesName CompilerKnownSymbols.BorrowViewType (typeReferenceSegments nameSegments) ->
+                    yield regionName |> typeVariableNameText
 
                     for argument in arguments do
                         yield! loop visited argument
                 | TypeSignatures.TypeName(name, arguments) ->
-                    let aliasName = SyntaxFacts.moduleNameToText name
+                    let aliasName = name |> TypeSignatures.TypeReference.text
 
                     match typeAliasMap |> Map.tryFind aliasName with
                     | Some aliasInfo
                         when not (Set.contains aliasName visited)
                              && List.length aliasInfo.Parameters = List.length arguments ->
-                        let substitution = List.zip aliasInfo.Parameters arguments |> Map.ofList
+                        let substitution =
+                            List.zip aliasInfo.Parameters arguments
+                            |> List.map (fun (parameterName, argumentType) -> parameterName, argumentType)
+                            |> Map.ofList
 
                         yield!
                             aliasInfo.Body
@@ -1994,8 +2008,8 @@ module ResourceChecking =
         | TypeSignatures.TypeUniverse _ ->
             false
         | TypeSignatures.TypeName(nameSegments, _) when
-            CompilerKnownSymbols.KnownTypes.matchesName CompilerKnownSymbols.IOType nameSegments
-            || CompilerKnownSymbols.KnownTypes.matchesName CompilerKnownSymbols.UIOType nameSegments ->
+            CompilerKnownSymbols.KnownTypes.matchesName CompilerKnownSymbols.IOType (typeReferenceSegments nameSegments)
+            || CompilerKnownSymbols.KnownTypes.matchesName CompilerKnownSymbols.UIOType (typeReferenceSegments nameSegments) ->
             false
         | TypeSignatures.TypeName(_, arguments) ->
             arguments |> List.forall typeIsReliableForApplicationBoundary
@@ -2030,14 +2044,14 @@ module ResourceChecking =
         | TypeSignatures.TypeLevelLiteral _ ->
             true
 
-    let private isSingleLetterTypeParameterLike (nameSegments: string list) =
-        match nameSegments with
+    let private isSingleLetterTypeParameterLike typeReference =
+        match typeReferenceSegments typeReference with
         | [ name ] -> name.Length = 1 && Char.IsUpper name[0]
         | _ -> false
 
-    let private isSuspensionWrapperName (nameSegments: string list) =
-        CompilerKnownSymbols.KnownTypes.matchesName CompilerKnownSymbols.NeedType nameSegments
-        || CompilerKnownSymbols.KnownTypes.matchesName CompilerKnownSymbols.ThunkType nameSegments
+    let private isSuspensionWrapperName typeReference =
+        CompilerKnownSymbols.KnownTypes.matchesName CompilerKnownSymbols.NeedType (typeReferenceSegments typeReference)
+        || CompilerKnownSymbols.KnownTypes.matchesName CompilerKnownSymbols.ThunkType (typeReferenceSegments typeReference)
 
     let rec private hasConservativeBoundarySpecialCase typeExpr =
         match typeExpr with
@@ -5281,26 +5295,26 @@ module ResourceChecking =
 
         let queryQuantityExpr quantity =
             match quantity with
-            | ResourceQuantity.Interval(0, Some 0) -> TypeSignatures.TypeName([ "0" ], [])
-            | ResourceQuantity.Interval(1, Some 1) -> TypeSignatures.TypeName([ "1" ], [])
-            | ResourceQuantity.Interval(0, None) -> TypeSignatures.TypeName([ "ω" ], [])
-            | ResourceQuantity.Interval(0, Some 1) -> TypeSignatures.TypeName([ "<=1" ], [])
-            | ResourceQuantity.Interval(1, None) -> TypeSignatures.TypeName([ ">=1" ], [])
-            | ResourceQuantity.Borrow None -> TypeSignatures.TypeName([ "&" ], [])
-            | ResourceQuantity.Borrow(Some regionName) -> TypeSignatures.TypeName([ $"&[{regionName}]" ], [])
-            | ResourceQuantity.Variable name -> TypeSignatures.TypeName([ name ], [])
+            | ResourceQuantity.Interval(0, Some 0) -> TypeSignatures.TypeName(typeReference [ "0" ], [])
+            | ResourceQuantity.Interval(1, Some 1) -> TypeSignatures.TypeName(typeReference [ "1" ], [])
+            | ResourceQuantity.Interval(0, None) -> TypeSignatures.TypeName(typeReference [ "ω" ], [])
+            | ResourceQuantity.Interval(0, Some 1) -> TypeSignatures.TypeName(typeReference [ "<=1" ], [])
+            | ResourceQuantity.Interval(1, None) -> TypeSignatures.TypeName(typeReference [ ">=1" ], [])
+            | ResourceQuantity.Borrow None -> TypeSignatures.TypeName(typeReference [ "&" ], [])
+            | ResourceQuantity.Borrow(Some regionName) -> TypeSignatures.TypeName(typeReference [ $"&[{regionName}]" ], [])
+            | ResourceQuantity.Variable name -> TypeSignatures.TypeName(typeReference [ name ], [])
             | ResourceQuantity.Interval(minimum, Some maximum) when minimum = maximum ->
-                TypeSignatures.TypeName([ string minimum ], [])
+                TypeSignatures.TypeName(typeReference [ string minimum ], [])
             | ResourceQuantity.Interval(minimum, Some maximum) ->
-                TypeSignatures.TypeName([ $"[{minimum},{maximum}]" ], [])
+                TypeSignatures.TypeName(typeReference [ $"[{minimum},{maximum}]" ], [])
             | ResourceQuantity.Interval(minimum, None) ->
-                TypeSignatures.TypeName([ $"[{minimum},inf]" ], [])
+                TypeSignatures.TypeName(typeReference [ $"[{minimum},inf]" ], [])
 
         let buildQueryTypeExpr (queryInfo: QuerySemantics.QueryTypeInfo) =
             let buildModeExpr (mode: QuerySemantics.QueryModeInfo) =
                 let useExpr =
                     TypeSignatures.TypeName(
-                        [
+                        typeReference [
                             match mode.Use with
                             | QuerySemantics.Reusable -> "Reusable"
                             | QuerySemantics.OneShot -> "OneShot"
@@ -5309,7 +5323,7 @@ module ResourceChecking =
                     )
 
                 let cardExpr =
-                    TypeSignatures.TypeName([ queryCardText mode.Card ], [])
+                    TypeSignatures.TypeName(typeReference [ queryCardText mode.Card ], [])
 
                 TypeSignatures.knownType CompilerKnownSymbols.QueryModeType [ useExpr; cardExpr ]
 
@@ -5333,7 +5347,7 @@ module ResourceChecking =
             if Set.isEmpty queryInfo.CaptureSet then
                 baseType
             else
-                TypeSignatures.TypeCapture(baseType, queryInfo.CaptureSet |> Set.toList)
+                TypeSignatures.TypeCapture(baseType, queryInfo.CaptureSet |> Set.toList |> List.map captureName)
 
         let currentRowBindings current =
             currentScopeBindingIds current
@@ -5617,7 +5631,7 @@ module ResourceChecking =
                             |> fun next -> checkExpression projectionSummaries document signatures currentLocals next field.Value) current
 
                     let nextLocals =
-                        Map.add intoName (TypeSignatures.TypeVariable $"__kappa_group_{intoName}") Map.empty
+                        Map.add intoName (TypeSignatures.TypeVariable(typeVariableName $"__kappa_group_{intoName}")) Map.empty
 
                     checkComprehensionClauses nextLocals current comprehension rest
                 | OrderByClause(_, key) ->
@@ -5699,7 +5713,7 @@ module ResourceChecking =
                     let intoType =
                         sourceInfo
                         |> Option.map (fun info -> buildQueryTypeExpr info.Query)
-                        |> Option.defaultValue (TypeSignatures.TypeVariable $"__kappa_query_{intoName}")
+                        |> Option.defaultValue (TypeSignatures.TypeVariable(typeVariableName $"__kappa_query_{intoName}"))
 
                     let nextState =
                         addBinding

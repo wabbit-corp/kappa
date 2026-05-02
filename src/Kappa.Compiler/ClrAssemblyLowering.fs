@@ -4,6 +4,9 @@ open System
 
 // Lowers KBackendIR modules into the CLR-specific assembly IR.
 module internal ClrAssemblyLowering =
+    let private mkTypeName segments arguments =
+        TypeSignatures.TypeName(TypeSignatures.TypeReference.ofSegments segments, arguments)
+
     let private qualifiedName (moduleName: string) (memberName: string) =
         moduleName.Split('.', StringSplitOptions.RemoveEmptyEntries)
         |> Array.toList
@@ -163,13 +166,12 @@ module internal ClrAssemblyLowering =
                 |> Option.map (fun elementType ->
                     TypeSignatures.knownType CompilerKnownSymbols.RefType [ elementType ])
             | BackendRepDictionary traitName ->
-                Some(TypeSignatures.TypeName([ TraitRuntime.dictionaryTypeName traitName ], []))
+                Some(mkTypeName [ TraitRuntime.dictionaryTypeName traitName ] [])
             | BackendRepTaggedData(moduleName, typeName) ->
                 Some(
-                    TypeSignatures.TypeName(
-                        (ModuleIdentity.ofDottedTextUnchecked moduleName |> ModuleIdentity.segments) @ [ typeName ],
+                    mkTypeName
+                        ((ModuleIdentity.ofDottedTextUnchecked moduleName |> ModuleIdentity.segments) @ [ typeName ])
                         []
-                    )
                 )
             | BackendRepIOAction ->
                 Some(TypeSignatures.knownType CompilerKnownSymbols.IOType [ TypeSignatures.knownType CompilerKnownSymbols.UnitType [] ])
@@ -180,7 +182,7 @@ module internal ClrAssemblyLowering =
             | BackendRepOpaque None ->
                 None
             | BackendRepOpaque(Some name) ->
-                Some(TypeSignatures.TypeName([ name ], []))
+                Some(mkTypeName [ name ] [])
 
         render representation
 

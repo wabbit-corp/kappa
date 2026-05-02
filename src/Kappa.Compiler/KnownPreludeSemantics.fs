@@ -26,6 +26,7 @@ module internal KnownPreludeSemantics =
         member this.TraitName =
             this.Trait
             |> TraitReference.localName
+            |> ReferenceName.text
 
     let preludeModuleIdentity = ModuleIdentity.ofSegments CompilerKnownSymbols.KnownModules.Prelude
     let hashModuleIdentity = ModuleIdentity.ofSegments CompilerKnownSymbols.KnownModules.Hash
@@ -66,6 +67,7 @@ module internal KnownPreludeSemantics =
         let localName =
             expectedTraitReference
             |> TraitReference.localName
+            |> ReferenceName.text
 
         nameSegments = [ localName ] || nameSegments = (CompilerKnownSymbols.KnownModules.Prelude @ [ localName ])
 
@@ -166,7 +168,9 @@ module internal KnownPreludeSemantics =
         (normalizedTypeExpr: TypeExpr)
         =
         match normalizedTypeExpr with
-        | TypeName(nameSegments, []) ->
+        | TypeName(typeReference, []) ->
+            let nameSegments = typeReference |> TypeReference.segments
+
             let matchesTopLevelNameSegments canonicalIdentity =
                 let bareName = [ TypeIdentity.name canonicalIdentity ]
                 let qualifiedName =

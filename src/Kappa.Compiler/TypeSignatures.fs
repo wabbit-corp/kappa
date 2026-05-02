@@ -5,6 +5,275 @@ open System.Collections.Generic
 
 // Parses and reasons about textual type signatures used across compiler stages.
 module TypeSignatures =
+    [<RequireQualifiedAccess>]
+    type NameOriginKind =
+        | SourceSpelling
+        | Synthetic of introductionKind: string
+
+    type NameProvenance =
+        { OriginKind: NameOriginKind
+          OriginSpan: TextSpan option }
+
+    [<CustomEquality; CustomComparison>]
+    type ReferenceName =
+        private
+            { Spelling: NamesModel.Spelling
+              CanonicalText: string
+              Provenance: NameProvenance option }
+
+        override this.Equals(other) =
+            match other with
+            | :? ReferenceName as other ->
+                String.Equals(this.CanonicalText, other.CanonicalText, StringComparison.Ordinal)
+            | _ ->
+                false
+
+        override this.GetHashCode() =
+            StringComparer.Ordinal.GetHashCode(this.CanonicalText)
+
+        interface IComparable with
+            member this.CompareTo(other) =
+                match other with
+                | :? ReferenceName as other ->
+                    StringComparer.Ordinal.Compare(this.CanonicalText, other.CanonicalText)
+                | _ ->
+                    invalidArg (nameof other) "Cannot compare reference names of different types."
+
+    module ReferenceName =
+        let private classifySpelling (renderedText: string) (canonicalText: string) =
+            if renderedText.Length >= 2
+               && renderedText[0] = '`'
+               && renderedText[renderedText.Length - 1] = '`' then
+                NamesModel.Spelling.BacktickIdent canonicalText
+            elif canonicalText.Length > 0 && canonicalText |> Seq.forall SyntaxFacts.isOperatorCharacter then
+                NamesModel.Spelling.Operator canonicalText
+            else
+                NamesModel.Spelling.Ident canonicalText
+
+        let createWithProvenance provenance text =
+            if String.IsNullOrWhiteSpace(text) then
+                invalidArg (nameof text) "Reference names must not be blank."
+
+            { Spelling = classifySpelling text text
+              CanonicalText = text
+              Provenance = provenance }
+
+        let create text = createWithProvenance None text
+
+        let createSynthetic introductionKind text =
+            createWithProvenance
+                (Some
+                    { OriginKind = NameOriginKind.Synthetic introductionKind
+                      OriginSpan = None })
+                text
+
+        let fromToken (token: Token) =
+            let renderedText = token.Text
+
+            let canonicalText =
+                match token.Kind with
+                | Operator
+                | Colon
+                | Equals ->
+                    renderedText
+                | _ ->
+                    SyntaxFacts.trimIdentifierQuotes renderedText
+
+            createWithProvenance
+                (Some
+                    { OriginKind = NameOriginKind.SourceSpelling
+                      OriginSpan = Some token.Span })
+                canonicalText
+            |> fun name ->
+                { name with
+                    Spelling = classifySpelling renderedText canonicalText }
+
+        let text name = name.CanonicalText
+
+        let spelling name = name.Spelling
+
+        let renderedText name =
+            match name.Spelling with
+            | NamesModel.Spelling.Ident text
+            | NamesModel.Spelling.Operator text ->
+                text
+            | NamesModel.Spelling.BacktickIdent text ->
+                $"`{text}`"
+
+        let provenance name = name.Provenance
+
+    [<CustomEquality; CustomComparison>]
+    type TypeVariableName =
+        private
+        | TypeVariableName of ReferenceName
+        with
+
+        override this.Equals(other) =
+            match other with
+            | :? TypeVariableName as other ->
+                let (TypeVariableName thisName) = this
+                let (TypeVariableName otherName) = other
+                thisName = otherName
+            | _ ->
+                false
+
+        override this.GetHashCode() =
+            let (TypeVariableName name) = this
+            hash name
+
+        interface IComparable with
+            member this.CompareTo(other) =
+                match other with
+                | :? TypeVariableName as other ->
+                    let (TypeVariableName thisName) = this
+                    let (TypeVariableName otherName) = other
+                    compare thisName otherName
+                | _ ->
+                    invalidArg (nameof other) "Cannot compare type variable names of different types."
+
+    module TypeVariableName =
+        let create text = text |> ReferenceName.create |> TypeVariableName
+
+        let ofReferenceName name = TypeVariableName name
+
+        let fromToken token = token |> ReferenceName.fromToken |> TypeVariableName
+
+        let createSynthetic introductionKind text =
+            text |> ReferenceName.createSynthetic introductionKind |> TypeVariableName
+
+        let text (TypeVariableName name) = name |> ReferenceName.text
+
+        let provenance (TypeVariableName name) = name |> ReferenceName.provenance
+
+    [<CustomEquality; CustomComparison>]
+    type FieldName =
+        private
+        | FieldName of ReferenceName
+        with
+
+        override this.Equals(other) =
+            match other with
+            | :? FieldName as other ->
+                let (FieldName thisName) = this
+                let (FieldName otherName) = other
+                thisName = otherName
+            | _ ->
+                false
+
+        override this.GetHashCode() =
+            let (FieldName name) = this
+            hash name
+
+        interface IComparable with
+            member this.CompareTo(other) =
+                match other with
+                | :? FieldName as other ->
+                    let (FieldName thisName) = this
+                    let (FieldName otherName) = other
+                    compare thisName otherName
+                | _ ->
+                    invalidArg (nameof other) "Cannot compare field names of different types."
+
+    module FieldName =
+        let create text = text |> ReferenceName.create |> FieldName
+
+        let ofReferenceName name = FieldName name
+
+        let fromToken token = token |> ReferenceName.fromToken |> FieldName
+
+        let createSynthetic introductionKind text =
+            text |> ReferenceName.createSynthetic introductionKind |> FieldName
+
+        let text (FieldName name) = name |> ReferenceName.text
+
+        let provenance (FieldName name) = name |> ReferenceName.provenance
+
+    [<CustomEquality; CustomComparison>]
+    type CaptureName =
+        private
+        | CaptureName of ReferenceName
+        with
+
+        override this.Equals(other) =
+            match other with
+            | :? CaptureName as other ->
+                let (CaptureName thisName) = this
+                let (CaptureName otherName) = other
+                thisName = otherName
+            | _ ->
+                false
+
+        override this.GetHashCode() =
+            let (CaptureName name) = this
+            hash name
+
+        interface IComparable with
+            member this.CompareTo(other) =
+                match other with
+                | :? CaptureName as other ->
+                    let (CaptureName thisName) = this
+                    let (CaptureName otherName) = other
+                    compare thisName otherName
+                | _ ->
+                    invalidArg (nameof other) "Cannot compare capture names of different types."
+
+    module CaptureName =
+        let create text = text |> ReferenceName.create |> CaptureName
+
+        let ofReferenceName name = CaptureName name
+
+        let fromToken token = token |> ReferenceName.fromToken |> CaptureName
+
+        let createSynthetic introductionKind text =
+            text |> ReferenceName.createSynthetic introductionKind |> CaptureName
+
+        let text (CaptureName name) = name |> ReferenceName.text
+
+        let provenance (CaptureName name) = name |> ReferenceName.provenance
+
+    [<StructuralEquality; StructuralComparison>]
+    type QualifiedReference =
+        private
+            { QualifierSegments: ReferenceName list
+              LocalName: ReferenceName }
+
+    module QualifiedReference =
+        let create qualifier localName =
+            { QualifierSegments = qualifier
+              LocalName = localName }
+
+        let ofSegments segments =
+            match segments with
+            | [] ->
+                invalidArg (nameof segments) "Qualified references must contain at least one segment."
+            | _ ->
+                let qualifier = segments |> List.take (max 0 (List.length segments - 1)) |> List.map ReferenceName.create
+                let localName = segments |> List.last |> ReferenceName.create
+                create qualifier localName
+
+        let ofNames segments =
+            match segments with
+            | [] ->
+                invalidArg (nameof segments) "Qualified references must contain at least one segment."
+            | _ ->
+                create (segments |> List.take (max 0 (List.length segments - 1))) (segments |> List.last)
+
+        let qualifierSegments qualifiedReference = qualifiedReference.QualifierSegments
+
+        let qualifierModuleIdentity qualifiedReference =
+            match qualifierSegments qualifiedReference |> List.map ReferenceName.text with
+            | [] -> None
+            | segments -> Some(ModuleIdentity.ofSegments segments)
+
+        let localName qualifiedReference = qualifiedReference.LocalName
+
+        let segments qualifiedReference =
+            (qualifierSegments qualifiedReference |> List.map ReferenceName.text)
+            @ [ localName qualifiedReference |> ReferenceName.text ]
+
+        let text qualifiedReference =
+            qualifiedReference |> segments |> SyntaxFacts.moduleNameToText
+
     type IntrinsicClassifier =
         | UniverseClassifier
         | QuantityClassifier
@@ -17,20 +286,20 @@ module TypeSignatures =
         | EffLabelClassifier
 
     type TypeExpr =
-        | TypeName of string list * TypeExpr list
-        | TypeVariable of string
+        | TypeName of TypeReference * TypeExpr list
+        | TypeVariable of TypeVariableName
         | TypeLevelLiteral of int
         | TypeUniverse of TypeExpr option
         | TypeIntrinsic of IntrinsicClassifier
         | TypeApply of TypeExpr * TypeExpr list
-        | TypeLambda of string * TypeExpr * TypeExpr
+        | TypeLambda of TypeVariableName * TypeExpr * TypeExpr
         | TypeDelay of TypeExpr
         | TypeMemo of TypeExpr
         | TypeForce of TypeExpr
-        | TypeProject of TypeExpr * string
+        | TypeProject of TypeExpr * FieldName
         | TypeArrow of Quantity * TypeExpr * TypeExpr
         | TypeEquality of TypeExpr * TypeExpr
-        | TypeCapture of TypeExpr * string list
+        | TypeCapture of TypeExpr * CaptureName list
         | TypeEffectRow of EffectRowEntry list * TypeExpr option
         | TypeRecord of RecordField list
         | TypeUnion of TypeExpr list
@@ -40,60 +309,97 @@ module TypeSignatures =
           Effect: TypeExpr }
 
     and RecordField =
-        { Name: string
+        { Name: FieldName
           Quantity: Quantity
           Type: TypeExpr }
 
-    type TraitReference = private TraitReference of string list * DeclarationIdentity option
+    and TypeReference = private TypeReference of QualifiedReference * TypeIdentity option
+
+    module TypeReference =
+        let create qualifiedReference identity =
+            TypeReference(qualifiedReference, identity)
+
+        let ofSegments segments = create (QualifiedReference.ofSegments segments) None
+
+        let ofQualifiedReference qualifiedReference = create qualifiedReference None
+
+        let qualifiedReference (TypeReference(qualifiedReference, _)) = qualifiedReference
+
+        let identity (TypeReference(_, identity)) = identity
+
+        let attachIdentity typeIdentity typeReference =
+            create (qualifiedReference typeReference) (Some typeIdentity)
+
+        let segments typeReference =
+            typeReference |> qualifiedReference |> QualifiedReference.segments
+
+        let text typeReference =
+            typeReference |> qualifiedReference |> QualifiedReference.text
+
+        let localName typeReference =
+            typeReference |> qualifiedReference |> QualifiedReference.localName
+
+        let canonicalText typeReference =
+            typeReference
+            |> identity
+            |> Option.map (fun typeIdentity ->
+                ((TypeIdentity.moduleIdentity typeIdentity |> ModuleIdentity.segments)
+                 @ TypeIdentity.scopePath typeIdentity
+                 @ [ TypeIdentity.name typeIdentity ])
+                |> String.concat ".")
+            |> Option.defaultValue (text typeReference)
+
+        let matches left right =
+            match identity left, identity right with
+            | Some leftIdentity, Some rightIdentity -> leftIdentity = rightIdentity
+            | _ -> qualifiedReference left = qualifiedReference right
+
+    type TraitReference = private TraitReference of QualifiedReference * DeclarationIdentity option
 
     module TraitReference =
-        let create segments identity =
-            match segments with
-            | [] ->
-                invalidArg (nameof segments) "Trait references must contain at least one segment."
-            | _ ->
-                TraitReference(segments, identity)
+        let create qualifiedReference identity =
+            TraitReference(qualifiedReference, identity)
 
-        let ofSegments segments = create segments None
+        let ofSegments segments = create (QualifiedReference.ofSegments segments) None
+
+        let ofQualifiedReference qualifiedReference = create qualifiedReference None
 
         let unqualified name = ofSegments [ name ]
 
-        let segments (TraitReference(segments, _)) = segments
+        let qualifiedReference (TraitReference(qualifiedReference, _)) = qualifiedReference
+
+        let segments traitReference = traitReference |> qualifiedReference |> QualifiedReference.segments
 
         let identity (TraitReference(_, identity)) = identity
 
         let attachIdentity declarationIdentity traitReference =
-            create (segments traitReference) (Some declarationIdentity)
+            create (qualifiedReference traitReference) (Some declarationIdentity)
 
         let text traitReference =
-            traitReference
-            |> segments
-            |> SyntaxFacts.moduleNameToText
+            traitReference |> qualifiedReference |> QualifiedReference.text
 
         let localName traitReference =
-            traitReference
-            |> segments
-            |> List.last
+            traitReference |> qualifiedReference |> QualifiedReference.localName
 
         let canonicalName traitReference =
             traitReference
             |> identity
             |> Option.map DeclarationIdentity.canonicalText
-            |> Option.defaultValue (localName traitReference)
+            |> Option.defaultValue (text traitReference)
 
         let matches left right =
             match identity left, identity right with
             | Some leftIdentity, Some rightIdentity ->
                 leftIdentity = rightIdentity
             | _ ->
-                segments left = segments right
+                qualifiedReference left = qualifiedReference right
 
     type TraitConstraint =
         { Trait: TraitReference
           Arguments: TypeExpr list }
 
     type ForallBinder =
-        { Name: string
+        { Name: TypeVariableName
           Quantity: Quantity
           Sort: TypeExpr }
 
@@ -103,7 +409,7 @@ module TypeSignatures =
           Body: TypeExpr }
 
     type TypeDefinition =
-        { ParameterNames: string list
+        { ParameterNames: TypeVariableName list
           DefinitionBody: TypeExpr
           Transparent: bool
           TerminationCertified: bool
@@ -116,15 +422,12 @@ module TypeSignatures =
         | AssertTerminatesUnverified
         | AssertReducibleUnverified
 
-    type DefinitionContext = Map<string, TypeDefinition>
+    type DefinitionContext = Map<QualifiedReference, TypeDefinition>
 
     let emptyDefinitionContext : DefinitionContext = Map.empty
 
-    let private collapsedName (segments: string list) =
-        SyntaxFacts.moduleNameToText segments
-
     let knownType known arguments =
-        TypeName(CompilerKnownSymbols.KnownTypes.canonicalPath known, arguments)
+        TypeName(TypeReference.ofSegments (CompilerKnownSymbols.KnownTypes.canonicalPath known), arguments)
 
     let private unitTypeExpr =
         knownType CompilerKnownSymbols.UnitType []
@@ -132,12 +435,22 @@ module TypeSignatures =
     let private optionTypeExpr inner =
         knownType CompilerKnownSymbols.OptionType [ inner ]
 
-    let matchesKnownTypeName known nameSegments =
-        CompilerKnownSymbols.KnownTypes.matchesName known nameSegments
+    let private makeTypeVariable text = text |> TypeVariableName.create |> TypeVariable
+    let private makeTypeVariableFromToken token = token |> TypeVariableName.fromToken |> TypeVariable
+    let private makeFieldName text = text |> FieldName.create
+    let private makeFieldNameFromToken token = token |> FieldName.fromToken
+    let private makeCaptureName text = text |> CaptureName.create
+    let private makeCaptureNameFromToken token = token |> CaptureName.fromToken
+    let private makeTypeReference segments = segments |> TypeReference.ofSegments
+    let private makeTypeReferenceFromQualifiedReference qualifiedReference =
+        qualifiedReference |> TypeReference.ofQualifiedReference
+
+    let matchesKnownTypeName known typeReference =
+        CompilerKnownSymbols.KnownTypes.matchesName known (TypeReference.segments typeReference)
 
     let tryKnownTypeArguments known typeExpr =
         match typeExpr with
-        | TypeName(nameSegments, arguments) when matchesKnownTypeName known nameSegments ->
+        | TypeName(typeReference, arguments) when matchesKnownTypeName known typeReference ->
             Some arguments
         | _ ->
             None
@@ -154,8 +467,8 @@ module TypeSignatures =
         | LabelClassifier -> CompilerKnownSymbols.KnownTypeNames.Label
         | EffLabelClassifier -> CompilerKnownSymbols.KnownTypeNames.EffLabel
 
-    let private tryIntrinsicClassifier name =
-        match CompilerKnownSymbols.KnownTypes.tryClassifyName name with
+    let private tryIntrinsicClassifier typeReference =
+        match typeReference |> TypeReference.segments |> CompilerKnownSymbols.KnownTypes.tryClassifyName with
         | Some CompilerKnownSymbols.UniverseType -> Some UniverseClassifier
         | Some CompilerKnownSymbols.QuantityType -> Some QuantityClassifier
         | Some CompilerKnownSymbols.RegionType -> Some RegionClassifier
@@ -167,7 +480,7 @@ module TypeSignatures =
         | _ -> None
 
     let addDefinition name definition (context: DefinitionContext) =
-        context |> Map.add (collapsedName name) definition
+        context |> Map.add name definition
 
     let addTransparentDefinition name parameters body context =
         addDefinition
@@ -434,10 +747,8 @@ module TypeSignatures =
                         typeTokens, afterQuantity
 
                 match nameTokens with
-                | [ nameToken ] when Token.isName nameToken ->
-                    Some(quantity, SyntaxFacts.trimIdentifierQuotes nameToken.Text, typeTokens)
-                | [ { Kind = Underscore } ] ->
-                    Some(quantity, "_", typeTokens)
+                | [ nameToken ] when Token.isName nameToken || nameToken.Kind = Underscore ->
+                    Some(quantity, ReferenceName.fromToken nameToken, typeTokens)
                 | _ ->
                     None
             | _ ->
@@ -517,7 +828,7 @@ module TypeSignatures =
 
                 nestedParser.ParseCompleteType()
                 |> Option.map (fun fieldType ->
-                    { Name = name
+                    { Name = name |> FieldName.ofReferenceName
                       Quantity = quantity
                       Type = fieldType })
             | None ->
@@ -535,7 +846,7 @@ module TypeSignatures =
 
                     nestedParser.ParseCompleteType()
                     |> Option.map (fun fieldValue ->
-                        { Name = SyntaxFacts.trimIdentifierQuotes nameToken.Text
+                        { Name = nameToken |> makeFieldNameFromToken
                           Quantity = QuantityOmega
                           Type = fieldValue })
                 | _ ->
@@ -583,7 +894,7 @@ module TypeSignatures =
                     elementTypes
                     |> List.choose id
                     |> List.mapi (fun index elementType ->
-                        { Name = $"_{index + 1}"
+                        { Name = makeFieldName $"_{index + 1}"
                           Quantity = QuantityOmega
                           Type = elementType })
                     |> TypeRecord
@@ -748,7 +1059,7 @@ module TypeSignatures =
                 match this.Current with
                 | Some { Kind = LeftParen } ->
                     let mutable offset = 1
-                    let mutable parts = ResizeArray<string>()
+                    let mutable parts = ResizeArray<Token>()
                     let mutable keepReading = true
                     let mutable sawRightParen = false
 
@@ -758,19 +1069,28 @@ module TypeSignatures =
                             sawRightParen <- true
                             keepReading <- false
                         | Some token when isSymbolToken token ->
-                            parts.Add(token.Text)
+                            parts.Add(token)
                             offset <- offset + 1
                         | _ ->
                             keepReading <- false
 
                     if sawRightParen then
-                        this.Advance() |> ignore
+                        let openingParen = this.Advance().Value
 
                         for _ in 1 .. parts.Count do
                             this.Advance() |> ignore
 
-                        this.Advance() |> ignore
-                        Some [ String.Concat(parts) ]
+                        let closingParen = this.Advance().Value
+                        let operatorText = parts |> Seq.map (fun token -> token.Text) |> String.Concat
+
+                        ReferenceName.createWithProvenance
+                            (Some
+                                { OriginKind = NameOriginKind.SourceSpelling
+                                  OriginSpan = Some(TextSpan.FromBounds(openingParen.Span.Start, closingParen.Span.End)) })
+                            operatorText
+                        |> List.singleton
+                        |> QualifiedReference.ofNames
+                        |> Some
                     else
                         None
                 | _ ->
@@ -781,8 +1101,8 @@ module TypeSignatures =
             | None ->
                 match this.Current with
                 | Some token when Token.isName token ->
-                    let segments = ResizeArray<string>()
-                    segments.Add(SyntaxFacts.trimIdentifierQuotes token.Text)
+                    let segments = ResizeArray<ReferenceName>()
+                    segments.Add(ReferenceName.fromToken token)
                     this.Advance() |> ignore
 
                     let mutable keepReading = true
@@ -791,18 +1111,18 @@ module TypeSignatures =
                         match this.Current, this.Peek(1) with
                         | Some { Kind = Dot }, Some nextToken when Token.isName nextToken ->
                             this.Advance() |> ignore
-                            segments.Add(SyntaxFacts.trimIdentifierQuotes nextToken.Text)
+                            segments.Add(ReferenceName.fromToken nextToken)
                             this.Advance() |> ignore
                         | _ ->
                             keepReading <- false
 
-                    Some(List.ofSeq segments)
+                    segments |> List.ofSeq |> QualifiedReference.ofNames |> Some
                 | _ ->
                     None
 
         member private this.TryParseQuantityAtom() =
             let quantityExpr quantity =
-                TypeName([ Quantity.toSurfaceText quantity ], [])
+                TypeName(makeTypeReference [ Quantity.toSurfaceText quantity ], [])
 
             match this.Current with
             | Some { Kind = IntegerLiteral; Text = "0" } ->
@@ -909,17 +1229,18 @@ module TypeSignatures =
             | _ ->
                 this.ParseQualifiedName()
                 |> Option.map (fun name ->
-                    let terminalSegment = name |> List.last
-                    let collapsedName = SyntaxFacts.moduleNameToText name
+                    let nameSegments = name |> QualifiedReference.segments
+                    let terminalSegment = name |> QualifiedReference.localName |> ReferenceName.text
+                    let collapsedName = name |> QualifiedReference.text
                     let projectionChain =
-                        match name with
+                        match nameSegments with
                         | head :: tail when not (List.isEmpty tail) ->
                             let terminalIsLowercase =
                                 terminalSegment.Length > 0 && Char.IsLower(terminalSegment[0])
 
                             if String.Equals(head, "this", StringComparison.Ordinal) || terminalIsLowercase then
                                 tail
-                                |> List.fold (fun current fieldName -> TypeProject(current, fieldName)) (TypeVariable head)
+                                |> List.fold (fun current fieldName -> TypeProject(current, fieldName |> makeFieldName)) (makeTypeVariable head)
                                 |> Some
                             else
                                 None
@@ -930,12 +1251,14 @@ module TypeSignatures =
                     | Some projected ->
                         projected
                     | None ->
-                        match tryIntrinsicClassifier name with
+                        let parsedTypeReference = makeTypeReferenceFromQualifiedReference name
+
+                        match tryIntrinsicClassifier parsedTypeReference with
                         | Some classifier ->
                             TypeIntrinsic classifier
-                        | None when name = [ "Type" ] ->
+                        | None when nameSegments = [ "Type" ] ->
                             TypeUniverse None
-                        | None when name.Length = 1 && terminalSegment.StartsWith("Type", StringComparison.Ordinal) ->
+                        | None when nameSegments.Length = 1 && terminalSegment.StartsWith("Type", StringComparison.Ordinal) ->
                             let suffix = terminalSegment.Substring("Type".Length)
 
                             match Int32.TryParse suffix with
@@ -943,14 +1266,14 @@ module TypeSignatures =
                                 TypeUniverse(Some(TypeLevelLiteral level))
                             | false, _ ->
                                 if terminalSegment.Length > 0 && Char.IsLower(terminalSegment[0]) then
-                                    TypeVariable collapsedName
+                                    makeTypeVariable collapsedName
                                 else
-                                    TypeName(name, [])
+                                    TypeName(parsedTypeReference, [])
                         | None ->
                             if terminalSegment.Length > 0 && Char.IsLower(terminalSegment[0]) then
-                                TypeVariable collapsedName
+                                makeTypeVariable collapsedName
                             else
-                                TypeName(name, []))
+                                TypeName(parsedTypeReference, []))
 
         member private this.CanStartAtom() =
             match this.Current with
@@ -982,7 +1305,7 @@ module TypeSignatures =
                     | Some { Kind = Dot }, Some nextToken when Token.isName nextToken ->
                         this.Advance() |> ignore
                         let memberToken = this.Advance().Value
-                        parsed <- TypeProject(parsed, SyntaxFacts.trimIdentifierQuotes memberToken.Text)
+                        parsed <- TypeProject(parsed, memberToken |> makeFieldNameFromToken)
                     | _ ->
                         keepParsingProjections <- false
 
@@ -1000,14 +1323,14 @@ module TypeSignatures =
             | Some capturesToken, Some { Kind = LeftParen } when isCapturesToken capturesToken ->
                 this.Advance() |> ignore
                 this.Advance() |> ignore
-                let regions = ResizeArray<string>()
+                let regions = ResizeArray<CaptureName>()
                 let mutable keepReading = true
                 let mutable parsed = true
 
                 while keepReading && parsed do
                     match this.Current with
                     | Some token when Token.isName token ->
-                        regions.Add(SyntaxFacts.trimIdentifierQuotes token.Text)
+                        regions.Add(token |> makeCaptureNameFromToken)
                         this.Advance() |> ignore
 
                         if this.MatchKind Comma then
@@ -1091,7 +1414,7 @@ module TypeSignatures =
 
                         match this.ParseApplication() with
                         | Some right ->
-                            parsed <- TypeApply(TypeName([ operatorName ], []), [ parsed; right ])
+                            parsed <- TypeApply(TypeName(makeTypeReference [ operatorName ], []), [ parsed; right ])
                         | None ->
                             valid <- false
                     | _ ->
@@ -1127,7 +1450,7 @@ module TypeSignatures =
                     let binderParser = Parser(typeTokens)
 
                     binderParser.ParseCompleteType()
-                    |> Option.map (fun binderSort -> binderName, binderSort)
+                    |> Option.map (fun binderSort -> binderName |> TypeVariableName.ofReferenceName, binderSort)
                 | None ->
                     None
 
@@ -1135,14 +1458,14 @@ module TypeSignatures =
             | Some token when Token.isKeyword Keyword.Forall token ->
                 this.Advance() |> ignore
 
-                let binders = ResizeArray<string * TypeExpr>()
+                let binders = ResizeArray<TypeVariableName * TypeExpr>()
                 let mutable keepReading = true
                 let mutable parsed = true
 
                 while keepReading && parsed do
                     match this.Current with
-                    | Some token when Token.isName token ->
-                        binders.Add(SyntaxFacts.trimIdentifierQuotes token.Text, TypeUniverse None)
+                    | Some token when Token.isName token || token.Kind = Underscore ->
+                        binders.Add(token |> TypeVariableName.fromToken, TypeUniverse None)
                         this.Advance() |> ignore
                     | Some { Kind = LeftParen } ->
                         match this.FindMatchingIndex(LeftParen, RightParen, position) with
@@ -1192,7 +1515,7 @@ module TypeSignatures =
 
                     binderParser.ParseCompleteType()
                     |> Option.map (fun binderSort ->
-                        { Name = binderName
+                        { Name = binderName |> TypeVariableName.ofReferenceName
                           Quantity = quantity
                           Sort = binderSort })
                 | None ->
@@ -1208,9 +1531,9 @@ module TypeSignatures =
 
                     while keepReading do
                         match this.Current with
-                        | Some token when Token.isName token ->
+                        | Some token when Token.isName token || token.Kind = Underscore ->
                             binders.Add(
-                                { Name = SyntaxFacts.trimIdentifierQuotes token.Text
+                                { Name = token |> TypeVariableName.fromToken
                                   Quantity = QuantityZero
                                   Sort = TypeUniverse None }
                             )
@@ -1261,7 +1584,7 @@ module TypeSignatures =
                 match constraintParser.ParseType() with
                 | Some(TypeName(name, arguments)) ->
                     Some
-                        { Trait = TraitReference.ofSegments name
+                        { Trait = TraitReference.ofSegments (TypeReference.segments name)
                           Arguments = arguments }
                 | _ ->
                     None
@@ -1466,12 +1789,12 @@ module TypeSignatures =
                 let nextCollected =
                     binderTokens
                     |> List.tryFind Token.isName
-                    |> Option.map (fun token -> SyntaxFacts.trimIdentifierQuotes token.Text :: collected)
+                    |> Option.map (fun token -> (token |> TypeVariableName.fromToken) :: collected)
                     |> Option.defaultValue collected
 
                 loop nextCollected rest
             | token :: tail when Token.isName token ->
-                loop (SyntaxFacts.trimIdentifierQuotes token.Text :: collected) tail
+                loop (TypeVariableName.fromToken token :: collected) tail
             | _ :: tail ->
                 loop collected tail
 
@@ -1710,18 +2033,19 @@ module TypeSignatures =
             TypeForce(applySubstitution substitution inner)
         | TypeProject(target, fieldName) ->
             TypeProject(applySubstitution substitution target, fieldName)
-        | TypeName([ name ], arguments) ->
+        | TypeName(typeReference, arguments) when List.length (TypeReference.segments typeReference) = 1 ->
+            let name = TypeReference.localName typeReference |> ReferenceName.text |> TypeVariableName.create
             let substitutedArguments = arguments |> List.map (applySubstitution substitution)
 
             match substitution |> Map.tryFind name with
-            | Some(TypeName(replacementName, replacementArguments)) ->
-                TypeName(replacementName, replacementArguments @ substitutedArguments)
+            | Some(TypeName(replacementReference, replacementArguments)) ->
+                TypeName(replacementReference, replacementArguments @ substitutedArguments)
             | Some replacement when List.isEmpty substitutedArguments ->
                 replacement
             | _ ->
-                TypeName([ name ], substitutedArguments)
-        | TypeName(name, arguments) ->
-            TypeName(name, arguments |> List.map (applySubstitution substitution))
+                TypeName(makeTypeReference [ name |> TypeVariableName.text ], substitutedArguments)
+        | TypeName(typeReference, arguments) ->
+            TypeName(typeReference, arguments |> List.map (applySubstitution substitution))
         | TypeArrow(quantity, parameterType, resultType) ->
             TypeArrow(quantity, applySubstitution substitution parameterType, applySubstitution substitution resultType)
         | TypeEquality(left, right) ->
@@ -1764,7 +2088,7 @@ module TypeSignatures =
         let rec loop current =
             match current with
             | TypeVariable currentName ->
-                String.Equals(currentName, name, StringComparison.Ordinal)
+                currentName = name
             | TypeLevelLiteral _ ->
                 false
             | TypeUniverse None ->
@@ -1777,7 +2101,7 @@ module TypeSignatures =
                 loop callee || arguments |> List.exists loop
             | TypeLambda(parameterName, parameterSort, body) ->
                 loop parameterSort
-                || (if String.Equals(parameterName, name, StringComparison.Ordinal) then false else loop body)
+                || (if parameterName = name then false else loop body)
             | TypeDelay inner
             | TypeMemo inner
             | TypeForce inner ->
@@ -1812,7 +2136,7 @@ module TypeSignatures =
                 let normalizedRight = applySubstitution substitution rightType
 
                 match normalizedLeft, normalizedRight with
-                | TypeVariable leftName, TypeVariable rightName when String.Equals(leftName, rightName, StringComparison.Ordinal) ->
+                | TypeVariable leftName, TypeVariable rightName when leftName = rightName ->
                     unify substitution rest
                 | TypeLevelLiteral leftLevel, TypeLevelLiteral rightLevel when leftLevel = rightLevel ->
                     unify substitution rest
@@ -1862,7 +2186,7 @@ module TypeSignatures =
                 | TypeForce leftInner, TypeForce rightInner ->
                     unify substitution ((leftInner, rightInner) :: rest)
                 | TypeProject(leftTarget, leftField), TypeProject(rightTarget, rightField)
-                    when String.Equals(leftField, rightField, StringComparison.Ordinal) ->
+                    when leftField = rightField ->
                     unify substitution ((leftTarget, rightTarget) :: rest)
                 | TypeArrow(leftQuantity, leftParameter, leftResult), TypeArrow(rightQuantity, rightParameter, rightResult)
                     when leftQuantity = rightQuantity ->
@@ -1907,7 +2231,7 @@ module TypeSignatures =
                     if List.length normalizedLeftFields = List.length normalizedRightFields
                        && List.forall2
                            (fun (leftField: RecordField) (rightField: RecordField) ->
-                               String.Equals(leftField.Name, rightField.Name, StringComparison.Ordinal)
+                               leftField.Name = rightField.Name
                                && leftField.Quantity = rightField.Quantity)
                            normalizedLeftFields
                            normalizedRightFields then
@@ -1963,7 +2287,7 @@ module TypeSignatures =
             | [] ->
                 substitution, List.rev instantiated
             | binder :: rest ->
-                let renamedName = $"{prefix}{nextIndex}"
+                let renamedName = $"{prefix}{nextIndex}" |> TypeVariableName.create
                 let renamedBinder =
                     { binder with
                         Name = renamedName
@@ -1987,7 +2311,7 @@ module TypeSignatures =
     let private canonicalCaptureSet captures =
         captures
         |> List.distinct
-        |> List.sort
+        |> List.sortBy CaptureName.text
 
     let forallBinderNames binders =
         binders |> List.map (fun binder -> binder.Name)
@@ -1999,17 +2323,20 @@ module TypeSignatures =
               Quantity = QuantityZero
               Sort = TypeUniverse None })
 
-    let private tryFieldDependencyReference (fieldNames: Set<string>) (referenceName: string) =
+    let private tryFieldDependencyReference (fieldNames: Set<FieldName>) (referenceName: TypeVariableName) =
+        let referenceText = referenceName |> TypeVariableName.text
+        let directReference = referenceText |> FieldName.create
+
         let direct =
-            if Set.contains referenceName fieldNames then
-                Some referenceName
+            if Set.contains directReference fieldNames then
+                Some directReference
             else
                 None
 
         direct
         |> Option.orElseWith (fun () ->
-            if referenceName.StartsWith("this.", StringComparison.Ordinal) then
-                let suffix = referenceName.Substring("this.".Length)
+            if referenceText.StartsWith("this.", StringComparison.Ordinal) then
+                let suffix = referenceText.Substring("this.".Length) |> FieldName.create
 
                 if Set.contains suffix fieldNames then
                     Some suffix
@@ -2096,7 +2423,7 @@ module TypeSignatures =
                 arguments
                 |> List.fold (fun state argument -> Set.union state (collectDependencies argument)) (collectDependencies callee)
             | TypeLambda(parameterName, parameterSort, body) ->
-                Set.remove parameterName (Set.union (collectDependencies parameterSort) (collectDependencies body))
+                Set.remove (parameterName |> TypeVariableName.text |> FieldName.create) (Set.union (collectDependencies parameterSort) (collectDependencies body))
             | TypeDelay inner
             | TypeMemo inner
             | TypeForce inner ->
@@ -2104,7 +2431,7 @@ module TypeSignatures =
             | TypeProject(target, fieldName) ->
                 Set.union
                     (collectDependencies target)
-                    (tryFieldDependencyReference fieldNames fieldName |> Option.toList |> Set.ofList)
+                    ((if Set.contains fieldName fieldNames then Some fieldName else None) |> Option.toList |> Set.ofList)
             | TypeArrow(_, parameterType, resultType) ->
                 Set.union (collectDependencies parameterType) (collectDependencies resultType)
             | TypeEquality(left, right) ->
@@ -2145,7 +2472,7 @@ module TypeSignatures =
 
         fieldMap, dependencyMap
 
-    let private hasDependencyCycle (dependencyMap: Map<string, Set<string>>) =
+    let private hasDependencyCycle (dependencyMap: Map<FieldName, Set<FieldName>>) =
         let rec visit visiting visited node =
             if Set.contains node visiting then
                 true
@@ -2213,7 +2540,7 @@ module TypeSignatures =
                     |> Set.filter (fun name ->
                         dependencyMap[name] |> Set.forall (fun dependency -> Set.contains dependency resolved))
                     |> Set.toList
-                    |> List.sort
+                    |> List.sortBy FieldName.text
 
                 match ready with
                 | next :: _ ->
@@ -2222,7 +2549,7 @@ module TypeSignatures =
                     let fallback =
                         remaining
                         |> Set.toList
-                        |> List.sort
+                        |> List.sortBy FieldName.text
                         |> List.map (fun name -> fieldMap[name])
 
                     List.rev ordered @ fallback
@@ -2232,7 +2559,7 @@ module TypeSignatures =
     let rec private tryEtaContractFunction typeExpr =
         match typeExpr with
         | TypeLambda(parameterName, parameterSort, TypeApply(callee, [ TypeVariable appliedName ]))
-            when String.Equals(parameterName, appliedName, StringComparison.Ordinal)
+            when parameterName = appliedName
                  && not (Set.contains parameterName (collectFreeTypeVariableSet callee)) ->
             Some(callee, parameterSort)
         | _ ->
@@ -2248,7 +2575,7 @@ module TypeSignatures =
                 |> List.map (fun field ->
                     match field.Type with
                     | TypeProject(target, fieldName)
-                        when String.Equals(field.Name, fieldName, StringComparison.Ordinal) ->
+                        when field.Name = fieldName ->
                         Some target
                     | _ ->
                         None)
@@ -2272,24 +2599,24 @@ module TypeSignatures =
         let normalizeTypeName name arguments =
             let normalizedArguments = arguments |> List.map normalize
             let normalizedName =
-                CompilerKnownSymbols.KnownTypes.tryClassifyName name
+                CompilerKnownSymbols.KnownTypes.tryClassifyName (TypeReference.segments name)
                 |> Option.bind (fun knownType ->
-                    if CompilerKnownSymbols.KnownTypes.acceptedPaths knownType |> List.exists ((=) name) then
-                        Some(CompilerKnownSymbols.KnownTypes.canonicalPath knownType)
+                    if CompilerKnownSymbols.KnownTypes.acceptedPaths knownType |> List.exists ((=) (TypeReference.segments name)) then
+                        Some(TypeReference.ofSegments (CompilerKnownSymbols.KnownTypes.canonicalPath knownType))
                     else
                         None)
                 |> Option.defaultValue name
 
             let normalizeLegacyIntrinsicTypeName () =
-                match normalizedName, normalizedArguments with
+                match TypeReference.segments normalizedName, normalizedArguments with
                 | [ "Type" ], [] ->
                     Some(TypeUniverse None)
                 | [ "Type" ], [ universeExpr ] ->
                     Some(TypeUniverse(Some universeExpr))
                 | _ ->
-                    match normalizedName with
+                    match TypeReference.segments normalizedName with
                     | [ intrinsicName ] when List.isEmpty normalizedArguments ->
-                        tryIntrinsicClassifier [ intrinsicName ] |> Option.map TypeIntrinsic
+                        tryIntrinsicClassifier (TypeReference.ofSegments [ intrinsicName ]) |> Option.map TypeIntrinsic
                     | _ ->
                         None
 
@@ -2297,7 +2624,7 @@ module TypeSignatures =
             | Some normalizedLegacy ->
                 normalizedLegacy
             | None ->
-                match context |> Map.tryFind (collapsedName normalizedName) with
+                match context |> Map.tryFind (TypeReference.qualifiedReference normalizedName) with
                 | Some definition when definition.Transparent && definition.ConversionReducible ->
                     if List.length normalizedArguments >= List.length definition.ParameterNames then
                         let appliedParameters, remainingArguments =
@@ -2388,7 +2715,7 @@ module TypeSignatures =
                 match normalize target with
                 | TypeRecord fields ->
                     fields
-                    |> List.tryFind (fun field -> String.Equals(field.Name, fieldName, StringComparison.Ordinal))
+                    |> List.tryFind (fun field -> field.Name = fieldName)
                     |> Option.map (fun field -> normalize field.Type)
                     |> Option.defaultValue (TypeProject(TypeRecord fields, fieldName))
                 | normalizedTarget ->
@@ -2464,7 +2791,7 @@ module TypeSignatures =
                 TypeApply(normalizedCallee, List.rev normalizedArguments), nextId
             | TypeLambda(parameterName, parameterSort, body) ->
                 let normalizedParameterSort, nextId = loop substitution nextId parameterSort
-                let canonicalParameterName = $"__alpha{nextId}"
+                let canonicalParameterName = $"__alpha{nextId}" |> TypeVariableName.create
                 let substitution = Map.add parameterName (TypeVariable canonicalParameterName) substitution
                 let normalizedBody, nextId = loop substitution (nextId + 1) body
                 TypeLambda(canonicalParameterName, normalizedParameterSort, normalizedBody), nextId
@@ -2580,15 +2907,17 @@ module TypeSignatures =
 
     let rec toText typeExpr =
         let renderTypeName name =
-            match name with
+            let segments = TypeReference.segments name
+
+            match segments with
             | _ when
-                List.take (max 0 (List.length name - 1)) name = CompilerKnownSymbols.KnownModules.Prelude
-                && (CompilerKnownSymbols.KnownTypes.tryClassifyName name
+                List.take (max 0 (List.length segments - 1)) segments = CompilerKnownSymbols.KnownModules.Prelude
+                && (CompilerKnownSymbols.KnownTypes.tryClassifyName segments
                     |> Option.exists (fun knownType ->
                         CompilerKnownSymbols.KnownTypes.acceptedPaths knownType
-                        |> List.exists ((=) name))) ->
-                List.last name
-            | _ -> SyntaxFacts.moduleNameToText name
+                        |> List.exists ((=) segments))) ->
+                TypeReference.localName name |> ReferenceName.text
+            | _ -> TypeReference.text name
 
         let rec renderAtom current =
             match current with
@@ -2608,12 +2937,12 @@ module TypeSignatures =
                 let argumentText = arguments |> List.map renderAtom |> String.concat " "
                 $"{renderTypeName name} {argumentText}"
             | TypeVariable name ->
-                name
+                name |> TypeVariableName.text
             | TypeApply(callee, arguments) ->
                 let argumentText = arguments |> List.map renderAtom |> String.concat " "
                 $"{renderAtom callee} {argumentText}"
             | TypeLambda(parameterName, parameterSort, body) ->
-                $"(\\({parameterName} : {toText parameterSort}) -> {toText body})"
+                $"(\\({parameterName |> TypeVariableName.text} : {toText parameterSort}) -> {toText body})"
             | TypeDelay inner ->
                 $"(thunk {toText inner})"
             | TypeMemo inner ->
@@ -2621,7 +2950,7 @@ module TypeSignatures =
             | TypeForce inner ->
                 $"(force {toText inner})"
             | TypeProject(target, fieldName) ->
-                $"{renderAtom target}.{fieldName}"
+                $"{renderAtom target}.{fieldName |> FieldName.text}"
             | TypeCapture _
             | TypeEffectRow _
             | TypeRecord _
@@ -2640,7 +2969,7 @@ module TypeSignatures =
         | TypeEquality(left, right) ->
             $"{renderAtom left} = {toText right}"
         | TypeCapture(inner, captures) ->
-            let capturesText = String.concat ", " captures
+            let capturesText = captures |> List.map CaptureName.text |> String.concat ", "
             $"{renderAtom inner} captures ({capturesText})"
         | TypeEffectRow(entries, tail) ->
             let entryText =
@@ -2666,7 +2995,7 @@ module TypeSignatures =
                         | QuantityOmega -> ""
                         | quantity -> Quantity.toSurfaceText quantity + " "
 
-                    $"{quantityText}{field.Name} : {toText field.Type}")
+                    $"{quantityText}{field.Name |> FieldName.text} : {toText field.Type}")
                 |> String.concat ", "
 
             $"({fieldText})"
@@ -2679,4 +3008,5 @@ module TypeSignatures =
     let collectFreeTypeVariables typeExpr =
         collectFreeTypeVariableSet typeExpr
         |> Set.toList
+        |> List.map TypeVariableName.text
         |> List.sort

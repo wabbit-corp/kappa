@@ -58,6 +58,7 @@ Current M4 status note: started, not complete. The compiler now has a real effec
   [IlDotNetBackendInput.fs](/D:/ws/kappa/src/Kappa.Compiler/IlDotNetBackendInput.fs),
   [Backend.fs](/D:/ws/kappa/src/Kappa.Compiler/Backend.fs),
   [ZigCcBackendSupport.fs](/D:/ws/kappa/src/Kappa.Compiler/ZigCcBackendSupport.fs).
+  The top `TypeSignatures` carrier migration is now build- and suite-clean through `SurfaceElaboration`, `KRuntimeLowering`, `KBackendLowering`, `ClrAssemblyLowering`, `IlDotNetBackendInput`, `ElaborationEvaluation`, and the fixture/test harness. The remaining debt is lower-level backend preparation and artifact DTOs that still project those symbolic references back into text.
 - [ ] Replace backend/runtime DTO fields that still encode semantic ownership as raw strings:
   `ModuleName`, `TypeName`, and `TraitName` fields in
   [KBackendIR.fs](/D:/ws/kappa/src/Kappa.Compiler/KBackendIR.fs),
@@ -71,7 +72,7 @@ Current M4 status note: started, not complete. The compiler now has a real effec
 - [ ] Finish slimming `Stdlib.fs` after the new `StandardLibraryCatalog` introduction. Prelude/bundled/synthetic module definitions now live in one typed catalog, but some convenience lookups still route through `Stdlib` rather than consuming the catalog directly.
 - [ ] Replace verifier/runtime stringly type carriers that force semantic checks over rendered text, especially `KRuntimeIR` type-text fields and the substring fallback in `CheckpointVerification.runtimeTypeLeaksErasureMetadata`.
   `KRuntimeIR`, `ClrAssemblyIR`, and `KBackendIR` now carry structured `TypeSignatures.TypeExpr` values for runtime releases, parameter types, return types, constructor field types, and trait-instance heads, and `CheckpointVerification.runtimeTypeLeaksErasureMetadata` now runs over those structured types instead of reparsing rendered text.
-  The remaining debt is in compatibility projections and lower-level DTOs that still round-trip those `TypeExpr` values back through text, especially `IlDotNetBackendInput`, `IlDotNetBackendModel.Raw*` records, and the host-bridge metadata in `HostBindings.fs`.
+  The remaining debt is in compatibility projections and lower-level DTOs that still round-trip those `TypeExpr` values back through text, especially `IlDotNetBackendModel.Raw*` records and the host-bridge metadata in `HostBindings.fs`.
 - [ ] Replace stringly trait/dictionary conventions that still depend on synthesized textual names or prefixes, including `TraitRuntime.dictionaryTypeName ...`, `__kappa_dict_*` prefix checks, and literal trait-name comparisons such as `InterpolatedMacro`, `LacksRec`, `IsProp`, and `IsTrait`.
   `SurfaceElaboration` now uses resolved prelude trait identities for compiler-known builtin evidence and `LacksRec` / `Rangeable` checks instead of local-name string comparisons.
   `KRuntimeLowering` no longer models compile-time-only traits as `Set<string>` local names; it now classifies them with structured trait references and only derives dictionary-type-name text at the current runtime-IR boundary.
@@ -82,6 +83,7 @@ Current M4 status note: started, not complete. The compiler now has a real effec
   [ElaborationEvaluation.fs](/D:/ws/kappa/src/Kappa.Compiler/ElaborationEvaluation.fs),
   [IlDotNetBackendTyping.fs](/D:/ws/kappa/src/Kappa.Compiler/IlDotNetBackendTyping.fs),
   [ZigCcBackendArtifact.fs](/D:/ws/kappa/src/Kappa.Compiler/ZigCcBackendArtifact.fs).
+  `ElaborationEvaluation` now normalizes parsed type syntax through `TypeReference`, `TypeVariableName`, and `FieldName` helpers instead of list/string pattern matching at its main comparison points.
 - [ ] Replace remaining last-segment and ad hoc scoped-path checks for reified static/meta objects with declaration identities instead of `string list` path inspection.
   Current hot spots:
   [ResourceChecking.fs](/D:/ws/kappa/src/Kappa.Compiler/ResourceChecking.fs) (`hasTypeLastSegment` over shape/meta carriers),

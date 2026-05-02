@@ -38,8 +38,8 @@ module internal QuerySemantics =
         { Use = OneShot
           Card = QZeroOrMore }
 
-    let private lastSegment nameSegments =
-        nameSegments |> List.tryLast
+    let private lastSegment typeReference =
+        typeReference |> TypeReference.segments |> List.tryLast
 
     let private classifyUseName nameSegments =
         match lastSegment nameSegments with
@@ -59,14 +59,14 @@ module internal QuerySemantics =
     let rec private stripCaptures typeExpr captureSet =
         match typeExpr with
         | TypeCapture(inner, captures) ->
-            stripCaptures inner (Set.union captureSet (captures |> Set.ofList))
+            stripCaptures inner (Set.union captureSet (captures |> List.map CaptureName.text |> Set.ofList))
         | _ ->
             typeExpr, captureSet
 
     let tryParseQuantityExpr typeExpr =
         match typeExpr with
-        | TypeName(nameSegments, []) ->
-            match lastSegment nameSegments with
+        | TypeName(typeReference, []) ->
+            match lastSegment typeReference with
             | Some "0" -> Some ResourceQuantity.zero
             | Some "1" -> Some ResourceQuantity.one
             | Some "ω"
@@ -85,22 +85,22 @@ module internal QuerySemantics =
 
     let private classifyUseExpr (typeExpr: TypeExpr) =
         match typeExpr with
-        | TypeName(nameSegments, []) -> classifyUseName nameSegments
+        | TypeName(typeReference, []) -> classifyUseName typeReference
         | _ -> None
 
     let private classifyCardExpr (typeExpr: TypeExpr) =
         match typeExpr with
-        | TypeName(nameSegments, []) -> classifyCardName nameSegments
+        | TypeName(typeReference, []) -> classifyCardName typeReference
         | _ -> None
 
     let tryParseModeExpr typeExpr =
         match typeExpr with
-        | TypeName(nameSegments, [ useExpr; cardExpr ]) ->
-            match classifyUseName nameSegments, classifyCardName nameSegments with
+        | TypeName(typeReference, [ useExpr; cardExpr ]) ->
+            match classifyUseName typeReference, classifyCardName typeReference with
             | Some useMode, Some card ->
                 Some { Use = useMode; Card = card }
             | _ ->
-                match lastSegment nameSegments, classifyUseExpr useExpr, classifyCardExpr cardExpr with
+                match lastSegment typeReference, classifyUseExpr useExpr, classifyCardExpr cardExpr with
                 | Some CompilerKnownSymbols.KnownTypeNames.QueryMode, Some useMode, Some card ->
                     Some { Use = useMode; Card = card }
                 | _ ->
@@ -122,8 +122,8 @@ module internal QuerySemantics =
                   CaptureSet = captures }
 
         match normalizedType with
-        | TypeName(nameSegments, [ itemType ]) ->
-            match lastSegment nameSegments with
+        | TypeName(typeReference, [ itemType ]) ->
+            match lastSegment typeReference with
             | Some CompilerKnownSymbols.KnownTypeNames.Query ->
                 build reusableZeroOrMoreMode ResourceQuantity.omega itemType
             | Some CompilerKnownSymbols.KnownTypeNames.OnceQuery ->
@@ -148,7 +148,7 @@ module internal QuerySemantics =
                     itemType
             | _ ->
                 None
-        | TypeName(nameSegments, [ modeExpr; itemQuantityExpr; itemType ]) when lastSegment nameSegments = Some CompilerKnownSymbols.KnownTypeNames.QueryCore ->
+        | TypeName(typeReference, [ modeExpr; itemQuantityExpr; itemType ]) when lastSegment typeReference = Some CompilerKnownSymbols.KnownTypeNames.QueryCore ->
             match tryParseModeExpr modeExpr, tryParseQuantityExpr itemQuantityExpr with
             | Some mode, Some itemQuantity ->
                 build mode itemQuantity itemType
@@ -173,8 +173,8 @@ module internal QuerySemantics =
             build queryType sourceDemand
         | None ->
             match normalize typeExpr with
-            | TypeName(nameSegments, [ itemType ]) ->
-                match lastSegment nameSegments with
+            | TypeName(typeReference, [ itemType ]) ->
+                match lastSegment typeReference with
                 | Some CompilerKnownSymbols.KnownTypeNames.List
                 | Some CompilerKnownSymbols.KnownTypeNames.Array
                 | Some CompilerKnownSymbols.KnownTypeNames.Set ->

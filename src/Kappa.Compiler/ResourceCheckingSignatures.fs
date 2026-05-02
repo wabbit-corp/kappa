@@ -358,17 +358,17 @@ module internal ResourceCheckingSignatures =
         | TypeSignatures.TypeUniverse _
         | TypeSignatures.TypeIntrinsic _ ->
             true
-        | TypeSignatures.TypeName([ "Type" ], []) ->
+        | TypeSignatures.TypeName(typeReference, []) when TypeSignatures.TypeReference.segments typeReference = [ "Type" ] ->
             true
-        | TypeSignatures.TypeName(nameSegments, []) when
-            matchesKnownType CompilerKnownSymbols.ConstraintType nameSegments
-            || matchesKnownType CompilerKnownSymbols.QuantityType nameSegments
-            || matchesKnownType CompilerKnownSymbols.RegionType nameSegments
-            || matchesKnownType CompilerKnownSymbols.RecRowType nameSegments
-            || matchesKnownType CompilerKnownSymbols.VarRowType nameSegments
-            || matchesKnownType CompilerKnownSymbols.EffRowType nameSegments
-            || matchesKnownType CompilerKnownSymbols.LabelType nameSegments
-            || matchesKnownType CompilerKnownSymbols.EffLabelType nameSegments ->
+        | TypeSignatures.TypeName(typeReference, []) when
+            matchesKnownType CompilerKnownSymbols.ConstraintType (TypeSignatures.TypeReference.segments typeReference)
+            || matchesKnownType CompilerKnownSymbols.QuantityType (TypeSignatures.TypeReference.segments typeReference)
+            || matchesKnownType CompilerKnownSymbols.RegionType (TypeSignatures.TypeReference.segments typeReference)
+            || matchesKnownType CompilerKnownSymbols.RecRowType (TypeSignatures.TypeReference.segments typeReference)
+            || matchesKnownType CompilerKnownSymbols.VarRowType (TypeSignatures.TypeReference.segments typeReference)
+            || matchesKnownType CompilerKnownSymbols.EffRowType (TypeSignatures.TypeReference.segments typeReference)
+            || matchesKnownType CompilerKnownSymbols.LabelType (TypeSignatures.TypeReference.segments typeReference)
+            || matchesKnownType CompilerKnownSymbols.EffLabelType (TypeSignatures.TypeReference.segments typeReference) ->
             true
         | TypeSignatures.TypeArrow(_, parameterType, resultType) ->
             isCompileTimeDefinitionParameterType parameterType
@@ -396,7 +396,9 @@ module internal ResourceCheckingSignatures =
         let returnTypeTokens =
             Some(
                 syntheticIdentifierToken declaration.Name
-                :: (typeParameterNames |> List.map syntheticIdentifierToken)
+                :: (typeParameterNames
+                    |> List.map TypeSignatures.TypeVariableName.text
+                    |> List.map syntheticIdentifierToken)
             )
 
         declaration.Constructors

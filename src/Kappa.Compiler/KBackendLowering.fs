@@ -4,6 +4,9 @@ open System
 
 // Lowers KRuntimeIR into target-neutral runtime-facing KBackendIR.
 module internal KBackendLowering =
+    let private typeReferenceSegments =
+        TypeSignatures.TypeReference.segments
+
     let rec private isFunctionLikeType typeExpr =
         match typeExpr with
         | TypeSignatures.TypeArrow _ -> true
@@ -58,8 +61,8 @@ module internal KBackendLowering =
     let private tryBackendRepresentationFromTypeExpr typeExpr =
         let tryTypeHead typeExpr =
             match typeExpr with
-            | TypeSignatures.TypeName(nameSegments, _) when not (List.isEmpty nameSegments) ->
-                List.tryLast nameSegments
+            | TypeSignatures.TypeName(nameSegments, _) when not (List.isEmpty (typeReferenceSegments nameSegments)) ->
+                List.tryLast (typeReferenceSegments nameSegments)
             | _ ->
                 None
 

@@ -11,6 +11,12 @@ open System.Runtime.CompilerServices
 module internal IlDotNetBackendInput =
     open IlDotNetBackendModel
 
+    let private typeReferenceSegments =
+        TypeSignatures.TypeReference.segments
+
+    let private typeVariableNameText =
+        TypeSignatures.TypeVariableName.text
+
     let internal significantTokens (tokens: Token list) =
         SignatureTokenAnalysis.significantTokens tokens
 
@@ -421,16 +427,17 @@ module internal IlDotNetBackendInput =
 
     let internal parseType (rawModules: Map<string, RawModuleInfo>) currentModule typeParameters (tokens: Token list) =
         let significant = significantTokens tokens
+        let typeReferenceSegments = TypeSignatures.TypeReference.segments
 
         let rec lowerTypeExpr (typeExpr: TypeSignatures.TypeExpr) =
             result {
                 match typeExpr with
                 | TypeSignatures.TypeName(nameSegments, [ constraintExpr ])
-                    when nameSegments = [ Stdlib.KnownTypeNames.Dict ]
-                         || nameSegments = Stdlib.PreludeModuleName @ [ Stdlib.KnownTypeNames.Dict ] ->
+                    when typeReferenceSegments nameSegments = [ Stdlib.KnownTypeNames.Dict ]
+                         || typeReferenceSegments nameSegments = Stdlib.PreludeModuleName @ [ Stdlib.KnownTypeNames.Dict ] ->
                     match constraintExpr with
                     | TypeSignatures.TypeName(traitNameSegments, argumentExprs) ->
-                        let traitName = List.last traitNameSegments
+                        let traitName = List.last (typeReferenceSegments traitNameSegments)
 
                         let! loweredArguments =
                             argumentExprs
@@ -451,7 +458,7 @@ module internal IlDotNetBackendInput =
                                 DiagnosticFact.ClrBackendEmitterError.message ClrTraitConstraintTypeExpected
                             )
                 | TypeSignatures.TypeName(segments, arguments) ->
-                    let! headType = tryResolveTypeName rawModules currentModule typeParameters segments
+                    let! headType = tryResolveTypeName rawModules currentModule typeParameters (typeReferenceSegments segments)
 
                     let! loweredArguments =
                         arguments
@@ -489,7 +496,7 @@ module internal IlDotNetBackendInput =
                                     (ClrTypeCannotTakeArguments(formatIlType headType))
                             )
                 | TypeSignatures.TypeVariable name ->
-                    return! tryResolveTypeName rawModules currentModule typeParameters [ name ]
+                    return! tryResolveTypeName rawModules currentModule typeParameters [ typeVariableNameText name ]
                 | _ ->
                     return!
                         Result.Error(
