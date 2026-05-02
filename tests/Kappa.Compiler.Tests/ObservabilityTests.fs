@@ -4512,6 +4512,33 @@ module ObservabilityTestsShard6 =
                        || reason = "pre-erasure-instance-head-type-metadata-leak")
         )
 
+    [<Fact>]
+    let ``backend verification does not treat qualified user Region types as erased runtime metadata`` () =
+        let workspace =
+            compileInMemoryWorkspace
+                "memory-verify-qualified-user-region-root"
+                [
+                    "shadow.kp",
+                    [
+                        "module shadow"
+                        "data Region : Type = Region"
+                    ]
+                    |> String.concat "\n"
+                    "main.kp",
+                    [
+                        "module main"
+                        "import shadow.*"
+                        "id : shadow.Region -> shadow.Region"
+                        "let id value = value"
+                        "let result = id Region"
+                    ]
+                    |> String.concat "\n"
+                ]
+
+        let diagnostics = Compilation.verifyCheckpoint workspace "KBackendIR"
+
+        Assert.Empty(diagnostics)
+
 
     [<Fact>]
     let ``core and backend artifacts remain usable after source documents are discarded`` () =

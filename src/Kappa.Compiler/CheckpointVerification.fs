@@ -270,6 +270,19 @@ module CheckpointVerification =
         verify Set.empty pattern
 
     let private runtimeTypeLeaksErasureMetadata allowEffectRows (typeText: string) =
+        let isCompileTimeOnlyKnownType knownType =
+            match knownType with
+            | CompilerKnownSymbols.UniverseType
+            | CompilerKnownSymbols.ConstraintType
+            | CompilerKnownSymbols.QuantityType
+            | CompilerKnownSymbols.RegionType
+            | CompilerKnownSymbols.RecRowType
+            | CompilerKnownSymbols.VarRowType
+            | CompilerKnownSymbols.EffRowType
+            | CompilerKnownSymbols.LabelType
+            | CompilerKnownSymbols.EffLabelType -> true
+            | _ -> false
+
         let rec loop typeExpr =
             match typeExpr with
             | TypeSignatures.TypeLevelLiteral _ ->
@@ -293,15 +306,10 @@ module CheckpointVerification =
             | TypeSignatures.TypeVariable _ ->
                 false
             | TypeSignatures.TypeName(name, arguments) ->
-                let head = name |> List.tryLast |> Option.defaultValue ""
-
                 arguments |> List.exists loop
-                || String.Equals(head, "Type", StringComparison.Ordinal)
-                || String.Equals(head, CompilerKnownSymbols.KnownTypeNames.Constraint, StringComparison.Ordinal)
-                || String.Equals(head, CompilerKnownSymbols.KnownTypeNames.Quantity, StringComparison.Ordinal)
-                || String.Equals(head, CompilerKnownSymbols.KnownTypeNames.Region, StringComparison.Ordinal)
-                || String.Equals(head, CompilerKnownSymbols.KnownTypeNames.RecRow, StringComparison.Ordinal)
-                || String.Equals(head, CompilerKnownSymbols.KnownTypeNames.Label, StringComparison.Ordinal)
+                || (name
+                    |> CompilerKnownSymbols.KnownTypes.tryClassifyName
+                    |> Option.exists isCompileTimeOnlyKnownType)
             | TypeSignatures.TypeArrow(quantity, parameterType, resultType) ->
                 quantity <> QuantityOmega || loop parameterType || loop resultType
             | TypeSignatures.TypeEquality _ ->

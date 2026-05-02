@@ -68,6 +68,12 @@ let ``KnownTypes classify bare and prelude spellings to the same symbolic type``
     Assert.Equal(Some CompilerKnownSymbols.OptionType, prelude)
 
 [<Fact>]
+let ``KnownTypes do not classify arbitrary qualified same-spelling names as compiler-known`` () =
+    let qualifiedShadow = CompilerKnownSymbols.KnownTypes.tryClassifyName [ "shadow"; "Region" ]
+
+    Assert.Equal(None, qualifiedShadow)
+
+[<Fact>]
 let ``TypeSignatures known type helpers construct and match symbolic heads`` () =
     let payload = TypeSignatures.knownType CompilerKnownSymbols.StringType []
     let optionType = TypeSignatures.knownType CompilerKnownSymbols.OptionType [ payload ]
