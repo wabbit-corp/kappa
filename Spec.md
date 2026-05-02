@@ -11465,6 +11465,63 @@ Rules:
   conforming implementation MAY specialize or erase that evidence only after producing the required runtime
   representation.
 
+<!-- types.gradual.dynrep_purity -->
+#### 5.10.1A Purity and locality of `DynRep`
+
+`DynRep` is the representation vocabulary for pure checked dynamic
+values.
+
+Rules:
+
+* `sameDynRep`, `checkedCastWith`, and `checkedCast` are pure operations.
+* A `DynRep a` check MUST NOT perform ordinary `IO`, bridge calls,
+  host reflection requiring runtime effects, process communication,
+  network communication, blocking member lookup, callback registration,
+  or mutation visible outside the dynamic value being checked.
+* A `DynRep a` MAY inspect runtime tags, runtime shape descriptors,
+  closed structural metadata, nominal type identity, stored provenance,
+  and payload-local representation data.
+* If validating a foreign or dynamic value requires effectful inspection,
+  foreign runtime calls, process communication, bridge state, callback
+  interaction, or resource-lifetime checks, that validation belongs in a
+  `std.bridge.BridgeContract`, trusted binding summary, or explicit
+  effectful boundary API rather than in `DynRep`.
+* A value of type `Dyn` MAY contain a foreign object, opaque handle, or
+  bridge-backed value only when its stored representation can validate
+  the demanded cast without performing forbidden effects.
+* Otherwise the value SHOULD be exposed through `std.bridge`, `IO`, an
+  opaque resource wrapper, or another effectful boundary surface.
+
+<!-- types.gradual.dynrep_coherence -->
+#### 5.10.1B Coherence of dynamic representations
+
+A `DynRep a` value is trusted runtime evidence for type `a`.
+
+Rules:
+
+* `sameDynRep repA repB = Yes p` is sound only if `p` is valid
+  propositional equality between the represented types.
+* A conforming implementation MUST prevent untrusted source code from
+  fabricating arbitrary `DynRep a` values that could make `sameDynRep`
+  return unsound equality evidence.
+* `DynRep` constructors, if any are exposed, MUST be exposed only through
+  APIs whose contracts preserve this soundness condition.
+* Implementations MAY provide derived `DynamicType` instances for
+  primitive, structural, nominal, and closed algebraic types, but such
+  derivation MUST respect visibility and opacity.
+* Outside the defining module of an opaque data type, a `DynamicType`
+  instance for that type may be used only if it is exported by the
+  defining module, supplied by a trusted summary, or otherwise explicitly
+  made available without revealing the hidden representation.
+* Multiple coherent `DynamicType a` instances in the same effective
+  instance environment MUST produce extensionally equivalent
+  representations for purposes of `sameDynRep`.
+* If two representations intentionally distinguish different runtime
+  policies, encodings, bridge identities, ownership modes, or erased
+  witness schemes, that distinction MUST appear in the represented type
+  or in an explicit runtime carrier. It MUST NOT be hidden inside two
+  incompatible `DynRep a` values for the same apparent `a`.
+
 <!-- types.gradual.dynamically_representable_types -->
 #### 5.10.2 Dynamically representable types
 
